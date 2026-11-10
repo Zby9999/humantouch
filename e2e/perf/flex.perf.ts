@@ -230,6 +230,16 @@ function design(page: Page) {
   return page.getByRole("complementary", { name: "Design" });
 }
 
+/**
+ * A field of the Design panel to type into: a value the code writes with a
+ * Variable shows it by name (ticket 119), detached first, as in Figma.
+ */
+async function fieldOf(page: Page, name: string) {
+  const detach = design(page).getByRole("button", { name: `Detach ${name.toLowerCase()} variable`, exact: true });
+  if (await detach.isVisible()) await detach.click();
+  return design(page).getByRole("textbox", { name, exact: true });
+}
+
 interface ValueSample {
   /** In the first frame drawn after the key was pressed, the view worked in showed the new value. */
   firstFrame: boolean;
@@ -311,7 +321,7 @@ async function everyViewShows(page: Page, selector: string, property: string, va
 
 /** Steps a value up with the arrow key, `VALUE_STEPS` times, measuring each, in `views`, the first worked in. */
 async function stepValue(page: Page, field: string, selector: string, property: string, views = VIEWS) {
-  await design(page).getByRole("textbox", { name: field, exact: true }).focus();
+  await (await fieldOf(page, field)).focus();
   const samples: ValueSample[] = [];
   for (let i = 0; i < VALUE_STEPS; i++) {
     const expected = `${parseFloat(await valueOnCanvas(page, selector, property)) + 1}px`;
@@ -427,7 +437,7 @@ function armHeld({ views, selector, property, from }: { views: string[]; selecto
  * go, waits till every view shows the last value.
  */
 async function holdValue(page: Page, field: string, selector: string, property: string): Promise<Held> {
-  await design(page).getByRole("textbox", { name: field, exact: true }).focus();
+  await (await fieldOf(page, field)).focus();
   const from = parseFloat(await valueOnCanvas(page, selector, property));
   await page.evaluate(armHeld, { views: VIEWS, selector, property, from });
   const cdp = await page.context().newCDPSession(page);
@@ -807,7 +817,7 @@ function armUndoRedo({ views, selector, property, expected, code }: { views: str
  * nothing to redo); it shows in every view at once too.
  */
 async function undoAndRedo(page: Page, field: string, selector: string, property: string) {
-  await design(page).getByRole("textbox", { name: field, exact: true }).focus();
+  await (await fieldOf(page, field)).focus();
   const undo: UndoRedoSample[] = [];
   const redo: UndoRedoSample[] = [];
   const measured = () => page.evaluate(() => (window as unknown as { tkUndoRedo: Promise<UndoRedoSample> }).tkUndoRedo);
@@ -903,7 +913,7 @@ test("⌥⌘V on one of 96 cards shows in the view worked in in the next frame, 
   await selectCard(page, 6, { parent: true });
   const selector = card(6);
   const property = "border-top-left-radius";
-  const field = design(page).getByRole("textbox", { name: "Corner radius", exact: true });
+  const field = (await fieldOf(page, "Corner radius"));
   const own = parseFloat(await valueOnCanvas(page, selector, property));
   const copied = `${own + 5}px`;
   await field.fill(String(own + 5));
@@ -950,6 +960,102 @@ test("⌥⌘V on one of 96 cards shows in the view worked in in the next frame, 
     ),
   );
   verdict(met, "⌥⌘V shows in the next frame, its work within a frame of a panel edit's");
+});
+
+interface SelectSample {
+  /** In the first frame drawn after the key, the Design panel showed the layer selected. */
+  firstFrame: boolean;
+  /** The main thread's time on it, as `ValueSample.work`: handling the key, then drawing that frame. */
+  work: number;
+  /** From the key press to that frame drawn. */
+  latency: number;
+}
+
+/**
+ * Escape, selecting the layer around the one selected, measured as
+ * `armUndoRedo` measures ⌘Z: the Design panel shows the layer selected in the
+ * first frame after it when its contents are other than before then.
+ */
+function armSelect() {
+  const w = window as unknown as WithKeysFirst & { tkSelect: Promise<SelectSample> };
+  const { scheduler } = window as unknown as WithScheduler;
+  const panel = document.querySelector("third-kind")!.shadowRoot!.querySelector('[aria-label="Design"]')!;
+  const before = panel.innerHTML;
+  return new Promise<void>((armed) =>
+    requestAnimationFrame(() =>
+      scheduler.postTask(
+        () => {
+          w.tkSelect = new Promise((resolve) => {
+            let start = 0;
+            let arrived = 0;
+            let handled = 0;
+            const frame = () => {
+              const at = performance.now();
+              scheduler.postTask(
+                () => {
+                  const drawn = performance.now();
+                  resolve({ firstFrame: panel.innerHTML !== before, work: (handled || at) - start + (drawn - at), latency: drawn - arrived });
+                },
+                { priority: "user-blocking" },
+              );
+            };
+            w.tkKeyFirst = (event) => {
+              if (event.key !== "Escape") return;
+              w.tkKeyFirst = undefined;
+              start = performance.now();
+              arrived = event.timeStamp;
+              requestAnimationFrame(frame);
+            };
+            const onHandled = (event: KeyboardEvent) => {
+              if (event.key !== "Escape") return;
+              handled = performance.now();
+              removeEventListener("keydown", onHandled, true);
+            };
+            addEventListener("keydown", onHandled, true);
+          });
+          armed();
+        },
+        { priority: "user-blocking" },
+      ),
+    ),
+  );
+}
+
+/**
+ * Ticket 119: a layer selected reads the Variables its code writes its values
+ * with, for the panel to show. Each of 20 cards of 96, a card not selected
+ * before (nothing read of it yet), selected from its body with Escape: shown
+ * in the Design panel in the next frame, its work within two frames.
+ */
+test("selecting one of 96 cards shows it in the Design panel in the next frame, its work within two frames", async ({ page }) => {
+  await page.addInitScript(hearKeysFirst);
+  const elements = await openBigPage(page);
+  await enterEditMode(page);
+  const samples: SelectSample[] = [];
+  for (let i = 0; i < 20; i++) {
+    await selectCard(page, 10 + i);
+    await settle(page, 150);
+    await page.evaluate(armSelect);
+    await page.keyboard.press("Escape");
+    samples.push(await page.evaluate(() => (window as unknown as { tkSelect: Promise<SelectSample> }).tkSelect));
+    await settle(page, 150);
+  }
+  const work = summarize(samples.map((s) => s.work));
+  const latency = summarize(samples.map((s) => s.latency));
+  const inFirstFrame = samples.filter((s) => s.firstFrame).length;
+  const met = inFirstFrame === samples.length && work.p95 <= VALUE_TARGET_MS;
+  keep("selectCard", { work, latency, inFirstFrame, samples });
+  print(
+    report(
+      `Selecting a card of ${PRODUCTS} with Escape, ${samples.length} cards, ${elements} elements, ${VIEWS.length} views — ${mode}`,
+      [
+        { name: "select: work", summary: work, target: `p95 ≤ ${VALUE_TARGET_MS.toFixed(1)}ms`, met },
+        { name: "select: key to frame drawn", summary: latency },
+      ],
+      [`${inFirstFrame} of ${samples.length} shown in the Design panel in the first frame`],
+    ),
+  );
+  verdict(met, "a card selected shows in the Design panel in the next frame, its work within two frames");
 });
 
 /** How many rows the Layers panel lists. */
@@ -1241,12 +1347,12 @@ test.describe("a claimed round", () => {
     await enterEditMode(page);
     await selectCard(page, 6, { parent: true });
     for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
-      const box = design(page).getByRole("textbox", { name: field, exact: true });
+      const box = (await fieldOf(page, field));
       await box.fill(value);
       await box.press("Enter");
     }
     await selectCard(page, 6);
-    const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
+    const gap = (await fieldOf(page, "Gap"));
     await gap.fill("10");
     await gap.press("Enter");
     await expect.poll(() => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes.length : 0)).toBe(3);
@@ -1291,12 +1397,12 @@ test.describe("a claimed round", () => {
     };
     await pickInPhone(true);
     for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
-      const box = design(page).getByRole("textbox", { name: field, exact: true });
+      const box = (await fieldOf(page, field));
       await box.fill(value);
       await box.press("Enter");
     }
     await pickInPhone(false);
-    const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
+    const gap = (await fieldOf(page, "Gap"));
     await gap.fill("10");
     await gap.press("Enter");
     const saved = () => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes : []) as { breakpoint?: object; parts?: unknown[] }[];
@@ -1337,7 +1443,7 @@ test.describe("a claimed round", () => {
     await page.keyboard.type("Ships in a day");
     await page.keyboard.press("Enter");
     // The new text, selected.
-    const size = design(page).getByRole("textbox", { name: "Font size", exact: true });
+    const size = (await fieldOf(page, "Font size"));
     await size.fill("20");
     await size.press("Enter");
     const saved = () => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes : []);
@@ -1381,12 +1487,12 @@ test.describe("a claimed round", () => {
       await enterEditMode(page);
       await selectCard(page, 1, { parent: true });
       for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
-        const box = design(page).getByRole("textbox", { name: field, exact: true });
+        const box = (await fieldOf(page, field));
         await box.fill(value);
         await box.press("Enter");
       }
       await selectCard(page, 1);
-      const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
+      const gap = (await fieldOf(page, "Gap"));
       await gap.fill("10");
       await gap.press("Enter");
       const saved = () => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes : []);
@@ -1432,12 +1538,12 @@ test.describe("a claimed round", () => {
       await enterEditMode(page);
       await selectCard(page, 1, { parent: true });
       for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
-        const box = design(page).getByRole("textbox", { name: field, exact: true });
+        const box = (await fieldOf(page, field));
         await box.fill(value);
         await box.press("Enter");
       }
       await selectCard(page, 1);
-      const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
+      const gap = (await fieldOf(page, "Gap"));
       await gap.fill("10");
       await gap.press("Enter");
       const saved = () => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes : []);
@@ -1552,7 +1658,7 @@ test.describe("the code changing in edit mode, with no claim", () => {
     await enterEditMode(page);
     await selectCard(page, 6, { parent: true });
     for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
-      const box = design(page).getByRole("textbox", { name: field, exact: true });
+      const box = (await fieldOf(page, field));
       await box.fill(value);
       await box.press("Enter");
     }
@@ -1617,7 +1723,7 @@ test.describe("the code changing in edit mode, with no claim", () => {
     await enterEditMode(page);
     await selectCard(page, 1, { parent: true });
     for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
-      const box = design(page).getByRole("textbox", { name: field, exact: true });
+      const box = (await fieldOf(page, field));
       await box.fill(value);
       await box.press("Enter");
     }
@@ -1716,7 +1822,7 @@ test.describe("a change at a breakpoint", () => {
   /** Sets `field` to `value`; with `leave`, goes back to preview mode at once. Waits till change `id` is saved with the parts of its range read; what was seen meanwhile. */
   async function changeAndRead(page: Page, id: number, field: string, value: string, leave = false) {
     await page.evaluate(armTasks, PARTS_MEASURE);
-    const box = design(page).getByRole("textbox", { name: field, exact: true });
+    const box = (await fieldOf(page, field));
     await box.fill(value);
     await box.press("Enter");
     if (leave) await page.getByRole("button", { name: EXIT_LABEL }).click();
@@ -1838,12 +1944,12 @@ test.describe("the same canvas again", () => {
     await enterEditMode(page);
     await selectCard(page, 6, { parent: true });
     for (const [field, value] of [["Corner radius", "20"], ["Fill color", "fafafa"]]) {
-      const box = design(page).getByRole("textbox", { name: field, exact: true });
+      const box = (await fieldOf(page, field));
       await box.fill(value);
       await box.press("Enter");
     }
     await selectCard(page, 6);
-    const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
+    const gap = (await fieldOf(page, "Gap"));
     await gap.fill("10");
     await gap.press("Enter");
     await expect.poll(() => changesSaved()?.changes.length ?? 0).toBe(3);

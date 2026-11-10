@@ -149,6 +149,9 @@ export async function enterEditMode(page: Page) {
 }
 
 export async function setField(page: Page, name: string, value: string) {
+  // A value the code writes with a Variable shows it by name (ticket 119): detached, as in Figma, the field is there to type into.
+  const detach = design(page).getByRole("button", { name: `Detach ${name.toLowerCase()} variable`, exact: true });
+  if (await detach.isVisible()) await detach.click();
   const field = design(page).getByRole("textbox", { name, exact: true });
   await field.fill(value);
   await field.press("Enter");

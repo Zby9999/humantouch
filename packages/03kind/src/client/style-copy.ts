@@ -9,7 +9,8 @@
  * shown, and not its words. Each value pasted is an ordinary style change,
  * as the Design panel makes it: across the instances of the usage, at the
  * breakpoint of the view worked in (ADR 0008), its Variables those picked for
- * it, else those its value is. One paste is one step.
+ * it or those the code writes it with (ticket 119), else those its value is.
+ * One paste is one step.
  */
 import type { Editor } from "./edit-commands";
 import type { Picked } from "./changeset";
@@ -42,7 +43,7 @@ export const STYLE_PROPERTIES = [
 
 export type StyleProperty = (typeof STYLE_PROPERTIES)[number];
 
-/** One value copied, and the Variables picked for its parts, if any. */
+/** One value copied, and the Variables of its parts, if any: picked this round, or written in the code (ticket 119). */
 interface Copied<P extends Property = Property> {
   value: PropertyValues[P];
   picked?: Picked;
@@ -60,7 +61,10 @@ export function copyStyle(editor: Editor, layer: Layer): CopiedStyle | null {
   const style: Record<string, Copied> = {};
   for (const property of STYLE_PROPERTIES) {
     if (!editor.can(layer, property)) continue;
-    const picked = pickedIn(editor.variables(layer, property));
+    // Those picked for it this round, and those the code writes it with (ticket 119): pasted, each is that Variable still.
+    const chosen = pickedIn(editor.variables(layer, property));
+    const code = editor.inCode(layer, property);
+    const picked = chosen || code ? { ...code, ...chosen } : undefined;
     style[property] = { value: editor.read(layer, property), ...(picked && { picked }) };
   }
   return Object.keys(style).length ? (style as CopiedStyle) : null;

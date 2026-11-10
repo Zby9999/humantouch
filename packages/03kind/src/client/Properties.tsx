@@ -124,16 +124,30 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
 
   const catalog = useCatalog();
   /**
-   * The Variable every selected layer has picked for part `part` of the property `propertyOf` names for it; null when none,
-   * or not the same. The property is where the layer keeps the value: a text layer's shadows are its text shadows.
+   * The parts detached from the Variable the code writes them with, as `property part`: shown as values, though
+   * nothing is changed by it (ticket 119); for this selection alone.
+   */
+  const [detachedOf, setDetachedOf] = useState<{ key: string; parts: string[] }>({ key: "", parts: [] });
+  const detached = detachedOf.key === keyOf(layers) ? detachedOf.parts : [];
+  /**
+   * The Variable every selected layer has for part `part` of the property `propertyOf` names for it: the one picked
+   * this round, else the one the code writes its value with (ticket 119), unless detached here. Null when none, or
+   * not the same. The property is where the layer keeps the value: a text layer's shadows are its text shadows.
    */
   const boundTo = (propertyOf: (layer: Layer) => Property, part: string) => {
-    const [first, ...rest] = layers.map((layer) => editor.variables(layer, propertyOf(layer))?.[part]);
-    const same = rest.every((other) => other?.picked && sameVariable(other, first));
-    return first?.picked && same ? first : null;
+    const [first, ...rest] = layers.map((layer) => {
+      const property = propertyOf(layer);
+      const bound = editor.variables(layer, property)?.[part];
+      if (bound?.picked) return bound;
+      return detached.includes(`${property} ${part}`) ? null : (editor.inCode(layer, property)?.[part] ?? null);
+    });
+    return first && rest.every((other) => sameVariable(other, first)) ? first : null;
   };
   /** Makes part `part` of the property `propertyOf` names for each selected layer the Variable `entry` draws, as one edit; null detaches it, keeping the value. */
   const pick = (propertyOf: (layer: Layer) => Property, part: string, entry: Resolved | null) => {
+    // Detached, the field shows the value, the code's Variable or not; picked, the Variable.
+    const parts = layers.map((layer) => `${propertyOf(layer)} ${part}`);
+    setDetachedOf({ key: keyOf(layers), parts: entry ? detached.filter((p) => !parts.includes(p)) : [...new Set([...detached, ...parts])] });
     editor.batch(() => {
       for (const layer of layers) {
         const property = propertyOf(layer);
