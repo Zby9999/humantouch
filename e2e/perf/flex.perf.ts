@@ -962,7 +962,7 @@ test("⌥⌘V on one of 96 cards shows in the view worked in in the next frame, 
   verdict(met, "⌥⌘V shows in the next frame, its work within a frame of a panel edit's");
 });
 
-interface SelectSample {
+interface ParentSample {
   /** In the first frame drawn after the key, the Design panel showed the layer selected. */
   firstFrame: boolean;
   /** The main thread's time on it, as `ValueSample.work`: handling the key, then drawing that frame. */
@@ -976,8 +976,8 @@ interface SelectSample {
  * `armUndoRedo` measures ⌘Z: the Design panel shows the layer selected in the
  * first frame after it when its contents are other than before then.
  */
-function armSelect() {
-  const w = window as unknown as WithKeysFirst & { tkSelect: Promise<SelectSample> };
+function armSelectParent() {
+  const w = window as unknown as WithKeysFirst & { tkSelectParent: Promise<ParentSample> };
   const { scheduler } = window as unknown as WithScheduler;
   const panel = document.querySelector("third-kind")!.shadowRoot!.querySelector('[aria-label="Design"]')!;
   const before = panel.innerHTML;
@@ -985,7 +985,7 @@ function armSelect() {
     requestAnimationFrame(() =>
       scheduler.postTask(
         () => {
-          w.tkSelect = new Promise((resolve) => {
+          w.tkSelectParent = new Promise((resolve) => {
             let start = 0;
             let arrived = 0;
             let handled = 0;
@@ -1031,13 +1031,13 @@ test("selecting one of 96 cards shows it in the Design panel in the next frame, 
   await page.addInitScript(hearKeysFirst);
   const elements = await openBigPage(page);
   await enterEditMode(page);
-  const samples: SelectSample[] = [];
+  const samples: ParentSample[] = [];
   for (let i = 0; i < 20; i++) {
     await selectCard(page, 10 + i);
     await settle(page, 150);
-    await page.evaluate(armSelect);
+    await page.evaluate(armSelectParent);
     await page.keyboard.press("Escape");
-    samples.push(await page.evaluate(() => (window as unknown as { tkSelect: Promise<SelectSample> }).tkSelect));
+    samples.push(await page.evaluate(() => (window as unknown as { tkSelectParent: Promise<ParentSample> }).tkSelectParent));
     await settle(page, 150);
   }
   const work = summarize(samples.map((s) => s.work));
