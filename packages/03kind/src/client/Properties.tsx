@@ -307,9 +307,10 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
         </section>
       )}
       {direction === undefined && (layers.length > 1 || layers[0].kind === "frame") && editor.canStack(layers) && (
-        <section class="tk-section" role="group" aria-label="Stack">
+        // Layout, as a Stack's section and a Grid's are titled (designer, 2026-11-10).
+        <section class="tk-section" role="group" aria-label="Layout">
           <div class="tk-section-header">
-            <h3 class="tk-section-title">Stack</h3>
+            <h3 class="tk-section-title">Layout</h3>
             <button type="button" class="tk-icon-button" aria-label="Make Stack" data-tk-tip="Make Stack (⇧A)" onClick={onStack}>
               <Icon name="plus" />
             </button>
@@ -565,9 +566,10 @@ function StackSection({ direction, arrange, dissolve, gap, padding, align, wrap,
     <ChangeMarksProvider value={marks}>
     <section class="tk-section" aria-labelledby="tk-stack">
       <div class="tk-section-header">
-        <h3 id="tk-stack" class="tk-section-title">Stack</h3>
+        {/* Layout, as the Grid's section is titled too: one section, a Stack or a Grid (designer, 2026-11-10). */}
+        <h3 id="tk-stack" class="tk-section-title">Layout</h3>
         <SectionReset
-          title="Stack"
+          title="Layout"
           properties={STACK_PROPERTIES}
           operations={[{ property: "direction" }, { property: "arrangement" }, { property: "wrap" }, { property: "align", part: ALIGN_POINT }, { property: "align", part: DISTRIBUTE }, { property: "gap" }, ...PADDING_SIDES]}
         />

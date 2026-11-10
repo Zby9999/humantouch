@@ -122,7 +122,7 @@ test("Wrap alone brings no Stack reset, nor one of its own; Wrap and the gap bri
   await enterEditMode(page);
   await rows(page, "Header").click();
   const panel = design(page);
-  const reset = panel.getByRole("button", { name: "Reset Stack" });
+  const reset = panel.getByRole("button", { name: "Reset Layout" });
   const wrap = panel.getByRole("button", { name: "Wrap", exact: true });
   const gap = panel.getByRole("textbox", { name: "Gap" });
   await expect(wrap).toHaveAttribute("aria-pressed", "false");
@@ -150,7 +150,7 @@ test("a Stack's direction changed: its track in the accent, the one chosen white
   const direction = panel.getByRole("radiogroup", { name: "Direction" });
   const vertical = direction.getByRole("radio", { name: "Vertical" });
   const reset = direction.getByRole("button", { name: "Reset direction" });
-  const stackReset = panel.getByRole("button", { name: "Reset Stack" });
+  const stackReset = panel.getByRole("button", { name: "Reset Layout" });
   const track = () => direction.evaluate((el) => getComputedStyle(el).backgroundColor);
   const grey = await track();
   await expect(direction).not.toHaveClass(/\bis-changed\b/);

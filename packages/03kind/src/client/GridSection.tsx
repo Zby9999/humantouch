@@ -46,19 +46,21 @@ export function GridSection({ editor, layers, onEdit, variable, arrange }: Props
   return (
     <section class="tk-section" aria-labelledby="tk-grid">
       <div class="tk-section-header">
+        {/* Layout, as the Stack's section is titled: one section, a Stack or a Grid (designer, 2026-11-10). */}
         <h3 id="tk-grid" class="tk-section-title">
-          Grid
+          Layout
         </h3>
         {/* As every section's: shown for two changes or more (designer, 2026-11-08). */}
-        <SectionReset title="Grid" properties={["columns", "rowGap", "columnGap", "arrangement"]} />
+        <SectionReset title="Layout" properties={["columns", "rowGap", "columnGap", "arrangement"]} />
       </div>
-      {arrange && (
-        <div class="tk-row">
-          <Segmented<ArrangeAs> label="Direction" property="arrangement" value="grid" options={arrangements(true)} onChange={(as) => as !== "grid" && arrange(as)} />
-        </div>
-      )}
+      {/* The direction beside the columns, a row the fewer (designer, 2026-11-10). */}
       <div class="tk-grid-2">
         <NumberField label="Columns" icon="grid" property="columns" value={shown("columns")} min={1} onChange={set("columns")} />
+        {arrange && (
+          <div class="tk-row">
+            <Segmented<ArrangeAs> label="Direction" property="arrangement" value="grid" options={arrangements(true)} onChange={(as) => as !== "grid" && arrange(as)} />
+          </div>
+        )}
       </div>
       <div class="tk-grid-2">
         <VariableSlot label="Row gap" slot={variable("rowGap")} property="rowGap">

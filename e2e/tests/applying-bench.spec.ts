@@ -2116,7 +2116,13 @@ test.describe("a Stack made a Grid, a Grid a Stack, and a Grid's cell made Fill 
   }
 
   const direction = (page: Page, section: "Stack" | "Grid", option: string) =>
-    page.getByRole("complementary", { name: "Design" }).getByRole("region", { name: section }).getByRole("radiogroup", { name: "Direction" }).getByRole("radio", { name: option });
+    page
+      .getByRole("complementary", { name: "Design" })
+      // One section, titled Layout (designer, 2026-11-10): a Grid's has its columns.
+      .getByRole("region", { name: "Layout" })
+      .filter({ [section === "Grid" ? "has" : "hasNot"]: page.getByRole("textbox", { name: "Columns" }) })
+      .getByRole("radiogroup", { name: "Direction" })
+      .getByRole("radio", { name: option });
 
   test("playbook: the header, a horizontal Stack, made a Grid in the desktop view; the Agent writes `grid grid-cols-2`: done says it shows", async ({ page }) => {
     await design(
