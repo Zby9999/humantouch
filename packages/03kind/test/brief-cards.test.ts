@@ -145,6 +145,16 @@ describe("the cards of the briefs, beside their views", () => {
     expect(lineOf({ x: -260, y: 87, width: 220, height: 66 }, heading, "across", CARD_OFFSET / 2, { layers: [page, heading], lines: [] }).path).toHaveLength(2);
   });
 
+  test("a card set before, opened again and grown, stays where it was and moves the cards below it down, its line where it was (designer, 2026-11-10)", () => {
+    const layers = [{ x: 100, y: 500, width: 50, height: 20 }, { x: 100, y: 540, width: 50, height: 20 }];
+    const [was, below] = placeCards(layers.map((layer, i) => card(String(i), desktop, layer, 36)), views);
+    const [now, pushed] = placeCards([{ ...card("0", desktop, layers[0], 96), restHeight: 36 }, card("1", desktop, layers[1], 36)], views);
+    expect(now).toMatchObject({ x: was.x, y: was.y, height: 96 });
+    expect(now.line).toEqual(was.line);
+    expect(pushed.y).toBe(now.y + 96 + CARD_GAP);
+    expect(pushed.y).toBeGreaterThan(below.y);
+  });
+
   test("a line's corners are rounded, 8px at most and never more than half a leg", () => {
     expect(pathOf([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }])).toBe("M0,0 L92,0 Q100,0 100,8 L100,100");
     expect(pathOf([{ x: 0, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 100 }])).toBe("M0,0 L3,0 Q6,0 6,3 L6,100");

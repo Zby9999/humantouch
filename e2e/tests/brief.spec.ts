@@ -368,3 +368,21 @@ test("a new brief is written on a card beside its layer, in its view; set, the c
   await expect(field(page)).toBeFocused();
   expect(await onCanvas()).toEqual(before);
 });
+
+test("a card set before, opened again, grows down where it is, and the cards below it move down to make room (designer, 2026-11-10)", async ({ page }) => {
+  await enterEditMode(page);
+  // Long enough that the card below it is right under it.
+  await writeBrief(page, canvas(page).locator("h1"), "A larger title, ".repeat(40));
+  await writeBrief(page, canvas(page).getByRole("button", { name: "Get started" }), "Press in a little");
+  await page.keyboard.press("Escape");
+  const [above, below] = await Promise.all([steadyBox(card(page, "Third Kind")), steadyBox(card(page, "Button"))]);
+  expect(below.y - (above.y + above.height)).toBeLessThan(above.height / 4);
+
+  await pressCard(page, "Third Kind");
+  await expect(field(page)).toBeFocused();
+  const [open, moved] = await Promise.all([steadyBox(card(page, "Third Kind")), steadyBox(card(page, "Button"))]);
+  expect(open.y).toBeCloseTo(above.y, 0);
+  expect(open.height).toBeGreaterThan(above.height);
+  expect(overlap(open, moved)).toBe(false);
+  expect(moved.y).toBeGreaterThan(below.y);
+});

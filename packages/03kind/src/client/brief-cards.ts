@@ -31,6 +31,11 @@ export interface CardToPlace {
   layer: Box | null;
   /** How tall the card is, in canvas px. */
   height: number;
+  /**
+   * How tall it was when it was set, if it is taller now: a card set before, opened again to be changed, is placed as
+   * tall as it was, so it grows down from where it is, and the cards below it move down to make room (designer, 2026-11-10).
+   */
+  restHeight?: number;
 }
 
 /** A point on the stage, in canvas px. */
@@ -85,21 +90,22 @@ export function placeCards(cards: CardToPlace[], obstacles: Box[], writing: stri
   const placed = new Map<number, PlacedCard>();
   for (const { card, side, i } of order) {
     const { host, layer, height } = card;
+    const sits = card.restHeight ?? height;
     const width = CARD_WIDTH;
     let x: number;
     let y: number;
     if (side === "top") {
       const middle = layer ? layer.x + layer.width / 2 : host.x + width / 2;
       x = Math.max(host.x, middle - width / 2);
-      y = host.y - LABEL_ROOM - CARD_OFFSET / 2 - height;
+      y = host.y - LABEL_ROOM - CARD_OFFSET / 2 - sits;
     } else {
       x = side === "left" ? host.x - CARD_OFFSET - width : host.x + host.width + CARD_OFFSET;
-      const middle = layer ? layer.y + layer.height / 2 : host.y + height / 2;
-      y = Math.max(host.y, middle - height / 2);
+      const middle = layer ? layer.y + layer.height / 2 : host.y + sits / 2;
+      y = Math.max(host.y, middle - sits / 2);
     }
     // Moved on till it is clear of everything placed so far.
     for (let tries = 0; tries < 1000; tries++) {
-      const box = { x, y, width, height };
+      const box = { x, y, width, height: sits };
       const hit = taken.find((other) => overlaps(box, other, CARD_GAP));
       if (!hit) break;
       if (side === "top") x = hit.x + hit.width + CARD_GAP;
@@ -115,7 +121,8 @@ export function placeCards(cards: CardToPlace[], obstacles: Box[], writing: stri
   for (const { card, side, i } of order) {
     if (!card.layer) continue;
     const at = placed.get(i)!;
-    const line = lineOf(at, card.layer, side === "top" ? "down" : "across", CARD_OFFSET / 2, { layers, lines: drawn });
+    // From where its side's middle was before it grew, so the line does not move as it is written in.
+    const line = lineOf({ ...at, height: card.restHeight ?? at.height }, card.layer, side === "top" ? "down" : "across", CARD_OFFSET / 2, { layers, lines: drawn });
     drawn.push(...segmentsOf(line.path));
     placed.set(i, { ...at, line });
   }

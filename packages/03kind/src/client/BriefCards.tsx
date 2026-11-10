@@ -136,12 +136,20 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
   // Measured again only once what the cards hold changes: not as a layer is dragged, or the canvas zoomed.
   const holds = cards.map((card) => `${card.key}\u0000${card.name}\u0000${card.text}`).join("\u0001") + `\u0001${writing}`;
   useLayoutEffect(measure, [holds]);
-  // A card set before, opened again, is placed as tall as it was, so it grows down from where it is and does not move.
+  // A card set before, opened again, is placed as tall as it was, so it grows down from where it is and does not move;
+  // the cards below it move down to make room.
   const restHeights = useRef<Record<string, number>>({});
   for (const key in heights) if (key !== writing) restHeights.current[key] = heights[key];
-  const heightOf = (key: string) => (key === writing && key !== "new" ? restHeights.current[key] : undefined) ?? heights[key] ?? UNMEASURED;
+  const restOf = (key: string) => (key === writing && key !== "new" ? restHeights.current[key] : undefined);
   const placed = placeCards(
-    cards.map((card) => ({ key: card.key, host: card.host, free: card.free, layer: card.layer, height: heightOf(card.key) })),
+    cards.map((card) => ({
+      key: card.key,
+      host: card.host,
+      free: card.free,
+      layer: card.layer,
+      height: heights[card.key] ?? UNMEASURED,
+      restHeight: restOf(card.key),
+    })),
     obstacles,
     // Only a new brief is written beside its layer; one set before is changed where its card is, so it does not jump (designer, 2026-11-10).
     writing === "new" ? writing : null,
