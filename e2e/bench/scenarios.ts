@@ -439,9 +439,14 @@ export const SCENARIOS: Scenario[] = [
       await layer(page, "Card").click();
       await setField(page, "Gap", "12");
       await layer(page, "Button").click();
-      await design(page).getByRole("group", { name: "Brief" }).getByRole("button", { name: "Add brief" }).click();
+      // The Brief tool, and a click on the button selected: its card opens beside the views (ticket 121).
+      await page.keyboard.press("b");
+      const button = await boxOf(desktop(page).contentFrame().locator(`${HERO} > button`));
+      await page.mouse.click(button.x + button.width / 2, button.y + button.height / 2);
+      await page.getByRole("textbox", { name: "Brief" }).waitFor();
       await page.keyboard.type("When pressed, it shrinks a little and springs back");
-      await page.keyboard.press("ControlOrMeta+Enter");
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Escape");
       await saved(desk, 3);
     },
     changes: [
@@ -736,10 +741,13 @@ export const SCENARIOS: Scenario[] = [
       await page.mouse.down();
       await page.mouse.move(from.x + 360 * zoom, from.y + 80 * zoom, { steps: 6 });
       await page.mouse.up();
-      await page.getByRole("button", { name: "Add brief" }).click();
+      // The Brief tool, and a click on the Frame drawn: its card opens beside the views (ticket 121).
+      await page.keyboard.press("b");
+      await page.mouse.click(from.x + 180 * zoom, from.y + 40 * zoom);
       const brief = page.getByRole("textbox", { name: "Brief" });
       await brief.fill("A row of three partner logos");
       await brief.press("Enter");
+      await page.keyboard.press("Escape");
       await saved(desk, 3);
     },
     changes: [

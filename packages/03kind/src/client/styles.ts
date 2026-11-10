@@ -1312,6 +1312,7 @@ export const styles = /* css */ `
 }
 .tk-viewport.is-pan-ready { cursor: grab; }
 .tk-viewport.is-drawing { cursor: crosshair; }
+.tk-viewport.is-briefing { cursor: copy; }
 .tk-viewport-message {
   position: absolute;
   inset: 0;
@@ -1418,27 +1419,9 @@ export const styles = /* css */ `
 .tk-selection[data-hidden] { opacity: 0; transition: none; }
 :is(.tk-selection, .tk-hover)[data-kind="instance"] { --tk-selection: var(--tk-instance); }
 :is(.tk-selection, .tk-hover)[data-kind="locked"] { --tk-selection: var(--tk-locked); }
-/* Beside a new Frame selected: its brief, a button that opens a field. */
-.tk-brief { position: absolute; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
-.tk-brief-button {
-  all: unset;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 24px;
-  padding: 0 8px 0 4px;
-  border-radius: 6px;
-  background: var(--tk-accent);
-  color: #fff;
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: default;
-}
-.tk-brief-button:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 2px; }
-.tk-brief-text { width: 220px; min-height: 72px; background: var(--tk-panel); box-shadow: 0 0 0 1px var(--tk-border), 0 4px 12px rgb(0 0 0 / 0.12); }
 /*
- * On the top right of the layer selected alone, above it and clear of its brief's mark: the selection toolbar,
- * its buttons in one row, its right edge on the layer's. Its buttons look as the brief button does.
+ * On the top right of the layer selected alone, above it: the selection toolbar,
+ * its buttons in one row, its right edge on the layer's.
  */
 .tk-selection-toolbar {
   position: absolute;
@@ -1461,22 +1444,38 @@ export const styles = /* css */ `
   cursor: default;
 }
 .tk-selection-tool:focus-visible { outline: 2px solid var(--tk-instance); outline-offset: 2px; }
-/* On a layer with a brief, in every view: the brief button's mark, small, centered on its top right corner. */
-.tk-brief-mark {
+/*
+ * The briefs (ticket 121): cards on the stage, beside the views, in canvas px, so they pan and zoom with the
+ * canvas as notes on it do; a dashed line from each to its layer, 1px at any zoom. A first look, after Figma's
+ * annotations, for tuning: white, the brief's blue on top, the layer's name over the words.
+ */
+.tk-brief-cards { position: absolute; top: 0; left: 0; transform-origin: 0 0; pointer-events: none; }
+.tk-brief-lines { position: absolute; top: 0; left: 0; overflow: visible; }
+.tk-brief-lines line { stroke: var(--tk-accent); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.tk-brief-lines circle { fill: var(--tk-accent); }
+.tk-brief-lines g:not([data-selected]) { opacity: 0.6; }
+.tk-brief-card {
   position: absolute;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  margin: -9px 0 0 -9px;
-  border-radius: 5px;
-  background: var(--tk-accent);
-  color: #fff;
-  box-shadow: 0 0 0 1px #fff;
-  pointer-events: none;
+  box-sizing: border-box;
+  padding: 16px 20px 20px;
+  border-radius: 16px;
+  border-top: 6px solid var(--tk-accent);
+  background: #fff;
+  color: var(--tk-text);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.08), 0 4px 16px rgb(0 0 0 / 0.08);
+  font-size: 22px;
+  line-height: 1.4;
+  pointer-events: auto;
+  cursor: text;
 }
-.tk-brief-mark svg { width: 12px; height: 12px; }
+.tk-brief-card[data-selected], .tk-brief-card[data-writing] { box-shadow: 0 0 0 3px var(--tk-accent), 0 4px 16px rgb(0 0 0 / 0.12); }
+.tk-brief-card-header { display: flex; align-items: center; gap: 8px; height: 32px; margin-bottom: 6px; color: var(--tk-accent); font-weight: 600; }
+.tk-brief-card-header > .tk-icon { --tk-icon-size: 24px; flex: none; }
+.tk-brief-card-layer { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-brief-card .tk-brief-card-remove { width: 32px; height: 32px; border-radius: 8px; color: var(--tk-text-muted); cursor: default; --tk-icon-size: 20px; }
+.tk-brief-card-text { margin: 0; min-height: 31px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tk-brief-card-field { all: unset; display: block; box-sizing: border-box; width: 100%; min-height: 31px; font: inherit; line-height: inherit; color: inherit; white-space: pre-wrap; overflow-wrap: anywhere; resize: none; overflow: hidden; }
+.tk-brief-card-field::placeholder { color: var(--tk-text-muted); }
 
 /* Typing in text, as in Figma: a thin blue box round the words, which grows as they do. */
 .tk-selection[data-kind="typing"] { transition: none; }
