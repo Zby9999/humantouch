@@ -4,6 +4,9 @@ import { canvasInPlace, expect, steadyBox, test, type Locator, type Page } from 
 // Ticket 119: the Design panel shows the Variable the code writes a value with, as one picked shows, though nothing is
 // changed; ⌥⌘C and ⌥⌘V carry it. On the React 18 + Tailwind v3 example: its classes name its config's Variables.
 
+// The names the code writes with are what is tested here: they stay.
+test.use({ detachCodeVariables: false });
+
 const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
 const phone = (page: Page) => page.locator('iframe[title="Phone 390"]');
 const design = (page: Page) => page.getByRole("complementary", { name: "Design" });
@@ -74,13 +77,14 @@ test("detached, a code's Variable shows the value to type into; a value typed is
 
 test("in the phone view, the class that holds at its width: `px-gutter md:px-section`", async ({ page }) => {
   await enterEditMode(page);
-  await selectRow(page, "main");
+  // The main column, picked in its left padding: in the desktop view, 1440px wide, `md:px-section`.
+  await pick(page, desktop(page), "main");
   await expect(chip(page, "Padding left")).toHaveText("section");
-  // The main column, worked on in the phone view, 390px wide: below `md` (820px).
-  await pick(page, phone(page), "article");
-  await selectRow(page, "main");
+  // In the phone view, 390px wide: below `md` (820px).
+  await pick(page, phone(page), "main");
   await expect(chip(page, "Padding left")).toHaveText("gutter");
   await expect(chip(page, "Padding right")).toHaveText("gutter");
+  await expect(changesOpener(page)).toHaveCount(0);
 });
 
 test("⌥⌘C carries the Variables the code writes, ⌥⌘V sets them: pasted, the fill is `white` still", async ({ page }) => {

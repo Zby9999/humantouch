@@ -13,9 +13,21 @@ export type { CDPSession, Frame, Locator, Page } from "@playwright/test";
  * tests work through it, so it is shown as edit mode is entered, each time,
  * unless a test opts out with `showLayers: false` (`showLayersOnEntry`).
  */
-export const test = base.extend<{ keepRoundInMemory: boolean; showLayers: boolean }>({
+export const test = base.extend<{ keepRoundInMemory: boolean; showLayers: boolean; detachCodeVariables: boolean }>({
   keepRoundInMemory: [true, { option: true }],
   showLayers: [true, { option: true }],
+  detachCodeVariables: [true, { option: true }],
+  /**
+   * A value the code writes with a Variable shows it by name in the Design
+   * panel, in place of its field (ticket 119); detached, the field shows the
+   * value, and nothing is changed. Tests not about Variables type into the
+   * fields as they did before: whenever such a name shows, it is detached in
+   * the frame after (`detachInCode`). Those about Variables opt out with `detachCodeVariables: false`.
+   */
+  page: async ({ page, detachCodeVariables }, use) => {
+    if (detachCodeVariables) await page.addInitScript(detachInCode);
+    await use(page);
+  },
   context: async ({ context, keepRoundInMemory, showLayers }, use) => {
     await watchVariables(context);
     if (keepRoundInMemory) await keepRoundIn(context);
@@ -181,4 +193,15 @@ export async function expectSegmentedChanged(group: Locator, chosen: Locator, re
   expect(button.width).toBe(24);
   expect(button.x).toBeGreaterThanOrEqual(box.x);
   expect(Math.round(box.x + box.width - (button.x + button.width))).toBe(2);
+}
+
+/** In the page, each frame: detaches every Variable the Design panel shows as the code's (ticket 119), as a designer would to type a value. */
+function detachInCode() {
+  if (window.top !== window) return;
+  const tick = () => {
+    const root = document.querySelector("third-kind")?.shadowRoot;
+    root?.querySelectorAll<HTMLElement>("[data-tk-in-code]").forEach((button) => button.click());
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
