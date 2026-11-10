@@ -1592,10 +1592,12 @@ export function CanvasView(props: Props) {
       )}
       {(drag?.layer.text || drag?.out || drag?.away) && <div class="tk-drag-ghost" aria-hidden="true" style={place(drag.box, cameraIn(camera, drag.in))} />}
       {drawn && <div class="tk-drag-ghost" aria-hidden="true" style={place(drawn.box, drawn.in ? cameraIn(camera, drawn.in) : camera)} />}
-      {/* No way to try again here: the Agent, sent to the console, finds why (designer, 2026-11-10). */}
+      {/* No way to try again here: the Agent finds why, the error in the console; the two sentences one over the other (designer, 2026-11-10). */}
       {failed && (
         <p class="tk-viewport-message" role="alert">
-          Couldn't turn this page into a canvas. Ask your Agent to look into it: the error is in the browser console.
+          Couldn't turn this page into a canvas.
+          <br />
+          Ask your Agent to look into it.
         </p>
       )}
     </div>
