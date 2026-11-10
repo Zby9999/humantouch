@@ -25,6 +25,14 @@ async function setField(page: Page, name: string, value: string) {
   await field.press("Enter");
 }
 
+/** How far below the first card's title its body is drawn on the canvas, in px. */
+function roomInCard(page: Page) {
+  return canvas(page)
+    .locator("article")
+    .first()
+    .evaluate((card) => Math.round(card.querySelector("p")!.getBoundingClientRect().top - card.querySelector("h3")!.getBoundingClientRect().bottom));
+}
+
 /** A computed style of the first element matching `selector` on the canvas. */
 function canvasStyle(page: Page, selector: string, property: string) {
   return canvas(page)
@@ -331,12 +339,45 @@ test("a plain top-to-bottom flow shows as a vertical Stack, and becomes a real o
   await rows(page, "Card").first().click();
   await expect(design(page).getByRole("radio", { name: "Vertical" })).toBeChecked();
   await expect.poll(() => canvasStyle(page, "article", "display")).toBe("block");
+  // Its gap is the room between its title and its body, the body's `mt-2` (ticket 122).
+  const gap = design(page).getByRole("textbox", { name: "Gap", exact: true });
+  await expect(gap).toHaveValue("8");
 
-  await setField(page, "Gap", "8");
+  await setField(page, "Gap", "16");
 
   await expect.poll(() => canvasStyle(page, "article", "display")).toBe("flex");
   await expect.poll(() => canvasStyle(page, "article", "flex-direction")).toBe("column");
-  await expect.poll(() => canvasStyle(page, "article", "row-gap")).toBe("8px");
+  await expect.poll(() => canvasStyle(page, "article", "row-gap")).toBe("16px");
+  // The gap takes the margin over: 16px is all the room between them.
+  await expect.poll(() => canvasStyle(page, "article p", "margin-top")).toBe("0px");
+  await expect.poll(() => roomInCard(page)).toBe(16);
+  await expect(gap).toHaveValue("16");
+
+  // One undo: the flow, and the margin, as they were.
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => canvasStyle(page, "article", "display")).toBe("block");
+  await expect.poll(() => canvasStyle(page, "article p", "margin-top")).toBe("8px");
+  await expect.poll(() => roomInCard(page)).toBe(8);
+  await expect(gap).toHaveValue("8");
+});
+
+test("a gap set in the phone view takes the margin between the layers off there only (ticket 122)", async ({ page }) => {
+  await enterEditMode(page);
+  const phone = page.locator('iframe[title="Phone 390"]');
+  const card = phone.contentFrame().locator("article").first();
+  // The first Card, picked in the phone view: the view worked in from then on.
+  const box = await steadyBox(card);
+  await page.keyboard.down("ControlOrMeta");
+  await page.mouse.click(box.x + 4, box.y + 4);
+  await page.keyboard.up("ControlOrMeta");
+  await rows(page, "Card").first().click();
+  await expect(design(page).getByRole("textbox", { name: "Gap", exact: true })).toHaveValue("8");
+
+  await setField(page, "Gap", "0");
+
+  await expect.poll(() => card.locator("p").evaluate((el) => getComputedStyle(el).marginTop)).toBe("0px");
+  await expect.poll(() => canvasStyle(page, "article p", "margin-top")).toBe("8px");
+  await expect.poll(() => roomInCard(page)).toBe(8);
 });
 
 test("opacity, clipping, and a hidden layer that stays in the layer tree and the panel, to be shown again", async ({ page }) => {
@@ -423,7 +464,7 @@ test("a new size and gap show when the canvas is played at full size", async ({ 
   await rows(page, "Button").click();
   await design(page).getByRole("combobox", { name: "Width sizing" }).selectOption("fill");
   await rows(page, "Card").first().click();
-  await setField(page, "Gap", "8");
+  await setField(page, "Gap", "16");
   await page.getByRole("button", { name: "Full screen Desktop view", exact: true }).click();
 
   const button = canvas(page).locator(`${HERO} > button`);
@@ -431,7 +472,7 @@ test("a new size and gap show when the canvas is played at full size", async ({ 
     expect(await button.evaluate((el) => el.getBoundingClientRect().width)).toBe(await canvas(page).locator(HERO).evaluate((el) => el.getBoundingClientRect().width)),
   ).toPass({ timeout: 5_000 });
   await expect(canvas(page).locator("article").first()).toHaveCSS("display", "flex");
-  await expect(canvas(page).locator("article").first()).toHaveCSS("row-gap", "8px");
+  await expect(canvas(page).locator("article").first()).toHaveCSS("row-gap", "16px");
 });
 
 test("a minimum or maximum size is added from its field's menu, the width's or the height's, as a row of its own, and taken off with its minus", async ({ page }) => {

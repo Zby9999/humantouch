@@ -17,7 +17,7 @@ import { canvasOf, type RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
 import { autoMarginTakesRoom, edgeGoneBy, middleShareOf, offsetPlacing, placedFrom, roomAlong, shareOf, sideShareOf, sizeAlong } from "./placed-from";
 import { checkable, foundByMarker, isEndOffset, textMovedInPlace, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, centeringSides, whereMade, type Edge, type InLayout, type Position, type Share, type Unfound } from "./checkable";
-import { absolute, ARRANGED, ordersOf, placementOf, readValue, round as rounded, sourcesFor, type Arrangement, type Property, type Stroke } from "./property-table";
+import { absolute, ARRANGED, ordersOf, placementOf, readValue, roomBetween, round as rounded, sourcesFor, type Arrangement, type MarginBetween, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, mayBeOf, savedCanvas as savedCanvasOf, usageKeyOf, type SavedCanvas } from "./page-elements";
 import { MADE_ATTR } from "./canvas-style";
@@ -548,7 +548,9 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
             ...(change.placedFrom?.margins && { byMargins: change.style }),
             uncentered: !!change.uncenteredAt?.some((range) => within(range, at.width)),
           })
-        : lookStyle(els, property, change.after, at);
+        : property === "gap"
+          ? lookGap(els, change)
+          : lookStyle(els, property, change.after, at);
   // What sets the value shown instead, read on the element that shows it.
   return sources && result.outcome === "not shown" && wrong ? { ...result, sources: sourcesFor(wrong, property) } : result;
 }
@@ -615,6 +617,47 @@ function lookStyle(els: Element[], property: Property, after: unknown, at: PageW
   const shows = comparison ? (el: Element) => comparison.shows(el, after, drawn) : (el: Element) => sameValue(readValue(el, property), after);
   const wrong = els.find((el) => !shows(el));
   return wrong === undefined ? [{ outcome: "shown" }, null] : [{ outcome: "not shown", actual: readValue(wrong, property) }, wrong];
+}
+
+/**
+ * A Stack's gap (ticket 122): shown where, on every one of `els`, its gap as
+ * written is the gap given (as ever), and none of the margins the change
+ * takes off (`marginsDropped`, by its layer's marker and side) is left. Other
+ * margins between its layers, which the notes never named, the canvas shows
+ * too: they are not looked at. Not shown with margins of those left: the
+ * room between the layers, from the least to the most, and those margins
+ * (`MarginsLeft`); else its gap as written.
+ */
+function lookGap(els: Element[], change: Change): [CheckResult, Element | null] {
+  const after = change.after as number;
+  const named = (margin: MarginBetween) =>
+    change.marginsDropped?.find(({ target, margins }) => !!target.loc && margin.el.getAttribute(LOC_ATTR) === target.loc && margin.side in margins);
+  for (const el of els) {
+    const { written, spaces, margins } = roomBetween(el);
+    const left = margins.filter(named);
+    if (sameValue(written, after) && !left.length) continue;
+    if (!left.length) return [{ outcome: "not shown", actual: written }, el];
+    const actual: MarginsLeft = {
+      room: { min: Math.min(...spaces!), max: Math.max(...spaces!) },
+      margins: left.map((margin) => ({ layer: unstopped(named(margin)!.target.context.path.at(-1)!), side: margin.side, px: rounded(margin.px) })),
+    };
+    return [{ outcome: "not shown", actual }, el];
+  }
+  return [{ outcome: "shown" }, null];
+}
+
+/** A layer's name as a line names it: a text layer's words without the full stop they end with (ticket 122). */
+export const unstopped = (name: string) => name.replace(/\.$/, "");
+
+/**
+ * What the page shows of a gap it does not show, its layers with margins
+ * between them still that the change takes off (ticket 122): the room
+ * between each two of its layers, from the least to the most, in px, and
+ * each of those margins, its layer as the notes name it, its side, and how wide.
+ */
+export interface MarginsLeft {
+  room: { min: number; max: number };
+  margins: { layer: string; side: string; px: number }[];
 }
 
 /**

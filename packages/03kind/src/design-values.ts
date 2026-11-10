@@ -354,6 +354,9 @@ export function value(property: string, v: unknown): string {
     case "right":
     case "bottom":
     case "gap":
+      // Uneven room between a Stack's layers, as a gap edit starts from it (ticket 122): each.
+      if (Array.isArray(v)) return `${listed((v as number[]).map((space) => `${space}px`))} between its layers`;
+      return `${v as number}px`;
     case "rowGap":
     case "columnGap":
       return `${v as number}px`;

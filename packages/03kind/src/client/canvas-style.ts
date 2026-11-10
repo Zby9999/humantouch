@@ -806,6 +806,12 @@ export function changesOn(layer: string, changes: Change[]): Change[] {
       const member = (change.after as Composed).layers.find((m) => m.layer === layer);
       return member ? [{ ...change, style: memberStyle(member) }] : [];
     }
+    // A layer of a Stack whose gap took over its margins between the layers (ticket 122): it has those no more, at the change's widths.
+    const dropped = change.marginsDropped?.find((m) => m.layer === layer);
+    if (dropped) {
+      const { asStack: _, ...rest } = change;
+      return [{ ...rest, style: droppedStyle(dropped.margins) }];
+    }
     return [];
   });
 }
@@ -817,3 +823,8 @@ export function memberStyle({ from, unmargined }: Composed["layers"][number]): R
 
 /** A layer joining a Stack with margins: it has none, one side at a time, so each side's own style comes back when taken apart. */
 const NO_MARGIN = { "margin-top": "0px", "margin-right": "0px", "margin-bottom": "0px", "margin-left": "0px" };
+
+/** What a gap that takes over a layer's margins between the layers declares on it (ticket 122): those sides none, the others as they are. */
+export function droppedStyle(margins: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.keys(margins).map((side) => [side, "0px"]));
+}

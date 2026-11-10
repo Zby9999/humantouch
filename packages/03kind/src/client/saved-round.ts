@@ -58,6 +58,8 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
       restoreStyle(elementsOf(doc, change.layer), cssOf(change.property as Property), changesOn(change.layer, rest), change.breakpoint ?? null);
       // Placed freely at a breakpoint no more: its container is no positioning reference there for it.
       if (change.within) restoreStyle(elementsOf(doc, change.within), ["position"], changesOn(change.within, rest), change.breakpoint ?? null);
+      // A gap that took over its layers' margins between them (ticket 122): theirs again.
+      for (const { layer, margins } of change.marginsDropped ?? []) restoreStyle(elementsOf(doc, layer), Object.keys(margins), changesOn(layer, rest), change.breakpoint ?? null);
     }
   }
   syncOrders(doc, changes);

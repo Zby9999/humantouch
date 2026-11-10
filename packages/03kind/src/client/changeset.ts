@@ -258,6 +258,15 @@ export interface Change {
    */
   asStack?: true;
   /**
+   * A change to a Stack's gap whose layers had margins between them (ticket
+   * 122), as it was first made: each such layer, and those margins, by side,
+   * as they were (`margin-top: 8px`), and what sets them in the page's
+   * styles. The change takes them off, at its widths: the room between the
+   * layers is its gap alone. `auto` margins, and those around the first and
+   * the last, stay.
+   */
+  marginsDropped?: (Member & { margins: Record<string, string>; sources: StyleSource[] })[];
+  /**
    * A copy's: what the layer it copies, and the layers in it, had at
    * breakpoints of their own when copied, which the copy keeps (ADR 0008).
    * None: nothing of its own at any breakpoint.

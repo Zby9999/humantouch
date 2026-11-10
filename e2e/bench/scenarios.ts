@@ -462,12 +462,14 @@ export const SCENARIOS: Scenario[] = [
       },
       {
         kind: "style",
-        expect: "The three cards of the loop are flex columns with a 12px gap; the fourth card is as it was.",
+        expect: "The three cards of the loop are flex columns with a 12px gap, the body's margin taken off, so 12px is all the room between title and body (ticket 122); the fourth card is as it was.",
         checkable: true,
         variable: ["gap-3", "gap-y-3"],
         shows: () => {
-          const cards = [...document.querySelectorAll("article")].map((card) => getComputedStyle(card));
-          const stack = (style: CSSStyleDeclaration) => style.display === "flex" && style.flexDirection === "column" && style.rowGap === "12px";
+          const articles = [...document.querySelectorAll("article")];
+          const cards = articles.map((card) => getComputedStyle(card));
+          const room = (card: Element) => card.querySelector("p")!.getBoundingClientRect().top - card.querySelector("h3")!.getBoundingClientRect().bottom;
+          const stack = (style: CSSStyleDeclaration, i: number) => style.display === "flex" && style.flexDirection === "column" && style.rowGap === "12px" && Math.abs(room(articles[i]) - 12) < 0.5;
           return cards.length === 4 && cards.slice(0, 3).every(stack) && cards[3].display === "block";
         },
       },
