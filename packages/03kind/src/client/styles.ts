@@ -1461,29 +1461,30 @@ button.tk-change-text:focus-visible { outline: 2px solid var(--tk-accent); outli
 .tk-brief-lines circle { fill: var(--tk-accent); }
 .tk-brief-lines g:not([data-selected]) { opacity: 0.6; }
 /*
- * A card laid out as ticket 121 first had it, its layer's name over the brief, looking as the Design panel's fields
- * do (designer, 2026-11-10): the editor's small type, a soft edge and shadow whether selected or written in, never the
- * accent's; and, written in, the accent's arrow that sets it at the top right, as the count of changes is drawn.
+ * A card as the designer drew it in Figma (2026-11-10): the brief alone in the editor's small type, 220px wide, a
+ * soft edge and shadow whether selected or written in, never the accent's; and, written in, the accent's arrow that
+ * sets it under the brief on the right, as the count of changes is drawn.
  */
 .tk-brief-card {
   position: absolute;
   box-sizing: border-box;
-  padding: 16px 20px 20px;
-  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 12px;
   background: var(--tk-input);
-  box-shadow: 0 2px 2px rgb(0 0 0 / 0.15), inset 0 0 0 1px rgb(0 0 0 / 0.1);
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1px rgb(0 0 0 / 0.15);
   color: var(--tk-text);
   font: 400 11px/16px ${EDITOR_FONT};
   pointer-events: auto;
   cursor: text;
 }
-.tk-brief-card-header { display: flex; align-items: center; gap: 8px; height: 32px; margin-bottom: 6px; color: var(--tk-text-muted); font-weight: 500; }
-.tk-brief-card-header > .tk-icon { flex: none; }
-.tk-brief-card-layer { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tk-brief-card-text { margin: 0; min-height: 31px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.tk-brief-card-field { all: unset; display: block; box-sizing: border-box; width: 100%; min-height: 31px; font: inherit; color: inherit; white-space: pre-wrap; overflow-wrap: anywhere; resize: none; overflow: hidden; }
+.tk-brief-card-text { align-self: stretch; box-sizing: border-box; margin: 0; padding: 4px; min-height: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tk-brief-card-field { all: unset; display: block; align-self: stretch; box-sizing: border-box; padding: 4px; min-height: 24px; font: inherit; color: inherit; white-space: pre-wrap; overflow-wrap: anywhere; resize: none; overflow: hidden; }
 .tk-brief-card-field::placeholder { color: var(--tk-text-muted); }
-.tk-brief-card-set { all: unset; position: relative; isolation: isolate; display: grid; flex: none; place-items: center; width: 24px; height: 24px; color: #daecff; cursor: pointer; }
+.tk-brief-card-set { all: unset; position: relative; isolation: isolate; display: grid; flex: none; place-items: center; width: 24px; height: 24px; color: #daecff; cursor: pointer; --tk-icon-size: 14px; }
 .tk-brief-card-set::before {
   content: "";
   position: absolute;
