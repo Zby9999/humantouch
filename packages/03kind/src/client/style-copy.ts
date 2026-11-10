@@ -138,7 +138,9 @@ function changes(editor: Editor, layer: Layer, property: Property, value: unknow
   if (!same(editor.read(layer, property), value)) return true;
   const now = picked && editor.variables(layer, property);
   if (!now) return false;
-  return Object.entries(picked!).some(([part, variable]) => !(now[part]?.picked && sameVariable(now[part], variable)));
+  // That Variable already: picked, named so by its value, or written so in the code (ticket 119).
+  const code = editor.inCode(layer, property);
+  return Object.entries(picked!).some(([part, variable]) => !sameVariable(now[part], variable) && !sameVariable(code?.[part], variable));
 }
 
 /** The Variable picked for part `from`, as part `to` of another property. */

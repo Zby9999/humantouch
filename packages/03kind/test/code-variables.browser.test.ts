@@ -33,6 +33,7 @@ const CSS = `
   .bg-brand-2\\/50 { background-color: color-mix(in oklab, var(--color-brand-2) 50%, transparent) }
   .bg-primary { --tw-bg-opacity: 1; background-color: rgb(255 0 0 / var(--tw-bg-opacity, 1)) }
   .p-4 { padding: calc(var(--spacing) * 4) }
+  .gap-4 { gap: calc(var(--spacing) * 4) }
   .px-6 { padding-inline: calc(var(--spacing) * 6) }
   .rounded-lg { border-radius: var(--radius-lg) }
   .card { border: 1px solid var(--line) }
@@ -45,6 +46,7 @@ const PAGE = `<!DOCTYPE html>
 <body style="margin: 0">
   <main ${at()} style="display: flex; flex-direction: column; gap: 4px">
     <div id="brand-2" ${at()} class="bg-brand-2 p-4 rounded-lg" style="display: flex; width: 100px; height: 40px"></div>
+    <div id="row" ${at()} class="gap-4" style="display: flex; flex-wrap: wrap; width: 100px"><i ${at()} style="width: 60px; height: 10px"></i><i ${at()} style="width: 60px; height: 10px"></i></div>
     <div id="brand-1" ${at()} class="bg-brand-1" style="width: 100px; height: 40px"></div>
     <div id="literal" ${at()} class="bg-literal px-6 p-4" style="width: 100px; height: 40px"></div>
     <div id="half" ${at()} class="bg-brand-2/50" style="width: 100px; height: 40px"></div>
@@ -165,5 +167,12 @@ describe("the Variables the code uses (ticket 119)", () => {
     pasteStyle(editor, [layer("#plain")], style);
     const fill = changes.list().find((change) => change.property === "fill")!;
     expect(fill.variables).toEqual({ color: expect.objectContaining({ name: "brand-2", picked: true }) });
+  });
+
+  test("a Stack's arrangement changed names its gaps left as they were by the code's Variable", () => {
+    const { editor, layer, changes } = openCanvas();
+    expect(names(editor.inCode(layer("#row"), "arrangement"))).toEqual({ gap: "4", crossGap: "4" });
+    editor.set(layer("#row"), "arrangement", { type: "stack", direction: "horizontal", wrap: true, gap: 24, crossGap: 16 });
+    expect(names(changes.list()[0].variables)).toEqual({ gap: "6", crossGap: "4" });
   });
 });

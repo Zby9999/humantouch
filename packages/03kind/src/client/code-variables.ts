@@ -56,6 +56,13 @@ function partsOf(el: Element, property: Property): Record<string, Part> | null {
       return one(["box-shadow"], /^shadow(?:-(.+))?$/);
     case "gap":
       return style.flexDirection.startsWith("row") ? one(["column-gap"], /^gap(?:-x)?-(.+)$/, 1) : one(["row-gap"], /^gap(?:-y)?-(.+)$/, 0);
+    case "arrangement": {
+      // Its gaps (ticket 109): a Grid's two, a Stack's along it and between its lines.
+      const row: Part = { places: [{ properties: ["row-gap"], two: 0 }], classes: /^gap(?:-y)?-(.+)$/ };
+      const column: Part = { places: [{ properties: ["column-gap"], two: 1 }], classes: /^gap(?:-x)?-(.+)$/ };
+      if (style.display.endsWith("grid")) return { rowGap: row, columnGap: column };
+      return style.flexDirection.startsWith("row") ? { gap: column, crossGap: row } : { gap: row, crossGap: column };
+    }
     case "rowGap":
       return one(["row-gap"], /^gap(?:-y)?-(.+)$/, 0);
     case "columnGap":

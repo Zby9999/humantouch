@@ -1,4 +1,4 @@
-import { REACT18_URL, TOGGLE_LABEL } from "../playwright.config";
+import { DEV_URL, REACT18_URL, TOGGLE_LABEL } from "../playwright.config";
 import { canvasInPlace, expect, steadyBox, test, type Locator, type Page } from "./fixtures";
 
 // Ticket 119: the Design panel shows the Variable the code writes a value with, as one picked shows, though nothing is
@@ -15,8 +15,8 @@ const chip = (page: Page, name: string) => design(page).getByRole("button", { na
 /** The count of changes beside the toggle: there only once there are changes. */
 const changesOpener = (page: Page) => page.locator("[data-tk-changes-opener]");
 
-async function enterEditMode(page: Page) {
-  await page.goto(REACT18_URL);
+async function enterEditMode(page: Page, url = REACT18_URL) {
+  await page.goto(url);
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(phone(page).contentFrame().locator("h1")).toBeVisible();
   await canvasInPlace(page);
@@ -99,4 +99,14 @@ test("⌥⌘C carries the Variables the code writes, ⌥⌘V sets them: pasted, 
   await expect.poll(() => desktop(page).contentFrame().locator("article").first().evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(61, 99, 245)");
   await expect(chip(page, "Fill color")).toHaveText("brand-500");
   await expect(chip(page, "Fill color")).toHaveAttribute("data-tk-tip", "brand-500: #3d63f5");
+});
+
+test("on a Tailwind v4 project, a class writes its theme's Variable through `var()`: the header's `gap-3`, the button's `px-4`", async ({ page }) => {
+  await enterEditMode(page, DEV_URL);
+  await pick(page, desktop(page), "header");
+  await expect(chip(page, "Gap")).toHaveText("3");
+  await pick(page, desktop(page), "[data-testid=hero] button");
+  await expect(chip(page, "Padding left")).toHaveText("4");
+  await expect(chip(page, "Padding top")).toHaveText("2");
+  await expect(changesOpener(page)).toHaveCount(0);
 });
