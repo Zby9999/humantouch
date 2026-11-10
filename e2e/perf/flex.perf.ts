@@ -1108,6 +1108,117 @@ test("dragging a layer's handle keeps 60fps", async ({ page }) => {
   verdict(met, "resizing by a handle keeps 60fps");
 });
 
+/** The free boxes added for selecting: `BOX_COLUMNS` across, `BOX_ROWS` down, 60 × 30, 12px apart. */
+const BOX_COLUMNS = 3;
+const BOX_ROWS = 4;
+/** Runs of selecting them all, one by one, after one to warm up. */
+const SELECT_RUNS = 4;
+
+interface SelectSample {
+  /** The main thread's time on it: handling the press and the click, then drawing the frame that shows the selection. */
+  work: number;
+  /** From the press to that frame drawn. */
+  latency: number;
+}
+
+/**
+ * A row of the Layers panel clicked with ⇧ held, adding its layer to those
+ * selected: the main thread's time handling the press, the release and the
+ * click, each from its first listener at the window to its last, plus the
+ * frame that first shows `count` rows selected and the Design panel's ⇧A
+ * button (Make Stack, or Make Grid where ⇧A makes one, ticket 110's
+ * follow-up), from its first callback to being drawn.
+ */
+function armSelect(count: number) {
+  const w = window as unknown as { tkSelect: Promise<SelectSample> };
+  const { scheduler } = window as unknown as WithScheduler;
+  w.tkSelect = new Promise((resolve) => {
+    const root = document.querySelector("third-kind")!.shadowRoot!;
+    const shown = () =>
+      root.querySelectorAll('[role=tree][aria-label=Layers] [role=treeitem][aria-selected=true]').length === count &&
+      !!root.querySelector('[aria-label="Make Stack"], [aria-label="Make Grid"]');
+    let start = 0;
+    let handling = 0;
+    let began = 0;
+    const capture = () => void (began = performance.now());
+    const bubble = () => void (handling += performance.now() - began);
+    const kinds = ["pointerdown", "pointerup", "click"];
+    const onDown = () => {
+      start = performance.now();
+      removeEventListener("pointerdown", onDown, true);
+      const frame = () => {
+        const at = performance.now();
+        scheduler.postTask(() => {
+          const drawn = performance.now();
+          if (!shown() && drawn - start < 2000) return requestAnimationFrame(frame);
+          for (const kind of kinds) {
+            removeEventListener(kind, capture, true);
+            removeEventListener(kind, bubble);
+          }
+          resolve({ work: handling + (drawn - at), latency: drawn - start });
+        }, { priority: "user-blocking" });
+      };
+      requestAnimationFrame(frame);
+    };
+    addEventListener("pointerdown", onDown, true);
+    for (const kind of kinds) {
+      addEventListener(kind, capture, true);
+      addEventListener(kind, bubble);
+    }
+  });
+}
+
+test("selecting free layers in rows and columns one by one with ⇧ held, the panel saying what ⇧A makes of them: the work of each, for comparing (ticket 110's follow-up)", async ({ page }) => {
+  const elements = await openBigPage(page);
+  // A Frame of free boxes, at the top of the page, in rows and columns.
+  await page.evaluate(({ columns, rows }) => {
+    const board = Object.assign(document.createElement("div"), { id: "tk-boxes" });
+    board.style.cssText = `position: relative; height: ${rows * 42 + 20}px`;
+    for (let i = 0; i < columns * rows; i++) {
+      const box = document.createElement("div");
+      box.style.cssText = `position: absolute; left: ${10 + (i % columns) * 72}px; top: ${10 + Math.floor(i / columns) * 42}px; width: 60px; height: 30px; background: #ccc`;
+      board.append(box);
+    }
+    document.body.prepend(board);
+  }, { columns: BOX_COLUMNS, rows: BOX_ROWS });
+  await enterEditMode(page);
+  const total = BOX_COLUMNS * BOX_ROWS;
+  const tree = page.getByRole("tree", { name: "Layers" });
+  const first = (await canvas(page).locator("#tk-boxes > div").first().boundingBox())!;
+  await selectDeepestIn(page, first);
+  await settle(page);
+  // The boxes' rows, as the panel lists them: the selected one and the siblings after it.
+  const boxRows = tree.getByRole("treeitem").filter({ hasText: /^Frame$/ });
+  const firstRow = await boxRows.evaluateAll((els) => els.findIndex((el) => el.getAttribute("aria-selected") === "true"));
+  expect(firstRow).toBeGreaterThanOrEqual(0);
+  const samples: SelectSample[] = [];
+  for (let run = 0; run <= SELECT_RUNS; run++) {
+    await boxRows.nth(firstRow).click();
+    await settle(page, 150);
+    for (let n = 2; n <= total; n++) {
+      await page.evaluate(armSelect, n);
+      await boxRows.nth(firstRow + n - 1).click({ modifiers: ["Shift"] });
+      const sample = await page.evaluate(() => (window as unknown as { tkSelect: Promise<SelectSample> }).tkSelect);
+      if (run > 0) samples.push(sample);
+      await settle(page, 100);
+    }
+  }
+  const made = await design(page).getByRole("button", { name: /^Make (Stack|Grid)$/ }).getAttribute("aria-label");
+  const work = summarize(samples.map((s) => s.work));
+  const latency = summarize(samples.map((s) => s.latency));
+  keep("selectFree", { boxes: total, work, latency, made, samples });
+  print(
+    report(
+      `Selecting ${total} free boxes in ${BOX_ROWS} rows of ${BOX_COLUMNS}, one by one with ⇧ held, ${SELECT_RUNS} runs, ${elements} elements, ${VIEWS.length} views — ${mode}`,
+      [
+        { name: "⇧-click: work", summary: work },
+        { name: "⇧-click: press to frame drawn", summary: latency },
+      ],
+      [`All ${total} selected, the Design panel's button: ${made}. For comparing before and after only: no target is set for selecting.`],
+    ),
+  );
+});
+
 /** Long tasks, and the measures named `measure`, seen on the page since `armTasks`: stopped and taken by `takenTasks`. */
 interface Seen {
   long: { start: number; duration: number }[];
