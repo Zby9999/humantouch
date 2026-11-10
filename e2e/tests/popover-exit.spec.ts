@@ -145,9 +145,8 @@ test("a menu closed with the pointer takes no clicks at once and is gone after i
   await page.keyboard.press("Escape");
   expect(await menus.count()).toBe(0);
 
-  // Enter on a choice: gone at once too. The pointer out of the way first: left on the select, the menu opens under it, and
-  // the option there, entered by it a frame later (later still on a busy machine), takes the keys' place back (ticket 126).
-  await page.mouse.move(0, 0);
+  // Enter on a choice: gone at once too. The pointer is left on the select, and the menu opens under it: the option there,
+  // entered by it a frame later (later still on a busy machine), does not take the keys' place, the pointer not moved (tickets 126, 131).
   await page.keyboard.press("ArrowDown");
   await expect(listbox).toBeVisible();
   await page.keyboard.press("ArrowUp");

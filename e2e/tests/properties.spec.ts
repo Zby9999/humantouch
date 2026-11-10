@@ -1623,6 +1623,54 @@ test("a text's alignment is as wide as its buttons, at the row's left; the font 
   await expect(sample).toHaveCSS("font-weight", "400");
 });
 
+test("in a font menu long enough to scroll, ↓ goes down to its end, the menu scrolling with it, the pointer left in it taking none of the keys' place; moved, the option under it is the one the keys are on (ticket 131)", async ({ page }) => {
+  // 40 fonts more, loaded on the canvas's page, before the text is selected: its font menu is longer than the window.
+  await canvas(page)
+    .locator("body")
+    .evaluate(async (body) => {
+      const doc = body.ownerDocument;
+      const View = doc.defaultView as unknown as typeof globalThis;
+      for (let i = 1; i <= 40; i++) {
+        const face = new View.FontFace(`Test Font ${String(i).padStart(2, "0")}`, "local(Georgia), local(Arial), local(Helvetica)");
+        doc.fonts.add(await face.load());
+      }
+    });
+  await selectRow(page, INTRO);
+  const font = design(page).getByRole("group", { name: "Text" }).getByRole("combobox", { name: "Font", exact: true });
+  await font.click();
+  const listbox = page.getByRole("listbox", { name: "Font", exact: true });
+  const options = listbox.getByRole("option");
+  await expect(options).toHaveCount(42);
+  const box = await steadyBox(listbox);
+  expect(await listbox.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+
+  // The pointer moved into the menu, near its top: the option under it is the one the keys are on. Then left there.
+  await page.mouse.move(box.x + box.width / 2, box.y + 48);
+  const active = listbox.locator(".tk-menu-option.is-active");
+  await expect(active).toHaveCount(1);
+  const ids = await options.evaluateAll((all) => all.map((o) => o.id));
+  const from = ids.indexOf((await active.getAttribute("id"))!);
+  expect(from).toBeGreaterThan(0);
+  expect(from).toBeLessThan(ids.length - 1);
+  // ↓ to the end: each a step down, the menu scrolling under the pointer, which takes none of them back.
+  for (let i = from + 1; i < ids.length; i++) {
+    await page.keyboard.press("ArrowDown");
+    await expect(active).toHaveAttribute("id", ids[i]);
+  }
+  // Two frames on: the pointer's enter for what moved under it is sent by then.
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  await expect(active).toHaveAttribute("id", ids.at(-1)!);
+  await expect(font).toHaveAttribute("aria-activedescendant", ids.at(-1)!);
+  expect(await listbox.evaluate((el) => el.scrollTop > 0 && Math.abs(el.scrollTop + el.clientHeight - el.scrollHeight) <= 1)).toBe(true);
+
+  // The pointer moved again, a row up, over the last option but one: it is the one the keys are on, as before; Enter chooses it.
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height - 48);
+  await expect(active).toHaveAttribute("id", ids.at(-2)!);
+  await page.keyboard.press("Enter");
+  await expect(listbox).toBeHidden();
+  await expect(font).toHaveValue("Test Font 39");
+});
+
 test("a layer that is not text has no Text section", async ({ page }) => {
   await selectRow(page, "Card");
 
