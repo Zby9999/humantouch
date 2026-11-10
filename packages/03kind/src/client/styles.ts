@@ -1,4 +1,4 @@
-import { APPLIED_LEAVE_MS, APPLIED_SCALE, EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, GRIP_ENTER_MS, GRIP_EXIT_MS, HEADER_LINE_MS, POPOVER_EXIT_MS, RESET_POP_MS, TIP_IN_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
+import { APPLIED_LEAVE_MS, APPLIED_SCALE, CHANGE_PING_MS, EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, GRIP_ENTER_MS, GRIP_EXIT_MS, HEADER_LINE_MS, POPOVER_EXIT_MS, RESET_POP_MS, TIP_IN_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
 import { EDITOR_FONT_FAMILY } from "./editor-font";
 import { FONT_STACK } from "./toggle-styles";
 
@@ -138,7 +138,7 @@ export const styles = /* css */ `
 }
 .tk-changes-list.is-above { --tk-fade-above: 24px; }
 .tk-changes-list.is-below { --tk-fade-below: 24px; }
-/* A row as a menu's option, two lines high: light grey under the pointer; its undo muted, darker under the pointer. */
+/* A row as a menu's option, as high as two lines were, one line now (designer, 2026-11-10): light grey under the pointer; its undo muted, darker under the pointer. */
 .tk-change {
   display: flex;
   align-items: center;
@@ -179,9 +179,18 @@ export const styles = /* css */ `
   .tk-change.is-applied { animation-name: tk-change-applied-fade; }
 }
 @keyframes tk-change-applied-fade { to { opacity: 0; } }
-.tk-change-text { display: grid; flex: 1; min-width: 0; }
-.tk-change-name, .tk-change-values { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tk-change-values { color: var(--tk-text-muted); }
+.tk-change-text { display: flex; flex: 1; align-items: center; align-self: stretch; min-width: 0; }
+/* The whole row but its undo shows the change, clicked. */
+button.tk-change-text { all: unset; display: flex; flex: 1; align-items: center; align-self: stretch; min-width: 0; }
+button.tk-change-text:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: -2px; border-radius: 6px; }
+.tk-change-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A change shown from the list: its layer's outline and each field it changed blink lighter twice, the whole of each; a color alone, kept with reduced motion (designer, 2026-11-10). */
+/* Twice the class: over the buttons' all: unset, which comes later, as a − in the accent is one. */
+.tk-ping.tk-ping { animation: tk-ping ${CHANGE_PING_MS}ms ${EASE_IN_OUT}; }
+@keyframes tk-ping {
+  25%, 75% { opacity: 0.35; }
+  0%, 50%, 100% { opacity: 1; }
+}
 .tk-changes-confirm { margin-top: 4px; padding: 8px 8px 0; border-top: 1px solid var(--tk-border); }
 .tk-changes-confirm p { margin: 0; }
 .tk-changes-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 8px 4px; }
@@ -263,7 +272,7 @@ export const styles = /* css */ `
   --tk-prominent-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15);
   --tk-panel-label: #525351; /* neutral 600: the tools' icons */
   --tk-raised-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1px rgb(0 0 0 / 0.15);
-  --tk-tab-track: #d4d4d3; /* neutral 300: the Design and Variants tabs */
+  --tk-tab-track: #d4d4d3; /* neutral 300: the Design and Variables tabs */
   /* The panels' widths: each set by its edge (designer, 2026-11-08), on the shell's style, as panel-widths.ts fits them. */
   --tk-layers-width: 320px;
   --tk-design-width: 320px;
@@ -535,7 +544,7 @@ export const styles = /* css */ `
 
 /*
  * A panel's top, one style for both (designer, 2026-11-08). The Layers': a button that hides them, and their title.
- * The Design panel's: what it shows (Design, or Variants with nothing selected) at the left, the changes so far and the
+ * The Design panel's: what it shows (Design, or Variables with nothing selected) at the left, the changes so far and the
  * way back at the right. Under both, the line the Design panel's had, inset by the panel's padding.
  * Sticky, on the panel's own color: what scrolls up goes under it. It reaches over the panel's padding (16px) to the
  * panel's edges, so nothing shows above or beside it; sticky keeps to the panel's padding, so it sticks 16px up.
@@ -676,8 +685,6 @@ export const styles = /* css */ `
 :is(.tk-tree-chevron[data-open], .tk-fold) { background: #ffffff; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1.5px rgb(0 0 0 / 0.15); color: #717171; }
 :is(.tk-tree-chevron[data-open="false"], .tk-fold[aria-expanded="false"]) .tk-icon { rotate: -90deg; }
 .tk-fold:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
-/* Before an effect's type, 5px from it, as things side by side in a row are: its row's own gap is 2px, the type and its − joined. */
-.tk-paint-row > .tk-fold { margin-right: 3px; }
 /* A guide: down from the layer this one is in, and in to this one; or down past it, to a later one there. */
 .tk-tree-guide { position: absolute; top: -16px; width: 15px; height: 30px; box-sizing: border-box; border-left: 1px solid var(--tk-guide); pointer-events: none; }
 .tk-tree-guide.is-in { border-bottom: 1px solid var(--tk-guide); border-bottom-left-radius: 4px; }
@@ -760,6 +767,7 @@ export const styles = /* css */ `
 .tk-section > :is(.tk-section-title, .tk-section-header) + * { margin-top: 0; }
 /* A section with nothing under its title yet (Fill, Stroke): its title alone, 24px. */
 .tk-section > :is(.tk-section-title, .tk-section-header):last-child { margin-bottom: 0; }
+/* Things side by side in a row 5px apart: a paint's field and its −, as Independent corners and Wrap (designer, 2026-11-10). */
 .tk-row { display: flex; align-items: center; gap: 5px; }
 /* A field: 28px high (Figma: 03 Kind, 86:557; designer, 2026-11-08), raised on neutral 50 (--tk-input), its label (an icon or a word) before what it holds. */
 /* Its corners 6px, as every field, choice and button in the panel (designer, 2026-11-08). */
@@ -924,8 +932,6 @@ export const styles = /* css */ `
 .tk-field[data-scrubbing] { box-shadow: var(--tk-input-focus-shadow); }
 .tk-field[data-scrubbing]:not(.is-changed) { background-color: var(--tk-input-hover); }
 .tk-field.is-changed[data-scrubbing] { box-shadow: var(--tk-changed-focus-shadow); }
-/* A paint's row: its field, then its remove button, 2px apart. */
-.tk-row.tk-paint-row { gap: 2px; }
 /* 17px with its 0.5px line, 5.5px in from the field's top, bottom and left (designer, 2026-11-08). */
 .tk-swatch {
   flex: none;
@@ -1006,10 +1012,11 @@ export const styles = /* css */ `
 .tk-icon-button:hover { background: var(--tk-field); }
 .tk-icon-button:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: -2px; }
 /* A button that stays on in the panel (Independent corners, Wrap): the accent, as the tool chosen is (designer, 2026-11-07); a row's reset as it (designer, 2026-11-08). */
-.tk-section .tk-icon-button[aria-pressed="true"], :is(.tk-size-row, .tk-color-row) > .tk-reset { background: var(--tk-accent); color: #ffffff; }
+/* On the accent, the darker hairline and shadow a changed field has (designer, 2026-11-10); so too the − of an item added, a changed check and a changed segmented group. */
+.tk-section .tk-icon-button[aria-pressed="true"], :is(.tk-size-row, .tk-color-row) > .tk-reset { background: var(--tk-accent); box-shadow: var(--tk-changed-shadow); color: #ffffff; }
 .tk-section .tk-icon-button[aria-pressed="true"]:hover, :is(.tk-size-row, .tk-color-row) > .tk-reset:hover { background: var(--tk-accent-strong); }
 /* An item added in this round (a shadow, a fill, a Stack): its − alone marked, as a button that stays on (designer, 2026-11-08). */
-.tk-icon-button.is-added { background: var(--tk-accent); color: #ffffff; }
+.tk-icon-button.is-added { background: var(--tk-accent); box-shadow: var(--tk-changed-shadow); color: #ffffff; }
 .tk-icon-button.is-added:hover { background: var(--tk-accent-strong); }
 /* A row's own button beside its fields (Independent corners, Wrap, a row's reset): as tall as they. */
 .tk-row > .tk-icon-button, .tk-grid-2 > .tk-icon-button, :is(.tk-size-row, .tk-color-row) > .tk-reset { width: 28px; height: 28px; border-radius: 6px; }
@@ -1159,7 +1166,7 @@ export const styles = /* css */ `
  * it (white on blue 500 is 3.4:1), a light tint under one hovered; the group's reset pops out inside it at its right end, 24px on blue 400
  * as a changed field's, the group as wide as its buttons and the reset (designer, 2026-11-08).
  */
-.tk-segmented-field.is-changed { background: var(--tk-accent); }
+.tk-segmented-field.is-changed { background: var(--tk-accent); box-shadow: var(--tk-changed-shadow); }
 .tk-segmented-field.is-changed .tk-icon-button:not([aria-checked="true"]) { color: #fafafa; }
 .tk-segmented-field.is-changed .tk-icon-button:not([aria-checked="true"]):hover { background: rgb(255 255 255 / 0.16); }
 /* Clicked, the accent at once, the click answered; taken back (its reset, undo), it eases back to the track's grey, as a check does. */
@@ -1297,7 +1304,7 @@ export const styles = /* css */ `
 }
 .tk-check input:indeterminate { background: #e5e5e4; }
 /* Changed, in the accent; checked again to go back, it has no reset of its own (designer, 2026-11-08). */
-.tk-check.is-changed { background: var(--tk-accent); color: #fafafa; }
+.tk-check.is-changed { background: var(--tk-accent); box-shadow: var(--tk-changed-shadow); color: #fafafa; }
 .tk-check input:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
 
 .tk-viewport {
@@ -1319,7 +1326,10 @@ export const styles = /* css */ `
   display: grid;
   place-items: center;
   margin: 0;
+  padding: 16px;
   color: var(--tk-text-muted);
+  text-align: center;
+  text-wrap: balance;
 }
 .tk-viewport.is-panning { cursor: grabbing; }
 /*
@@ -1446,36 +1456,51 @@ export const styles = /* css */ `
 .tk-selection-tool:focus-visible { outline: 2px solid var(--tk-instance); outline-offset: 2px; }
 /*
  * The briefs (ticket 121): cards on the stage, beside the views, in canvas px, so they pan and zoom with the
- * canvas as notes on it do; a dashed line from each to its layer, 1px at any zoom. A first look, after Figma's
- * annotations, for tuning: white, the brief's blue on top, the layer's name over the words.
+ * canvas as notes on it do; a grey dashed line from each to its layer, across and down only, 1px at any zoom (designer, 2026-11-10).
  */
 .tk-brief-cards { position: absolute; top: 0; left: 0; transform-origin: 0 0; pointer-events: none; }
 .tk-brief-lines { position: absolute; top: 0; left: 0; overflow: visible; }
-.tk-brief-lines line { stroke: var(--tk-accent); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
-.tk-brief-lines circle { fill: var(--tk-accent); }
+.tk-brief-lines path { fill: none; stroke: var(--tk-text-muted); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.tk-brief-lines circle { fill: var(--tk-text-muted); }
 .tk-brief-lines g:not([data-selected]) { opacity: 0.6; }
+/*
+ * A card as the designer drew it in Figma (2026-11-10): the brief alone in the editor's small type, 220px wide, a
+ * soft edge and shadow whether selected or written in, never the accent's; and, written in, the accent's arrow that
+ * sets it under the brief on the right, as the count of changes is drawn.
+ */
 .tk-brief-card {
   position: absolute;
   box-sizing: border-box;
-  padding: 16px 20px 20px;
-  border-radius: 16px;
-  border-top: 6px solid var(--tk-accent);
-  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--tk-input);
+  box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1px rgb(0 0 0 / 0.15);
   color: var(--tk-text);
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.08), 0 4px 16px rgb(0 0 0 / 0.08);
-  font-size: 22px;
-  line-height: 1.4;
+  font: 400 11px/16px ${EDITOR_FONT};
   pointer-events: auto;
   cursor: text;
 }
-.tk-brief-card[data-selected], .tk-brief-card[data-writing] { box-shadow: 0 0 0 3px var(--tk-accent), 0 4px 16px rgb(0 0 0 / 0.12); }
-.tk-brief-card-header { display: flex; align-items: center; gap: 8px; height: 32px; margin-bottom: 6px; color: var(--tk-accent); font-weight: 600; }
-.tk-brief-card-header > .tk-icon { --tk-icon-size: 24px; flex: none; }
-.tk-brief-card-layer { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tk-brief-card .tk-brief-card-remove { width: 32px; height: 32px; border-radius: 8px; color: var(--tk-text-muted); cursor: default; --tk-icon-size: 20px; }
-.tk-brief-card-text { margin: 0; min-height: 31px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.tk-brief-card-field { all: unset; display: block; box-sizing: border-box; width: 100%; min-height: 31px; font: inherit; line-height: inherit; color: inherit; white-space: pre-wrap; overflow-wrap: anywhere; resize: none; overflow: hidden; }
+/* Written in, over the card under it: a card opened again grows down from where it is (designer, 2026-11-10). */
+.tk-brief-card[data-writing] { z-index: 1; }
+.tk-brief-card-text { align-self: stretch; box-sizing: border-box; margin: 0; padding: 4px; min-height: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tk-brief-card-field { all: unset; display: block; align-self: stretch; box-sizing: border-box; padding: 4px; min-height: 24px; font: inherit; color: inherit; white-space: pre-wrap; overflow-wrap: anywhere; resize: none; overflow: hidden; }
 .tk-brief-card-field::placeholder { color: var(--tk-text-muted); }
+.tk-brief-card-set { all: unset; position: relative; isolation: isolate; display: grid; flex: none; place-items: center; width: 24px; height: 24px; color: #daecff; cursor: pointer; --tk-icon-size: 14px; }
+.tk-brief-card-set::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 6px;
+  background: linear-gradient(var(--tk-accent-on), var(--tk-accent));
+  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.15), 0 1px 1px rgb(0 0 0 / 0.15);
+}
+.tk-brief-card-set:hover::before { background: linear-gradient(var(--tk-accent), var(--tk-accent-strong)); }
+.tk-brief-card-set:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 0; border-radius: 6px; }
 
 /* Typing in text, as in Figma: a thin blue box round the words, which grows as they do. */
 .tk-selection[data-kind="typing"] { transition: none; }
@@ -1501,9 +1526,11 @@ export const styles = /* css */ `
 .tk-handle { position: absolute; box-sizing: border-box; pointer-events: auto; touch-action: none; }
 .tk-handle[data-corner] { border: 1px solid var(--tk-selection); background: #fff; }
 .tk-handles:not([data-small]) .tk-handle[data-corner]::before { content: ""; position: absolute; inset: -3px; }
-/* In the views other than the one worked in, the selection lighter, its handles' squares white still (designer, 2026-11-09). */
-.tk-selection[data-away] { border-color: color-mix(in srgb, var(--tk-selection) 40%, transparent); }
-.tk-handles[data-away] .tk-handle[data-corner] { border-color: color-mix(in srgb, var(--tk-selection) 40%, #fff); }
+/*
+ * In the views other than the one worked in, the selection lighter, with no handles: they are not resized there (designer, 2026-11-09,
+ * 2026-11-10). So too the layer pointed at, in the views other than the one pointed in.
+ */
+:is(.tk-selection, .tk-hover)[data-away] { border-color: color-mix(in srgb, var(--tk-selection) 40%, transparent); }
 /* A gradient's handles on the layer, while its fill's picker is open: drawn by the editor layer alone. */
 .tk-gradient-handles { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .tk-gradient-handles g { pointer-events: all; touch-action: none; }
@@ -1613,7 +1640,7 @@ export const styles = /* css */ `
   background: var(--tk-swatch);
 }
 .tk-swatch-button:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
-/* A color pointed at, wherever one is chosen: a white line inside it and a darker one round it, as the Variants tab's swatches have;
+/* A color pointed at, wherever one is chosen: a white line inside it and a darker one round it, as the Variables tab's swatches have;
    in a color's field, pointing anywhere on the field does it, not over its open picker (designer, 2026-11-08). */
 .tk-swatch-button:hover,
 .tk-color-field:hover:not(:has(.tk-popover:hover)) > .tk-swatch-button,
@@ -1758,7 +1785,7 @@ export const styles = /* css */ `
   background: var(--tk-field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23737472' stroke-width='1.43' stroke-linecap='round'%3E%3Ccircle cx='7.25' cy='7.25' r='4.5'/%3E%3Cline x1='10.5' y1='10.5' x2='13.25' y2='13.25'/%3E%3C/svg%3E") no-repeat 8px center / 14px 14px;
 }
 .tk-variable-search::placeholder { color: var(--tk-text-muted); font-weight: 500; }
-/* The picker's colors: the palette of the Variants tab, without its ramps' names. */
+/* The picker's colors: the palette of the Variables tab, without its ramps' names. */
 .tk-variants-ramp.is-bare { grid-template-columns: repeat(var(--tk-steps, 11), minmax(0, 1fr)); }
 .tk-variants-swatch[aria-selected="true"] { box-shadow: inset 0 0 0 1px #fff, 0 0 0 2px var(--tk-accent); }
 .tk-variable-list { overflow: auto; min-height: 0; margin: 0 -12px; padding: 0 12px; }
@@ -1820,7 +1847,7 @@ export const styles = /* css */ `
 .tk-mark[data-type="gap"][data-across] .tk-mark-label { top: auto; bottom: 4px; transform: translateX(-50%); }
 .tk-mark[data-type="gap"]:not([data-across]) .tk-mark-label { left: 4px; transform: translateY(-50%); }
 
-/* The Variants tab: the project's Variables, by group (designer, 2026-11-07). */
+/* The Variables tab: the project's Variables, by group (designer, 2026-11-07). */
 .tk-variants { display: flex; flex-direction: column; gap: 16px; }
 .tk-variants .tk-row > .tk-field { flex: 1; }
 /* The Variables source (All): tracked as the other muted labels (designer, 2026-11-08). */

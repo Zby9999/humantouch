@@ -282,9 +282,9 @@ async function titleAt(page: Page, size: string) {
   await page.waitForFunction((px) => getComputedStyle(document.querySelector("main h1")!).fontSize === px, size);
 }
 
-/** Picks how the selected layer is arranged, in the Design panel's Stack or Grid section (ticket 109): `Horizontal`, `Vertical` or `Grid`. */
-async function arrangeAs(page: Page, section: "Stack" | "Grid", option: "Horizontal" | "Vertical" | "Grid") {
-  await design(page).getByRole("region", { name: section }).getByRole("radiogroup", { name: "Direction" }).getByRole("radio", { name: option }).click();
+/** Picks how the selected layer is arranged, in the Design panel's Layout section, a Stack's or a Grid's alike (ticket 109; designer, 2026-11-10): `Horizontal`, `Vertical` or `Grid`. */
+async function arrangeAs(page: Page, option: "Horizontal" | "Vertical" | "Grid") {
+  await design(page).getByRole("region", { name: "Layout" }).getByRole("radiogroup", { name: "Direction" }).getByRole("radio", { name: option }).click();
 }
 
 /** The cards' Grid as the example writes it. */
@@ -439,10 +439,12 @@ export const SCENARIOS: Scenario[] = [
       await layer(page, "Card").click();
       await setField(page, "Gap", "12");
       await layer(page, "Button").click();
-      // The Brief tool, and a click on the button selected: its card opens beside the views (ticket 121).
+      // The Brief tool, and a click on the button selected: its card opens beside the views (ticket 121). In its
+      // padding, 4px in in the page's px: the tool writes on the deepest layer clicked, its words in the middle (designer, 2026-11-10).
       await page.keyboard.press("b");
       const button = await boxOf(desktop(page).contentFrame().locator(`${HERO} > button`));
-      await page.mouse.click(button.x + button.width / 2, button.y + button.height / 2);
+      const zoom = await desktop(page).evaluate((frame: HTMLIFrameElement) => frame.getBoundingClientRect().width / frame.offsetWidth);
+      await page.mouse.click(button.x + 4 * zoom, button.y + 4 * zoom);
       await page.getByRole("textbox", { name: "Brief" }).waitFor();
       await page.keyboard.type("When pressed, it shrinks a little and springs back");
       await page.keyboard.press("Enter");
@@ -1456,7 +1458,7 @@ export const SCENARIOS: Scenario[] = [
 
       await enterEditMode(page);
       await layer(page, "Header").click();
-      await arrangeAs(page, "Stack", "Grid");
+      await arrangeAs(page, "Grid");
       await setField(page, "Columns", "3");
       await layer(page, "Card").click();
       await design(page).getByRole("combobox", { name: "Width sizing" }).selectOption("fill");
@@ -1541,10 +1543,11 @@ export const SCENARIOS: Scenario[] = [
       const selected = await tree.getByRole("treeitem", { selected: true }).allTextContents();
       if (selected.join() !== "Frame,Frame,Frame,Frame") throw new Error(`The tiles are not the four layers selected: ${selected.join(", ")}`);
       await page.keyboard.press("Shift+A");
-      await design(page).getByRole("region", { name: "Grid" }).waitFor();
+      // A Grid's Layout section, its columns in it (a Stack's has none).
+      await design(page).getByRole("region", { name: "Layout" }).getByRole("textbox", { name: "Columns" }).waitFor();
       await saved(desk, 1);
       await pickGrid(page, phone(page));
-      await arrangeAs(page, "Grid", "Vertical");
+      await arrangeAs(page, "Vertical");
       await saved(desk, 2);
     },
     changes: [
@@ -1617,7 +1620,7 @@ export const SCENARIOS: Scenario[] = [
 
       await enterEditMode(page);
       await pickGrid(page, phone(page));
-      await arrangeAs(page, "Grid", "Vertical");
+      await arrangeAs(page, "Vertical");
       await saved(desk, 1);
     },
     changes: [

@@ -9,13 +9,13 @@ import { BRIEF_ATTR, LAYER_ID_ATTR } from "./canvas-style";
 import { canvasKey, drawsWith, type Tool } from "./canvas-keys";
 import { marksNow, resizeStep, type ResizePointer, type ResizeSession, type ResizeStep } from "./canvas-resize";
 import { boxFrom, DRAG_THRESHOLD, laidOut, moveWhole, restoreDragStyles, shift, SNAP_PX, startDragSession, type At, type DragSession, type Pointer } from "./canvas-drag";
-import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scrolled, showsWhole, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
+import { boundsOf, cameraIn, centredOn, currentCamera, fitCamera, initialCamera, place, scrolled, showsWhole, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edit-commands";
 import { fitHeight, freeze, restore } from "./freezer";
 import { ENTER_MARK } from "./host";
-import { chromePush, EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
+import { CHANGE_GLIDE_MS, chromePush, EASE_IN_OUT, EASE_OUT, easeInOut, MODE_FADE_MS, MODE_SWITCH_MS, ping, prefersReducedMotion } from "./motion";
 import { framedText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { createLater } from "./later";
 import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
@@ -28,7 +28,7 @@ import type { Handle } from "./resize";
 import { CAUGHT_UP_MS, createViews, type View, type Views } from "./views";
 import { keyOf, LABEL_OFFSET, layoutViews, placeOffCanvas, shownAt, viewsWidth, type Placed, type Shown } from "./view-layout";
 import { AddView, desktopRange, readViewWidths, viewName, ViewLabel, withWidth, writeViewWidths } from "./ViewLabels";
-import type { Breakpoint } from "./breakpoints";
+import { contains, type Breakpoint } from "./breakpoints";
 
 export type { Tool } from "./canvas-keys";
 
@@ -77,6 +77,19 @@ interface Props {
   selected: Layer[];
   /** Keep the selection box out of the way, as while a value is being adjusted. */
   hideSelection: boolean;
+  /** The layer whose row in the Layers panel is pointed at: outlined in every view alike, as the layer pointed at is (designer, 2026-11-10). */
+  rowHovered: Layer | null;
+  /**
+   * The row pointed at is a change's in the change list, which applies in this range (null: at every width): the
+   * views outside it outline the layer lighter (designer, 2026-11-10). Undefined: a row of the Layers panel.
+   */
+  rowHoveredRange?: Breakpoint | null;
+  /**
+   * A change clicked in the change list (designer, 2026-11-10): its layer, glided to in the view its range
+   * `breakpoint` applies in (the desktop view's: null), its outline then flashing once, and `shown` called. A new
+   * `key` each time.
+   */
+  focus: { layer: Layer; breakpoint: Breakpoint | null; key: number; shown(): void } | null;
   onSelect(layers: Layer[]): void;
   /** What a dragged layer can be moved into; null until there is a canvas to edit. */
   editor: Editor | null;
@@ -130,7 +143,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, rowHovered, rowHoveredRange, focus, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -177,8 +190,19 @@ export function CanvasView(props: Props) {
   const clickPress = useRef<{ pointerId: number; time: number; x: number; y: number; second: boolean; plain: boolean; dragged: boolean } | null>(null);
   /** The last plain press let go as a click, which the next press may make a double click of. */
   const lastClick = useRef<{ time: number; x: number; y: number } | null>(null);
-  /** The drag under way: how far the layer has gone, and where it would go, in the view it is dragged in, in its px; `out`: off the canvas. */
-  const [drag, setDrag] = useState<{ layer: Layer; in: Shown; box: DOMRect; drop: Drop | null; out: boolean; away?: boolean } | null>(null);
+  /**
+   * The drag under way: how far the layer has gone, and where it would go, in the view it is dragged in, in its px; `out`: off the canvas.
+   * `whole`: a layer off the canvas dragged whole, and how far it has gone on the stage, its outline going along (designer, 2026-11-10).
+   */
+  const [drag, setDrag] = useState<{
+    layer: Layer;
+    in: Shown;
+    box: DOMRect;
+    drop: Drop | null;
+    out: boolean;
+    away?: boolean;
+    whole?: { of: OffCanvasLayer; dx: number; dy: number };
+  } | null>(null);
   /**
    * A handle of the layer selected pressed, and dragged: held from the moment it is pressed till it is let
    * go, or the resize cancelled with Esc (ADR 0012). `resize` has what it shows: the view, the handle (its
@@ -899,7 +923,8 @@ export function CanvasView(props: Props) {
     const hit = pointedAt(event);
     const off = over.at.offCanvasLayer;
     if (!hit || (off && !off.origin.made)) return;
-    const layer = event.metaKey || event.ctrlKey ? selectDeepest(hit.layer) : selectOnClick(hit.layer, primary);
+    // The deepest layer there, as with ⌘ held: what is written about is what is pointed at (designer, 2026-11-10).
+    const layer = selectDeepest(hit.layer);
     if (!layer) return;
     if (!off) {
       views?.sync(over.at.view);
@@ -974,7 +999,7 @@ export function CanvasView(props: Props) {
       session.to = into ? null : { x: offCanvasLayer.x + dx, y: offCanvasLayer.y + dy };
       session.back = drop;
       // Nothing makes room for it: coming from outside, the layers would slide away from under the pointer as it enters.
-      setDrag({ layer, in: into ?? shown, box: drop?.box ?? there ?? box, drop, out: false });
+      setDrag({ layer, in: into ?? shown, box: drop?.box ?? there ?? box, drop, out: false, whole: { of: offCanvasLayer, dx, dy } });
       return;
     }
     // Over another document than its own (ticket 108): a layer off the canvas, from the canvas or another off it, or a view, from off it.
@@ -1217,12 +1242,13 @@ export function CanvasView(props: Props) {
     else onMove(layer, drop.to);
   }
 
-  // Nothing to point out while panning, dragging or while a value is being adjusted.
+  // Nothing to point out while panning, dragging or while a value is being adjusted. With the Brief tool, the deepest
+  // layer, as it writes on (designer, 2026-11-10).
   // A move builds the layers anew: a layer pointed at before it is gone.
   const hoveredTree = hover && treeOf(hover.hit);
   const hovered =
     hover && !spaceHeld && !panning && !drag && !resize && !hideSelection && hoveredTree && inTree(hoveredTree, hover.hit)
-      ? hover.deep
+      ? hover.deep || tool === "brief"
         ? selectDeepest(hover.hit)
         : selectOnClick(hover.hit, primary)
       : null;
@@ -1233,6 +1259,55 @@ export function CanvasView(props: Props) {
   const toolbarIn = shownViews.find((p) => p.view === active) ?? shownViews[0];
   /** Whether a view, or a layer off the canvas, shows the layer: those of the canvas show in every view, those off it in their own. */
   const shows = (shown: Shown, layer: Layer) => layer.el.ownerDocument === (shown.offCanvasLayer ? shown.offCanvasLayer.document : canvas?.document);
+  // A change shown from the list: in the view it applies in, pressed in as if by the designer, the camera glides till
+  // its layer is in the middle, zooming out only if it does not fit; a wheel turned or a press meanwhile stops it there.
+  useEffect(() => {
+    if (!focus || playing || travelling) return;
+    const { layer, breakpoint } = focus;
+    const showing = [...shownViews, ...outside].filter((shown) => shows(shown, layer));
+    const inRange = showing.filter((shown) => !shown.offCanvasLayer && (breakpoint ? contains(breakpoint, shown.width) : shown.desktop));
+    const shown = inRange.find((each) => each.view === active) ?? inRange[0] ?? showing[0];
+    if (!shown) return;
+    if (!shown.offCanvasLayer) {
+      views?.sync(shown.view);
+      setActive(shown.view);
+    }
+    const el = viewport.current!;
+    const r = shown.view.boxOf(layer);
+    const to = r && (r.width || r.height) ? centredOn(camera, { x: shown.x + r.left, y: shown.y + r.top, width: r.width, height: r.height }, el.getBoundingClientRect()) : null;
+    let frame = 0;
+    const stop = () => {
+      cancelAnimationFrame(frame);
+      el.removeEventListener("wheel", stop, true);
+      el.removeEventListener("pointerdown", stop, true);
+    };
+    // There, drawn where it is: its outline in that view flashes, then what else shows it.
+    const arrived = () => {
+      stop();
+      frame = requestAnimationFrame(() => {
+        for (const outline of el.querySelectorAll(`.tk-selection[data-view="${CSS.escape(shown.name)}"]`)) ping(outline);
+        focus.shown();
+      });
+    };
+    if (!to || prefersReducedMotion()) {
+      if (to) setCamera(to);
+      arrived();
+      return stop;
+    }
+    const from = camera;
+    const start = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / CHANGE_GLIDE_MS);
+      const k = easeInOut(t);
+      setCamera({ x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k, zoom: from.zoom + (to.zoom - from.zoom) * k });
+      if (t < 1) frame = requestAnimationFrame(step);
+      else arrived();
+    };
+    el.addEventListener("wheel", stop, true);
+    el.addEventListener("pointerdown", stop, true);
+    frame = requestAnimationFrame(step);
+    return stop;
+  }, [focus?.key]);
   /** The layer of the canvas selected alone, with the selection toolbar on its top right, in `toolbarIn`. */
   const toolbar =
     toolbarIn && editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && !travelling && !playing && !drag && !resize && !hideSelection && !typingLayer
@@ -1416,13 +1491,6 @@ export function CanvasView(props: Props) {
             writeIn(found.layer, found.in);
           }}
           onWritten={(_key, text) => written(text)}
-          onRemove={(key) => {
-            const found = cards.list.find((c) => c.card.key === key);
-            if (!found) return;
-            const layer = treeOf(found.layer)?.layerOf(nodeOf(found.layer)) ?? found.layer;
-            onSetBrief(layer, "");
-            if (!found.in.offCanvasLayer) briefViews.forget(key);
-          }}
           onReveal={(dx, dy) => setCamera((v) => ({ ...v, x: v.x + dx, y: v.y + dy }))}
           placedNow={cardsPlaced}
         />
@@ -1432,17 +1500,24 @@ export function CanvasView(props: Props) {
         !playing &&
         [...shownViews, ...outside].map((shown) => {
           const { view, name } = shown;
-          const at = cameraIn(camera, shown);
+          // A layer off the canvas dragged whole: what is drawn over it goes along with it.
+          const by = drag?.whole && drag.whole.of === shown.offCanvasLayer ? drag.whole : null;
+          const at = cameraIn(camera, by ? { x: shown.x + by.dx, y: shown.y + by.dy } : shown);
           // The selection lighter in the views other than the one worked in, pressed in last (designer, 2026-11-09).
           const away = !shown.offCanvasLayer && view !== (active ?? views?.list()[0]);
           return (
             <Fragment key={keyOf(shown)}>
-              {hovered && !selected.includes(hovered) && shows(shown, hovered) && <Outline layer={hovered} view={view} name={name} camera={at} hover />}
+              {hovered && !selected.includes(hovered) && shows(shown, hovered) && (
+                <Outline layer={hovered} view={view} name={name} camera={at} hover away={!shown.offCanvasLayer && keyOf(shown) !== keyOf(hover!.in)} />
+              )}
+              {rowHovered && !selected.includes(rowHovered) && !drag && !resize && !hideSelection && shows(shown, rowHovered) && (
+                <Outline layer={rowHovered} view={view} name={name} camera={at} hover away={rowHoveredRange !== undefined && !shown.offCanvasLayer && !contains(rowHoveredRange, shown.width)} />
+              )}
               {tree && titled === keyOf(shown) && !selected.includes(tree.root) && <Outline layer={tree.root} view={view} name={name} camera={at} hover />}
               {selected.map((layer, i) => layer !== typingLayer && shows(shown, layer) && <Outline key={i} layer={layer} view={view} name={name} camera={at} hidden={hideSelection} away={away} />)}
               {typingLayer && shows(shown, typingLayer) && <Outline layer={typingLayer} view={view} name={name} camera={at} typing />}
-              {withHandles && shows(shown, withHandles) && (!spaceHeld || resize) && (
-                <Handles layer={withHandles} view={view} name={name} camera={at} away={away} onPress={(handle, event) => pressHandle(withHandles, shown, handle, event)} />
+              {withHandles && !away && shows(shown, withHandles) && (!spaceHeld || resize) && (
+                <Handles layer={withHandles} view={view} name={name} camera={at} onPress={(handle, event) => pressHandle(withHandles, shown, handle, event)} />
               )}
               {withGradient && !shown.offCanvasLayer && shows(shown, withGradient) && (
                 <GradientHandles
@@ -1517,7 +1592,14 @@ export function CanvasView(props: Props) {
       )}
       {(drag?.layer.text || drag?.out || drag?.away) && <div class="tk-drag-ghost" aria-hidden="true" style={place(drag.box, cameraIn(camera, drag.in))} />}
       {drawn && <div class="tk-drag-ghost" aria-hidden="true" style={place(drawn.box, drawn.in ? cameraIn(camera, drawn.in) : camera)} />}
-      {failed && <p class="tk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
+      {/* No way to try again here: the Agent finds why, the error in the console; the two sentences one over the other (designer, 2026-11-10). */}
+      {failed && (
+        <p class="tk-viewport-message" role="alert">
+          Couldn't turn this page into a canvas.
+          <br />
+          Ask your Agent to look into it.
+        </p>
+      )}
     </div>
   );
 }

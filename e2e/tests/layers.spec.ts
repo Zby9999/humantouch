@@ -710,7 +710,8 @@ test.describe("the hover outline", () => {
     await page.mouse.move(text.x, text.y);
     await expect(hover(page)).toHaveCount(1);
 
-    await layerTree(page).hover();
+    // Out on the Design panel: a row of the Layers panel pointed at outlines its layer (designer, 2026-11-10).
+    await page.getByRole("complementary", { name: "Design" }).hover();
     await expect(hover(page)).toHaveCount(0);
   });
 });

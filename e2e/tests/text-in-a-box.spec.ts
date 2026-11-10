@@ -85,7 +85,7 @@ test("the Close button takes a background, a border, corners and padding of its 
   await expect.poll(async () => [await closeStyle(page, "borderTopStyle"), await closeStyle(page, "borderTopWidth")]).toEqual(["solid", "1px"]);
   await expect.poll(() => closeStyle(page, "borderTopLeftRadius")).toBe("8px");
   await expect.poll(() => closeStyle(page, "paddingTop")).toBe("10px");
-  await expect(await changeRows(page)).toHaveText([/Fill.*Button/, /Stroke.*Button/, /Corner radius.*Button/, /Padding.*Button/]);
+  await expect(await changeRows(page)).toReadAs([/Fill.*Button/, /Stroke.*Button/, /Corner radius.*Button/, /Padding.*Button/]);
 });
 
 test("the text in it takes its text styles on the button itself, with no element put around the words", async ({ page }) => {
@@ -100,7 +100,7 @@ test("the text in it takes its text styles on the button itself, with no element
   await expect.poll(() => closeStyle(page, "fontSize")).toBe("18px");
   await expect.poll(() => close(page).evaluate((el) => el.childElementCount)).toBe(0);
   await expect(selectedRow(page)).toHaveText("Close");
-  await expect(await changeRows(page)).toHaveText([/Font size.*Close/]);
+  await expect(await changeRows(page)).toReadAs([/Font size.*Close/]);
   await page.keyboard.press("Escape");
 
   // Undone, the text is still the one selected.
@@ -124,5 +124,5 @@ test("a click on the Close button selects it; a double click types in its words"
   await expect(close(page)).toHaveText("Done");
   await expect.poll(() => close(page).evaluate((el) => el.childElementCount)).toBe(0);
   await expect(selectedRow(page)).toHaveText("Done");
-  await expect(await changeRows(page)).toHaveText([/Text.*“Close” → “Done”/]);
+  await expect(await changeRows(page)).toReadAs([/Text.*“Close” → “Done”/]);
 });

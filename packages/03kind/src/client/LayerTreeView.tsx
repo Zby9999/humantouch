@@ -18,6 +18,8 @@ interface Props {
   broughtBack: number;
   /** `extend`: ⇧ held, the layer joins the selection or leaves it. */
   onSelect(layer: Layer, extend: boolean): void;
+  /** The layer whose row the pointer is over; null as it leaves the rows. */
+  onHover(layer: Layer | null): void;
 }
 
 /** How far in a level's rows start: a disclosure and the gap after it. */
@@ -33,7 +35,7 @@ const MAX_OPEN_ROWS = 200;
  * layers off the canvas come first, each as it is named on the canvas, at
  * the level of the canvas's outermost layers; the canvas's follow.
  */
-export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, onSelect }: Props) {
+export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, onSelect, onHover }: Props) {
   const trees = [...offCanvas, tree];
   // Shown, the panel starts its layers anew; hidden, it leaves those closed then with what it remembers.
   const [collapsed, setCollapsed] = useState<ReadonlySet<Layer>>(() => {
@@ -198,6 +200,8 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
             onPointerDown={(event) => {
               if (event.button === 0) onSelect(layer, event.shiftKey);
             }}
+            onPointerEnter={() => onHover(layer)}
+            onPointerLeave={() => onHover(null)}
           >
             {/* Guides: in to this layer from the one it is in, and on down past it to the later layers of those above it. */}
             {/* In to the row's chevron; a row with none, on across its place to its icon (designer, 2026-11-07). */}

@@ -501,6 +501,38 @@ test("a stroke at weight 0, typed or dragged, stays a stroke with its color and 
   await expect(weight).toHaveCount(0);
 });
 
+test("a stroke on one side taken to 0 goes up again on that side, not on all, as in Figma (designer, 2026-11-10)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const stroke = design(page).getByRole("group", { name: "Stroke", exact: true });
+  const weight = stroke.getByRole("textbox", { name: "Stroke weight" });
+  const sides = stroke.getByRole("combobox", { name: "Stroke sides" });
+  await sides.selectOption("Bottom");
+  await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("0px 0px 1px");
+
+  await weight.fill("0");
+  await weight.press("Enter");
+  await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("0px");
+  await expect(sides).toHaveValue("2");
+  await weight.fill("2");
+  await weight.press("Enter");
+  await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("0px 0px 2px");
+  await expect(sides).toHaveValue("2");
+});
+
+test("a stroke at 0 as it lands in the code, its color the layer's own, is a stroke at 0; a line of 0 the page gives every element is none (designer, 2026-11-10)", async ({ page }) => {
+  // The Card's own `border-stone-200`, its width 0 as the code would write it.
+  await canvas(page).locator("article").first().evaluate((card) => card.style.setProperty("border-width", "0px"));
+  await selectRow(page, "Card");
+  const stroke = design(page).getByRole("group", { name: "Stroke", exact: true });
+  await expect(stroke.getByRole("textbox", { name: "Stroke weight" })).toHaveValue("0");
+  await expect(stroke.getByRole("textbox", { name: "Stroke color", exact: true })).toHaveValue("E7E5E4");
+  await expect(stroke.getByRole("button", { name: "Add stroke" })).toHaveCount(0);
+
+  // The Header: Tailwind's `*, ::before, ::after { border: 0 solid }` alone.
+  await selectRow(page, "Header");
+  await expect(stroke.getByRole("button", { name: "Add stroke" })).toBeVisible();
+});
+
 test("a stroke weight goes in 0.5px steps, whatever the screen, and a toast says so when it is rounded; it shows as set though a 1x screen draws it narrower", async ({ page }) => {
   await page.clock.install();
   await selectRow(page, "Card");
@@ -510,9 +542,9 @@ test("a stroke weight goes in 0.5px steps, whatever the screen, and a toast says
   await weight.fill("1.25");
   await weight.press("Enter");
   await expect(weight).toHaveValue("1");
-  await expect(toast(page)).toHaveText("Stroke weights go in 0.5px steps: 1.25px is now 1px.");
+  await expect(toast(page)).toHaveText("Stroke must be a multiple of 0.5px.");
   // Not in the Design panel any more.
-  await expect(stroke.getByText("0.5px steps")).toHaveCount(0);
+  await expect(stroke.getByText("multiple of 0.5px")).toHaveCount(0);
   await page.clock.runFor(5000);
   await expect(toast(page)).toHaveText("");
 
@@ -529,7 +561,7 @@ test("a stroke weight goes in 0.5px steps, whatever the screen, and a toast says
   await weight.fill("0.3");
   await weight.press("Enter");
   await expect(weight).toHaveValue("0.5");
-  await expect(toast(page)).toHaveText("Stroke weights go in 0.5px steps: 0.3px is now 0.5px.");
+  await expect(toast(page)).toHaveText("Stroke must be a multiple of 0.5px.");
 
   // Each side its own, each rounded.
   await stroke.getByRole("combobox", { name: "Stroke sides" }).selectOption("Custom");
@@ -537,14 +569,14 @@ test("a stroke weight goes in 0.5px steps, whatever the screen, and a toast says
   await left.fill("1.75");
   await left.press("Enter");
   await expect(left).toHaveValue("1.5");
-  await expect(toast(page)).toHaveText("Stroke weights go in 0.5px steps: 1.75px is now 1.5px.");
+  await expect(toast(page)).toHaveText("Stroke must be a multiple of 0.5px.");
 });
 
 test("a toast rises at the bottom middle of the canvas and fades after about 3 seconds, but not while the pointer is on it; a new one takes its place", async ({ page }) => {
   await page.clock.install();
   await selectRow(page, "Card");
   const weight = design(page).getByRole("group", { name: "Stroke", exact: true }).getByRole("textbox", { name: "Stroke weight" });
-  const message = toast(page).getByText("Stroke weights go in 0.5px steps", { exact: false });
+  const message = toast(page).getByText("Stroke must be a multiple of 0.5px.");
 
   await weight.fill("1.25");
   await weight.press("Enter");
@@ -561,7 +593,7 @@ test("a toast rises at the bottom middle of the canvas and fades after about 3 s
   await weight.fill("0.3");
   await weight.press("Enter");
   await expect(message).toHaveCount(1);
-  await expect(message).toHaveText("Stroke weights go in 0.5px steps: 0.3px is now 0.5px.");
+  await expect(message).toHaveText("Stroke must be a multiple of 0.5px.");
   await page.clock.runFor(2000);
   await expect(message).toBeVisible();
   await page.clock.runFor(2000);
@@ -1944,10 +1976,12 @@ test("an effect's fold at its row's left, its type filling the row from 5px afte
     ]);
     expect(Math.abs(fold.x - rowBox.x), `${name}: its fold at the row's left`).toBeLessThanOrEqual(1);
     expect(Math.abs(fold.x + fold.width + 5 - type.x), `${name}: its type 5px after its fold`).toBeLessThanOrEqual(1);
-    // The 2px gap of a paint's row between them.
-    expect(Math.abs(type.x + type.width + 2 - minus.x), `${name}: its type up to its −`).toBeLessThanOrEqual(1);
+    // 5px between them, as things side by side in a row are (designer, 2026-11-10).
+    expect(Math.abs(type.x + type.width + 5 - minus.x), `${name}: its type 5px before its −`).toBeLessThanOrEqual(1);
     expect(Math.abs(minus.x + minus.width - (rowBox.x + rowBox.width)), `${name}: its − at the row's right end`).toBeLessThanOrEqual(1);
   }
+  // Added in this round, its − on the accent with a changed field's darker hairline and shadow (designer, 2026-11-10).
+  await expect(effects.getByRole("button", { name: "Remove layer blur" })).toHaveCSS("box-shadow", /rgba\(0, 0, 0, 0\.15\) 0px 0px 0px 0\.5px inset/);
 });
 
 test("an effect's fold, as a layer's chevron in the Layers panel but 28px as the panel's buttons, folds its details away to its type and shows them again (designer, 2026-11-08)", async ({ page }) => {
@@ -1984,7 +2018,7 @@ test("an effect's fold, as a layer's chevron in the Layers panel but 28px as the
   await expect(blur.getByRole("textbox")).toHaveCount(0);
 });
 
-test("a color pointed at, wherever one is chosen, has the Variants tab's white line inside it and a darker one round it", async ({ page }) => {
+test("a color pointed at, wherever one is chosen, has the Variables tab's white line inside it and a darker one round it", async ({ page }) => {
   await page.goto(DEV_URL);
   await enterEditMode(page);
   await selectRow(page, "Card");

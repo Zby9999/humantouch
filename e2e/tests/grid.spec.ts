@@ -6,6 +6,10 @@ const tablet = (page: Page) => page.locator('iframe[title="Tablet 768"]');
 const phone = (page: Page) => page.locator('iframe[title="Phone 390"]');
 const views = (page: Page) => [desktop(page), tablet(page), phone(page)];
 const design = (page: Page) => page.getByRole("complementary", { name: "Design" });
+/** The Layout section as a Grid's: its columns in it (designer, 2026-11-10: one section, titled Layout, a Stack or a Grid). */
+const gridSection = (page: Page) => design(page).getByRole("region", { name: "Layout" }).filter({ has: page.getByRole("textbox", { name: "Columns" }) });
+/** The Layout section as a Stack's: no columns in it. */
+const stackSection = (page: Page) => design(page).getByRole("region", { name: "Layout" }).filter({ hasNot: page.getByRole("textbox", { name: "Columns" }) });
 const layers = (page: Page) => page.getByRole("tree", { name: "Layers" });
 const field = (page: Page, name: string) => design(page).getByRole("textbox", { name, exact: true });
 
@@ -69,13 +73,13 @@ test("a Grid shows its columns and gaps in the panel; changed there, every view 
   await enterEditMode(page);
   await pickGrid(page, desktop(page));
 
-  const section = design(page).getByRole("region", { name: "Grid" });
+  const section = gridSection(page);
   await expect(section).toBeVisible();
   await expect(field(page, "Columns")).toHaveValue("3");
   await expect(field(page, "Row gap")).toHaveValue("16");
   await expect(field(page, "Column gap")).toHaveValue("16");
   // A Grid is no Stack: it has no direction or padding of its own.
-  await expect(design(page).getByRole("region", { name: "Stack" })).toHaveCount(0);
+  await expect(stackSection(page)).toHaveCount(0);
 
   await setField(page, "Columns", "2");
   await setField(page, "Column gap", "40");
@@ -87,7 +91,7 @@ test("a Grid shows its columns and gaps in the panel; changed there, every view 
   // Both read afresh each time: the first card may still be moving too.
   await expect(async () => expect((await third.boundingBox())!.x).toBeCloseTo((await first.boundingBox())!.x, 0)).toPass({ timeout: 5_000 });
 
-  await expect(await changeRows(page)).toHaveText([/Columns.*Grid.*3 → 2/, /Column gap.*Grid.*16px → 40px/]);
+  await expect(await changeRows(page)).toReadAs([/Columns.*Grid.*3 → 2/, /Column gap.*Grid.*16px → 40px/]);
   await page.keyboard.press("Escape");
   await page.keyboard.press("Meta+z");
   await page.keyboard.press("Meta+z");
@@ -110,7 +114,7 @@ test("in the phone view, the Grid's columns and gaps change at its breakpoint on
   await expect(design(page).getByRole("button", { name: "Reset columns" })).toHaveCount(0);
   await expect.poll(() => grids(page)).toEqual(["3 16px 16px", "3 16px 16px", "1 8px 16px"]);
   await expect(field(page, "Columns")).toHaveValue("1");
-  await expect(await changeRows(page)).toHaveText([/Row gap.*Grid.*below 768px/]);
+  await expect(await changeRows(page)).toReadAs([/Row gap.*Grid.*below 768px/]);
 });
 
 test("a card dragged between the cells of the Grid takes that cell, in every view; the others make room while it moves, with a line where it goes", async ({ page }) => {
@@ -135,7 +139,7 @@ test("a card dragged between the cells of the Grid takes that cell, in every vie
   await expect.poll(() => cards(page)).toEqual([moved, moved, moved]);
   await expect(page.locator(".tk-drop-line")).toHaveCount(0);
   await expect(freeze).toHaveCSS("translate", "none");
-  await expect(await changeRows(page)).toHaveText([/Reorder.*Card.*4th → 1st/]);
+  await expect(await changeRows(page)).toReadAs([/Reorder.*Card.*4th → 1st/]);
   await page.keyboard.press("Escape");
 
   await page.keyboard.press("Meta+z");
@@ -176,7 +180,7 @@ test("a layer dragged into the Grid from a Stack takes the cell it is let go at"
 
   const children = () => desktop(page).contentFrame().locator(GRID).evaluate((el) => [...el.children].map((child) => child.querySelector("h3")?.textContent ?? child.localName));
   await expect.poll(children).toEqual(["Freeze", "button", "Arrange", "Apply", "Your turn"]);
-  await expect(await changeRows(page)).toHaveText([/Move.*Button.*Stack → Grid/]);
+  await expect(await changeRows(page)).toReadAs([/Move.*Button.*Stack → Grid/]);
 });
 
 test("in a Grid one of whose cards is placed by order, a card dragged or nudged among the cards stays, with no reorder; a layer dragged in goes last", async ({ page }) => {
@@ -209,7 +213,7 @@ test("in a Grid one of whose cards is placed by order, a card dragged or nudged 
 
   const children = () => desktop(page).contentFrame().locator(GRID).evaluate((el) => [...el.children].map((child) => child.querySelector("h3")?.textContent ?? child.localName));
   await expect.poll(children).toEqual([...ORDER, "button"]);
-  await expect(await changeRows(page)).toHaveText([/Move.*Button.*Stack → Grid/]);
+  await expect(await changeRows(page)).toReadAs([/Move.*Button.*Stack → Grid/]);
 });
 
 /** How a view lays the header out: a Grid, by its columns; else its display and direction. */
@@ -225,7 +229,7 @@ const headerIn = (view: Locator) =>
 test("a Stack made a Grid from beside its direction, as in Figma: the Grid section shows, one change, one ⌘Z; and back to a Stack from the Grid section (ticket 109)", async ({ page }) => {
   await enterEditMode(page);
   await layers(page).getByRole("treeitem", { name: "Header", exact: true }).click();
-  const stack = design(page).getByRole("region", { name: "Stack" });
+  const stack = stackSection(page);
   const direction = stack.getByRole("radiogroup", { name: "Direction" });
   await expect(direction.getByRole("radio")).toHaveCount(3);
   await expect(direction.getByRole("radio", { name: "Horizontal" })).toHaveAttribute("aria-checked", "true");
@@ -233,21 +237,21 @@ test("a Stack made a Grid from beside its direction, as in Figma: the Grid secti
   await direction.getByRole("radio", { name: "Grid" }).click();
   // The title and the badge, a column each: a Grid of two, its gap the Stack's.
   await expect.poll(() => Promise.all(views(page).map(headerIn))).toEqual(["grid 2", "grid 2", "grid 2"]);
-  const grid = design(page).getByRole("region", { name: "Grid" });
+  const grid = gridSection(page);
   await expect(grid).toBeVisible();
-  await expect(design(page).getByRole("region", { name: "Stack" })).toHaveCount(0);
+  await expect(stackSection(page)).toHaveCount(0);
   await expect(field(page, "Columns")).toHaveValue("2");
   await expect(field(page, "Column gap")).toHaveValue("12");
   await expect(grid.getByRole("radiogroup", { name: "Direction" }).getByRole("radio", { name: "Grid" })).toHaveAttribute("aria-checked", "true");
   // Its columns changed now are of the same change.
   await setField(page, "Columns", "3");
-  await expect(await changeRows(page)).toHaveText([/Arrangement.*Header.*horizontal Stack.*→ a Grid of 3 equal columns/]);
+  await expect(await changeRows(page)).toReadAs([/Arrangement.*Header.*horizontal Stack.*→ a Grid of 3 equal columns/]);
   await page.keyboard.press("Escape");
 
   await grid.getByRole("radiogroup", { name: "Direction" }).getByRole("radio", { name: "Vertical" }).click();
   await expect.poll(() => Promise.all(views(page).map(headerIn))).toEqual(["flex column", "flex column", "flex column"]);
   await expect(stack.getByRole("radiogroup", { name: "Direction" }).getByRole("radio", { name: "Vertical" })).toHaveAttribute("aria-checked", "true");
-  await expect(await changeRows(page)).toHaveText([/Arrangement.*Header.*→ a vertical Stack with a gap of 12px/]);
+  await expect(await changeRows(page)).toReadAs([/Arrangement.*Header.*→ a vertical Stack with a gap of 12px/]);
   await page.keyboard.press("Escape");
 
   // Each a step: back to the Grid of three, then the Stack it was, and no change.
@@ -262,20 +266,20 @@ test("a Stack made a Grid from beside its direction, as in Figma: the Grid secti
 test("in the phone view, the Grid made a vertical Stack at its breakpoint only, marked there and reset there (ticket 109)", async ({ page }) => {
   await enterEditMode(page);
   await pickGrid(page, phone(page));
-  const direction = design(page).getByRole("region", { name: "Grid" }).getByRole("radiogroup", { name: "Direction" });
+  const direction = gridSection(page).getByRole("radiogroup", { name: "Direction" });
 
   await direction.getByRole("radio", { name: "Vertical" }).click();
   const layouts = () => Promise.all(views(page).map((view) => view.contentFrame().locator(GRID).evaluate((el) => `${getComputedStyle(el).display} ${getComputedStyle(el).flexDirection}`)));
   await expect.poll(layouts).toEqual(["grid row", "grid row", "flex column"]);
-  const stack = design(page).getByRole("region", { name: "Stack" });
+  const stack = stackSection(page);
   await expect(stack).toBeVisible();
-  await expect(await changeRows(page)).toHaveText([/Arrangement.*Grid.*below 768px/]);
+  await expect(await changeRows(page)).toReadAs([/Arrangement.*Grid.*below 768px/]);
   await page.keyboard.press("Escape");
 
   // Marked on the direction, as made a Stack here; its reset takes it back to the Grid there.
   await stack.getByRole("button", { name: "Reset direction" }).click();
   await expect.poll(layouts).toEqual(["grid row", "grid row", "grid row"]);
-  await expect(design(page).getByRole("region", { name: "Grid" })).toBeVisible();
+  await expect(gridSection(page)).toBeVisible();
 });
 
 test("in the phone view, a Grid laying its cards out by areas made a vertical Stack there: the cards in the order of the layers, there alone; ⌘Z and reset take it back (ticket 109's follow-up)", async ({ page }) => {
@@ -303,15 +307,15 @@ test("in the phone view, a Grid laying its cards out by areas made a vertical St
   const placed = [...ORDER].reverse();
   await expect.poll(drawn).toEqual([placed, placed, placed]);
   await pickGrid(page, phone(page));
-  const direction = design(page).getByRole("region", { name: "Grid" }).getByRole("radiogroup", { name: "Direction" });
+  const direction = gridSection(page).getByRole("radiogroup", { name: "Direction" });
   // Offered, though the Grid places its cards itself.
   await expect(direction.getByRole("radio")).toHaveCount(3);
 
   await direction.getByRole("radio", { name: "Vertical" }).click();
   await expect.poll(drawn).toEqual([placed, placed, ORDER]);
-  const stack = design(page).getByRole("region", { name: "Stack" });
+  const stack = stackSection(page);
   await expect(stack).toBeVisible();
-  await expect(await changeRows(page)).toHaveText([/Arrangement.*Grid.*below 768px/]);
+  await expect(await changeRows(page)).toReadAs([/Arrangement.*Grid.*below 768px/]);
   await page.keyboard.press("Escape");
 
   await page.keyboard.press("Meta+z");
@@ -322,7 +326,7 @@ test("in the phone view, a Grid laying its cards out by areas made a vertical St
 
   await stack.getByRole("button", { name: "Reset direction" }).click();
   await expect.poll(drawn).toEqual([placed, placed, placed]);
-  await expect(design(page).getByRole("region", { name: "Grid" })).toBeVisible();
+  await expect(gridSection(page)).toBeVisible();
   await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
 });
 
@@ -536,7 +540,7 @@ test("a Grid the page has shows Dissolve Grid in its section, as ⌥⇧A: a Fram
   await expect(columns).toHaveCount(0);
   await expect.poll(near).toBe(true);
   await expect(tiles).toHaveCSS("display", "block");
-  await expect(await changeRows(page)).toHaveText([/Dissolve Grid.*Grid → Frame/]);
+  await expect(await changeRows(page)).toReadAs([/Dissolve Grid.*Grid → Frame/]);
   await page.keyboard.press("Escape");
 
   await page.keyboard.press("Meta+z");
@@ -579,17 +583,17 @@ test("⇧A on free layers in two rows of two makes a Grid where they are, its co
   const made = layers(page).getByRole("treeitem", { name: "Grid", exact: true }).last();
   await expect(made).toHaveAttribute("aria-selected", "true");
   await expect.poll(near).toBe(true);
-  await expect(design(page).getByRole("region", { name: "Grid" })).toBeVisible();
+  await expect(gridSection(page)).toBeVisible();
   await expect(field(page, "Columns")).toHaveValue("2");
   await expect(field(page, "Row gap")).toHaveValue("16");
   await expect(field(page, "Column gap")).toHaveValue("24");
-  await expect(await changeRows(page)).toHaveText([/Make Grid.*4 layers, 2 columns, row gap 16px, column gap 24px/]);
+  await expect(await changeRows(page)).toReadAs([/Make Grid.*4 layers, 2 columns, row gap 16px, column gap 24px/]);
   await page.keyboard.press("Escape");
 
   await page.keyboard.press("Alt+Shift+A");
   await expect(layers(page).getByRole("treeitem", { name: "Grid", exact: true })).toHaveCount(1);
   await expect.poll(near).toBe(true);
-  await expect(await changeRows(page)).toHaveText([/Make Grid/, /Dissolve Grid.*Grid → Frame/]);
+  await expect(await changeRows(page)).toReadAs([/Make Grid/, /Dissolve Grid.*Grid → Frame/]);
   await page.keyboard.press("Escape");
 
   // A step each: the Grid back, then the boxes as they were, and no change.

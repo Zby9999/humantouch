@@ -1,8 +1,24 @@
-import { expect, test as base, type BrowserContext, type Locator, type Page } from "@playwright/test";
+import { expect as baseExpect, test as base, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { showLayersOnEntry } from "../layers-on-entry.ts";
 import { LAYERS_FOLD_MS, LAYERS_FOLD_RISE_PX } from "../../packages/03kind/src/client/motion";
 
-export { expect } from "@playwright/test";
+/**
+ * Playwright's, and `toReadAs`: the change list's rows read as `patterns`, in order, each row its name and then its
+ * values, which it shows in its tip (designer, 2026-11-10). A string is a part of the row; a pattern, the whole of it.
+ */
+export const expect = baseExpect.extend({
+  async toReadAs(rows: Locator, patterns: (RegExp | string)[], options?: { timeout?: number }) {
+    const read = () =>
+      rows.evaluateAll((els) => els.map((el) => `${el.textContent} ${el.querySelector(".tk-change-text")?.getAttribute("data-tk-tip") ?? ""}`.trim()));
+    const expected = patterns.map((each) => (typeof each === "string" ? baseExpect.stringContaining(each) : baseExpect.stringMatching(each)));
+    try {
+      await baseExpect.poll(read, options).toEqual(expected);
+      return { pass: true, name: "toReadAs", message: () => "the rows read as expected" };
+    } catch (error) {
+      return { pass: false, name: "toReadAs", message: () => (error as Error).message };
+    }
+  },
+});
 export type { CDPSession, Frame, Locator, Page } from "@playwright/test";
 
 /**

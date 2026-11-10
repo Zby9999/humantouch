@@ -232,7 +232,7 @@ test("the badge opens the change list, where each change can be undone on its ow
 
   await badge(page).click();
   const list = changeList(page);
-  await expect(list.getByRole("listitem")).toHaveText([/Fill.*Card.*#FFFFFF → #FF0000/, /Corner radius.*Card.*12px → 2px/, /Fill.*Button.*#DC2626 → #2563EB/]);
+  await expect(list.getByRole("listitem")).toReadAs([/Fill.*Card.*#FFFFFF → #FF0000/, /Corner radius.*Card.*12px → 2px/, /Fill.*Button.*#DC2626 → #2563EB/]);
   await list.getByRole("button", { name: "Undo the corner radius of Card" }).click();
 
   await expect.poll(() => cardStyles(page, "borderRadius", "canvas")).toEqual(["12px", "12px", "12px", "12px"]);
@@ -245,6 +245,51 @@ test("the badge opens the change list, where each change can be undone on its ow
   await expect(list.getByRole("listitem")).toHaveCount(3);
 });
 
+test("a row of the change list names its change on one line, its values in its tip; clicked, its layer is selected and glided to, and the fields it changed blink (designer, 2026-11-10)", async ({ page }) => {
+  await makeThreeChanges(page);
+  await selectRow(page, "Card");
+
+  await badge(page).click();
+  const rows = changeList(page).getByRole("listitem");
+  await expect(rows).toHaveText(["Fill · Card", "Corner radius · Card", "Fill · Button"]);
+  await expect(rows.first().locator(".tk-change-text")).toHaveAttribute("data-tk-tip", "#FFFFFF → #FF0000");
+  // Pointed at, its layer is outlined on the canvas, as pointed at there; and no longer, once the pointer leaves.
+  await rows.nth(2).hover();
+  await expect(page.locator(".tk-hover")).not.toHaveCount(0);
+  // A change at every width: as dark in every view.
+  await expect(page.locator(".tk-hover[data-away]")).toHaveCount(0);
+  await page.getByRole("dialog", { name: "Changes" }).getByRole("heading").hover();
+  await expect(page.locator(".tk-hover")).toHaveCount(0);
+  await rows.nth(2).getByRole("button", { name: "Fill · Button" }).click();
+
+  await expect(changeList(page)).toHaveCount(0);
+  await expect(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true })).toHaveAttribute("aria-selected", "true");
+  // In the middle of the viewport, across.
+  const viewport = (await page.getByLabel("Canvas viewport").boundingBox())!;
+  const off = async () => {
+    const box = (await page.locator(".tk-selection:not([data-away])").first().boundingBox())!;
+    return Math.abs(box.x + box.width / 2 - (viewport.x + viewport.width / 2));
+  };
+  await expect.poll(off).toBeLessThanOrEqual(1);
+  await expect.poll(() => design(page).locator('[data-tk-mark="fill"]').first().evaluate((el) => getComputedStyle(el).animationName)).toBe("tk-ping");
+  // Blinked, as it was.
+  await expect(design(page).locator('[data-tk-mark="fill"]').first()).not.toHaveClass(/\btk-ping\b/);
+});
+
+test("a shadow added, clicked in the change list, blinks its − in the accent, its fields being unmarked (designer, 2026-11-10)", async ({ page }) => {
+  await enterEditMode(page);
+  await selectRow(page, "Button");
+  const effects = design(page).getByRole("group", { name: "Effects" });
+  await effects.getByRole("button", { name: "Add effect" }).click();
+  await page.getByRole("dialog", { name: "Add effect" }).getByRole("option", { name: "Drop shadow", exact: true }).click();
+  await selectRow(page, "Card");
+
+  await badge(page).click();
+  await changeList(page).getByRole("button", { name: "Shadows · Button" }).click();
+  // Blinking, not only marked so: a − is a button, whose styles unset all else.
+  await expect.poll(() => design(page).getByRole("button", { name: "Remove shadow 1" }).evaluate((el) => getComputedStyle(el).animationName)).toBe("tk-ping");
+});
+
 test("in preview mode, a change undone from the list leaves the round at once; the list opens from the keyboard too", async ({ page }) => {
   await makeThreeChanges(page);
   await backToPreviewMode(page);
@@ -255,7 +300,7 @@ test("in preview mode, a change undone from the list leaves the round at once; t
   await expect(list).toBeVisible();
   await list.getByRole("button", { name: "Undo the fill of Card" }).click();
 
-  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/, /Fill.*Button/]);
+  await expect(list.getByRole("listitem")).toReadAs([/Corner radius.*Card/, /Fill.*Button/]);
   await expect(badge(page)).toHaveText("2");
 
   await page.keyboard.press("Escape");
@@ -275,17 +320,17 @@ test("in preview mode, ⌘Z in the change list undoes what was undone there; wit
   const list = changeList(page);
   await list.getByRole("button", { name: "Undo the fill of Card" }).click();
   await list.getByRole("button", { name: "Undo the fill of Button" }).click();
-  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/]);
+  await expect(list.getByRole("listitem")).toReadAs([/Corner radius.*Card/]);
 
   await page.keyboard.press("ControlOrMeta+z");
   await expect(badge(page)).toHaveText("2");
-  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/, /Fill.*Button/]);
+  await expect(list.getByRole("listitem")).toReadAs([/Corner radius.*Card/, /Fill.*Button/]);
   await page.keyboard.press("ControlOrMeta+z");
   await expect(badge(page)).toHaveText("3");
-  await expect(list.getByRole("listitem")).toHaveText([/Fill.*Card/, /Corner radius.*Card/, /Fill.*Button/]);
+  await expect(list.getByRole("listitem")).toReadAs([/Fill.*Card/, /Corner radius.*Card/, /Fill.*Button/]);
   await page.keyboard.press("ControlOrMeta+Shift+z");
   await expect(badge(page)).toHaveText("2");
-  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/, /Fill.*Button/]);
+  await expect(list.getByRole("listitem")).toReadAs([/Corner radius.*Card/, /Fill.*Button/]);
 
   await page.keyboard.press("Escape");
   await page.keyboard.press("ControlOrMeta+z");
@@ -299,7 +344,7 @@ test("in the change list, the keys are the editor's: ⌘Z undoes, ⇧⌘Z and Ct
   const list = changeList(page);
   await list.getByRole("button", { name: "Undo the fill of Card" }).click();
   await list.getByRole("button", { name: "Undo the fill of Button" }).click();
-  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/]);
+  await expect(list.getByRole("listitem")).toReadAs([/Corner radius.*Card/]);
   // Whether the last key pressed was taken from the browser (its own action prevented): seen on the window, after the list.
   await page.evaluate(() => {
     window.addEventListener("keydown", (event) => ((window as unknown as { taken: boolean }).taken = event.defaultPrevented));
@@ -312,20 +357,20 @@ test("in the change list, the keys are the editor's: ⌘Z undoes, ⇧⌘Z and Ct
   await page.keyboard.press("Meta+Shift+y");
   await expect.poll(() => takenFromBrowser()).toBe(false);
   await expect(badge(page)).toHaveText("1");
-  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/]);
+  await expect(list.getByRole("listitem")).toReadAs([/Corner radius.*Card/]);
 
   await page.keyboard.press("Meta+z");
-  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/, /Fill.*Button/]);
+  await expect(list.getByRole("listitem")).toReadAs([/Corner radius.*Card/, /Fill.*Button/]);
   await expect.poll(() => takenFromBrowser()).toBe(true);
   await page.keyboard.press("Control+z");
   await expect(badge(page)).toHaveText("3");
   await expect.poll(() => takenFromBrowser()).toBe(true);
   // Ctrl+Y and ⇧⌘Z redo: the two undone from the list go again.
   await page.keyboard.press("Control+y");
-  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/, /Fill.*Button/]);
+  await expect(list.getByRole("listitem")).toReadAs([/Corner radius.*Card/, /Fill.*Button/]);
   await expect.poll(() => takenFromBrowser()).toBe(true);
   await page.keyboard.press("Meta+Shift+z");
-  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/]);
+  await expect(list.getByRole("listitem")).toReadAs([/Corner radius.*Card/]);
   await expect(badge(page)).toHaveText("1");
   await expect.poll(() => takenFromBrowser()).toBe(true);
 
@@ -333,7 +378,7 @@ test("in the change list, the keys are the editor's: ⌘Z undoes, ⇧⌘Z and Ct
   await page.keyboard.press("Meta+z");
   await page.keyboard.press("Meta+y");
   await expect.poll(() => takenFromBrowser()).toBe(false);
-  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card/, /Fill.*Button/]);
+  await expect(list.getByRole("listitem")).toReadAs([/Corner radius.*Card/, /Fill.*Button/]);
   await expect(badge(page)).toHaveText("2");
 });
 
@@ -350,7 +395,7 @@ test("the last change undone in preview mode can be brought back with ⌘Z, the 
 
   await page.keyboard.press("ControlOrMeta+z");
   await expect(badge(page)).toHaveText("1");
-  await expect(changeList(page).getByRole("listitem")).toHaveText([/Corner radius.*Card.*12px → 2px/]);
+  await expect(changeList(page).getByRole("listitem")).toReadAs([/Corner radius.*Card.*12px → 2px/]);
 });
 
 test("after a reload there is nothing to undo with ⌘Z, but the change list still undoes each change", async ({ page }) => {

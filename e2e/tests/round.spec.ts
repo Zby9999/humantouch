@@ -232,7 +232,7 @@ test("while the round is being applied, the change list only shows what is left 
   const list = page.getByRole("dialog", { name: "Changes" });
 
   await expect(list.getByText("The Agent is applying these changes.")).toBeVisible();
-  await expect(list.getByRole("listitem")).toHaveText([/Corner radius.*Card.*12px → 2px/]);
+  await expect(list.getByRole("listitem")).toReadAs([/Corner radius.*Card.*12px → 2px/]);
   await expect(list.getByRole("button")).toHaveCount(0);
 });
 

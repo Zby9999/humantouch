@@ -60,7 +60,7 @@ test("the color picker's Variables tab shows the project's colors first, as a pa
   for (const name of ["brand-500", "ink", "muted"]) await expect(groups.first().getByRole("option", { name, exact: true })).toBeVisible();
   await expect(groups.nth(1)).toHaveAccessibleName("Tailwind");
   await expect(groups.nth(1).getByRole("option", { name: "red-500" })).toBeVisible();
-  // Pointed at, a swatch tells its name and value in the Variants tab's dark tip, not the browser's (designer, 2026-11-08).
+  // Pointed at, a swatch tells its name and value in the Variables tab's dark tip, not the browser's (designer, 2026-11-08).
   const ink = picker.getByRole("option", { name: "ink", exact: true });
   await expect(ink).not.toHaveAttribute("title");
   await ink.hover();
@@ -175,7 +175,7 @@ test("the menu of Effects' + is two panels: the effect types nearer the button, 
   await page.keyboard.press("ArrowRight");
   await expect(active).toHaveText("Inner shadow");
 
-  // A shadow Variable pointed at shows its layers, as the Variants tab does, at its panel's left.
+  // A shadow Variable pointed at shows its layers, as the Variables tab does, at its panel's left.
   const details = page.locator(".tk-variants-details");
   const md = variables.getByRole("option", { name: "md", exact: true });
   await md.hover();
@@ -441,13 +441,13 @@ test("on a Tailwind v4 project, its default theme's Variables are offered; with 
   await expect(page.getByRole("dialog", { name: /color$/ }).getByRole("tab")).toHaveCount(0);
 });
 
-/** The Variants tab shows the project's own at first (designer, 2026-11-09): Tailwind's with them. */
+/** The Variables tab shows the project's own at first (designer, 2026-11-09): Tailwind's with them. */
 async function showAll(page: Page) {
   await design(page).getByRole("combobox", { name: "Variables shown" }).click();
   await page.getByRole("listbox", { name: "Variables shown" }).getByRole("option", { name: "All" }).click();
 }
 
-test("with nothing selected, the Variants tab shows the project's own Variables first; a project with none, Tailwind's", async ({ page }) => {
+test("with nothing selected, the Variables tab shows the project's own Variables first; a project with none, Tailwind's", async ({ page }) => {
   await enterEditMode(page);
   const filter = design(page).getByRole("combobox", { name: "Variables shown" });
   await expect(filter).toHaveValue("own");

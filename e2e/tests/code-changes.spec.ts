@@ -287,7 +287,7 @@ test("the toasts: at the canvas's bottom left, by the Layers panel or the window
   expect(box.x).toBe(16);
   expect(viewport.height - (box.y + box.height)).toBe(16);
   await setField(page, "Stroke weight", "1.3");
-  await expect(page.locator(".tk-toast").filter({ hasText: "Stroke weights go in 0.5px steps" })).toBeVisible();
+  await expect(page.locator(".tk-toast").filter({ hasText: "Stroke must be a multiple of 0.5px." })).toBeVisible();
   await expect(changed).toBeVisible();
   // About 8 seconds, then its fade.
   await expect(changed).toHaveCount(0, { timeout: 12_000 });

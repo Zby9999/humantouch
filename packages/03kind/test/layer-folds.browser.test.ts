@@ -52,7 +52,7 @@ function openPanel(editor: ReturnType<typeof openCanvas>["editor"], outside: () 
   let broughtBack = 0;
   let shown = true;
   const draw = () =>
-    act(() => render(shown ? h(LayerTreeView, { tree: editor.tree(), offCanvas: outside(), selected: [], folds, broughtBack, onSelect() {} }) : null, host));
+    act(() => render(shown ? h(LayerTreeView, { tree: editor.tree(), offCanvas: outside(), selected: [], folds, broughtBack, onSelect() {}, onHover() {} }) : null, host));
   cleanups.push(() => {
     render(null, host);
     host.remove();

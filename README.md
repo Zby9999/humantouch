@@ -40,9 +40,9 @@ Use the page as you always do, and bring it to the state you want to change: ope
 Click the toggle. The page freezes into a canvas, shown side by side in the Desktop, Tablet and Phone views, with the Layers panel on the left and the Design panel on the right.
 
 - Drag layers to move them, or move them off the canvas: they stay beside it as off-canvas layers, for you to put back later. Select a few and press ⇧A to make a Stack.
-- Set Position, Size, Stack, Padding, Fill, Stroke, Appearance, Effects and Text in the Design panel. Draw a new Frame (F) or Text (T) on the canvas.
+- Set Position, Size, Layout, Padding, Fill, Stroke, Appearance, Effects and Text in the Design panel. Draw a new Frame (F) or Text (T) on the canvas.
 - A change made in the Desktop view applies at every width, except at a breakpoint where you have already changed that property in its own view; one made in the Tablet or Phone view applies only at that view's breakpoint.
-- With nothing selected, the Design panel lists the project's Variables (Variants).
+- With nothing selected, the Design panel lists the project's Variables.
 - When the Design panel cannot say what you want, pick the Brief tool (B) and click the layer: write what the Agent should achieve there on its card, which sits beside the views with a dashed line to the layer.
 - Click the full screen button at the top right of a view to see the canvas at full size, at that view's width; press Esc to come back.
 

@@ -688,7 +688,7 @@ test("a double click on text in the phone view types in it there, the caret in t
   await expect(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Third 基", exact: true })).toBeVisible();
   // The same change as typed in the desktop view: words for every width.
   await page.getByRole("button", { name: /not applied yet/ }).click();
-  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Text.*“Third Kind” → “Third 基”/]);
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toReadAs([/Text.*“Third Kind” → “Third 基”/]);
   await page.keyboard.press("Escape");
 
   await page.keyboard.press("ControlOrMeta+z");
@@ -798,26 +798,43 @@ test("a layer dragged below the bottom of a view leaves every view as tall as it
   for (const view of views) await expect(view.contentFrame().locator("article:last-child")).toBeHidden();
 });
 
-test("a layer selected, its selection in the views other than the one worked in is lighter, its handles' squares white still", async ({ page }) => {
+test("a layer selected, its selection in the views other than the one worked in is lighter, with no handles; the layer pointed at too, in the views other than the one pointed in (designer, 2026-11-10)", async ({ page }) => {
   await page.goto(DEV_URL);
   await enterEditMode(page);
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
   const outline = (view: string) => page.locator(`.tk-selection[data-view="${view}"]`);
-  const corner = (view: string) => page.locator(`.tk-handles[data-view="${view}"] .tk-handle[data-corner]`).first();
-  const look = (el: Locator) => el.evaluate((node) => [getComputedStyle(node).borderTopColor, getComputedStyle(node).backgroundColor]);
+  const handles = (view: string) => page.locator(`.tk-handles[data-view="${view}"]`);
+  const look = (el: Locator) => el.evaluate((node) => getComputedStyle(node).borderTopColor);
 
-  // Worked in the desktop view at first.
+  // Worked in the desktop view at first: its handles there alone.
   await expect(outline("Desktop")).not.toHaveAttribute("data-away");
   for (const view of ["Tablet", "Phone"]) await expect(outline(view)).toHaveAttribute("data-away", "true");
-  const [near, far] = [await look(outline("Desktop")), await look(outline("Phone"))];
-  expect(far[0]).not.toBe(near[0]);
-  const [nearCorner, farCorner] = [await look(corner("Desktop")), await look(corner("Phone"))];
-  expect(farCorner[0]).not.toBe(nearCorner[0]);
-  expect(farCorner[1]).toBe("rgb(255, 255, 255)");
+  expect(await look(outline("Phone"))).not.toBe(await look(outline("Desktop")));
+  await expect(handles("Desktop")).toHaveCount(1);
+  for (const view of ["Tablet", "Phone"]) await expect(handles(view)).toHaveCount(0);
 
   // Pressed in the phone view: it is the one worked in.
   const card = (await phone(page).contentFrame().locator("article").first().boundingBox())!;
   await page.mouse.click(card.x + 20, card.y + 10);
   await expect(outline("Phone")).not.toHaveAttribute("data-away");
   for (const view of ["Desktop", "Tablet"]) await expect(outline(view)).toHaveAttribute("data-away", "true");
+  await expect(handles("Phone")).toHaveCount(1);
+  for (const view of ["Desktop", "Tablet"]) await expect(handles(view)).toHaveCount(0);
+
+  // Pointed at in the tablet view: outlined as it is there, lighter in the others.
+  const hover = (view: string) => page.locator(`.tk-hover[data-view="${view}"]`);
+  const heading = (await tablet(page).contentFrame().locator("h1").boundingBox())!;
+  await page.mouse.move(heading.x + 10, heading.y + heading.height / 2);
+  await expect(hover("Tablet")).toHaveCount(1);
+  await expect(hover("Tablet")).not.toHaveAttribute("data-away");
+  for (const view of ["Desktop", "Phone"]) await expect(hover(view)).toHaveAttribute("data-away", "true");
+
+  // A row pointed at in the Layers panel: the layer outlined in every view alike.
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Header", exact: true }).hover();
+  for (const view of ["Desktop", "Tablet", "Phone"]) {
+    await expect(hover(view)).toHaveCount(1);
+    await expect(hover(view)).not.toHaveAttribute("data-away");
+  }
+  await page.mouse.move(0, 0);
+  for (const view of ["Desktop", "Tablet", "Phone"]) await expect(hover(view)).toHaveCount(0);
 });

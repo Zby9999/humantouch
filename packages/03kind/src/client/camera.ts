@@ -85,6 +85,17 @@ function centered(bounds: Bounds, area: DOMRect, zoom: number): Camera {
   return { zoom, x: (area.width - bounds.width * zoom) / 2, y: (area.height - bounds.height * zoom) / 2 };
 }
 
+/**
+ * A box (in canvas px) in the middle of the viewport, below the tools: at the
+ * zoom the camera has, or zoomed out as far as it takes to fit, never in
+ * (designer, 2026-11-10).
+ */
+export function centredOn(camera: Camera, box: Box, area: Pick<DOMRect, "width" | "height">): Camera {
+  const room = { width: area.width - 2 * PADDING, height: area.height - TOP - PADDING };
+  const zoom = clamp(Math.min(camera.zoom, room.width / box.width, room.height / box.height));
+  return { zoom, x: area.width / 2 - (box.x + box.width / 2) * zoom, y: TOP + room.height / 2 - (box.y + box.height / 2) * zoom };
+}
+
 /** Every edge of `bounds` within the viewport, where the camera has them: all of them in sight. */
 export function showsWhole(camera: Camera, bounds: Bounds, area: Pick<DOMRect, "width" | "height">): boolean {
   const left = camera.x + (bounds.x ?? 0) * camera.zoom;

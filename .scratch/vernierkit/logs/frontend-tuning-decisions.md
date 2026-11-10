@@ -250,3 +250,70 @@
 - Grid 格子的 Hug / Fill（f046089）在 Agent 那边还没跟上：写法规则只讲 Stack、核对把格子里的 `w-full` 读成 Fixed，记进了 ticket 109。
 - 进编辑模式的余量又少了约 5ms（ticket 105 发布后做）。
 - 这份记录还没有 11-09 的条目；「待定」里「打字时在文字里单击、双击」已在 11-08 做了。
+
+# 第 2 轮（2026-11-10，分支 claude/musing-hellman-3caa3c）
+
+设计师 2026-11-10 说「都没问题了，收起来」。合并等设计师一句话（规划会话定）。每个改动单独一个提交，都是设计师当场看过的。
+
+## Design 面板
+
+- 只有某几条边有描边时，粗细拖到 0 再拖回来，只回到那几条边，不再变成四边都有；`border: 0 solid` 落进代码后读成粗细为 0 的描边，页面给所有元素的 `border: 0` 仍读成没有描边（7bdbd635）。
+  - 第 1 轮遗留。`Properties.tsx`、`stroke-weight.ts`。
+- 强调色上的按钮（开着的、加出来那一项的 −、改过的勾选和分段控件）用改过的输入框那种深一点的细边和阴影；颜色框和它的 − 相距 5px，同 Independent corners 和 Wrap（5e23ee49）。`styles.ts`。
+- 什么都没选时面板标题写 Variables，不写 Variants（30be9e0a）。Variants 在 Figma 里指组件的变体。第 1 轮遗留。
+- Stack 和 Grid 的区块都叫 Layout，只有一个；Grid 里方向放在列数旁边，少一行（eaead101）。`Properties.tsx`、`GridSection.tsx`。
+
+## 画布上的选择和指向
+
+- 不是正在工作的视图里，选择框不带把手；指向的图层在别的视图里淡一些；在 Layers 面板指向一行，各视图里都一样描出它的图层（86bebdfd）。
+- 整个拖动画布外的图层时，选择框跟着走，不再留在原地等松手（c86a215f）。
+
+## 改动列表
+
+- 每条改动一行：改了什么 · 哪个图层；具体值放进提示。点一行，镜头滑到它的图层（在它生效的视图里），改的那一项闪两下变淡；指向一行，画布上描出它的图层（a0dd1493）。
+- 强调色上的 − 也跟着闪（7b272854）。
+- 指向一行时，在它生效的视图里描出图层，其他视图里淡一些（544d1466）。
+
+## Brief（ticket 121 之后的外观和摆放）
+
+- Brief 工具写在点到的最深的图层上，按住时就把它标出来（e7a1d658）。
+- 卡片按设计师 Figma 节点 199:1022 做（9af81c63）：只有 brief 本身，不写图层名、不要标题栏和 ×；220px 宽，内边距 6px，圆角 12px，0.5px 细边加 1px 阴影；书写时箭头在右下，图标 14px；在输入框周围按下仍保持书写。留空就是去掉 brief。
+  - 中间试过几种（a9898796、46c41d04、e890f4ff、1b797a35、3aaa8a80），以 9af81c63 为准。
+- 卡片离视图 40px，是视图间距的一半（40ac2d53）。
+- 连线（40ac2d53、d5a113ea），学 Figma 的批注：
+  - 只走水平和垂直，灰色虚线和圆点，转角是圆的（8px）。
+  - 从卡片侧边中点，接到图层朝向它那条边的中点；会压到别的线、或穿过别的带 brief 的图层时，改接上边或下边的中点。
+  - 同一列的线错开拐弯，不重叠、不交叉。
+- 新 brief 在选中图层旁、视图里面写；提交后滑到视图外（d5a113ea）。
+- 已有的 brief 再打开：卡片原地往下长，下面的卡片让开，它的线不动（1779ae1d）；关闭时不再弹跳（2839a892）。
+- Brief 工具的图标是「添加便签」：缺一个角的便签加中间一个加号，没有折角（90ac31a2、487a72aa）；Layers 面板里有 brief 的图层仍是原来的便签。
+- 涉及文件：`brief-cards.ts`（摆放、连线，纯函数）、`BriefCards.tsx`、`styles.ts`、`icons.tsx`、`Shell.tsx`。
+
+## 提示文字（设计师逐条看了提示清单页，https://claude.ai/artifact/AkndAhamiHMLdhU9y1R5qS）
+
+- 描边粗细取整时：「Stroke must be a multiple of 0.5px.」（8f0de3c7）。原来是「Stroke weights go in 0.5px steps: 1.3px is now 1.5px.」
+- 锥形渐变：「Conic gradients can't be edited.」（8f0de3c7）。原来是「A conic gradient is shown here, not edited.」
+- Promote 不再弹 toast，`promotedNote` 一起删掉（8f0de3c7）。为什么：改动列表里本来看得到哪些上了组件（「· Card itself」）、哪些留下；原因是代码层面的，设计师用不上；原因多时一行 toast 会被截断。
+- 画布做不出来时，两行：「Couldn't turn this page into a canvas.」/「Ask your Agent to look into it.」，错误照常写进 console（12d79d55、2c22887a）。
+  - 中间加过 Try again 和 Start from the page，设计师改主意撤了：重试多半还是失败，反而惹人烦；交给 Agent 查成功率更高。
+- 留给设计师：清单页末尾列了 5 种完全没有提示的情况（禁用控件不说原因、几种失败只进 console、页面检查的「应用不了」原因只给 Agent、Promote 按钮没有说明、加视图时宽度超范围没有文字）。规划会话放进决策报告，先不开票。
+
+## 测试记录
+
+2026-11-10 收尾检查（规划会话要求先跑，合并等设计师）。先并入 main 1676dc08（102、123、124、125、126），没有冲突。
+
+- 类型检查通过；单元测试 1205 条通过（1 条跳过）。
+- 整套 e2e：page 组 448 条通过，1 条失败是 `layers.spec:316`（已知会偶发失败的动画测试），单独重跑 3/3 通过。
+- project files 组：第一次在本 worktree 跑，失败了 44 条。原因是设计师 5350 的预览也从本 worktree 的 `examples/vite-react19-tw4` 起服务，两边的本地服务同时写同一个 `.03kind/`（409、`checks.json` 改名冲突），不是代码问题；那次运行也把示例里的 `.03kind/` 清掉了。
+  - 之后改在临时 worktree 里跑（端口 5960 起）：148 条通过，3 条失败，都是 bench-scenarios 的 Grid 场景。
+  - 修了以后全部通过。
+- 测量台：main 的 Grid 场景（ticket 109、110）还按 Design 面板的区块名 Stack / Grid 找，第 2 轮已改名为 Layout（eaead101）。只改 `e2e/bench/scenarios.ts` 的定位（04c1a613），产品代码没动。
+  - `--dry` 29/29。
+  - `--claim-out` 和 main 1676dc08 逐字比较，29 个场景全同。去掉 Promote 的 toast 和 `promotedNote` 没碰到认领说明：那句话只在 toast 里，不进改动说明。
+  - `--scripted` 20/20。
+- 性能（headless 1440×813，只作前后对比；126 压 CPU，负载高）：
+  - 整套 20 条两边都过。
+  - 进编辑模式：第一次在高负载下跑，main 146.0ms，本分支 155.0ms。负载降下来后单独轮流各跑两次：main 128.2、134.1ms；本分支 123.8、138.8ms。没有退步。
+  - 拖动、改圆角、改 Stack 间距和 main 相当，个别软指标两边都偶尔没达到。
+- 切换按钮 gzip：Vite 提供时 10119 B，发布的包 9958 B（上限 10240 B）。
+- README 的界面用词：只有第 46 行写到 Brief 卡片在视图旁、有虚线连到图层，仍然对。

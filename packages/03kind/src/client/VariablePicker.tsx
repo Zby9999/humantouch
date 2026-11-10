@@ -15,7 +15,7 @@ import { palette, paletteLines, Tip } from "./VariantsPanel";
 const NAMED_ROW = 11;
 
 /**
- * The picker's palette as the Variants tab's (designer, 2026-11-08), without
+ * The picker's palette as the Variables tab's (designer, 2026-11-08), without
  * names: the ramps' lines, then the named colors, `NAMED_ROW` a row on as
  * many columns, each named in its title. Undefined where a ramp has no color
  * for a step: a named row has no placeholders, as it has no steps.
@@ -196,7 +196,7 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
   useEffect(() => search.current?.focus(), []);
   const found = !catalog ? [] : query.trim() ? catalog.named(group, query) : catalog.of(group);
   const headings = [...new Set(found.map(({ variable }) => headingOf(variable)))];
-  /** The palette's swatch pointed at or focused: its name and value in the Variants tab's dark tip, not the browser's (designer, 2026-11-08). */
+  /** The palette's swatch pointed at or focused: its name and value in the Variables tab's dark tip, not the browser's (designer, 2026-11-08). */
   const [pointed, setPointed] = useState<{ entry: Resolved; at: DOMRect } | null>(null);
   const point = (entry: Resolved, swatch: HTMLElement) => setPointed({ entry, at: swatch.getBoundingClientRect() });
   return (
@@ -214,7 +214,7 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
       />
       <div class="tk-variable-list" role="listbox" aria-label="Variables">
         {!found.length && <p class="tk-layer-note">No variables match.</p>}
-        {/* Colors not searched for: a palette, the project's own first, as the Variants tab shows them (designer, 2026-11-07). */}
+        {/* Colors not searched for: a palette, the project's own first, as the Variables tab shows them (designer, 2026-11-07). */}
         {group === "color" && !query.trim()
           ? (["Project", "Tailwind"] as const).map((heading) => {
               const part = found.filter(({ variable }) => variable.own === (heading === "Project"));
@@ -327,7 +327,7 @@ export function VariableSlot({ label, slot, property, part, rowReset, children }
   return (
     <div class={offered ? "tk-variable-slot" : "tk-variable-slot is-alone"} {...typedIn.handlers}>
       {bound ? (
-        <div class={`tk-field tk-variable-chip${changed ? " is-changed" : ""}`}>
+        <div class={`tk-field tk-variable-chip${changed ? " is-changed" : ""}`} data-tk-mark={changed ? property : undefined}>
           {own.icon ? <Icon name={own.icon} /> : own.glyph ? <span class={own.small ? "tk-glyph is-small" : "tk-glyph"}>{own.glyph}</span> : <Icon name="variable" />}
           <button
             type="button"
