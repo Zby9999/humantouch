@@ -4,7 +4,7 @@
  * of change the round has, each once. An Agent that never loaded the Skill
  * finds them all here; one that did reads only what this round needs.
  */
-import { dissolvesGrid, drawnIn, makesGrid, type Change, type Created, type Place } from "./client/changeset";
+import { dissolvesGrid, drawnIn, makesGrid, type Change, type Composed, type Created, type Dissolved, type Place, type Target } from "./client/changeset";
 import { checkable, forOneUsage, foundByMarker, isEndOffset, makerOf, PLACING, textMovedInPlace, type PlacedAlong } from "./client/checkable";
 import type { Property } from "./client/property-table";
 import { listed } from "./design-values";
@@ -32,10 +32,10 @@ const HOW_TO_WRITE: HowToWrite[] = [
   {
     // Said only for a layer a third-party component draws (ticket 120): an Agent reached into one from its usage, and the notes of every other round stay as they were.
     name: "Third-party components",
-    calledFor: (change) => !!change.target.chain[0]?.thirdParty,
+    calledFor: (change) => layersStyled(change).some(drawnByThirdParty),
     text:
-      "a layer a third-party component draws is changed only by what the component takes from its usage (a prop, a `className` or `style` it passes on). " +
-      "Do not reach into its elements from the usage either: no wrapper with descendant selectors (`[&>span]:w-[90px]`), no global rule on its class names. " +
+      "change a layer a third-party component draws by what the component takes from its usage (a prop, a `className` or `style` it passes on); " +
+      "an element around it may place or size it as a whole, but do not reach into its elements from the usage: no child or descendant selectors on any element around it (`[&>span]:w-[90px]`, `*:…`, `:has()`), no global rule on its class names. " +
       "Those depend on how the library draws its elements, and stop working, with no error, once it draws them otherwise: a change that cannot be made without them is left out and reported.",
   },
   {
@@ -273,6 +273,20 @@ function replaceBy(helper: ClassHelper | null | undefined): string {
 interface HowChecked {
   calledFor(change: Change, list: Change[]): boolean;
   text: string;
+}
+
+/** Whether a third-party component draws the layer (ticket 120): the innermost level of its usage chain is a dependency's. */
+const drawnByThirdParty = (target: Target) => !!target.chain[0]?.thirdParty;
+
+/**
+ * The layers a change styles (ticket 120): its own, and those it gives styles
+ * of their own: each layer of a Stack or Grid dissolved (absolute, placed and
+ * sized), and each a new Stack or Grid takes over the margins of.
+ */
+function layersStyled(change: Change): Target[] {
+  if (change.kind === "unstack") return [change.target, ...((change.after as Dissolved | null)?.layers ?? []).map((layer) => layer.target)];
+  if (change.kind === "stack") return [change.target, ...((change.after as Composed | null)?.layers ?? []).filter((layer) => layer.unmargined).map((layer) => layer.target)];
+  return [change.target];
 }
 
 /** A layer placed absolute, as the page checks it: where it is drawn. */

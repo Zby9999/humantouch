@@ -34,7 +34,7 @@
 
 **做了什么**
 
-- 写法规则（`writing-rules.ts`）在「Every change」后面加一条「Third-party components」，只在这一轮有改动的图层使用链最里那一层是第三方（`target.chain[0].thirdParty`，和锁定图层、认领说明 Scope 里「The layer is drawn by a dependency」用的是同一份使用链）时出现。措辞（代定 1）：
+- 写法规则（`writing-rules.ts`）在「Every change」后面加一条「Third-party components」，只在这一轮有改动的图层使用链最里那一层是第三方（`target.chain[0].thirdParty`，和锁定图层、认领说明 Scope 里「The layer is drawn by a dependency」用的是同一份使用链）时出现（review 后还看解散、做 Stack 时的图层，措辞也改了，见下面「Review 后的修正」）。初版措辞：
 
   > - **Third-party components:** a layer a third-party component draws is changed only by what the component takes from its usage (a prop, a `className` or `style` it passes on). Do not reach into its elements from the usage either: no wrapper with descendant selectors (`[&>span]:w-[90px]`), no global rule on its class names. Those depend on how the library draws its elements, and stop working, with no error, once it draws them otherwise: a change that cannot be made without them is left out and reported.
 
@@ -58,9 +58,20 @@
 
 #### 代定的事（待设计师确认）
 
-1. 新规则的英文措辞（上面那段），名字「Third-party components」，放在「Every change」紧后面。先说只能用组件从使用处收的东西改（prop、它传下去的 `className` 或 `style`），再说也不要伸进它的元素里，例子用真实 Agent 写过的 `[&>span]:w-[90px]`，理由是库换个画法就悄悄失效，最后是做不到就留着不做、写进报告。
+1. （review 后改）新规则的英文措辞，名字「Third-party components」，放在「Every change」紧后面，见下面「Review 后的修正」里的最终文字。允许外面一层把它整体摆放、定大小（GLOSSARY：锁定图层可以整体移动、调外部尺寸），只禁止伸进它的元素：任何包在它外面的元素上都不写子、后代选择器（`[&>span]:w-[90px]`、`*:…`、`:has()`），不对它的类名写全局规则；理由是库换个画法就悄悄失效，做不到就留着不做、写进报告。
 2. `done` 不认出「伸进第三方元素改」，不提示。要认得从代码改动里找出包在第三方组件外的后代选择器、对它类名的全局规则，不是小改动；先靠规则和真 Agent 复验看效果。
-3. 判断只看改动自己的图层（`target`）：挪动、做 Stack 时，容器或别的被带到的图层是第三方的，不叫出这条（这些改动写在使用处的 JSX 上，不伸进组件里面）。
+3. （review 后改）判断看这条改动要给样式的图层：改动自己的图层（`target`）；解散 Stack、Grid 时它的每个图层（都要写 `position: absolute`、`left` / `top` 和大小）；做 Stack、Grid 时接手了 margin 的图层（`unmargined`）。做 Stack、Grid 时只挪 JSX 的图层、挪动时的容器是第三方的，不叫出这条（只动使用处的 JSX）。
+
+### Review 后的修正（2026-11-10）
+
+- 判断从只看 `target` 改成 `layersStyled`（`writing-rules.ts`）：`unstack` 加上 `after.layers[].target`，`stack`（含做 Grid）加上 `unmargined` 的 `after.layers[].target`，任一个使用链最里是第三方就出现。
+- 措辞改了，最终文字：
+
+  > - **Third-party components:** change a layer a third-party component draws by what the component takes from its usage (a prop, a `className` or `style` it passes on); an element around it may place or size it as a whole, but do not reach into its elements from the usage: no child or descendant selectors on any element around it (`[&>span]:w-[90px]`, `*:…`, `:has()`), no global rule on its class names. Those depend on how the library draws its elements, and stop working, with no error, once it draws them otherwise: a change that cannot be made without them is left out and reported.
+
+- 测试改成一个 describe：用 Badge 的宽度改成 Fixed 90px（88 那样的改动，不是锁定图层改不了的填充）；另 7 条：锁定图层挪动有；`chain` 为空没有；解散 Stack、其中一个图层是 Badge 有，全是项目自己的图层没有；做 Stack、做 Grid 接手 Badge 的 margin 有；做 Stack 只挪 Badge 的 JSX 没有。
+- 重跑：`pnpm typecheck` 过；`pnpm test` 1154 过 1 跳过，node 126 过；`--dry` 28/28；`--scripted` 19/19；third-party 的 2 个 e2e 剧本（`--project="project files" --no-deps`）过。`--dry --claim-out` 和 main 25b8882 比，仍只有 `third-party.md` 多出上面那一行（`31a32`），没有别的场景因解散、做 Stack 的图层而多出这条。
+- 包：切换按钮、`editor.dev.js` 仍逐字节相同（同上面的哈希）；`cli.js` 173898 B（比 main +1267 B），gzip -9 48069 B（+417 B）。
 
 #### 遗留风险
 
