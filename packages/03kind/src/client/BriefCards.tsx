@@ -163,7 +163,7 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
           (p, i) =>
             p.line && (
               <g key={p.key} data-selected={cards[i].selected || undefined}>
-                <line x1={p.line.from.x} y1={p.line.from.y} x2={p.line.to.x} y2={p.line.to.y} />
+                <polyline points={p.line.path.map((at) => `${at.x},${at.y}`).join(" ")} />
                 <circle cx={p.line.to.x} cy={p.line.to.y} r={3 / camera.zoom} />
               </g>
             ),

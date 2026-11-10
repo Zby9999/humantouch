@@ -1453,11 +1453,11 @@ button.tk-change-text:focus-visible { outline: 2px solid var(--tk-accent); outli
 .tk-selection-tool:focus-visible { outline: 2px solid var(--tk-instance); outline-offset: 2px; }
 /*
  * The briefs (ticket 121): cards on the stage, beside the views, in canvas px, so they pan and zoom with the
- * canvas as notes on it do; a dashed line from each to its layer, 1px at any zoom.
+ * canvas as notes on it do; a dashed line from each to its layer, across and down only, 1px at any zoom.
  */
 .tk-brief-cards { position: absolute; top: 0; left: 0; transform-origin: 0 0; pointer-events: none; }
 .tk-brief-lines { position: absolute; top: 0; left: 0; overflow: visible; }
-.tk-brief-lines line { stroke: var(--tk-accent); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.tk-brief-lines polyline { fill: none; stroke: var(--tk-accent); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
 .tk-brief-lines circle { fill: var(--tk-accent); }
 .tk-brief-lines g:not([data-selected]) { opacity: 0.6; }
 /*

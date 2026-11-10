@@ -39,17 +39,29 @@ export interface Point {
   y: number;
 }
 
+/** A card's line to its layer: from the card, to the middle of the layer's side, by `path`, across and down only. */
+export interface Line {
+  from: Point;
+  to: Point;
+  /** Every corner of it, `from` first and `to` last. */
+  path: Point[];
+}
+
 /** A card placed: where it is, and its line from the card to its layer, if the layer is drawn. */
 export interface PlacedCard extends Box {
   key: string;
   side: "left" | "right" | "top";
-  line: { from: Point; to: Point } | null;
+  line: Line | null;
 }
 
 /** How wide a card is, in canvas px: it scales with the canvas, as a note on it does. */
 export const CARD_WIDTH = 220;
-/** Between a card and its host, in canvas px: as far again as the gap between views (`VIEW_GAP`). */
-export const CARD_OFFSET = 160;
+/** Between a card and its host, in canvas px: half the gap between views (`VIEW_GAP`), close to it as Figma's notes are (designer, 2026-11-10). */
+export const CARD_OFFSET = 40;
+/** How far in from a card's corners its line may leave it, in canvas px: its corners' radius. */
+const CARD_CORNER = 12;
+/** Between the bends of lines side by side, in canvas px, at most. */
+const BEND_STEP = 8;
 /** Between one card and the next, and between a card and anything else, in canvas px. */
 export const CARD_GAP = 16;
 /** Above a view, the room its label takes, in canvas px: a card in a row above it stays clear of it. */
@@ -95,9 +107,40 @@ export function placeCards(cards: CardToPlace[], obstacles: Box[]): PlacedCard[]
     }
     const box = { x, y, width, height };
     taken.push(box);
-    placed.set(i, { key: card.key, side, ...box, line: layer ? lineOf(box, layer) : null });
+    placed.set(i, { key: card.key, side, ...box, line: layer ? lineOf(box, layer, side === "top" ? "down" : "across") : null });
   }
+  spreadBends(cards, placed);
   return cards.map((_, i) => placed.get(i)!);
+}
+
+/**
+ * The lines of a column (or a row) of cards bent at the same place would run on one another: each is bent a little
+ * further from its card than the one before, in the order that keeps them from crossing (the line of the card further
+ * from its layer, further out), about the middle of the space between the cards and their view.
+ */
+function spreadBends(cards: CardToPlace[], placed: Map<number, PlacedCard>) {
+  const groups = new Map<string, { i: number; card: PlacedCard; layer: Box }[]>();
+  placed.forEach((card, i) => {
+    const layer = cards[i].layer;
+    if (!layer || !card.line || card.line.path.length === 2) return;
+    const across = card.side !== "top";
+    const back = across ? card.line.to.y < card.line.from.y : card.line.to.x < card.line.from.x;
+    const { host } = cards[i];
+    const key = `${host.x},${host.y},${card.side},${back}`;
+    groups.set(key, [...(groups.get(key) ?? []), { i, card, layer }]);
+  });
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const across = group[0].card.side !== "top";
+    const at = (c: PlacedCard) => (across ? c.line!.from.y : c.line!.from.x);
+    const back = across ? group[0].card.line!.to.y < group[0].card.line!.from.y : group[0].card.line!.to.x < group[0].card.line!.from.x;
+    group.sort((a, b) => (back ? at(a.card) - at(b.card) : at(b.card) - at(a.card)));
+    const step = Math.min(BEND_STEP, (CARD_OFFSET - 2 * BEND_STEP) / (group.length - 1));
+    group.forEach(({ i, card, layer }, k) => {
+      const bend = CARD_OFFSET / 2 + (k - (group.length - 1) / 2) * step;
+      placed.set(i, { ...card, line: lineOf(card, layer, across ? "across" : "down", bend) });
+    });
+  }
 }
 
 /** The free side of the host nearest the layer, the left on a tie; with neither free, above it. */
@@ -127,11 +170,31 @@ function middles(box: Box): Point[] {
   ];
 }
 
-/** The line from a card to its layer: from the middle of the card's side nearest the layer to the middle of the layer's side nearest the card. */
-export function lineOf(card: Box, layer: Box): { from: Point; to: Point } {
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+/**
+ * The line from a card to its layer, as Figma draws a note's: to the middle of the layer's side nearest the card,
+ * leaving the card level with it if it can, else from as near it as it can, bent once in between, `bendAt` from the
+ * card (the layer entered across, `"across"`, or from above or below, `"down"`; by default, whichever side of it is
+ * nearest).
+ */
+export function lineOf(card: Box, layer: Box, way?: "across" | "down", bendAt = CARD_OFFSET / 2): Line {
   const center = { x: card.x + card.width / 2, y: card.y + card.height / 2 };
-  const to = nearest(middles(layer), center);
-  return { from: nearest(middles(card), to), to };
+  const sides = middles(layer);
+  const to = way === "across" ? nearest(sides.slice(0, 2), center) : way === "down" ? nearest(sides.slice(2), center) : nearest(sides, center);
+  const across = to === sides[0] || to === sides[1];
+  if (across) {
+    const right = center.x < to.x;
+    const from = { x: right ? card.x + card.width : card.x, y: clamp(to.y, card.y + CARD_CORNER, card.y + card.height - CARD_CORNER) };
+    if (from.y === to.y) return { from, to, path: [from, to] };
+    const bend = from.x + Math.sign(to.x - from.x) * Math.min(bendAt, Math.abs(to.x - from.x) / 2);
+    return { from, to, path: [from, { x: bend, y: from.y }, { x: bend, y: to.y }, to] };
+  }
+  const below = center.y < to.y;
+  const from = { x: clamp(to.x, card.x + CARD_CORNER, card.x + card.width - CARD_CORNER), y: below ? card.y + card.height : card.y };
+  if (from.x === to.x) return { from, to, path: [from, to] };
+  const bend = from.y + Math.sign(to.y - from.y) * Math.min(bendAt, Math.abs(to.y - from.y) / 2);
+  return { from, to, path: [from, { x: from.x, y: bend }, { x: to.x, y: bend }, to] };
 }
 
 /** The one of `points` nearest `to`, the first on a tie. */
