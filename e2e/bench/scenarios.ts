@@ -439,10 +439,12 @@ export const SCENARIOS: Scenario[] = [
       await layer(page, "Card").click();
       await setField(page, "Gap", "12");
       await layer(page, "Button").click();
-      // The Brief tool, and a click on the button selected: its card opens beside the views (ticket 121).
+      // The Brief tool, and a click on the button selected: its card opens beside the views (ticket 121). In its
+      // padding, 4px in in the page's px: the tool writes on the deepest layer clicked, its words in the middle (designer, 2026-11-10).
       await page.keyboard.press("b");
       const button = await boxOf(desktop(page).contentFrame().locator(`${HERO} > button`));
-      await page.mouse.click(button.x + button.width / 2, button.y + button.height / 2);
+      const zoom = await desktop(page).evaluate((frame: HTMLIFrameElement) => frame.getBoundingClientRect().width / frame.offsetWidth);
+      await page.mouse.click(button.x + 4 * zoom, button.y + 4 * zoom);
       await page.getByRole("textbox", { name: "Brief" }).waitFor();
       await page.keyboard.type("When pressed, it shrinks a little and springs back");
       await page.keyboard.press("Enter");

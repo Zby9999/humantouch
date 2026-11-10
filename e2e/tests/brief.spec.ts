@@ -36,12 +36,12 @@ const card = (page: Page, layer: string) => page.getByRole("group", { name: `Bri
 /** The field of the card being written in. */
 const field = (page: Page) => page.getByRole("textbox", { name: "Brief" });
 
-/** Clicks the middle of `target` with the Brief tool, picked with B: its card opens, focused. */
+/** Clicks just inside the top left of `target` with the Brief tool, picked with B, as it writes on the deepest layer there: its card opens, focused. */
 async function openBrief(page: Page, target: Locator) {
   await page.keyboard.press("b");
   await expect(tool(page, "Brief")).toHaveAttribute("aria-pressed", "true");
   const box = await steadyBox(target);
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.click(box.x + 4, box.y + 4);
   await expect(field(page)).toBeFocused();
 }
 
@@ -120,7 +120,7 @@ test("a click in the blank space with the Brief tool puts it down; a card opened
   await expect(tool(page, "Select")).toHaveAttribute("aria-pressed", "true");
 });
 
-test("changed on its card when left, taken off with Remove brief, each a step ⌘Z takes back and ⇧⌘Z makes again; Esc leaves it as it was", async ({ page }) => {
+test("changed on its card when left, taken off by leaving it empty, each a step ⌘Z takes back and ⇧⌘Z makes again; Esc leaves it as it was", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Button");
   const button = canvas(page).getByRole("button", { name: "Get started" });
@@ -143,7 +143,10 @@ test("changed on its card when left, taken off with Remove brief, each a step �
   await expect(button).toHaveAttribute("data-tk-brief", "Press in a little, and spring back");
   await expect(badge(page)).toHaveText("1");
 
-  await card(page, "Button").getByRole("button", { name: "Remove brief" }).click();
+  // Left empty, by its arrow: taken off (designer, 2026-11-10).
+  await card(page, "Button").click();
+  await field(page).fill("");
+  await card(page, "Button").getByRole("button", { name: "Set brief" }).click();
   await expect(cards(page)).toHaveCount(0);
   await expect(button).not.toHaveAttribute("data-tk-brief");
   await expect(badge(page)).toHaveCount(0);
@@ -151,7 +154,7 @@ test("changed on its card when left, taken off with Remove brief, each a step �
   await page.keyboard.press("ControlOrMeta+z");
   await expect(card(page, "Button")).toContainText("Press in a little, and spring back");
   await page.keyboard.press("ControlOrMeta+z");
-  await expect(card(page, "Button")).toContainText(/^Button\s*Press in a little$/);
+  await expect(card(page, "Button")).toHaveText(/^Press in a little$/);
   await page.keyboard.press("ControlOrMeta+z");
   await expect(cards(page)).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+Shift+z");
@@ -159,20 +162,40 @@ test("changed on its card when left, taken off with Remove brief, each a step �
   await expect(badge(page)).toHaveText("1");
 });
 
-test("Remove pressed while the card is typed in takes the brief off in one edit: ⌘Z brings back the brief as it was, not what was typed", async ({ page }) => {
+test("the Brief tool writes on the deepest layer clicked, as ⌘ held selects it, and points it out so as it is held (designer, 2026-11-10)", async ({ page }) => {
+  await enterEditMode(page);
+  await page.keyboard.press("b");
+  const words = canvas(page).locator("article h3").first();
+  const box = await steadyBox(words);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.locator(".tk-hover").first()).toBeVisible();
+  const outlined = await steadyBox(page.locator('.tk-hover[data-view^="Desktop"]'));
+  expect(Math.abs(outlined.height - box.height)).toBeLessThanOrEqual(2);
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(field(page)).toBeFocused();
+  await page.keyboard.type("Bolder");
+  await page.keyboard.press("Enter");
+  await expect(words).toHaveAttribute("data-tk-brief", "Bolder");
+  await expect(canvas(page).locator("article").first()).not.toHaveAttribute("data-tk-brief");
+});
+
+test("a card is a field with the accent's arrow beside it as it is written in, which sets what is typed, as one edit (designer, 2026-11-10)", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Button");
   const button = canvas(page).getByRole("button", { name: "Get started" });
   await writeBrief(page, button, "Press in a little");
   await page.keyboard.press("Escape");
+  // Not written in: the brief alone, no arrow, no layer's name.
+  await expect(card(page, "Button").getByRole("button")).toHaveCount(0);
+  await expect(card(page, "Button")).toHaveText("Press in a little");
+
   await card(page, "Button").click();
   await field(page).fill("Something else");
-  await card(page, "Button").getByRole("button", { name: "Remove brief" }).click();
-  await expect(cards(page)).toHaveCount(0);
-  await expect(badge(page)).toHaveCount(0);
+  await card(page, "Button").getByRole("button", { name: "Set brief" }).click();
+  await expect(field(page)).toHaveCount(0);
+  await expect(button).toHaveAttribute("data-tk-brief", "Something else");
   await page.keyboard.press("ControlOrMeta+z");
   await expect(button).toHaveAttribute("data-tk-brief", "Press in a little");
-  await expect(card(page, "Button")).toContainText("Press in a little");
 });
 
 test("a Brief press let go off the canvas writes nothing, and puts the tool down; the Select tool's next click selects as ever", async ({ page }) => {
@@ -225,7 +248,7 @@ test("written in the phone view, the card is right of it, and stays there after 
 test("cards of layers close together are clear of one another and of the views, in the order of their layers' middles from the top", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Stack");
-  await writeBrief(page, canvas(page).locator("header"), "A larger title");
+  await writeBrief(page, canvas(page).locator("h1"), "A larger title");
   await selectRow(page, "Button");
   await writeBrief(page, canvas(page).getByRole("button", { name: "Get started" }), "Press in a little");
   await selectRow(page, "Card");
@@ -240,8 +263,7 @@ test("cards of layers close together are clear of one another and of the views, 
     for (const view of views) expect(overlap(a, view)).toBe(false);
   }
   const byTop = await Promise.all([0, 1, 2].map(async (i) => ({ y: boxes[i].y, name: await cards(page).nth(i).getAttribute("aria-label") })));
-  // The hero's Stack is as tall as the screen: its middle is below its button's.
-  expect(byTop.sort((a, b) => a.y - b.y).map((c) => c.name)).toEqual(["Brief on Button", "Brief on Stack", "Brief on Card"]);
+  expect(byTop.sort((a, b) => a.y - b.y).map((c) => c.name)).toEqual(["Brief on Third Kind", "Brief on Button", "Brief on Card"]);
 });
 
 test("a copy of a layer with a brief has none: the brief stays with the layer it was written on", async ({ page }) => {
@@ -272,9 +294,9 @@ test("typed on a card, then another layer clicked with the Brief tool: the brief
   const heading = await steadyBox(canvas(page).locator("h1"));
   await page.mouse.click(heading.x + 10, heading.y + heading.height / 2);
 
-  // What a click there selects (the outermost layer under it), its card written in now.
-  await expect(layerTree(page).getByRole("treeitem", { selected: true })).toHaveText("Stack");
-  await expect(card(page, "Stack").getByRole("textbox", { name: "Brief" })).toBeFocused();
+  // The deepest layer there (designer, 2026-11-10), its card written in now.
+  await expect(layerTree(page).getByRole("treeitem", { selected: true })).toHaveText("Third Kind");
+  await expect(card(page, "Third Kind").getByRole("textbox", { name: "Brief" })).toBeFocused();
   await expect(canvas(page).locator("article").first()).toHaveAttribute("data-tk-brief", "Bounce back harder when pressed");
   await expect(badge(page)).toHaveText("1");
 });

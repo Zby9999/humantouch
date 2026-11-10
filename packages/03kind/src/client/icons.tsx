@@ -147,6 +147,8 @@ const ICONS: Record<string, string> = {
   "align-justify": '<line x1="2.25" y1="3.25" x2="13.75" y2="3.25"/><line x1="2.25" y1="6.375" x2="13.75" y2="6.375"/><line x1="2.25" y1="9.625" x2="13.75" y2="9.625"/><line x1="2.25" y1="12.75" x2="13.75" y2="12.75"/>',
   // Arrow up to line
   promote: '<g transform="rotate(-90 8 8)"><line x1="2.5" y1="8" x2="10.5" y2="8"/><path d="M6.75 4.25 L10.5 8 L6.75 11.75"/><line x1="13.5" y1="3" x2="13.5" y2="13"/></g>',
+  // Arrow up: a brief set (designer, 2026-11-10)
+  "arrow-up": '<line x1="8" y1="13" x2="8" y2="3"/><path d="M3.75 7.25 L8 3 L12.25 7.25"/>',
   // Note
   brief: '<path d="M3 2.5 L13 2.5 C13.276 2.5 13.5 2.724 13.5 3 L13.5 9.5 L9.5 13.5 L3 13.5 C2.724 13.5 2.5 13.276 2.5 13 L2.5 3 C2.5 2.724 2.724 2.5 3 2.5 Z"/><path d="M13.5 9.5 L9.7 9.5 C9.59 9.5 9.5 9.59 9.5 9.7 L9.5 13.5"/>',
   // From the designer's panels in Figma (2026-11-07), drawn on 14px there: scaled to this square.

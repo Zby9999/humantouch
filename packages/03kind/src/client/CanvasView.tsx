@@ -923,7 +923,8 @@ export function CanvasView(props: Props) {
     const hit = pointedAt(event);
     const off = over.at.offCanvasLayer;
     if (!hit || (off && !off.origin.made)) return;
-    const layer = event.metaKey || event.ctrlKey ? selectDeepest(hit.layer) : selectOnClick(hit.layer, primary);
+    // The deepest layer there, as with ⌘ held: what is written about is what is pointed at (designer, 2026-11-10).
+    const layer = selectDeepest(hit.layer);
     if (!layer) return;
     if (!off) {
       views?.sync(over.at.view);
@@ -1241,12 +1242,13 @@ export function CanvasView(props: Props) {
     else onMove(layer, drop.to);
   }
 
-  // Nothing to point out while panning, dragging or while a value is being adjusted.
+  // Nothing to point out while panning, dragging or while a value is being adjusted. With the Brief tool, the deepest
+  // layer, as it writes on (designer, 2026-11-10).
   // A move builds the layers anew: a layer pointed at before it is gone.
   const hoveredTree = hover && treeOf(hover.hit);
   const hovered =
     hover && !spaceHeld && !panning && !drag && !resize && !hideSelection && hoveredTree && inTree(hoveredTree, hover.hit)
-      ? hover.deep
+      ? hover.deep || tool === "brief"
         ? selectDeepest(hover.hit)
         : selectOnClick(hover.hit, primary)
       : null;
@@ -1489,13 +1491,6 @@ export function CanvasView(props: Props) {
             writeIn(found.layer, found.in);
           }}
           onWritten={(_key, text) => written(text)}
-          onRemove={(key) => {
-            const found = cards.list.find((c) => c.card.key === key);
-            if (!found) return;
-            const layer = treeOf(found.layer)?.layerOf(nodeOf(found.layer)) ?? found.layer;
-            onSetBrief(layer, "");
-            if (!found.in.offCanvasLayer) briefViews.forget(key);
-          }}
           onReveal={(dx, dy) => setCamera((v) => ({ ...v, x: v.x + dx, y: v.y + dy }))}
           placedNow={cardsPlaced}
         />

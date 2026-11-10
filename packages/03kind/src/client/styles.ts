@@ -1453,36 +1453,50 @@ button.tk-change-text:focus-visible { outline: 2px solid var(--tk-accent); outli
 .tk-selection-tool:focus-visible { outline: 2px solid var(--tk-instance); outline-offset: 2px; }
 /*
  * The briefs (ticket 121): cards on the stage, beside the views, in canvas px, so they pan and zoom with the
- * canvas as notes on it do; a dashed line from each to its layer, 1px at any zoom. A first look, after Figma's
- * annotations, for tuning: white, the brief's blue on top, the layer's name over the words.
+ * canvas as notes on it do; a dashed line from each to its layer, 1px at any zoom.
  */
 .tk-brief-cards { position: absolute; top: 0; left: 0; transform-origin: 0 0; pointer-events: none; }
 .tk-brief-lines { position: absolute; top: 0; left: 0; overflow: visible; }
 .tk-brief-lines line { stroke: var(--tk-accent); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
 .tk-brief-lines circle { fill: var(--tk-accent); }
 .tk-brief-lines g:not([data-selected]) { opacity: 0.6; }
+/*
+ * A card as the Design panel's fields are, twice their size on the canvas (designer, 2026-11-10): the brief in a field,
+ * and, written in, the accent's arrow that sets it, as the count of changes is drawn. Its corners round the arrow's
+ * at the 8px between them.
+ */
 .tk-brief-card {
   position: absolute;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
   box-sizing: border-box;
-  padding: 16px 20px 20px;
-  border-radius: 16px;
-  border-top: 6px solid var(--tk-accent);
-  background: #fff;
+  padding: 8px;
+  border-radius: 20px;
+  background: var(--tk-input);
+  box-shadow: inset 0 0 0 2px transparent, 0 2px 2px rgb(0 0 0 / 0.15), inset 0 0 0 1px rgb(0 0 0 / 0.1);
   color: var(--tk-text);
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.08), 0 4px 16px rgb(0 0 0 / 0.08);
-  font-size: 22px;
-  line-height: 1.4;
+  font: 400 24px/32px ${EDITOR_FONT};
+  letter-spacing: -0.02em;
   pointer-events: auto;
   cursor: text;
 }
-.tk-brief-card[data-selected], .tk-brief-card[data-writing] { box-shadow: 0 0 0 3px var(--tk-accent), 0 4px 16px rgb(0 0 0 / 0.12); }
-.tk-brief-card-header { display: flex; align-items: center; gap: 8px; height: 32px; margin-bottom: 6px; color: var(--tk-accent); font-weight: 600; }
-.tk-brief-card-header > .tk-icon { --tk-icon-size: 24px; flex: none; }
-.tk-brief-card-layer { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tk-brief-card .tk-brief-card-remove { width: 32px; height: 32px; border-radius: 8px; color: var(--tk-text-muted); cursor: default; --tk-icon-size: 20px; }
-.tk-brief-card-text { margin: 0; min-height: 31px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.tk-brief-card-field { all: unset; display: block; box-sizing: border-box; width: 100%; min-height: 31px; font: inherit; line-height: inherit; color: inherit; white-space: pre-wrap; overflow-wrap: anywhere; resize: none; overflow: hidden; }
+.tk-brief-card[data-selected], .tk-brief-card[data-writing] { box-shadow: inset 0 0 0 2px var(--tk-accent-strong), 0 2px 2px rgb(0 143 240 / 0.6), inset 0 0 0 1px rgb(0 0 0 / 0.1); }
+.tk-brief-card-text { flex: 1; min-width: 0; min-height: 32px; margin: 0; padding: 8px 4px 8px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tk-brief-card-field { all: unset; display: block; flex: 1; box-sizing: border-box; min-width: 0; min-height: 48px; padding: 8px 4px 8px 8px; font: inherit; letter-spacing: inherit; color: inherit; white-space: pre-wrap; overflow-wrap: anywhere; resize: none; overflow: hidden; }
 .tk-brief-card-field::placeholder { color: var(--tk-text-muted); }
+.tk-brief-card-set { all: unset; position: relative; isolation: isolate; display: grid; flex: none; place-items: center; width: 48px; height: 48px; color: #daecff; cursor: pointer; --tk-icon-size: 24px; }
+.tk-brief-card-set::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 12px;
+  background: linear-gradient(var(--tk-accent-on), var(--tk-accent));
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15), 0 2px 2px rgb(0 0 0 / 0.15);
+}
+.tk-brief-card-set:hover::before { background: linear-gradient(var(--tk-accent), var(--tk-accent-strong)); }
+.tk-brief-card-set:focus-visible { outline: 4px solid var(--tk-accent); outline-offset: 0; border-radius: 12px; }
 
 /* Typing in text, as in Figma: a thin blue box round the words, which grows as they do. */
 .tk-selection[data-kind="typing"] { transition: none; }
