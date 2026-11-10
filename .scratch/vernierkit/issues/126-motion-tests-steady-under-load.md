@@ -17,16 +17,80 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Comments 里写明这四个测试各自在机器忙时失败的原因。
-- [ ] 在人为压高 CPU 时，这四个测试各 `--repeat-each=20` 都不失败。压 CPU 的方式写进 Comments，比如并行开几个 `yes > /dev/null`，跑完要关掉。
-- [ ] 检查的内容不变弱。Comments 里逐条对照修改前后各检查了什么。
+- [x] Comments 里写明这四个测试各自在机器忙时失败的原因。
+- [x] 在人为压高 CPU 时，这四个测试各 `--repeat-each=20` 都不失败。压 CPU 的方式写进 Comments，比如并行开几个 `yes > /dev/null`，跑完要关掉。
+- [x] 检查的内容不变弱。Comments 里逐条对照修改前后各检查了什么。
 - [ ] 整套 e2e 一次跑过。
-- [ ] `packages/` 不动。
+- [x] `packages/` 不动。
 
 ## 规划会话决定（设计师不在，2026-11-10，回来后确认）
 
 - 只改测试，不改产品，不影响要发布的内容，所以现在就做，不用等发布。
 - 交给 109 那条线：它发布前的票都做完了，现在闲着。照常 conduct：派一个新的实现子 agent、一个审查子 agent，都用 effort medium。端口用这条线的 5500 段。
 - 压 CPU 只在这条线的 worktree 里做，跑完马上停。同一时间别的线可能也在跑测试。
+
+## Comments
+
+### 实现记录（2026-11-10；起点 main 1676dc08，分支 worktree-agent-a2b73358e9acf7ddd）
+
+**各自为什么失败**（先在原来的测试上压 CPU 复现：6 个 `yes`，`--repeat-each=10`，40 次挂了约 9 次）
+- `layers.spec.ts`「a level closed folds up …」：读的是动画中间的状态。折叠的副本（`.tk-tree-fold`）只活 `LAYERS_FOLD_MS`（200ms），动画一结束（`clip.onfinish`）就移除；后面那行的上升动画没有 `fill`，结束就从 `getAnimations()` 里消失。点击之后测试还要先做四五次断言，每次一个来回，机器忙时 200ms 早过了。失败时读到的：`fold.locator(".tk-tree-row")` 是 0 个、`fold` 找不到（`toHaveAttribute` 超时）。
+- `properties.spec.ts`「an effect folded goes …」：同一个原因，效果的副本（`.tk-effect-fold`）也是 200ms。失败时读到的：`getAnimations` 是 `[]`，或 `copies` 找不到。
+- `popover-exit.spec.ts:34`（现在 60 行）「a menu closed with the pointer …」：两处。
+  1. 点了选项以后才读菜单的离开状态，可菜单只留 `POPOVER_EXIT_MS`（150ms，`setTimeout`），机器忙时读的那一下已经在它移除以后。失败时读到的：`leavingState(menus)` 是 `[]`，`state` 是 `undefined`。
+  2. 改了第 1 处以后又复现出另一个（50 次里 1–2 次）：后面用键盘那段，ArrowDown 打开、ArrowUp 两下、Enter，应该是 All，得到 Project。在页面里记了每个按键前后的状态：第一下 ArrowUp 把选中的从 Tailwind 移到 Project，4ms 后又回到 Tailwind。原因是鼠标还停在 select 上（前面 `filter.click()` 留下的），菜单正好打开在它下面，当前选项盖在鼠标下；浏览器在下一帧给那个选项发 `pointerenter`，`onPointerEnter` 把 active 设回 Tailwind。机器空闲时这一下在 ArrowUp 之前到，没影响；机器忙时晚到，就吃掉了一下 ArrowUp。这是产品照设计在做（指针进入的选项变成当前项），不是动画的问题。
+- `popover-exit.spec.ts:99`（现在 127 行）「the color picker leaves …」：和 34 的第 1 处一样，取色器关掉以后才读，150ms 已过。
+
+没有发现产品的动画在机器忙时真的不对。没用到 `waitForTimeout` 的测试；`:69` 的 `waitForTimeout(POPOVER_EXIT_MS + 100)` 不在这次的四个里，没动。
+
+**改了什么**（只动 `e2e/tests/`，`packages/` 没动）
+- `fixtures.ts` 新增两个：
+  - `holdMotion(page)`：用 DevTools 协议把页面动画的播放速度设成 0（`Animation.setPlaybackRate`，`motion.spec.ts` 早就这么用），之后开始的动画也停在起点；返回的函数把速度设回 1。计时器照走。
+  - `midway(locator, ms)`：把元素（含子元素）的动画都定到第 `ms` 毫秒，读算出来的位移（`DOMMatrix` 的 `m42`）和不透明度。
+- 两个折叠测试：点之前 `holdMotion`，原来的检查一条不少，照原样读（这时副本和动画都还在）；再加中点采样；然后放开，等副本没了。
+- 两个弹出层测试：新的 `watchLeaving(page, selector)`，点之前在编辑层的 shadow root 上挂 `MutationObserver`，有一个开始 `.is-leaving` 的那一刻，在页面里当场读下所有匹配元素的 `leaving / aria-hidden / inert / pointer-events`（和 `leavingState` 读的一样）；回调是微任务，150ms 的计时器不可能先跑。测试用 `expect.poll` 等这份记录。
+- `:34` 键盘那段之前 `page.mouse.move(0, 0)`，把指针挪开。
+
+**为什么检查没有变弱**（逐条对照）
+- 折叠（两个测试一样）：
+  - 改前：点击后立刻收起（`aria-expanded`、行没了）→ 现在同样。
+  - 改前：副本 `aria-hidden`、有副本行、没有 treeitem（效果那边：没有输入框、副本里的值是 0）→ 现在同样。
+  - 改前：关键帧包含 `none → translateY(-8px)` 和 `inset(0) → inset(0 0 100%)` → 现在同样。
+  - 改前：后面那一行 / 那个效果有一个动画 → 现在同样。
+  - 新增：动画的中点，副本向上移了（0 > y > -8px），淡了一部分（0 < 不透明度 < 1），后面那行 / 效果还在原位下方（y > 0，往上升）。改前只看关键帧写了什么，现在还看它真的按这个方向、在这个范围里动。
+  - 改前：然后副本没了 → 现在放开以后同样要没了（证明动画放完会移除）。
+  - 减少动态效果时立刻收起（layers 那条）→ 一字没改。
+- 弹出层：
+  - `:34` 改前：离开那一刻 `{ leaving: true, aria-hidden: "true", inert: true, pointer-events: "none" }`，只取第一个 → 现在要求整份就是这一个（多了「只有一个菜单」）。
+  - `:99` 改前：只看有一个、在离开 → 现在和 `:34` 一样看全四项（更严）。
+  - 读的时刻：改前是「点击返回后第一次读」，现在是「变成离开的那一刻」，比改前更早，正是「at once」要说的。
+  - 之后的 `toBeHidden`、值、`toHaveCount(0, { timeout: POPOVER_EXIT_MS + 1000 })`（离开后会走）、Esc 和 Enter 立刻没了 → 一字没改。
+  - 键盘那段挪开指针：按键、顺序、期望的值都没改，只是不让指针替用户选。
+
+**次数和负载**（机器 12 核；同时别的线也在跑，所以「不压」时的负载也有 20 左右。负载是 `sysctl vm.loadavg` 的 1 分钟值，每 5 秒采一次）
+- 压 CPU 的方式：跑之前起 6 个 `yes > /dev/null`，跑完按自己起的 PID 杀掉，每次跑完都确认 `pgrep -x yes` 是 0。脚本只在这次的 worktree 里用，没留在仓库。
+- 修之前（原测试，压着）：四个各 10 次，挂了约 9 次（上面的读数就是这次的）；负载 8–49。
+- 修之后，压着：
+  - 四个一起 `--repeat-each=50`：200 过 0 挂，负载 18.1–26.3（平均 23.6）。
+  - 各自 `--repeat-each=20`：layers 20/20（负载 19.4–20.0）、properties 20/20（17.9–21.0）、popover `:34` 20/20（18.9–21.7）、popover `:99` 20/20（19.4–20.2）。
+- 修之后，不压：各自 `--repeat-each=20`：layers 20/20（负载 20.2–23.1）、properties 20/20（21.1–22.4）、popover `:34` 20/20（20.1–22.8）、popover `:99` 20/20（20.6–21.9）。
+- 整个文件各跑一次（`--project=page`，不压，负载约 17–20）：`layers.spec.ts` 34 过、`properties.spec.ts` 64 过、`popover-exit.spec.ts` 7 过。
+- `pnpm typecheck` 过。整套 e2e 留给指挥。
+
+#### 代定的事（待设计师确认）
+
+1. 折叠测试用「把动画停在起点、读完再放开」代替「赶在 200ms 里读」。停的是整个页面的动画（DevTools 的播放速度），不是只停折叠的；停的时间里只做读取，不碰别的动画。
+2. 弹出层的离开状态改在「变成离开的那一刻」读（页面里的 MutationObserver），不再在点击返回之后读。
+3. 折叠两个测试多了中点采样（方向、0–8px 之间、半淡、后面的往上升），比改前严。`:99` 也改成和 `:34` 一样看全四项。
+4. `:34` 键盘那段前把指针挪到 (0, 0)。指针停在菜单下面时，选项被指针进入而成为当前项是产品照设计的行为，测试不去改它，只让键盘那段不受它干扰。
+
+#### 遗留风险
+
+1. `holdMotion` 靠 Chrome 的 DevTools 协议（`Animation.setPlaybackRate`）。e2e 只跑 Chromium，`motion.spec.ts` 也靠它；换浏览器要换做法。
+2. 停住动画时整个页面的动画都停（包括别的面板的），只在读的那几步里；如果以后在停住期间加了要等别的动画结束的断言，会卡住直到超时。
+3. `watchLeaving` 只在第一次出现 `.is-leaving` 时记一次；以后同一个测试里要再看一次离开，得再调一次。
+4. 离开后「会走」那条仍是 `POPOVER_EXIT_MS + 1000` 的上限，这次压着跑（两个测试各 70 次）都没挂；机器比这次（负载 50 左右）还忙，理论上还可能超时。
+5. 不压时的负载也有 20 左右（别的线在跑），没有在完全空闲的机器上跑过这 20 次。
+6. 「a menu opened again while it leaves」（现在 97 行）也是点完再读离开状态，机器很忙时同样可能读晚。它不在这次的四个里，压着把 `popover-exit.spec.ts` 整个跑 15 遍没挂过，没改；要改可以照 `watchLeaving` 的做法。

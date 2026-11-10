@@ -1,4 +1,5 @@
-import { canvasInPlace, expectSegmentedChanged, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, expectSegmentedChanged, holdMotion, midway, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
+import { LAYERS_FOLD_MS, LAYERS_FOLD_RISE_PX } from "../../packages/03kind/src/client/motion";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
 function canvas(page: Page) {
@@ -1196,6 +1197,8 @@ test.describe("with motion", () => {
     await addEffect(effects, "Layer blur");
     const shadow = effects.getByRole("group", { name: "Shadow 1", exact: true });
     const copies = shadow.locator(".tk-effect-fold");
+    // Its motion held where it starts, so that it is read midway however busy the machine (ticket 126).
+    const letGo = await holdMotion(page);
     await shadow.getByRole("button", { name: "Shadow 1 details" }).click();
     // Folded at once for its readers: its fields gone, copies of them hidden from them, showing what they did.
     await expect(shadow.getByRole("textbox")).toHaveCount(0);
@@ -1205,8 +1208,17 @@ test.describe("with motion", () => {
       el.getAnimations({ subtree: true }).map((animation) => (animation.effect as KeyframeEffect).getKeyframes().map((frame) => frame.transform ?? frame.clipPath)),
     );
     expect(keyframes).toEqual(expect.arrayContaining([["none", "translateY(-8px)"], ["inset(0px)", "inset(0px 0px 100%)"]]));
-    expect(await effects.getByRole("group", { name: "Layer blur", exact: true }).evaluate((el) => el.getAnimations().length)).toBe(1);
-    // Then gone.
+    const after = effects.getByRole("group", { name: "Layer blur", exact: true });
+    expect(await after.evaluate((el) => el.getAnimations().length)).toBe(1);
+    // Halfway: the copies part of the way up and faded part of the way, the effect after still below its place, rising.
+    const halfway = await midway(copies.locator(":scope > .tk-effect"), LAYERS_FOLD_MS / 2);
+    expect(halfway.y).toBeLessThan(0);
+    expect(halfway.y).toBeGreaterThan(-LAYERS_FOLD_RISE_PX);
+    expect(halfway.opacity).toBeGreaterThan(0);
+    expect(halfway.opacity).toBeLessThan(1);
+    expect((await midway(after, LAYERS_FOLD_MS / 2)).y).toBeGreaterThan(0);
+    // Then, played on, gone.
+    await letGo();
     await expect(copies).toHaveCount(0);
 
     await shadow.getByRole("button", { name: "Shadow 1 details" }).click();

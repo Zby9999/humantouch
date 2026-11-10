@@ -154,6 +154,34 @@ async function variablesIn(page: Page) {
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
+/**
+ * Holds every animation in the page where it is, those that start meanwhile too, until the call returned lets them
+ * play on: a test reads a short motion (a fold's 200ms) midway however busy the machine, where read after its click
+ * it could already be over (ticket 126). The DevTools protocol's playback rate, the one the Animations panel sets;
+ * timers run on.
+ */
+export async function holdMotion(page: Page): Promise<() => Promise<void>> {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Animation.enable");
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
+  return async () => {
+    await cdp.send("Animation.setPlaybackRate", { playbackRate: 1 });
+    await cdp.detach();
+  };
+}
+
+/**
+ * Where `el`'s animations put it `at` ms in, all of them sought there, read from its computed style: how far it is
+ * moved down (px, up < 0) and how opaque it is. For motion held by `holdMotion`.
+ */
+export function midway(el: Locator, at: number) {
+  return el.evaluate((node, at) => {
+    for (const animation of node.getAnimations({ subtree: true })) animation.currentTime = at;
+    const style = getComputedStyle(node);
+    return { y: new DOMMatrixReadOnly(style.transform === "none" ? undefined : style.transform).m42, opacity: Number(style.opacity) };
+  }, at);
+}
+
 type Box = NonNullable<Awaited<ReturnType<Locator["boundingBox"]>>>;
 
 /**

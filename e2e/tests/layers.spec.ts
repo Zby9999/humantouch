@@ -1,4 +1,5 @@
-import { canvasInPlace, expect, steadyBox, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, expect, holdMotion, midway, steadyBox, test, type Locator, type Page } from "./fixtures";
+import { LAYERS_FOLD_MS, LAYERS_FOLD_RISE_PX } from "../../packages/03kind/src/client/motion";
 import { readFileSync } from "node:fs";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
@@ -322,6 +323,8 @@ test("a level closed folds up: its rows go a little way up and fade as the rows 
   const next = header.locator("xpath=following-sibling::*[1]");
   await expect(header).toHaveAttribute("aria-expanded", "true");
 
+  // Its motion held where it starts, so that it is read midway however busy the machine (ticket 126).
+  const letGo = await holdMotion(page);
   await header.locator(".tk-tree-chevron").click();
   // Closed at once, for the tree and its readers: its rows are gone from it, copies of them in a fold hidden from them.
   await expect(header).toHaveAttribute("aria-expanded", "false");
@@ -335,7 +338,15 @@ test("a level closed folds up: its rows go a little way up and fade as the rows 
   );
   expect(keyframes).toEqual(expect.arrayContaining([["none", "translateY(-8px)"], ["inset(0px)", "inset(0px 0px 100%)"]]));
   expect(await next.evaluate((el) => el.getAnimations().length)).toBe(1);
-  // Then gone.
+  // Halfway: the copies part of the way up and faded part of the way, the row after still below its place, rising.
+  const copies = await midway(fold.locator(".tk-tree-rows"), LAYERS_FOLD_MS / 2);
+  expect(copies.y).toBeLessThan(0);
+  expect(copies.y).toBeGreaterThan(-LAYERS_FOLD_RISE_PX);
+  expect(copies.opacity).toBeGreaterThan(0);
+  expect(copies.opacity).toBeLessThan(1);
+  expect((await midway(next, LAYERS_FOLD_MS / 2)).y).toBeGreaterThan(0);
+  // Then, played on, gone.
+  await letGo();
   await expect(fold).toHaveCount(0);
 
   // With reduced motion, closed at once.

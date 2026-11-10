@@ -31,6 +31,32 @@ function leavingState(menu: Locator) {
   );
 }
 
+/**
+ * What the popovers matching `selector` are the moment one of them starts leaving, as `leavingState` reads them, read
+ * there and then in the page (a mutation observer's, before its exit's timer can run) and polled for by the returned
+ * call. Read after the click that closes it, a busy machine can reach the read after the exit is over (ticket 126).
+ */
+async function watchLeaving(page: Page, selector: string) {
+  await design(page).evaluate((panel, selector) => {
+    const root = panel.getRootNode() as ShadowRoot | Document;
+    const seen = window as unknown as { __e2eLeaving?: unknown };
+    delete seen.__e2eLeaving;
+    const observer = new MutationObserver(() => {
+      const all = [...root.querySelectorAll(selector)];
+      if (!all.some((m) => m.classList.contains("is-leaving"))) return;
+      observer.disconnect();
+      seen.__e2eLeaving = all.map((m) => ({
+        leaving: m.classList.contains("is-leaving"),
+        hidden: m.getAttribute("aria-hidden"),
+        inert: (m as HTMLElement).inert,
+        pointerEvents: getComputedStyle(m).pointerEvents,
+      }));
+    });
+    observer.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
+  }, selector);
+  return () => expect.poll(() => page.evaluate(() => (window as unknown as { __e2eLeaving?: unknown }).__e2eLeaving ?? null));
+}
+
 test("a menu closed with the pointer takes no clicks at once and is gone after its exit; with Esc, it is gone at once", async ({ page }) => {
   await enterEditMode(page);
   // Nothing selected: the Design panel lists the Variables, filtered by a select.
@@ -42,9 +68,9 @@ test("a menu closed with the pointer takes no clicks at once and is gone after i
   await filter.click();
   await expect(listbox).toBeVisible();
   await steadyBox(listbox);
+  const left = await watchLeaving(page, ".tk-menu");
   await listbox.getByRole("option", { name: "Tailwind" }).click();
-  const [state] = await leavingState(menus);
-  expect(state).toEqual({ leaving: true, hidden: "true", inert: true, pointerEvents: "none" });
+  await left().toEqual([{ leaving: true, hidden: "true", inert: true, pointerEvents: "none" }]);
   await expect(listbox).toBeHidden();
   await expect(filter).toHaveValue("tailwind");
   // Gone once its exit is over.
@@ -56,7 +82,9 @@ test("a menu closed with the pointer takes no clicks at once and is gone after i
   await page.keyboard.press("Escape");
   expect(await menus.count()).toBe(0);
 
-  // Enter on a choice: gone at once too.
+  // Enter on a choice: gone at once too. The pointer out of the way first: left on the select, the menu opens under it, and
+  // the option there, entered by it a frame later (later still on a busy machine), takes the keys' place back (ticket 126).
+  await page.mouse.move(0, 0);
   await page.keyboard.press("ArrowDown");
   await expect(listbox).toBeVisible();
   await page.keyboard.press("ArrowUp");
@@ -105,8 +133,9 @@ test("the color picker leaves when closed with the pointer, and at once with Esc
 
   await swatch.click();
   await expect(picker).toBeVisible();
+  const left = await watchLeaving(page, ".tk-popover");
   await picker.getByRole("button", { name: "Close" }).click();
-  expect((await leavingState(popovers)).map((s) => s.leaving)).toEqual([true]);
+  await left().toEqual([{ leaving: true, hidden: "true", inert: true, pointerEvents: "none" }]);
   await expect(picker).toBeHidden();
   await expect(popovers).toHaveCount(0, { timeout: POPOVER_EXIT_MS + 1000 });
 
