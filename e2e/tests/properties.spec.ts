@@ -1623,11 +1623,6 @@ test("a text's alignment is as wide as its buttons, at the row's left; the font 
   await expect(sample).toHaveCSS("font-weight", "400");
 });
 
-/** Two frames of the page drawn: the pointer's enter and leave for what moved under it are sent by then. */
-function twoFrames(page: Page) {
-  return page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-}
-
 test("in a font menu long enough to scroll, ↓ goes down to its end, the menu scrolling with it, the pointer left in it taking none of the keys' place; moved, the option under it is the one the keys are on (ticket 131)", async ({ page }) => {
   // 40 fonts more, loaded on the canvas's page, before the text is selected: its font menu is longer than the window.
   await canvas(page)
@@ -1662,7 +1657,8 @@ test("in a font menu long enough to scroll, ↓ goes down to its end, the menu s
     await page.keyboard.press("ArrowDown");
     await expect(active).toHaveAttribute("id", ids[i]);
   }
-  await twoFrames(page);
+  // Two frames on: the pointer's enter for what moved under it is sent by then.
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
   await expect(active).toHaveAttribute("id", ids.at(-1)!);
   await expect(font).toHaveAttribute("aria-activedescendant", ids.at(-1)!);
   expect(await listbox.evaluate((el) => el.scrollTop > 0 && Math.abs(el.scrollTop + el.clientHeight - el.scrollHeight) <= 1)).toBe(true);

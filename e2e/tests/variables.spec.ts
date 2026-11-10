@@ -268,7 +268,7 @@ test("in Effects' + with very many shadow Variables, ↓ goes down their panel t
     await page.keyboard.press("ArrowDown");
     await expect(active).toHaveAttribute("id", ids[i]);
   }
-  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  await frames(page);
   await expect(active).toHaveAttribute("id", ids.at(-1)!);
   await expect(menu.getByRole("listbox")).toHaveAttribute("aria-activedescendant", ids.at(-1)!);
   await expect(active).toHaveText("elevation-40");
@@ -285,6 +285,68 @@ test("in Effects' + with very many shadow Variables, ↓ goes down their panel t
   await expect(details.locator(".tk-variants-details-name")).toHaveText("elevation-39");
   await page.keyboard.press("Enter");
   await expect(menu).toBeHidden();
+});
+
+test("in a field's list of very many matching Variables, ↓ goes down to its end and round to the first, ↑ back to the last, the list scrolling with them, the pointer left in it taking none of the keys' place; moved, the match under it is the one the keys are on (ticket 131)", async ({ page }) => {
+  await page.route(/\/variables(\?|$)/, async (route) => {
+    const response = await route.fetch();
+    const list = await response.json();
+    for (let i = 1; i <= 40; i++) list.push({ name: `space-${String(i).padStart(2, "0")}`, group: "spacing", value: `${i}px`, from: "tailwind", own: true });
+    await route.fulfill({ response, json: list });
+  });
+  await enterEditMode(page);
+  await selectRow(page, "Card");
+  const list = await variablesOf(page, "Padding top");
+  await page.keyboard.type("space-");
+  const options = list.getByRole("option");
+  await expect(options).toHaveCount(40);
+  const box = await steadyBox(list);
+  expect(await list.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  const field = design(page).getByRole("textbox", { name: "Padding top", exact: true });
+  const active = list.locator('[role="option"][aria-selected="true"]');
+  const ids = await options.evaluateAll((all) => all.map((o) => o.id));
+  const scrollTop = () => list.evaluate((el) => el.scrollTop);
+  /** The match the keys are on, as the field tells it and the list shows it, whole in the list. */
+  const on = async (index: number) => {
+    await expect(field).toHaveAttribute("aria-activedescendant", ids[index]);
+    await expect(active).toHaveAttribute("id", ids[index]);
+    const [row, all] = [await active.boundingBox(), await list.boundingBox()];
+    expect(row!.y).toBeGreaterThanOrEqual(all!.y - 0.5);
+    expect(row!.y + row!.height).toBeLessThanOrEqual(all!.y + all!.height + 0.5);
+  };
+
+  // The pointer moved into the list, near its top: the match under it is the one the keys are on. Then left there.
+  await page.mouse.move(box.x + box.width / 2, box.y + 48);
+  await expect(active).toHaveCount(1);
+  const from = ids.indexOf((await active.getAttribute("id"))!);
+  expect(from).toBeGreaterThan(0);
+  // ↓ to the end: each a step down, the list scrolling under the pointer, which takes none of them back.
+  for (let i = from + 1; i < ids.length; i++) {
+    await page.keyboard.press("ArrowDown");
+    await on(i);
+  }
+  await frames(page);
+  await on(ids.length - 1);
+  expect(await scrollTop()).toBeGreaterThan(0);
+  // On round to the first, the list back at its top; ↑ from it, the last again, the list at its foot.
+  await page.keyboard.press("ArrowDown");
+  await on(0);
+  await frames(page);
+  await on(0);
+  // (Its padding, 4px, may stay scrolled past: the first match is brought just into view.)
+  expect(await scrollTop()).toBeLessThanOrEqual(4);
+  await page.keyboard.press("ArrowUp");
+  await on(ids.length - 1);
+  await frames(page);
+  await on(ids.length - 1);
+  expect(await scrollTop()).toBeGreaterThan(0);
+
+  // The pointer moved again, over the last match but one: it is the one the keys are on, as before; Enter picks it.
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height - 48);
+  await on(ids.length - 2);
+  const name = (await options.nth(ids.length - 2).getAttribute("aria-label"))!;
+  await page.keyboard.press("Enter");
+  await expect(design(page).getByRole("button", { name: "Padding top variable", exact: true })).toHaveText(name);
 });
 
 test("corner radius, shadows, size and font size take Variables of their own groups", async ({ page }) => {
