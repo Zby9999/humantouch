@@ -211,7 +211,7 @@ export interface Editor {
    * Design panel cannot set; for a new Frame, what the Agent is to make in it. "" when it has none.
    */
   brief(layer: Layer): string;
-  /** Whether the layer is a new Frame, whose brief says what to make in it: it is written beside it on the canvas, and kept in the change that makes it. */
+  /** Whether the layer is a new Frame, whose brief says what to make in it: kept in the change that makes it. */
   isNewFrame(layer: Layer): boolean;
   /**
    * Gives the layer a brief, or takes it off (""), as one edit that can be

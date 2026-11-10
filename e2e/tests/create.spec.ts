@@ -132,7 +132,7 @@ test("the chosen tool's backing slides to a tool clicked and jumps to one a key 
   expect(await over("Select")).toBe(true);
 });
 
-test("F and a drag in a Frame's empty space make an absolute Frame, with no fill or outline; a button beside it writes its brief", async ({ page }) => {
+test("F and a drag in a Frame's empty space make an absolute Frame, with no fill or outline; the Brief tool writes its brief, on a card beside the views", async ({ page }) => {
   await addBoard(page);
   await enterEditMode(page);
   const board = await boxOf(canvas(page).locator("#board"));
@@ -151,35 +151,36 @@ test("F and a drag in a Frame's empty space make an absolute Frame, with no fill
   for (const [side, value] of [["x", 40], ["y", 20], ["width", 200], ["height", 120]] as const) expect(Math.abs(placed[side] - value)).toBeLessThanOrEqual(2);
   expect(placed.fill).toBe("rgba(0, 0, 0, 0)");
 
-  // Beside the Frame selected, a button opens its brief; the Design panel has none.
+  // B, and a click on the Frame: its card opens (ticket 121); nothing beside it, nor in the Design panel.
+  await expect(page.getByRole("button", { name: "Add brief" })).toHaveCount(0);
   await expect(design(page).getByRole("textbox", { name: "Brief" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Add brief" }).click();
+  await page.keyboard.press("b");
+  const drawn = await steadyBox(frame);
+  await page.mouse.click(drawn.x + drawn.width / 2, drawn.y + drawn.height / 2);
   const brief = page.getByRole("textbox", { name: "Brief" });
+  await expect(brief).toBeFocused();
   await brief.fill("A pricing table with three plans");
   await brief.press("Enter");
   await expect(brief).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Brief", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("group", { name: "Brief on Frame" })).toContainText("A pricing table with three plans");
   // No outline of its own on the canvas: a stroke will say that.
   await expect.poll(() => frame.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe("none");
   await expect(frame).toHaveAttribute("data-tk-brief", "A pricing table with three plans");
   // A plain Frame on the canvas, room to draw in: the brief shows in the Layers panel, not in it.
   await expect.poll(() => frame.evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
   await expect(page.locator('.tk-tree-row[aria-selected="true"] .tk-tree-brief')).toHaveAttribute("data-tk-tip", "Brief: A pricing table with three plans");
-  // Marked on the canvas in the other views; in the one worked in, its button stands for the mark.
-  await expect(page.locator('.tk-brief-mark[data-view="Desktop"]')).toHaveCount(0);
-  await expect(page.locator('.tk-brief-mark[data-view="Tablet"]')).toHaveCount(1);
-  await expect(page.locator('.tk-brief-mark[data-view="Phone"]')).toHaveCount(1);
   await expect(await changeRows(page)).toHaveText([/New Frame.*200 × 120px, “A pricing table with three plans”/]);
   await page.keyboard.press("Escape");
 
-  // Its copy is made by the brief too: marked as it is, in every view and in the Layers panel.
+  // Its copy is made by the brief too: with a card of its own, and marked in the Layers panel.
   await layerTree(page).getByRole("treeitem", { name: "Frame", description: "Frame · Absolute" }).click();
   await page.keyboard.press("ControlOrMeta+d");
   const copy = canvas(page).locator("#board > div").nth(1);
   await expect(copy).toHaveAttribute("data-tk-brief", "A pricing table with three plans");
   await expect(page.locator('.tk-tree-row[aria-selected="true"] .tk-tree-brief')).toHaveAttribute("data-tk-tip", "Brief: A pricing table with three plans");
-  for (const view of ["Desktop", "Tablet", "Phone"]) await expect(page.locator(`.tk-brief-mark[data-view="${view}"]`)).toHaveCount(2);
-  await expect(design(page).getByRole("group", { name: "Brief" }).getByRole("textbox", { name: "Brief" })).toHaveValue("A pricing table with three plans");
+  await expect(page.locator(".tk-brief-card")).toHaveCount(2);
+  await expect(page.getByRole("group", { name: "Brief on Frame" }).nth(1)).toContainText("A pricing table with three plans");
 });
 
 test("while a Frame is drawn with F, ⌘Z, ⇧⌘Z, Delete and the tool keys do nothing; let go, it is made, and ⌘Z takes it back, then the edit before it; Esc still puts the tool down", async ({ page }) => {

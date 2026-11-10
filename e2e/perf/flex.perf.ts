@@ -1108,6 +1108,96 @@ test("dragging a layer's handle keeps 60fps", async ({ page }) => {
   verdict(met, "resizing by a handle keeps 60fps");
 });
 
+/** How many briefs `withBriefs` writes: ticket 121's standard, 20 cards beside the views. */
+const BRIEFS = 20;
+
+/**
+ * Writes a brief on each of the first `BRIEFS` product cards with the Brief
+ * tool (ticket 121), each on its card beside the desktop view; then puts the
+ * tool down. A card out of sight is brought into it with the wheel first.
+ */
+async function withBriefs(page: Page) {
+  await selectCard(page, 1, { parent: true });
+  await page.keyboard.press("b");
+  const viewport = (await host(page).getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
+  for (let n = 1; n <= BRIEFS; n++) {
+    let box = (await canvas(page).locator(card(n)).boundingBox())!;
+    while (box.y + box.height > viewport.y + viewport.height - 40 || box.x + box.width > viewport.x + viewport.width - 40) {
+      await page.mouse.move(viewport.x + viewport.width / 2, viewport.y + viewport.height / 2);
+      await page.mouse.wheel(box.x + box.width > viewport.x + viewport.width - 40 ? 300 : 0, box.y + box.height > viewport.y + viewport.height - 40 ? 300 : 0);
+      await settle(page, 100);
+      box = (await canvas(page).locator(card(n)).boundingBox())!;
+    }
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await expect(host(page).getByRole("textbox", { name: "Brief" })).toBeFocused();
+    await page.keyboard.type(`Brief ${n}: a little more room between the price and the button`);
+    await page.keyboard.press("Enter");
+  }
+  await page.keyboard.press("Escape");
+  await expect(host(page).locator(".tk-brief-card")).toHaveCount(BRIEFS);
+  // The canvas where it starts: every view in, the cards with them.
+  await page.keyboard.press("Shift+1");
+  await settle(page, 500);
+}
+
+/** Zooms the canvas in and out with the wheel, ⌘ (Ctrl) held, about the middle of the viewport for `DRAG_MS`, recording the frames, as `dragFor` does a drag. */
+async function zoomFor(page: Page) {
+  const viewport = (await host(page).getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
+  const at = { x: viewport.x + viewport.width / 2, y: viewport.y + viewport.height / 2 };
+  await page.mouse.move(at.x, at.y);
+  await page.evaluate(armFrames, ".tk-brief-card");
+  const cdp = await page.context().newCDPSession(page);
+  const sent: Promise<unknown>[] = [];
+  const started = Date.now();
+  await new Promise<void>((done) => {
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - started;
+      if (elapsed >= DRAG_MS) {
+        clearInterval(timer);
+        return done();
+      }
+      // In for half of every 1.25s, out for the other half.
+      const deltaY = Math.sin((elapsed / 1250) * 2 * Math.PI) > 0 ? -4 : 4;
+      sent.push(cdp.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: at.x, y: at.y, deltaX: 0, deltaY, modifiers: 2 }));
+    }, POINTER_EVERY_MS);
+  });
+  await Promise.all(sent);
+  await cdp.detach();
+  const record = await page.evaluate(() => {
+    const record = (window as unknown as { tkFrames: FrameRecord }).tkFrames;
+    record.stop();
+    return { times: record.times, withLine: record.withLine, long: record.long, moves: record.moves };
+  });
+  await settle(page);
+  return record;
+}
+
+test("with 20 briefs on cards beside the views, dragging a layer and zooming the canvas keep 60fps", async ({ page }) => {
+  const elements = await openBigPage(page);
+  await enterEditMode(page);
+  await withBriefs(page);
+  await selectCard(page, 6, { parent: true });
+  const drags: DragRecord[] = [];
+  for (let i = 0; i < DRAGS; i++) {
+    const record = await dragCard(page, 6);
+    expect(record.withLine, "the drag shows where the card would go").toBeGreaterThan(0);
+    drags.push(record);
+  }
+  const zooms: DragRecord[] = [];
+  for (let i = 0; i < DRAGS; i++) {
+    const record = await zoomFor(page);
+    expect(record.withLine, "the cards show as the canvas zooms").toBeGreaterThan(0);
+    zooms.push(record);
+  }
+  const drag = dragFrames(drags);
+  const zoom = dragFrames(zooms);
+  keep("drag with briefs", { fps: drag.fps, frameIntervals: drag.frames, dropped: drag.dropped, frames: drag.count, longTasks: drag.long, pointerMovesPerSecond: drag.moves });
+  keep("zoom with briefs", { fps: zoom.fps, frameIntervals: zoom.frames, dropped: zoom.dropped, frames: zoom.count, longTasks: zoom.long, wheelEventsPerSecond: zoom.moves });
+  print(report(`Dragging a card, ${BRIEFS} briefs on cards, ${elements} elements, ${VIEWS.length} views — ${mode}`, drag.rows("drag"), [drag.note]));
+  print(report(`Zooming the canvas with the wheel, ${BRIEFS} briefs on cards, ${elements} elements, ${VIEWS.length} views — ${mode}`, zoom.rows("zoom"), [zoom.note]));
+  verdict(drag.met && zoom.met, "with 20 briefs, dragging and zooming keep 60fps");
+});
+
 /** Long tasks, and the measures named `measure`, seen on the page since `armTasks`: stopped and taken by `takenTasks`. */
 interface Seen {
   long: { start: number; duration: number }[];

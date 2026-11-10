@@ -163,11 +163,17 @@ async function frameWithText(page: Page, offTheCanvas: boolean): Promise<string[
   const frame = offTheCanvas ? offCanvas(page) : null;
   // On the canvas, filled white in the Design panel, as one made in the blank space is at once.
   if (!frame) await page.getByRole("complementary", { name: "Design" }).getByRole("button", { name: "Add fill" }).click();
-  await page.getByRole("button", { name: "Add brief" }).click();
+  // Its brief, with the Brief tool (ticket 121): its card may bring the canvas round to show it, so the Frame is found again after.
+  const made = frame ?? desktop(page).contentFrame().locator("#board > div");
+  await page.keyboard.press("b");
+  const drawn = await steadyBox(made);
+  await page.mouse.click(drawn.x + drawn.width / 2, drawn.y + drawn.height / 2);
+  await expect(page.getByRole("textbox", { name: "Brief" })).toBeFocused();
   await page.getByRole("textbox", { name: "Brief" }).fill("A hero for the launch");
   await page.getByRole("textbox", { name: "Brief" }).press("Enter");
+  const now = await steadyBox(made);
   await page.keyboard.press("t");
-  await page.mouse.click(start.x + 4, start.y + 4);
+  await page.mouse.click(now.x + 4, now.y + 4);
   await page.keyboard.type("Launch");
   await page.keyboard.press("Enter");
 
@@ -179,7 +185,9 @@ async function frameWithText(page: Page, offTheCanvas: boolean): Promise<string[
     // Pressed near its bottom right, on the Frame itself, clear of its text; let go with it where the one drawn on the canvas starts.
     await page.mouse.move(box.x + 32, box.y + 24);
     await page.mouse.down();
-    await page.mouse.move(target.x + 32, target.y + 24, { steps: 12 });
+    // Where the one drawn on the canvas starts, as the canvas is now.
+    const there = await steadyBox(desktop(page).contentFrame().locator("#board"));
+    await page.mouse.move(there.x + 20 + 32, there.y + 10 + 24, { steps: 12 });
     await page.mouse.up();
     await expect(offCanvas(page)).toHaveCount(0);
   }
