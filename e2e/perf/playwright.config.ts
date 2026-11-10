@@ -24,6 +24,8 @@ const PORT = Number(process.env.TK_PERF_PORT ?? 5390);
 export const BIG_URL = `http://localhost:${PORT}/big.html`;
 /** How the window is sized: on the designer's screen, at its own pixel density. */
 export const WINDOW = { width: 1440, height: 900 };
+/** The headless shell's viewport: the windowed Chrome's page viewport in that window, as measured on the designer's computer on 2026-11-10 (ticket 124). */
+const HEADLESS_VIEWPORT = { width: 1440, height: 813 };
 
 const react18Example = fileURLToPath(new URL("../../examples/vite-react18-tw3", import.meta.url));
 
@@ -38,7 +40,7 @@ export default defineConfig({
   timeout: 10 * 60_000,
   reporter: [["list"]],
   use: HEADLESS
-    ? { browserName: "chromium", headless: true, viewport: WINDOW, deviceScaleFactor: 2 }
+    ? { browserName: "chromium", headless: true, viewport: HEADLESS_VIEWPORT, deviceScaleFactor: 2 }
     : {
         browserName: "chromium",
         channel: "chrome",
