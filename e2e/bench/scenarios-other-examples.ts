@@ -297,5 +297,8 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
   },
 ];
 
-/** Every standard scenario: the React 19 + Tailwind v4 example's, then these. */
+/**
+ * Every standard scenario: the React 19 + Tailwind v4 example's, then these. 28 of them since ticket 118 (24 to ticket 88's runs and
+ * their reruns, 25 from ticket 108's): `--dry` sets up 28, `--scripted` applies the 19 with scripted code.
+ */
 export const STANDARD_SCENARIOS: Scenario[] = [...SCENARIOS, ...OTHER_EXAMPLE_SCENARIOS];
