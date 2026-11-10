@@ -676,8 +676,6 @@ export const styles = /* css */ `
 :is(.tk-tree-chevron[data-open], .tk-fold) { background: #ffffff; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1.5px rgb(0 0 0 / 0.15); color: #717171; }
 :is(.tk-tree-chevron[data-open="false"], .tk-fold[aria-expanded="false"]) .tk-icon { rotate: -90deg; }
 .tk-fold:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
-/* Before an effect's type, 5px from it, as things side by side in a row are: its row's own gap is 2px, the type and its − joined. */
-.tk-paint-row > .tk-fold { margin-right: 3px; }
 /* A guide: down from the layer this one is in, and in to this one; or down past it, to a later one there. */
 .tk-tree-guide { position: absolute; top: -16px; width: 15px; height: 30px; box-sizing: border-box; border-left: 1px solid var(--tk-guide); pointer-events: none; }
 .tk-tree-guide.is-in { border-bottom: 1px solid var(--tk-guide); border-bottom-left-radius: 4px; }
@@ -760,6 +758,7 @@ export const styles = /* css */ `
 .tk-section > :is(.tk-section-title, .tk-section-header) + * { margin-top: 0; }
 /* A section with nothing under its title yet (Fill, Stroke): its title alone, 24px. */
 .tk-section > :is(.tk-section-title, .tk-section-header):last-child { margin-bottom: 0; }
+/* Things side by side in a row 5px apart: a paint's field and its −, as Independent corners and Wrap (designer, 2026-11-10). */
 .tk-row { display: flex; align-items: center; gap: 5px; }
 /* A field: 28px high (Figma: 03 Kind, 86:557; designer, 2026-11-08), raised on neutral 50 (--tk-input), its label (an icon or a word) before what it holds. */
 /* Its corners 6px, as every field, choice and button in the panel (designer, 2026-11-08). */
@@ -924,8 +923,6 @@ export const styles = /* css */ `
 .tk-field[data-scrubbing] { box-shadow: var(--tk-input-focus-shadow); }
 .tk-field[data-scrubbing]:not(.is-changed) { background-color: var(--tk-input-hover); }
 .tk-field.is-changed[data-scrubbing] { box-shadow: var(--tk-changed-focus-shadow); }
-/* A paint's row: its field, then its remove button, 2px apart. */
-.tk-row.tk-paint-row { gap: 2px; }
 /* 17px with its 0.5px line, 5.5px in from the field's top, bottom and left (designer, 2026-11-08). */
 .tk-swatch {
   flex: none;
@@ -1006,10 +1003,11 @@ export const styles = /* css */ `
 .tk-icon-button:hover { background: var(--tk-field); }
 .tk-icon-button:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: -2px; }
 /* A button that stays on in the panel (Independent corners, Wrap): the accent, as the tool chosen is (designer, 2026-11-07); a row's reset as it (designer, 2026-11-08). */
-.tk-section .tk-icon-button[aria-pressed="true"], :is(.tk-size-row, .tk-color-row) > .tk-reset { background: var(--tk-accent); color: #ffffff; }
+/* On the accent, the darker hairline and shadow a changed field has (designer, 2026-11-10); so too the − of an item added, a changed check and a changed segmented group. */
+.tk-section .tk-icon-button[aria-pressed="true"], :is(.tk-size-row, .tk-color-row) > .tk-reset { background: var(--tk-accent); box-shadow: var(--tk-changed-shadow); color: #ffffff; }
 .tk-section .tk-icon-button[aria-pressed="true"]:hover, :is(.tk-size-row, .tk-color-row) > .tk-reset:hover { background: var(--tk-accent-strong); }
 /* An item added in this round (a shadow, a fill, a Stack): its − alone marked, as a button that stays on (designer, 2026-11-08). */
-.tk-icon-button.is-added { background: var(--tk-accent); color: #ffffff; }
+.tk-icon-button.is-added { background: var(--tk-accent); box-shadow: var(--tk-changed-shadow); color: #ffffff; }
 .tk-icon-button.is-added:hover { background: var(--tk-accent-strong); }
 /* A row's own button beside its fields (Independent corners, Wrap, a row's reset): as tall as they. */
 .tk-row > .tk-icon-button, .tk-grid-2 > .tk-icon-button, :is(.tk-size-row, .tk-color-row) > .tk-reset { width: 28px; height: 28px; border-radius: 6px; }
@@ -1159,7 +1157,7 @@ export const styles = /* css */ `
  * it (white on blue 500 is 3.4:1), a light tint under one hovered; the group's reset pops out inside it at its right end, 24px on blue 400
  * as a changed field's, the group as wide as its buttons and the reset (designer, 2026-11-08).
  */
-.tk-segmented-field.is-changed { background: var(--tk-accent); }
+.tk-segmented-field.is-changed { background: var(--tk-accent); box-shadow: var(--tk-changed-shadow); }
 .tk-segmented-field.is-changed .tk-icon-button:not([aria-checked="true"]) { color: #fafafa; }
 .tk-segmented-field.is-changed .tk-icon-button:not([aria-checked="true"]):hover { background: rgb(255 255 255 / 0.16); }
 /* Clicked, the accent at once, the click answered; taken back (its reset, undo), it eases back to the track's grey, as a check does. */
@@ -1297,7 +1295,7 @@ export const styles = /* css */ `
 }
 .tk-check input:indeterminate { background: #e5e5e4; }
 /* Changed, in the accent; checked again to go back, it has no reset of its own (designer, 2026-11-08). */
-.tk-check.is-changed { background: var(--tk-accent); color: #fafafa; }
+.tk-check.is-changed { background: var(--tk-accent); box-shadow: var(--tk-changed-shadow); color: #fafafa; }
 .tk-check input:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
 
 .tk-viewport {

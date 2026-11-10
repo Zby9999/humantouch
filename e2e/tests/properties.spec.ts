@@ -1970,10 +1970,12 @@ test("an effect's fold at its row's left, its type filling the row from 5px afte
     ]);
     expect(Math.abs(fold.x - rowBox.x), `${name}: its fold at the row's left`).toBeLessThanOrEqual(1);
     expect(Math.abs(fold.x + fold.width + 5 - type.x), `${name}: its type 5px after its fold`).toBeLessThanOrEqual(1);
-    // The 2px gap of a paint's row between them.
-    expect(Math.abs(type.x + type.width + 2 - minus.x), `${name}: its type up to its −`).toBeLessThanOrEqual(1);
+    // 5px between them, as things side by side in a row are (designer, 2026-11-10).
+    expect(Math.abs(type.x + type.width + 5 - minus.x), `${name}: its type 5px before its −`).toBeLessThanOrEqual(1);
     expect(Math.abs(minus.x + minus.width - (rowBox.x + rowBox.width)), `${name}: its − at the row's right end`).toBeLessThanOrEqual(1);
   }
+  // Added in this round, its − on the accent with a changed field's darker hairline and shadow (designer, 2026-11-10).
+  await expect(effects.getByRole("button", { name: "Remove layer blur" })).toHaveCSS("box-shadow", /rgba\(0, 0, 0, 0\.15\) 0px 0px 0px 0\.5px inset/);
 });
 
 test("an effect's fold, as a layer's chevron in the Layers panel but 28px as the panel's buttons, folds its details away to its type and shows them again (designer, 2026-11-08)", async ({ page }) => {
