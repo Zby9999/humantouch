@@ -18,5 +18,4 @@ test("the page not made into a canvas says so, and sends the designer to their A
   await expect(page.getByRole("alert")).toHaveText("Couldn't turn this page into a canvas.Ask your Agent to look into it.");
   // One over the other.
   expect(await page.getByRole("alert").evaluate((el) => el.getClientRects().length && el.getBoundingClientRect().height)).toBeGreaterThan(24);
-  await page.getByRole("alert").screenshot({ path: ".scratch/canvas-failed.png" });
 });
