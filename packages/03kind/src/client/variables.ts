@@ -266,17 +266,23 @@ function shadowColors(shadows: Shadow[]): Record<string, Slot> {
  * Which Variable each part of a value is, as the change records it. A part the
  * designer picked a Variable for keeps it while the value there is still that
  * Variable's (`picked`; null there: they detached it); any other part is the
- * first Variable of its group with exactly its value, or null when none has it.
+ * Variable the code writes it with, when that one draws exactly its value
+ * (`code`, ticket 119: of two of the same value, the code's), else the first
+ * Variable of its group with exactly its value, or null when none has it.
  * Undefined when no part of the value has a group with Variables.
  */
-export function bind(catalog: Catalog, property: string, value: unknown, picked: Picked | undefined, previous: Bindings | undefined): Bindings | undefined {
+export function bind(catalog: Catalog, property: string, value: unknown, picked: Picked | undefined, previous: Bindings | undefined, code?: Bindings): Bindings | undefined {
   const bindings: Bindings = {};
   for (const [slot, { group, drawn }] of Object.entries(slotsOf(property, value))) {
     if (!catalog.of(group).length) continue;
     const chosen = picked && slot in picked ? picked[slot] : previous?.[slot]?.picked ? previous[slot] : null;
     const still = chosen && catalog.of(group).find((entry) => sameVariable(entry.variable, chosen));
     if (still && equal(still.drawn, drawn)) bindings[slot] = { ...still.variable, picked: true };
-    else bindings[slot] = catalog.match(group, drawn);
+    else {
+      const written = !(picked && slot in picked) && code?.[slot];
+      const holds = written && catalog.of(group).find((entry) => sameVariable(entry.variable, written));
+      bindings[slot] = holds && equal(holds.drawn, drawn) ? holds.variable : catalog.match(group, drawn);
+    }
   }
   // Shadows that are a shadow Variable are that Variable, their colors and all, as an effect style is in Figma.
   if (property === "shadows" && bindings[""]) for (const slot of Object.keys(bindings)) if (slot) delete bindings[slot];

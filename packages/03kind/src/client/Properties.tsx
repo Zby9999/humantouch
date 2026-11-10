@@ -40,9 +40,10 @@ import { useToast } from "./Toast";
 import { fontsOf, type Font, type LineHeight, type TextAlign, type TextCase, type TextDecoration, type TextLength } from "./typography";
 import { weightName } from "../design-values";
 import { ColorPanel } from "./ColorPanel";
-import { ColorPicker, namesColor, Preview, TypingProvider, useCatalog, useTypeahead, VariableSlot, type Slot } from "./VariablePicker";
+import { ColorPicker, namesColor, Preview, TypingProvider, useCatalog, useTypeahead, useTypedIn, VariableSlot, type Slot } from "./VariablePicker";
 import { ShadowDetails } from "./VariantsPanel";
 import { GROUPS, sameVariable, withPart, type Resolved } from "./variables";
+import type { Variable } from "../service-protocol";
 
 interface Props {
   editor: Editor;
@@ -125,18 +126,37 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
 
   const catalog = useCatalog();
   /**
-   * The Variable every selected layer has picked for part `part` of the property `propertyOf` names for it; null when none,
-   * or not the same. The property is where the layer keeps the value: a text layer's shadows are its text shadows.
+   * The parts detached from the Variable the code writes them with, as `property part`: shown as values, though
+   * nothing is changed by it (ticket 119); for this selection alone.
    */
-  const boundTo = (propertyOf: (layer: Layer) => Property, part: string) => {
-    const [first, ...rest] = layers.map((layer) => editor.variables(layer, propertyOf(layer))?.[part]);
-    const same = rest.every((other) => other?.picked && sameVariable(other, first));
-    return first?.picked && same ? first : null;
+  const [detachedOf, setDetachedOf] = useState<{ key: string; parts: string[] }>({ key: "", parts: [] });
+  const detached = detachedOf.key === keyOf(layers) ? detachedOf.parts : [];
+  /**
+   * The Variable every selected layer has for part `part` of the property `propertyOf` names for it: the one picked
+   * this round, else the one the code writes its value with (ticket 119), unless detached here. Null when none, or
+   * not the same. The property is where the layer keeps the value: a text layer's shadows are its text shadows.
+   */
+  const boundTo = (propertyOf: (layer: Layer) => Property, part: string): { bound: Variable | null; inCode?: boolean } => {
+    const [first, ...rest] = layers.map((layer) => {
+      const property = propertyOf(layer);
+      const bound = editor.variables(layer, property)?.[part];
+      if (bound?.picked) return { variable: bound, inCode: false };
+      const code = detached.includes(`${property} ${part}`) ? null : editor.inCode(layer, property)?.[part];
+      return code ? { variable: code, inCode: true } : null;
+    });
+    if (!first || !rest.every((other) => sameVariable(other?.variable, first.variable))) return { bound: null };
+    return { bound: first.variable, ...(rest.every((other) => other!.inCode === first.inCode) && first.inCode && { inCode: true }) };
   };
   /** Makes part `part` of the property `propertyOf` names for each selected layer the Variable `entry` draws, as one edit; null detaches it, keeping the value. */
   const pick = (propertyOf: (layer: Layer) => Property, part: string, entry: Resolved | null) => {
+    // Detached, the field shows the value, the code's Variable or not; picked, the Variable.
+    const parts = layers.map((layer) => `${propertyOf(layer)} ${part}`);
+    setDetachedOf({ key: keyOf(layers), parts: entry ? detached.filter((p) => !parts.includes(p)) : [...new Set([...detached, ...parts])] });
+    // Detached from the code's Variable, not one picked this round: there is nothing to edit.
+    const editing = entry ? layers : layers.filter((layer) => editor.variables(layer, propertyOf(layer))?.[part]?.picked);
+    if (!editing.length) return;
     editor.batch(() => {
-      for (const layer of layers) {
+      for (const layer of editing) {
         const property = propertyOf(layer);
         const current = editor.read(layer, property);
         const next = entry ? withPart(property, current, part, entry.drawn) : current;
@@ -150,7 +170,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
     const group = GROUPS[property];
     if (!catalog || !group) return undefined;
     const propertyOf = () => property;
-    return { group, selection: keyOf(layers), bound: boundTo(propertyOf, part), onPick: (entry) => pick(propertyOf, part, entry) };
+    return { group, selection: keyOf(layers), ...boundTo(propertyOf, part), onPick: (entry) => pick(propertyOf, part, entry) };
   };
 
   /** The color of shadow `i` as a field that can be a color Variable, where each layer keeps its shadows; undefined when the project has none. */
@@ -158,7 +178,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
     if (!catalog) return undefined;
     const part = `shadow ${i + 1}`;
     const kept = (layer: Layer) => effectOf(layer, "shadows")!;
-    return { group: "color", selection: keyOf(layers), bound: boundTo(kept, part), onPick: (entry) => pick(kept, part, entry) };
+    return { group: "color", selection: keyOf(layers), ...boundTo(kept, part), onPick: (entry) => pick(kept, part, entry) };
   };
 
   /** Selected text layers: their shadows are text shadows, and they have no blur. */
@@ -2345,14 +2365,16 @@ function ColorField({ name, color, onChange, variable, top, shown, onPicker, pro
   /** The swatch or the Variable's name the picker is open from. */
   const [open, setOpen] = useState<HTMLElement | null>(null);
   useEffect(() => onPicker?.(!!open), [!!open]);
-  const offered = variable && catalog?.of("color").length ? variable : undefined;
+  const typedIn = useTypedIn();
+  const listed = variable && catalog?.of("color").length ? variable : undefined;
+  const offered = listed?.inCode && typedIn.typing ? { ...listed, bound: null, inCode: undefined } : listed;
   const toggle = (event: { currentTarget: HTMLElement }) => setOpen(open ? null : event.currentTarget);
   const marks = useChangeMarks();
   const changed = !!property && marks.changed(property, part);
   /** Typed as hex: its opacity in a field of its own, joined to it, as the designer drew it (2026-11-07). */
   const typed = !shown && !offered?.bound;
   return (
-    <div class={`tk-color-row${changed ? " is-changed" : ""}`}>
+    <div class={`tk-color-row${changed ? " is-changed" : ""}`} {...typedIn.handlers}>
       {/* One reset takes the color and its opacity back together (a gradient, all of it): at the row's left, outside the fields, both marked with none of their own (designer, 2026-11-08). */}
       {changed && <ResetButton label={name.toLowerCase()} onReset={() => marks.reset([property!], part)} />}
       <div class={`tk-field tk-color-field${typed ? " is-joined" : ""}${changed ? " is-changed" : ""}`}>
@@ -2405,7 +2427,7 @@ function ColorValue({ name, color, onChange, offered, onOpen }: {
         <button type="button" class="tk-variable-chip-name" aria-label={`${name} color variable`} aria-haspopup="dialog" data-tk-tip={`${offered.bound.name}: ${offered.bound.value}`} onClick={onOpen}>
           {offered.bound.name}
         </button>
-        <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} color variable`} data-tk-tip="Detach variable" onClick={() => offered.onPick(null)}>
+        <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} color variable`} data-tk-tip="Detach variable" data-tk-in-code={offered.inCode ? "" : undefined} onClick={() => offered.onPick(null)}>
           <Icon name="detach" />
         </button>
       </>
