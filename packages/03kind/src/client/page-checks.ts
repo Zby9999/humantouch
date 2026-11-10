@@ -81,8 +81,11 @@ export const PAGE_UPDATE_LOST_MS = 12_000;
  *   page first checked, if one was under way then.
  * - `was`: the count, as last heard.
  * - `lost`: of the count, the updates whose end will never come: those
- *   counted as another began, as Vite begins one only once the one before is
- *   over (its handler threw before it said so).
+ *   counted as another began, where Vite begins one only once the one before
+ *   is over (its handler threw before it said so; `CodeUpdates.inTurn`,
+ *   6.3.0 on). Where updates run side by side, as before 6.3.0, another's
+ *   beginning says nothing of those under way (ticket 125): only those begun
+ *   `PAGE_UPDATE_LOST_MS` before it are counted lost then.
  */
 interface HotUpdates {
   began: number;
@@ -101,10 +104,11 @@ function hotUpdates(win: Window): HotUpdates | undefined {
   hotUpdatesOf.set(win, hot);
   // Never taken off: the page's checks come and go with the round, the updates they go by run on.
   win.addEventListener(CODE_EVENT, () => {
-    const count = codeUpdates(win)?.updating ?? 0;
+    const updates = codeUpdates(win);
+    const count = updates?.updating ?? 0;
     if (count > hot.was) {
+      if (updates?.inTurn || performance.now() - hot.began >= PAGE_UPDATE_LOST_MS) hot.lost = Math.max(hot.lost, hot.was);
       hot.began = performance.now();
-      hot.lost = Math.max(hot.lost, hot.was);
     }
     hot.was = count;
     hot.lost = Math.min(hot.lost, count);
@@ -330,7 +334,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   const hot = hotUpdates(win);
   /**
    * An update under way, as the dev server says, but for one that lost its
-   * end (ticket 123): one counted as another began (`HotUpdates.lost`), or
+   * end (ticket 123): one counted lost as another began (`HotUpdates.lost`), or
    * the latest begun `PAGE_UPDATE_LOST_MS` ago with no word of its end. Else
    * it would hold every ask after it for all of `CHECK_ARRIVE_MS`. Unlike
    * the code changes' `UPDATE_LOST_MS`, timed from the latest update's

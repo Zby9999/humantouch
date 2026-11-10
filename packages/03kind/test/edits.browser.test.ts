@@ -3829,7 +3829,7 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     write("border: 1px solid #ff0000");
     // The Agent's edit is in: the dev server said so before the page heard of the claim.
     const win = page.defaultView!;
-    (win as unknown as Record<string, CodeUpdates>)[CODE_GLOBAL] = { at: Date.now(), updating: 0 };
+    (win as unknown as Record<string, CodeUpdates>)[CODE_GLOBAL] = { at: Date.now(), updating: 0, inTurn: true };
     win.dispatchEvent(new Event(CODE_EVENT));
     const shown: number[][] = [];
     const reports: CheckReport[] = [];
@@ -3843,18 +3843,27 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     checks.stop();
   });
 
+  interface HotUpdatesFaked {
+    begin(): void;
+    end(): void;
+    ask(key?: string): void;
+    nextRound(): void;
+    after(ms: number): Promise<void>;
+    answer(key?: string): CheckReport | undefined;
+    answered(key?: string): number | undefined;
+  }
+
   /**
    * The page watched with word from its dev server on hot updates, the clock
    * faked (ticket 123): `begin` and `end` as Vite's `vite:beforeUpdate` and
    * `vite:afterUpdate`; `answered`, when `done`'s answer came, in ms after it
    * asked; `nextRound`, the checks stopped and begun anew on the same page,
-   * as for the round after.
+   * as for the round after. `inTurn`, as `CodeUpdates.inTurn`: Vite 6.3.0
+   * on, unless said otherwise (ticket 125).
    */
   const withUpdates = async (
-    body: (
-      page: ReturnType<typeof open>,
-      hot: { begin(): void; end(): void; ask(key?: string): void; nextRound(): void; after(ms: number): Promise<void>; answer(key?: string): CheckReport | undefined; answered(key?: string): number | undefined },
-    ) => Promise<void>,
+    body: (page: ReturnType<typeof open>, hot: HotUpdatesFaked) => Promise<void>,
+    { inTurn = true } = {},
   ) => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance", "Date"] });
     try {
@@ -3864,7 +3873,7 @@ describe("a stroke is checked on the live page as the code writes it, else as th
       const [change] = changes.list();
       write("border: 1px solid #ff0000");
       const win = page.defaultView!;
-      const code: CodeUpdates = { at: Date.now(), updating: 0 };
+      const code: CodeUpdates = { at: Date.now(), updating: 0, inTurn };
       (win as unknown as Record<string, CodeUpdates>)[CODE_GLOBAL] = code;
       const reports: CheckReport[] = [];
       /** By the ask's key: when it asked, then how long after it the answer came. */
@@ -4006,6 +4015,69 @@ describe("a stroke is checked on the live page as the code writes it, else as th
       expect(hot.answer()).toEqual(expect.objectContaining({ outcome: "shown" }));
       expect(hot.answered()).toBeLessThan(CHECK_SETTLE_MS + 1000);
     });
+  });
+
+  /**
+   * Two updates side by side (ticket 125): A begins, B begins, A ends, and
+   * the page draws the edit only as B ends, longer than `SHOW_MS` after A.
+   * What `done` had answered before B's end.
+   */
+  const overlapping = async ({ write }: ReturnType<typeof open>, hot: HotUpdatesFaked) => {
+    hot.begin();
+    hot.begin();
+    hot.ask();
+    await hot.after(500);
+    hot.end();
+    await hot.after(4000);
+    const early = hot.answer();
+    write("border: 1.5px solid #ff0000");
+    hot.end();
+    await hot.after(1000);
+    return early;
+  };
+
+  test("before Vite 6.3, two updates side by side: done waits for the later one's end, not only the first's, and answers shown", async () => {
+    await withUpdates(
+      async (page, hot) => {
+        expect(await overlapping(page, hot)).toBeUndefined();
+        expect(hot.answer()).toEqual(expect.objectContaining({ outcome: "shown" }));
+      },
+      { inTurn: false },
+    );
+  });
+
+  test("from Vite 6.3, updates never overlap, so a second's beginning says the first is over: as in ticket 123, done answers once the first ends", async () => {
+    await withUpdates(async (page, hot) => {
+      expect(await overlapping(page, hot)).toEqual(expect.objectContaining({ outcome: "not shown" }));
+    });
+  });
+
+  test("before Vite 6.3, an update that lost its end holds a later one only till PAGE_UPDATE_LOST_MS after the later one began, and none once it has gone that long with none begun", async () => {
+    await withUpdates(
+      async ({ write }, hot) => {
+        // Lost: its end never comes.
+        hot.begin();
+        await hot.after(1000);
+        // Begun beside it, as far as the page can say: the change not shown, waited for till PAGE_UPDATE_LOST_MS after it began.
+        write("border: 3px solid #ff0000");
+        hot.begin();
+        hot.end();
+        hot.ask();
+        await hot.after(PAGE_UPDATE_LOST_MS - 500);
+        expect(hot.answer()).toBeUndefined();
+        await hot.after(CHECK_SETTLE_MS);
+        expect(hot.answer()).toEqual(expect.objectContaining({ outcome: "not shown" }));
+        // PAGE_UPDATE_LOST_MS on with none begun, the one left under way is taken as lost as the next begins: that one is answered once in.
+        await hot.after(PAGE_UPDATE_LOST_MS);
+        hot.begin();
+        hot.end();
+        hot.ask("done again");
+        await hot.after(PAGE_UPDATE_LOST_MS);
+        expect(hot.answer("done again")).toEqual(expect.objectContaining({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: 3, style: "solid" } }));
+        expect(hot.answered("done again")).toBeLessThan(3000);
+      },
+      { inTurn: false },
+    );
   });
 
   test("shown, then gone from the page with its layer (another route, say): the page cannot check it, which is no word that it is undone", async () => {

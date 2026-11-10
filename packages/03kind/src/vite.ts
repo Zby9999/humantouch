@@ -1,16 +1,19 @@
-import type { Plugin } from "vite";
+import { version as viteVersion, type Plugin } from "vite";
 import { CODE_EVENT, CODE_GLOBAL, SERVICE_GLOBAL, type ServiceConfig } from "./service-protocol";
 import { startService, type Service } from "./service";
 import { markSource } from "./source-marker";
+import { updatesInTurn } from "./vite-version";
 
 /**
  * Keeps on the page when the dev server last brought code in, and whether it
  * is bringing some in now, as `CodeUpdates`: from Vite's own HMR events. The
- * page's code is as new as it loaded, until an update.
+ * page's code is as new as it loaded, until an update. Whether this Vite
+ * handles its updates one at a time goes with them, read from its version
+ * here on the server (ticket 125).
  */
 const CODE_MODULE = "virtual:03kind/code-updates";
 const RESOLVED_CODE_MODULE = `\0${CODE_MODULE}`;
-const CODE_UPDATES = `const code = (window.${CODE_GLOBAL} = { at: Date.now(), updating: 0 });
+const CODE_UPDATES = `const code = (window.${CODE_GLOBAL} = { at: Date.now(), updating: 0, inTurn: ${updatesInTurn(viteVersion)} });
 const changed = () => dispatchEvent(new Event(${JSON.stringify(CODE_EVENT)}));
 if (import.meta.hot) {
   import.meta.hot.on("vite:beforeUpdate", () => { code.updating++; changed(); });
