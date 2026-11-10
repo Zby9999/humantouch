@@ -269,7 +269,7 @@ test("a row of the change list names its change on one line, its values in its t
     return Math.abs(box.x + box.width / 2 - (viewport.x + viewport.width / 2));
   };
   await expect.poll(off).toBeLessThanOrEqual(1);
-  await expect(design(page).locator('[data-tk-mark="fill"]').first()).toHaveClass(/\btk-ping\b/);
+  await expect.poll(() => design(page).locator('[data-tk-mark="fill"]').first().evaluate((el) => getComputedStyle(el).animationName)).toBe("tk-ping");
   // Blinked, as it was.
   await expect(design(page).locator('[data-tk-mark="fill"]').first()).not.toHaveClass(/\btk-ping\b/);
 });
@@ -284,7 +284,8 @@ test("a shadow added, clicked in the change list, blinks its − in the accent, 
 
   await badge(page).click();
   await changeList(page).getByRole("button", { name: "Shadows · Button" }).click();
-  await expect(design(page).getByRole("button", { name: "Remove shadow 1" })).toHaveClass(/\btk-ping\b/);
+  // Blinking, not only marked so: a − is a button, whose styles unset all else.
+  await expect.poll(() => design(page).getByRole("button", { name: "Remove shadow 1" }).evaluate((el) => getComputedStyle(el).animationName)).toBe("tk-ping");
 });
 
 test("in preview mode, a change undone from the list leaves the round at once; the list opens from the keyboard too", async ({ page }) => {

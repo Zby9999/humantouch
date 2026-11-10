@@ -185,7 +185,8 @@ button.tk-change-text { all: unset; display: flex; flex: 1; align-items: center;
 button.tk-change-text:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: -2px; border-radius: 6px; }
 .tk-change-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A change shown from the list: its layer's outline and each field it changed blink lighter twice, the whole of each; a color alone, kept with reduced motion (designer, 2026-11-10). */
-.tk-ping { animation: tk-ping ${CHANGE_PING_MS}ms ${EASE_IN_OUT}; }
+/* Twice the class: over the buttons' all: unset, which comes later, as a − in the accent is one. */
+.tk-ping.tk-ping { animation: tk-ping ${CHANGE_PING_MS}ms ${EASE_IN_OUT}; }
 @keyframes tk-ping {
   25%, 75% { opacity: 0.35; }
   0%, 50%, 100% { opacity: 1; }
