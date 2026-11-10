@@ -420,8 +420,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     }
     return null;
   };
-  /** The layer of the change whose row in the change list is pointed at: outlined on the canvas (designer, 2026-11-10). */
-  const [changeHovered, setChangeHovered] = useState<Layer | null>(null);
+  /** The layer of the change whose row in the change list is pointed at, and the range it applies in: outlined on the canvas, lighter outside it (designer, 2026-11-10). */
+  const [changeHovered, setChangeHovered] = useState<{ layer: Layer; range: Breakpoint | null } | null>(null);
   /** A change shown from the change list, for the canvas to glide to; a new `key` each time. */
   const [focus, setFocus] = useState<{ layer: Layer; breakpoint: Breakpoint | null; key: number; shown(): void } | null>(null);
   /**
@@ -911,7 +911,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
             },
             hover(id) {
               const change = id === null ? undefined : changeSet.list().find((change) => change.id === id);
-              latest.current.setChangeHovered(change ? latest.current.layerOfChange(change) : null);
+              const layer = change && latest.current.layerOfChange(change);
+              latest.current.setChangeHovered(layer ? { layer, range: change.breakpoint ?? null } : null);
             },
           };
         }}
@@ -927,7 +928,9 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         selected={selected}
         hideSelection={adjusting}
         // The panel hidden, no row is pointed at.
-        rowHovered={changeHovered ?? (layersShown ? rowHovered : null)}
+        rowHovered={changeHovered?.layer ?? (layersShown ? rowHovered : null)}
+        // A change's row: the views it applies in outline its layer, the others lighter (designer, 2026-11-10).
+        rowHoveredRange={changeHovered ? changeHovered.range : undefined}
         focus={focus}
         onSelect={select}
         editor={editor}

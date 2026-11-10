@@ -78,6 +78,11 @@ interface Props {
   /** The layer whose row in the Layers panel is pointed at: outlined in every view alike, as the layer pointed at is (designer, 2026-11-10). */
   rowHovered: Layer | null;
   /**
+   * The row pointed at is a change's in the change list, which applies in this range (null: at every width): the
+   * views outside it outline the layer lighter (designer, 2026-11-10). Undefined: a row of the Layers panel.
+   */
+  rowHoveredRange?: Breakpoint | null;
+  /**
    * A change clicked in the change list (designer, 2026-11-10): its layer, glided to in the view its range
    * `breakpoint` applies in (the desktop view's: null), its outline then flashing once, and `shown` called. A new
    * `key` each time.
@@ -136,7 +141,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, rowHovered, focus, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, rowHovered, rowHoveredRange, focus, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -1361,7 +1366,9 @@ export function CanvasView(props: Props) {
               {hovered && !selected.includes(hovered) && shows(shown, hovered) && (
                 <Outline layer={hovered} view={view} name={name} camera={at} hover away={!shown.offCanvasLayer && keyOf(shown) !== keyOf(hover!.in)} />
               )}
-              {rowHovered && !selected.includes(rowHovered) && !drag && !resize && !hideSelection && shows(shown, rowHovered) && <Outline layer={rowHovered} view={view} name={name} camera={at} hover />}
+              {rowHovered && !selected.includes(rowHovered) && !drag && !resize && !hideSelection && shows(shown, rowHovered) && (
+                <Outline layer={rowHovered} view={view} name={name} camera={at} hover away={rowHoveredRange !== undefined && !shown.offCanvasLayer && !contains(rowHoveredRange, shown.width)} />
+              )}
               {tree && titled === keyOf(shown) && !selected.includes(tree.root) && <Outline layer={tree.root} view={view} name={name} camera={at} hover />}
               {selected.map((layer, i) => layer !== typingLayer && shows(shown, layer) && <Outline key={i} layer={layer} view={view} name={name} camera={at} hidden={hideSelection} away={away} />)}
               {typingLayer && shows(shown, typingLayer) && <Outline layer={typingLayer} view={view} name={name} camera={at} typing />}

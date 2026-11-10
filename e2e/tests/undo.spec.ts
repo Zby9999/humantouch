@@ -256,6 +256,8 @@ test("a row of the change list names its change on one line, its values in its t
   // Pointed at, its layer is outlined on the canvas, as pointed at there; and no longer, once the pointer leaves.
   await rows.nth(2).hover();
   await expect(page.locator(".tk-hover")).not.toHaveCount(0);
+  // A change at every width: as dark in every view.
+  await expect(page.locator(".tk-hover[data-away]")).toHaveCount(0);
   await page.getByRole("dialog", { name: "Changes" }).getByRole("heading").hover();
   await expect(page.locator(".tk-hover")).toHaveCount(0);
   await rows.nth(2).getByRole("button", { name: "Fill · Button" }).click();
