@@ -161,3 +161,5 @@
   - 场景：`third-party`、118 的 3 个、`off-canvas-frame`、`fill-gap-brief`、`r18-card-gap`，一共 7 个；
   - Claude 和 pi 各跑 3 次，一共 42 次；
   - 等设计师给额度。
+
+**设计师确认（2026-11-10）：** 规划会话的代定都照通过。
