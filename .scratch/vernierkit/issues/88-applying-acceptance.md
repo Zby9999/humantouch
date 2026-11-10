@@ -387,3 +387,8 @@ pi 34 次，除了 1 次撤销，都不改项目里的文件（跑构建工具�
 
 1. **Skill 第 2 步那一句加不加**（101 分诊时留到这里定：「The notes name the file and line of each change: read those, and search the project only where a section says the layer is not located.」）：建议**不加**。Claude 剩下的全仓搜索是在查其他使用处、变量定义，属于落地前的核实，这句话会把这些也劝掉；pi 从 46 次降到 19 次、Claude 从 15 次降到 7 次，靠的是 101 让 `claim` 写明位置，Skill 不用再加。
 2. **第三方组件**：建议在写法规则「Never change third-party code」后面补半句，例如「nor reach into its elements from the usage (a wrapper with descendant selectors such as `[&>span]:…`, a global rule on its class names): it depends on how the library draws them, and a change that needs it is left out and reported」。这条规则在「Every change」里，每份改动说明都有；为了别的改动说明逐字不变，补的这半句另起一条，只在改动的图层是第三方组件画的时候出现（`claim` 已经认得出来时）。改了以后用真实 Agent 只重跑 third-party 一个场景（Claude 3 次、pi 3 次，约 5 分钟）。也可以不改，把它当作 Agent 的合理变通。
+
+#### 设计师定了（2026-11-10）
+
+1. Skill 第 2 步那一句：不加。
+2. 第三方组件：选 A，不许从使用处伸进第三方组件改，单独一条规则，只对第三方图层出现，见 ticket 120。真 Agent 只重跑 `third-party`，Claude 和 pi 各 3 次，和 ticket 118 新场景的真跑一起，由规划会话在 118、120 合进 main 后跑，开跑前问额度。
