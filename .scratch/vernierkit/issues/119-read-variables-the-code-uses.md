@@ -51,12 +51,12 @@
 - 现有测试：示例里几乎每个值都是 Tailwind 主题的类，字段都变成了芯片，所以 e2e 夹具默认每帧把面板上「代码里的」芯片解开（`detachCodeVariables`，按 `data-tk-in-code` 认），旧测试照旧往输入框里输；讲变量的 `code-variables.spec` 关掉它。bench 的 playbook 和 perf 的字段先解开再输。
 - spec「属性面板」加了 65c 和「代码里在用的设计变量（ticket 119）」一节；GLOSSARY「设计变量」补了一个值"是"哪个变量的顺序。
 
-### 验证（同步了 main 431f898 的分支）
+### 验证（同步了 main 25b8882 的分支，合并前最后一轮）
 
-- `pnpm typecheck` 过；`pnpm test` 1155 过、1 跳过。
-- `TK_E2E_PORT=5400 pnpm test:e2e`：页面组 424 过、4 条失败：`code-variables.spec.ts:104` 是我的测试点错了图层，已改；`layers.spec.ts:316`、`popover-exit.spec.ts:34`、`properties.spec.ts:1193` 是负载下的时序。这 4 个文件或条目单独重跑 8/8 过。"project files" 组 `--project="project files" --no-deps` 149/149 过。
-- `TK_BENCH_PORT=5440 pnpm bench:agents --dry`：28/28（`variables` 先失败：playbook 的 `pickColorVariable` 往 hex 框里输，框现在是 `stone-600` 芯片；改成先解开后单独重跑过）。`--scripted` 18/18（`variables` 同上，单独重跑过）。
-- `--dry --claim-out`：main 431f898 和分支的 28 份认领说明**逐字相同**。「from `brand-2`」照代定 3 不改；`bind` 的"没改的部分记代码里的"在这 28 个场景里没有改变任何一句。
+- `pnpm typecheck` 过；`pnpm test` 1156 过、1 跳过。
+- `TK_E2E_PORT=5400 pnpm test:e2e`：页面组 432 过、1 条失败（`popover-exit.spec.ts:99`，负载下的时序，单独重跑 3/3 过）；"project files" 组 `--project="project files" --no-deps` 149/149 过。前一轮（main 431f898）页面组 424 过，4 条失败：`code-variables.spec.ts:104` 是我的测试点错了图层，已改；`layers.spec.ts:316`、`popover-exit.spec.ts:34`、`properties.spec.ts:1193` 单独重跑都过。
+- `TK_BENCH_PORT=5440 pnpm bench:agents --dry`：28/28；`--scripted` 19/19。（之前一轮 `variables` 失败过：playbook 的 `pickColorVariable` 往 hex 框里输，框现在是 `stone-600` 芯片；改成先解开。）
+- `--dry --claim-out`：main 25b8882 和分支的 28 份认领说明**逐字相同**（431f898 那一轮也逐字相同）。「from `brand-2`」照代定 5 不改；`bind` 的"没改的部分记代码里的"在这 28 个场景里没有改变任何一句。
 - 包：切换按钮 `react.dev.js` 1423 B（`bd6c2389b64451f0`）、`chunk-2GJY7MXB.js` 21372 B（`a8c4c0d4bc3db6a8`），和 main 逐字节相同。编辑层 `editor.dev.js` 515694 → 522149 B（+6455 B），gzip -9 182078 → 184555 B（+2477 B）。
 
 ### 性能（headless，`TK_PERF_HEADLESS=1`，main 431f898 和分支背靠背，参考用）
