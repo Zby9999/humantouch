@@ -1619,7 +1619,7 @@ button.tk-change-text:focus-visible { outline: 2px solid var(--tk-accent); outli
 .tk-variable-hint:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: -2px; }
 .tk-field.is-changed .tk-variable-hint:not(.tk-popover *) { box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.5); color: #fafafa; }
 .tk-field.is-changed .tk-variable-hint:not(.tk-popover *):hover { background: var(--tk-accent-on); }
-/* The Variables whose names have what is typed: a list under the field. */
+/* The Variables a field lists as it is focused and typed into: left of its panel, clear of the tools, else under or above the field (ticket 127). */
 .tk-matches {
   position: fixed;
   z-index: 2;

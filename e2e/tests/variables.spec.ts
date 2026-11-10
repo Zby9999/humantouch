@@ -18,7 +18,7 @@ async function enterEditMode(page: Page, url = REACT18_URL) {
   await canvasInPlace(page);
 }
 
-/** A field's Variables, listed under it as it is focused, the closest to its value first. */
+/** A field's Variables, listed left of the panel as it is focused, the closest to its value first. */
 async function variablesOf(page: Page, field: string) {
   await design(page).getByRole("textbox", { name: field, exact: true }).click();
   const list = page.getByRole("listbox", { name: "Matching variables" });
@@ -321,7 +321,7 @@ test("a shadow's color takes a color Variable from the color picker, shown by na
   await expect(canvas(page).locator("h3").first()).toHaveCSS("text-shadow", /^rgb\(27, 29, 42\) /);
 });
 
-test("typing part of a name in a field lists its group's Variables that have it, under the field: arrows choose, Enter picks, Esc puts the value back", async ({ page }) => {
+test("typing part of a name in a field lists its group's Variables that have it, left of the panel: arrows choose, Enter picks, Esc puts the value back", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");
   const matching = page.getByRole("listbox", { name: "Matching variables" });

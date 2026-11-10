@@ -462,18 +462,23 @@ export interface Typeahead {
   keyDown(event: TargetedKeyboardEvent<HTMLInputElement>): boolean;
   /** The text typed was applied as the value. */
   applied(text: string): void;
+  /** The text typed was applied with Enter: the list closes, and opens again as more is typed or the field is focused again (ticket 127). */
+  closedOnEnter(): void;
   input: Record<string, string | undefined>;
   after: ComponentChildren;
 }
 
-const NONE: Typeahead = { keyDown: () => false, applied: () => {}, input: {}, after: null };
+const NONE: Typeahead = { keyDown: () => false, applied: () => {}, closedOnEnter: () => {}, input: {}, after: null };
 
 /**
  * Finds Variables as a field is typed into, as in Figma, for a field inside a
- * TypingProvider. Focused, the field lists the group's Variables under it, the
- * closest to what it shows, or what is typed, first, to pick with a click: no
- * button beside it to open them (designer, 2026-11-05). Text that is part of
- * a name lists those that have it, to choose with ↑ / ↓ and pick with Enter
+ * TypingProvider. Focused, the field lists the group's Variables left of its
+ * panel, from the field's top and clear of the tools (designer, 2026-11-10,
+ * ticket 127); with no room there, under the field, or above it when there is
+ * none under it. The closest to what it shows, or what is typed, come first, to
+ * pick with a click: no button beside it to open them (designer, 2026-11-05).
+ * Enter, Tab or a press elsewhere applies what is typed and closes them. Text
+ * that is part of a name lists those that have it, to choose with ↑ / ↓ and pick with Enter
  * (Esc puts back the value); with a value typed, ↑ / ↓ and Enter are the
  * field's. A value close to one of them (see `NEAR`) shows its name quietly at
  * the end of the field, to pick with a click. None of it takes the focus or
@@ -494,7 +499,7 @@ export function useTypeahead({ text, value, focused, input, reset }: {
   const [chosen, setChosen] = useState({ text, index: 0 });
   /** The value last typed in and applied, and for which layers: its hint stays while the field shows it for them, to be clicked. */
   const [typed, setTyped] = useState<{ drawn: Drawn; selection: string } | null>(null);
-  /** The list closed with Esc, for the text it was closed on: it opens again as more is typed, or the field is focused again. */
+  /** The list closed with Esc, or with Enter applying the value, for the text it was closed on: it opens again as more is typed, or the field is focused again. */
   const [closed, setClosed] = useState<{ text: string | null } | null>(null);
   useEffect(() => {
     if (!focused) setClosed(null);
@@ -540,6 +545,9 @@ export function useTypeahead({ text, value, focused, input, reset }: {
       const drawn = read(applied);
       setTyped(drawn === null ? null : { drawn, selection });
     },
+    closedOnEnter() {
+      setClosed({ text: null });
+    },
     input: open ? { "aria-autocomplete": "list", "aria-controls": id, "aria-activedescendant": active >= 0 ? optionId(active) : undefined } : {},
     after: (
       <>
@@ -563,7 +571,7 @@ export function useTypeahead({ text, value, focused, input, reset }: {
   };
 }
 
-/** The Variables whose names have what is typed, in a list under the field. */
+/** The Variables whose names have what is typed, in a list left of the panel and clear of the tools, or under or above the field when there is no room there. */
 function Matches({ id, anchor, options, active, optionId, onChoose, onPick }: {
   id: string;
   anchor: HTMLInputElement;
@@ -579,6 +587,24 @@ function Matches({ id, anchor, options, active, optionId, onChoose, onPick }: {
     const at = (anchor.closest(".tk-field") ?? anchor).getBoundingClientRect();
     const width = Math.max(at.width, MATCHES_WIDTH);
     const height = list.current!.offsetHeight;
+    // Beside the panel the field is in, as the pickers are, from the field's top: over the panel it would cover the controls
+    // under the field, and a press meant for them would pick a Variable (ticket 127).
+    const panel = anchor.closest(".tk-panel, .tk-popover")?.getBoundingClientRect();
+    if (panel && panel.left - width - GAP >= GAP) {
+      const left = panel.left - width - GAP;
+      let top = Math.max(GAP, Math.min(at.top, window.innerHeight - height - GAP));
+      // Clear of the tools at the canvas's top right: under them, or, with no room under them, to their left.
+      const tools = (anchor.getRootNode() as Document | ShadowRoot).querySelector(".tk-tools")?.getBoundingClientRect();
+      let beside = left;
+      if (tools && tools.width && left < tools.right && left + width > tools.left && top < tools.bottom + GAP && top + height > tools.top - GAP) {
+        if (tools.bottom + GAP + height + GAP <= window.innerHeight) top = tools.bottom + GAP;
+        else beside = tools.left - width - GAP;
+      }
+      if (beside >= GAP) {
+        setPlace({ left: beside, top, width });
+        return;
+      }
+    }
     const below = at.bottom + 4;
     setPlace({
       left: Math.max(GAP, Math.min(at.left, window.innerWidth - width - GAP)),

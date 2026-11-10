@@ -75,7 +75,7 @@ function seen(page: Page, label: string) {
 
 for (const field of FIELDS) {
   const { layer, label, values: [first, second] } = field;
-  // Once the Variables are in, the field focused lists them under it.
+  // Once the Variables are in, the field focused lists them left of the panel.
   const listed = (page: Page) => page.getByRole("listbox", { name: "Matching variables" });
 
   test(`${label}: typed as the Variables come in, the field keeps the text, the focus and the selection, and Enter applies it`, async ({ page }) => {
