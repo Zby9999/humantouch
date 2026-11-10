@@ -197,7 +197,8 @@ function Menu({ id, select, options, active, leaving, onActive, onChoose, onClos
           aria-disabled={option.disabled || undefined}
           // The select keeps the focus, and its keys.
           onPointerDown={(event) => event.preventDefault()}
-          onPointerEnter={() => !option.disabled && onActive(i)}
+          // The pointer moved over it, not one it was left at that it came under, the menu scrolled by the keys or opened under it (ticket 131).
+          onPointerMove={() => !option.disabled && i !== active && onActive(i)}
           onClick={() => !option.disabled && onChoose(option)}
         >
           {i === chosen && <Icon name="check" />}
@@ -392,9 +393,10 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
         aria-selected={false}
         aria-disabled={item.disabled || undefined}
         onPointerDown={(event) => event.preventDefault()}
-        onPointerEnter={(event) => {
-          if (!item.disabled) setActive(i);
-          if (!item.details || event.pointerType !== "mouse") return;
+        // The pointer moved over it, not one it was left at that it came under, the list scrolled by the keys or opened under it (ticket 131).
+        onPointerMove={(event) => {
+          if (!item.disabled && i !== active) setActive(i);
+          if (!item.details || event.pointerType !== "mouse" || pointed?.index === i) return;
           const el = event.currentTarget;
           setPointed({ index: i, at: el.getBoundingClientRect(), beside: (el.closest(".tk-menu-column") ?? el).getBoundingClientRect() });
         }}

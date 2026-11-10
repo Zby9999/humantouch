@@ -236,6 +236,57 @@ test("with very many shadow Variables, Effects' + keeps its types by the button:
   expect(Math.round((await steadyBox(variables)).height)).toBe(400);
 });
 
+test("in Effects' + with very many shadow Variables, ↓ goes down their panel to its end, the panel scrolling with it, the pointer left in it taking none of the keys' place; moved, the Variable under it is the one the keys are on, its layers shown (ticket 131)", async ({ page }) => {
+  await page.route(/\/variables(\?|$)/, async (route) => {
+    const response = await route.fetch();
+    const list = await response.json();
+    for (let i = 1; i <= 40; i++) list.push({ name: `elevation-${i}`, group: "shadow", value: `0 ${i}px ${2 * i}px rgb(0 0 0 / 0.1)`, from: "tailwind", own: true });
+    await route.fulfill({ response, json: list });
+  });
+  await enterEditMode(page);
+  await selectRow(page, "Card");
+  await design(page).getByRole("group", { name: "Effects" }).getByRole("button", { name: "Add effect" }).click();
+  const menu = page.getByRole("dialog", { name: "Add effect" });
+  const variables = menu.locator(".tk-menu-column").nth(0);
+  const options = variables.getByRole("option");
+  await expect(variables.getByRole("option", { name: "elevation-40" })).toHaveCount(1);
+  const box = await steadyBox(variables);
+  expect(await variables.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+
+  // The pointer moved into the Variables' panel, near its top: the Variable under it is the one the keys are on, its layers shown. Then left there.
+  const details = page.locator(".tk-variants-details");
+  await page.mouse.move(box.x + box.width / 2, box.y + 96);
+  const active = menu.locator(".tk-menu-option.is-active");
+  await expect(active).toHaveCount(1);
+  const ids = await options.evaluateAll((all) => all.map((o) => o.id));
+  const from = ids.indexOf((await active.getAttribute("id"))!);
+  expect(from).toBeGreaterThan(0);
+  expect(from).toBeLessThan(ids.length - 1);
+  await expect(details.locator(".tk-variants-details-name")).toHaveText(await active.innerText());
+  // ↓ to the end: each a step down, the panel scrolling under the pointer, which takes none of them back.
+  for (let i = from + 1; i < ids.length; i++) {
+    await page.keyboard.press("ArrowDown");
+    await expect(active).toHaveAttribute("id", ids[i]);
+  }
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+  await expect(active).toHaveAttribute("id", ids.at(-1)!);
+  await expect(menu.getByRole("listbox")).toHaveAttribute("aria-activedescendant", ids.at(-1)!);
+  await expect(active).toHaveText("elevation-40");
+  // Scrolled with the keys: the last Variable whole in its panel.
+  expect(await variables.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  const [last, panel] = [await active.boundingBox(), await variables.boundingBox()];
+  expect(last!.y).toBeGreaterThanOrEqual(panel!.y);
+  expect(last!.y + last!.height).toBeLessThanOrEqual(panel!.y + panel!.height + 0.5);
+
+  // The pointer moved again, a row up, over the last Variable but one: it is the one the keys are on, its layers shown, as before; Enter adds it.
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height - 48);
+  await expect(active).toHaveAttribute("id", ids.at(-2)!);
+  await expect(active).toHaveText("elevation-39");
+  await expect(details.locator(".tk-variants-details-name")).toHaveText("elevation-39");
+  await page.keyboard.press("Enter");
+  await expect(menu).toBeHidden();
+});
+
 test("corner radius, shadows, size and font size take Variables of their own groups", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");
