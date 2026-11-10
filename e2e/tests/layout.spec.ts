@@ -206,8 +206,6 @@ test("a Stack's direction, gap, padding and alignment, in design language", asyn
   await expect.poll(() => canvasStyle(page, "header", "justify-content")).toBe("flex-end");
   await expect.poll(() => canvasStyle(page, "header", "align-items")).toBe("flex-end");
   await setField(page, "Gap", "24");
-  // Left, its Variables close: they would cover the direction (the panel, with no Brief section since ticket 121, has nothing to scroll that closes them).
-  await stack.getByRole("textbox", { name: "Gap", exact: true }).blur();
   const gap = await canvas(page)
     .locator("header")
     .evaluate((header) => header.children[1].getBoundingClientRect().left - header.children[0].getBoundingClientRect().right);
@@ -217,9 +215,60 @@ test("a Stack's direction, gap, padding and alignment, in design language", asyn
   // Distributed evenly: the gap's Auto, as Figma has it (designer, 2026-11-07).
   await stack.getByRole("combobox", { name: "Gap sizing" }).selectOption("auto");
   await expect.poll(() => canvasStyle(page, "header", "justify-content")).toBe("space-between");
-  // Last: the Variables the padding field lists as it is typed into stay open over the rows above it.
+  // Last: the padding typed into, applied with Enter.
   await setField(page, "Padding left", "10");
   await expect.poll(() => canvasStyle(page, "header", "padding-left")).toBe("10px");
+});
+
+test("the gap typed into, then the direction clicked at once: one click sets the direction and applies the gap, two changes (ticket 127)", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Header").click();
+  const panel = design(page);
+  const gap = panel.getByRole("textbox", { name: "Gap", exact: true });
+  const matches = page.getByRole("listbox", { name: "Matching variables" });
+  await gap.click();
+  await expect(matches).toBeVisible();
+  await gap.fill("24");
+  // Still listed as it is typed into, beside the panel: none of the panel's controls is under the list.
+  await expect(matches).toBeVisible();
+  const [list, aside] = [await steadyBox(matches), await steadyBox(panel)];
+  expect(list.x + list.width).toBeLessThanOrEqual(aside.x);
+
+  // No Enter, no Esc: the press lands on the direction.
+  await panel.getByRole("radio", { name: "Vertical" }).click();
+  await expect.poll(() => canvasStyle(page, "header", "flex-direction")).toBe("column");
+  await expect(panel.getByRole("radio", { name: "Vertical" })).toBeChecked();
+  await expect(matches).toHaveCount(0);
+  await expect(gap).toHaveValue("24");
+  await expect.poll(() => canvasStyle(page, "header", "row-gap")).toBe("24px");
+  await page.getByRole("button", { name: /not applied yet/ }).click();
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toReadAs(["Gap", "Direction"]);
+});
+
+test("the gap applied with Enter: its Variables close, the direction under it clicked at once, and open again as it is typed into (ticket 127)", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Header").click();
+  const panel = design(page);
+  const gap = panel.getByRole("textbox", { name: "Gap", exact: true });
+  const matches = page.getByRole("listbox", { name: "Matching variables" });
+  await gap.fill("30");
+  await expect(matches).toBeVisible();
+  await gap.press("Enter");
+  await expect(matches).toHaveCount(0);
+  await expect(gap).toBeFocused();
+  await expect.poll(() => canvasStyle(page, "header", "column-gap")).toBe("30px");
+  await gap.pressSequentially("2");
+  await expect(matches).toBeVisible();
+  await gap.press("Enter");
+  await expect(matches).toHaveCount(0);
+  await panel.getByRole("radio", { name: "Vertical" }).click();
+  await expect.poll(() => canvasStyle(page, "header", "flex-direction")).toBe("column");
+  // Tab applies it, and the list closes as the focus leaves.
+  await gap.fill("16");
+  await expect(matches).toBeVisible();
+  await gap.press("Tab");
+  await expect(matches).toHaveCount(0);
+  await expect.poll(() => canvasStyle(page, "header", "row-gap")).toBe("16px");
 });
 
 test("the gap's sizing opens its menu from the gap typed into: the Variables listed under it close, and stay closed once Auto is picked (designer, 2026-11-08)", async ({ page }) => {

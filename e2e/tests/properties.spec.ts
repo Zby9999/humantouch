@@ -1943,8 +1943,6 @@ test("a Stack made in this round: its fields unmarked, only its − in the accen
   const gap = stack.getByRole("textbox", { name: "Gap", exact: true });
   await gap.fill("40");
   await gap.press("Enter");
-  // Left, its Variables close: they would cover the direction.
-  await gap.blur();
   await stack.getByRole("radio", { name: "Horizontal" }).click();
   await expect(stack.locator(".is-changed")).toHaveCount(0);
   await expect(stack.getByRole("button", { name: /^Reset/ })).toHaveCount(0);

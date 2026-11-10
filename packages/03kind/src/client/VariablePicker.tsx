@@ -462,17 +462,21 @@ export interface Typeahead {
   keyDown(event: TargetedKeyboardEvent<HTMLInputElement>): boolean;
   /** The text typed was applied as the value. */
   applied(text: string): void;
+  /** The value was committed with Enter: the list closes, and opens again as more is typed or the field is focused again (ticket 127). */
+  committed(): void;
   input: Record<string, string | undefined>;
   after: ComponentChildren;
 }
 
-const NONE: Typeahead = { keyDown: () => false, applied: () => {}, input: {}, after: null };
+const NONE: Typeahead = { keyDown: () => false, applied: () => {}, committed: () => {}, input: {}, after: null };
 
 /**
  * Finds Variables as a field is typed into, as in Figma, for a field inside a
- * TypingProvider. Focused, the field lists the group's Variables under it, the
- * closest to what it shows, or what is typed, first, to pick with a click: no
- * button beside it to open them (designer, 2026-11-05). Text that is part of
+ * TypingProvider. Focused, the field lists the group's Variables beside the
+ * panel, from the field's top (ticket 127), the closest to what it shows, or
+ * what is typed, first, to pick with a click: no button beside it to open them
+ * (designer, 2026-11-05). Enter, Tab or a press elsewhere applies what is typed
+ * and closes them. Text that is part of
  * a name lists those that have it, to choose with ↑ / ↓ and pick with Enter
  * (Esc puts back the value); with a value typed, ↑ / ↓ and Enter are the
  * field's. A value close to one of them (see `NEAR`) shows its name quietly at
@@ -494,7 +498,7 @@ export function useTypeahead({ text, value, focused, input, reset }: {
   const [chosen, setChosen] = useState({ text, index: 0 });
   /** The value last typed in and applied, and for which layers: its hint stays while the field shows it for them, to be clicked. */
   const [typed, setTyped] = useState<{ drawn: Drawn; selection: string } | null>(null);
-  /** The list closed with Esc, for the text it was closed on: it opens again as more is typed, or the field is focused again. */
+  /** The list closed with Esc, or with Enter applying the value, for the text it was closed on: it opens again as more is typed, or the field is focused again. */
   const [closed, setClosed] = useState<{ text: string | null } | null>(null);
   useEffect(() => {
     if (!focused) setClosed(null);
@@ -540,6 +544,9 @@ export function useTypeahead({ text, value, focused, input, reset }: {
       const drawn = read(applied);
       setTyped(drawn === null ? null : { drawn, selection });
     },
+    committed() {
+      setClosed({ text: null });
+    },
     input: open ? { "aria-autocomplete": "list", "aria-controls": id, "aria-activedescendant": active >= 0 ? optionId(active) : undefined } : {},
     after: (
       <>
@@ -563,7 +570,7 @@ export function useTypeahead({ text, value, focused, input, reset }: {
   };
 }
 
-/** The Variables whose names have what is typed, in a list under the field. */
+/** The Variables whose names have what is typed, in a list beside the panel, or under the field when there is no room beside it. */
 function Matches({ id, anchor, options, active, optionId, onChoose, onPick }: {
   id: string;
   anchor: HTMLInputElement;
@@ -579,6 +586,13 @@ function Matches({ id, anchor, options, active, optionId, onChoose, onPick }: {
     const at = (anchor.closest(".tk-field") ?? anchor).getBoundingClientRect();
     const width = Math.max(at.width, MATCHES_WIDTH);
     const height = list.current!.offsetHeight;
+    // Beside the panel the field is in, as the pickers are, from the field's top: over the panel it would cover the controls
+    // under the field, and a press meant for them would pick a Variable (ticket 127).
+    const panel = anchor.closest(".tk-panel, .tk-popover")?.getBoundingClientRect();
+    if (panel && panel.left - width - GAP >= GAP) {
+      setPlace({ left: panel.left - width - GAP, top: Math.max(GAP, Math.min(at.top, window.innerHeight - height - GAP)), width });
+      return;
+    }
     const below = at.bottom + 4;
     setPlace({
       left: Math.max(GAP, Math.min(at.left, window.innerWidth - width - GAP)),
