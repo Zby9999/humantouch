@@ -27,12 +27,12 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 「Moves」那条，在图层带 margin 时写明 margin 留着、怎么画。不带 margin 的不变。
 - [x] 不改 Skill。和 100 的结论一样：问题在 `claim`。
 - [x] `--dry --claim-out` 前后对比：只有挪成 Absolute、而且图层带 margin 的场景，说明变了，至少有 `off-canvas-frame`。
-- [ ] `--scripted` 全过；整套 e2e 过。
+- [x] `--scripted` 全过；整套 e2e 过。（规划会话合并前在分支 9bd73417 上跑整套：typecheck 过；vitest 1208 过 1 跳过；node 126 过；e2e 606 过 1 跳过，一次过；`--scripted` 20/20。没派审查子 agent：改动十几行，规划会话自己逐行看过，省一次 Claude 额度）
 - [ ] 改完以后，`off-canvas-frame` 用真实 Agent 跑几次看效果。跑不跑、跑几次，由设计师定，会用到额度。
 
 ## 背景
