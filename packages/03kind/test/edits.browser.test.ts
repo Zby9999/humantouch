@@ -470,8 +470,11 @@ describe("stroke", () => {
       return editor.read(layerOf(box), "stroke");
     };
 
-    // Tailwind's preflight: every element has a solid border of 0.
-    expect(read("border: 0 solid #e5e7eb")).toBeNull();
+    // Tailwind's preflight: every element has a solid border of 0, and so no stroke.
+    doc.head.insertAdjacentHTML("beforeend", "<style>*, ::before, ::after { border: 0 solid #e5e7eb }</style>");
+    expect(read("")).toBeNull();
+    // A stroke at 0 as it lands in the code: its color the layer's own (designer, 2026-11-10).
+    expect(read("border-color: red")).toEqual({ color: "#FF0000", opacity: 1, weight: 0, style: "solid" });
     expect(read("border: 1px solid oklch(92.8% 0.006 264.531)")).toEqual({ color: "#E5E7EB", opacity: 1, weight: 1, style: "solid" });
     expect(read("border-bottom: 2px dotted blue; border-top: 3px none red")).toEqual({ color: "#0000FF", opacity: 1, weight: [0, 0, 2, 0], style: "dashed" });
   });
@@ -563,7 +566,8 @@ describe("stroke", () => {
     const { doc, editor, changes, layerOf } = openCanvas();
     const box = doc.getElementById("unmarked")!;
     // Tailwind's preflight under a border of the page's own: a line of 0 on its own is no stroke.
-    box.style.cssText = "height: 40px; border: 0 solid #e5e7eb";
+    doc.head.insertAdjacentHTML("beforeend", "<style>*, ::before, ::after { border: 0 solid #e5e7eb }</style>");
+    box.style.cssText = "height: 40px";
     const layer = layerOf(box);
     expect(editor.read(layer, "stroke")).toBeNull();
     box.style.cssText = "height: 40px; border: 2px solid #ff0000";

@@ -501,6 +501,38 @@ test("a stroke at weight 0, typed or dragged, stays a stroke with its color and 
   await expect(weight).toHaveCount(0);
 });
 
+test("a stroke on one side taken to 0 goes up again on that side, not on all, as in Figma (designer, 2026-11-10)", async ({ page }) => {
+  await selectRow(page, "Card");
+  const stroke = design(page).getByRole("group", { name: "Stroke", exact: true });
+  const weight = stroke.getByRole("textbox", { name: "Stroke weight" });
+  const sides = stroke.getByRole("combobox", { name: "Stroke sides" });
+  await sides.selectOption("Bottom");
+  await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("0px 0px 1px");
+
+  await weight.fill("0");
+  await weight.press("Enter");
+  await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("0px");
+  await expect(sides).toHaveValue("2");
+  await weight.fill("2");
+  await weight.press("Enter");
+  await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("0px 0px 2px");
+  await expect(sides).toHaveValue("2");
+});
+
+test("a stroke at 0 as it lands in the code, its color the layer's own, is a stroke at 0; a line of 0 the page gives every element is none (designer, 2026-11-10)", async ({ page }) => {
+  // The Card's own `border-stone-200`, its width 0 as the code would write it.
+  await canvas(page).locator("article").first().evaluate((card) => card.style.setProperty("border-width", "0px"));
+  await selectRow(page, "Card");
+  const stroke = design(page).getByRole("group", { name: "Stroke", exact: true });
+  await expect(stroke.getByRole("textbox", { name: "Stroke weight" })).toHaveValue("0");
+  await expect(stroke.getByRole("textbox", { name: "Stroke color", exact: true })).toHaveValue("E7E5E4");
+  await expect(stroke.getByRole("button", { name: "Add stroke" })).toHaveCount(0);
+
+  // The Header: Tailwind's `*, ::before, ::after { border: 0 solid }` alone.
+  await selectRow(page, "Header");
+  await expect(stroke.getByRole("button", { name: "Add stroke" })).toBeVisible();
+});
+
 test("a stroke weight goes in 0.5px steps, whatever the screen, and a toast says so when it is rounded; it shows as set though a 1x screen draws it narrower", async ({ page }) => {
   await page.clock.install();
   await selectRow(page, "Card");

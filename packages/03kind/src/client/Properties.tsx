@@ -1719,7 +1719,16 @@ function StrokeSection({ stroke, onChange, update, variable }: {
     if (weight !== typed && next) showToast(`Stroke weights go in 0.5px steps: ${typed}px is now ${weight}px.`);
     onChange(next, continues);
   };
-  const sides = stroke && stroke !== MIXED ? (custom ? "custom" : sidesOf(stroke.weight)) : null;
+  /**
+   * The sides drawn, as last drawn on some: a weight taken to 0 keeps them, so it goes up again on those sides, not on all,
+   * as in Figma (designer, 2026-11-10). Null: all sides. Kept while this layer is selected (the section is keyed by it).
+   */
+  const drawnSides = useRef<boolean[] | null>(null);
+  if (stroke && stroke !== MIXED && widest(stroke.weight) > 0) drawnSides.current = typeof stroke.weight === "number" ? null : stroke.weight.map((w) => w > 0);
+  /** The stroke's weights, at 0 on the sides last drawn: what a weight goes up on. */
+  const shape = (stroke: Stroke): Stroke["weight"] =>
+    widest(stroke.weight) === 0 && drawnSides.current ? (drawnSides.current.map((drawn) => (drawn ? 1 : 0)) as Stroke["weight"]) : stroke.weight;
+  const sides = stroke && stroke !== MIXED ? (custom ? "custom" : sidesOf(shape(stroke))) : null;
   const marks = useChangeMarks();
   /** Added in this round: its fields unmarked, with no resets; its − alone in the accent, one operation for the section's reset (designer, 2026-11-08). */
   const added = marks.added("stroke");
@@ -1770,7 +1779,10 @@ function StrokeSection({ stroke, onChange, update, variable }: {
               value={widest(stroke.weight)}
               min={0}
               onChange={(typed, continues) =>
-                changeWeight(typed, (weight) => strokeWith(stroke, typeof stroke.weight === "number" ? weight : stroke.weight.map((w) => (w > 0 ? weight : 0)) as Stroke["weight"]), continues)
+                changeWeight(typed, (weight) => {
+                  const drawn = shape(stroke);
+                  return strokeWith(stroke, typeof drawn === "number" ? weight : (drawn.map((w) => (w > 0 ? weight : 0)) as Stroke["weight"]));
+                }, continues)
               }
             />
           )}

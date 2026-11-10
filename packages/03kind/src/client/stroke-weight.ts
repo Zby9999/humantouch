@@ -7,7 +7,7 @@
  */
 import { declaredByEdit } from "./canvas-style";
 import { readStroke, strokeWith, type ColorReader, type Stroke } from "./paint";
-import { declarationsOf } from "./style-source";
+import { declarationsOf, sourcesOf } from "./style-source";
 
 const SIDES = ["top", "right", "bottom", "left"];
 
@@ -18,23 +18,36 @@ const SIDES = ["top", "right", "bottom", "left"];
  */
 export function readWrittenStroke(el: Element, colors: ColorReader): Stroke | null {
   const sides = readSides(el, colors);
-  return sides ? asWritten(sides) : editedAtZero(el, colors);
+  return sides ? asWritten(sides) : atZero(el, colors);
 }
 
 /**
- * A stroke an edit draws at 0, as in Figma: still a stroke, with its color and
- * line, so its weight can go up again. Only an edit's line counts: the page's
- * styles give many a layer a line of 0 (Tailwind's `border: 0 solid`), and
- * those have no stroke.
+ * A stroke drawn at 0, as in Figma: still a stroke, with its color and line,
+ * so its weight can go up again. An edit's line counts, and the layer's own,
+ * as a stroke at 0 lands in the code (designer, 2026-11-10); not the page's
+ * for every element: its styles give many a layer a line of 0 (Tailwind's
+ * `*, ::before, ::after { border: 0 solid }`), and those have no stroke.
  */
-function editedAtZero(el: Element, colors: ColorReader): Stroke | null {
-  const line = declaredByEdit(el, "border-style");
+function atZero(el: Element, colors: ColorReader): Stroke | null {
+  const line = declaredByEdit(el, "border-style") || ownLine(el);
   if (!line || /^(none|hidden)$/.test(line)) return null;
   return {
     ...colors.color(getComputedStyle(el).getPropertyValue("border-top-color")),
     weight: 0,
     style: /^(dashed|dotted)$/.test(line) ? "dashed" : "solid",
   };
+}
+
+/**
+ * The line the layer's own styles draw its border in, when they set its line
+ * or color: a rule for it, not for every element (`*`), or its style
+ * attribute. Empty when only the page's rules for every element do.
+ */
+function ownLine(el: Element): string {
+  const own = sourcesOf(el, ["border-top-style", "border-top-color"]).some(
+    (source) => source.kind === "inline" || (source.kind === "rule" && source.selector?.trim() !== "*"),
+  );
+  return own ? getComputedStyle(el).getPropertyValue("border-top-style") : "";
 }
 
 /**
