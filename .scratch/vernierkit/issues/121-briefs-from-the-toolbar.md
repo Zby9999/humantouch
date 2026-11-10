@@ -62,7 +62,8 @@
 - `pnpm typecheck` 过；`pnpm test` vitest 1153 过 1 跳过，node 测试 0 失败。
 - e2e（`TK_E2E_PORT=6200`，见风险 1）：页面测试 425 过，2 个失败是我弄坏的（见风险 2），修了单跑都过；「project files」一组用 `--project="project files" --no-deps` 补跑 149 过。
 - `brief.spec.ts` 重写为 10 条（工具、B、卡的位置和线的端点、空白处放下工具、空卡不记、改与撤、Remove 正在打字时也是一步、手机视图写的卡在手机视图右边且刷新后还在、删图层卡走撤回卡回、三张卡互不压住也不压视图、复制没有说明、写一半点另一个图层、改动列表撤掉、预览模式没有卡、Brief 按下拖出面板松手）；`create.spec.ts`、`made-off-canvas.spec.ts` 里写说明的地方改用 Brief 工具。照 93 的写法（`canvasInPlace`、`steadyBox`、web-first / `expect.poll`）。
-- bench：`--dry` 分支 28/28、main 431f898a 28/28；`--dry --claim-out` 两边 28 份 `diff -r` 逐字相同；`--scripted` 19/19（有 `apply` 的全部）。
+- 合并前最后一次（分支同步到 main 42953574，含 110 follow-up 和 119）：`pnpm typecheck` 过；`pnpm test` vitest 1164 过 1 跳过，node 0 失败；`TK_E2E_PORT=6200 pnpm test:e2e` 一次 586 全过；`--dry` 分支 28/28、main 42953574 28/28，`--dry --claim-out` 两边 28 份逐字相同；`--scripted` 19/19。
+- 之前（main 431f898a 上）：bench `--dry` 分支 28/28、main 431f898a 28/28；`--dry --claim-out` 两边 28 份 `diff -r` 逐字相同；`--scripted` 19/19（有 `apply` 的全部）。
 - 包：切换按钮的包（`react.dev.js`、`chunk-*.js` 等，除 `editor.dev.js` 外 12 个文件）和 431f898a 逐字节相同；`editor.dev.js` 515,694 → 520,818 字节（+5.1 KB），gzip -9 182,078 → 184,218（+2.1 KB）。
 - 性能 headless（`TK_PERF_HEADLESS=1 TK_PERF_PORT=6010`），main 和分支交替各跑两次（main → 分支 → main → 分支），中位数：
 
