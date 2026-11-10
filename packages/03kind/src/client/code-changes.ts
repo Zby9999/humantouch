@@ -46,8 +46,8 @@ export function codeUpdates(win: Window): CodeUpdates | undefined {
 export const CODE_QUIET_MS = 1000;
 /** While the designer is busy, or code is being brought in, how often to look again. */
 const BUSY_EVERY_MS = 250;
-/** An update begun this long ago with no word of its end is taken as over: Vite says nothing of one whose code failed to load. The page's checks go by it too (ticket 123). */
-export const UPDATE_LOST_MS = 5000;
+/** An update begun this long ago with no word of its end is taken as over: Vite says nothing of one whose code failed to load. */
+const UPDATE_LOST_MS = 5000;
 /** The longest the page tells in one go before it lets the page have a turn. */
 const SLICE_MS = 10;
 /** What the page's telling is measured as, a slice at a time (`performance.measure`). */

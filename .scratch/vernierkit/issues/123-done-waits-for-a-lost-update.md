@@ -78,3 +78,28 @@
 2. 第 1 条靠「Vite 一次只处理一个更新」。老版本的 Vite（peer 写的是 >=5）如果不排队，两次更新同时进行时会把先开始的当丢了；先开始的先结束时，后一次不再等，只剩 `updates.at >= codeAt` 或 `CHECK_SETTLE_MS` 拦着。不知道排队是 Vite 哪个版本加的，没查。Next.js 没有这份数，不受影响。
 3. 原因没确认；没在压 CPU 下复跑 102 的失败。
 4. 第 3 条的 `code-changes.ts` 那一路的 5 秒拖慢，要不要一起改，可以另开票。
+
+**Review 后的修正（2026-11-10）**（上面「做了什么」「包」、代定 2–3、风险 1–2 里说的 5 秒和导出，以这一节为准）
+
+- 页面核对不再用 `code-changes.ts` 的 `UPDATE_LOST_MS`，改用自己的 `PAGE_UPDATE_LOST_MS = 12_000`（`page-checks.ts`）。`code-changes.ts` 回到和 main 一字不差（不再导出）。原因：用 5 秒时，忙机器上 7 秒才拉完的正常更新，在开始后 5 秒就被当成丢了，`showsWithin` 在约 6.5 秒时答没显示，改前会等到它结束答 ✓。(a) 已经由「另一次开始时之前的算丢了」接住，计时只为 (b)/(c)，那时队列是永远卡住的，多等几秒没关系。12 秒加 `SHOW_MS` 仍在 `CHECK_ARRIVE_MS`（20 秒）里。这和规划会话写的「共用同一个常量」不同，指挥转告规划会话。
+- 记的数（最近一次开始的时间、上次听到的数、当作丢了的数）从每个 `watchPage` 自己记，改成按页面窗口记一份（`WeakMap<Window, HotUpdates>`，第一次核对时装一个一直不摘的 `CODE_EVENT` 监听）。这样一轮里丢过的，下一轮新开的核对也知道，不会在下一轮第一次 `done` 时再等满一次阈值。
+- 注释改了：不再说「照 code-changes 的做法」，写明两处的不同（从最近一次开始计时、减去当作丢了的）。`lost = Math.min(lost, count)` 只留在监听里一处。
+- 测试：原来 4 条的阈值改成 `PAGE_UPDATE_LOST_MS`，「再下一次很快的更新」的上限收紧到 3 秒；新加 2 条：正常更新 7 秒才结束、页面在结束时才画上，等到它结束答 ✓；一轮里丢过一次，下一轮新开核对、没有新更新时 `done` 在 `CHECK_SETTLE_MS + 1s` 内答 ✓（把记的数改回每次核对自己记，这条就挂）。
+- Vite 的排队：离线查不到 changelog（`node_modules` 里的 vite 包不带 CHANGELOG，pnpm store 是 sqlite，没联网）。本机能找到的 vite 6.4.3、7.3.x、8.0.12、8.1.x、8.3.4 的 `dist/client/client.mjs` 里都有 `createHMRHandler` 的队列；没找到 5.x 的副本，所以 **Vite 5.x 是否排队没确认**，见风险 2。
+
+**重跑（修正后）**：`pnpm typecheck` 过；`pnpm test` 1191 过 1 跳过，node 126 过；`round.spec.ts`、`code-changes.spec.ts`（`--project="project files" --no-deps`）52 过；`round.spec.ts:911 --repeat-each 20` 20 过（负载 3–8，有别的会话，没压 CPU）；`--dry` 29/29，`--dry --claim-out` 和 main d2c6f1d 的 29 份逐字相同；`--scripted` 20/20。整套 e2e 留给指挥。
+
+**包（修正后）**：切换按钮 `react.dev.js` 1423 B（`bd6c2389b64451f0`）、`chunk-2GJY7MXB.js` 21372 B（`a8c4c0d4bc3db6a8`），和 d2c6f1d 逐字节相同。编辑层 `editor.dev.js` 532092 → 532459 B（+367 B），gzip -9 188603 → 188710 B（+107 B）。
+
+#### 代定（修正后，替换上面 2–3）
+
+1. 同上面代定 1（审查建议保留）。
+2. 页面核对的阈值是自己的 12 秒，不和 `code-changes.ts` 的 5 秒共用；计时从这个页面最近一次 `vite:beforeUpdate` 算起，第一次核对时已有更新在进行则从那时算起。
+3. 记的数按页面窗口跨轮保留。`code-changes.ts` 不动。
+
+#### 遗留风险（修正后，替换上面 1–2）
+
+1. 正常但超过 12 秒的更新仍会被当成丢了，`done` 可能提前答没显示（之前是 5 秒）。
+2. 代定 1 靠「Vite 一次只处理一个更新」。6.4.3 起确认有队列；5.x 没确认。5.x 如果不排队，两次更新同时进行时会把先开始的当丢了，先开始的先结束时后一次不再等，只剩 `updates.at >= codeAt` 或 `CHECK_SETTLE_MS` 拦着。建议（设计师定）：查清 5.x，必要时把 peer 从 `vite >=5` 提到确认有队列的版本；本票没改 peer。
+3. 页面第一次核对之前就丢了的更新：那时还没装监听，数目停在 1，第一次核对要等到开始核对后 12 秒，或者下一次更新开始（那时就算丢了）。只会发生一次。
+4. 原因没确认；没压 CPU 复跑。`code-changes.ts` 那一路丢过一次后每次多等约 5 秒，可另开票。

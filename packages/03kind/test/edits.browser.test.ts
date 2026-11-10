@@ -7,8 +7,7 @@ import { placedOnCanvas } from "../src/client/moves";
 import { checkAcross, checkChange, itself, uncheckable, valuesAt, widthsOf, type PageWidth } from "../src/client/check";
 import { copyPage, type PageCopy } from "../src/client/page-copy";
 import { measureParts, PARTS_MEASURE } from "../src/client/range-parts";
-import { watchPage } from "../src/client/page-checks";
-import { UPDATE_LOST_MS } from "../src/client/code-changes";
+import { PAGE_UPDATE_LOST_MS, watchPage } from "../src/client/page-checks";
 import { createClipboard } from "../src/client/clipboard";
 import { asPage, declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
 import { findDrop, findPlace } from "../src/client/drag";
@@ -3848,12 +3847,13 @@ describe("a stroke is checked on the live page as the code writes it, else as th
    * The page watched with word from its dev server on hot updates, the clock
    * faked (ticket 123): `begin` and `end` as Vite's `vite:beforeUpdate` and
    * `vite:afterUpdate`; `answered`, when `done`'s answer came, in ms after it
-   * asked.
+   * asked; `nextRound`, the checks stopped and begun anew on the same page,
+   * as for the round after.
    */
   const withUpdates = async (
     body: (
       page: ReturnType<typeof open>,
-      hot: { begin(): void; end(): void; ask(key?: string): void; after(ms: number): Promise<void>; answer(key?: string): CheckReport | undefined; answered(key?: string): number | undefined },
+      hot: { begin(): void; end(): void; ask(key?: string): void; nextRound(): void; after(ms: number): Promise<void>; answer(key?: string): CheckReport | undefined; answered(key?: string): number | undefined },
     ) => Promise<void>,
   ) => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance", "Date"] });
@@ -3870,17 +3870,19 @@ describe("a stroke is checked on the live page as the code writes it, else as th
       /** By the ask's key: when it asked, then how long after it the answer came. */
       const asked = new Map<string, number>();
       const answeredAfter = new Map<string, number>();
-      const checks = watchPage({
-        window: win,
-        changes: onCanvas([change]),
-        report(r) {
-          reports.push(r);
-          if (r.answers && !answeredAfter.has(r.answers)) answeredAfter.set(r.answers, performance.now() - asked.get(r.answers)!);
-        },
-        onShown() {},
-        viewWidths: () => [],
-        copiesIn: () => document.body,
-      });
+      const watch = () =>
+        watchPage({
+          window: win,
+          changes: onCanvas([change]),
+          report(r) {
+            reports.push(r);
+            if (r.answers && !answeredAfter.has(r.answers)) answeredAfter.set(r.answers, performance.now() - asked.get(r.answers)!);
+          },
+          onShown() {},
+          viewWidths: () => [],
+          copiesIn: () => document.body,
+        });
+      let checks = watch();
       await vi.advanceTimersByTimeAsync(100);
       try {
         await body(opened, {
@@ -3897,6 +3899,10 @@ describe("a stroke is checked on the live page as the code writes it, else as th
             asked.set(key, performance.now());
             checks.ask({ ids: [change.id], at: new Date().toISOString(), key, codeAt: Date.now() });
           },
+          nextRound() {
+            checks.stop();
+            checks = watch();
+          },
           after: async (ms) => void (await vi.advanceTimersByTimeAsync(ms)),
           answer: (key = "done") => reports.find((r) => r.answers === key),
           answered: (key = "done") => answeredAfter.get(key),
@@ -3909,16 +3915,16 @@ describe("a stroke is checked on the live page as the code writes it, else as th
     }
   };
 
-  test("an update whose end never comes (vite:afterUpdate lost) holds done for UPDATE_LOST_MS, not CHECK_ARRIVE_MS: the page answers as it would have, shown", async () => {
+  test("an update whose end never comes (vite:afterUpdate lost) holds done for PAGE_UPDATE_LOST_MS, not CHECK_ARRIVE_MS: the page answers as it would have, shown", async () => {
     await withUpdates(async ({ write }, hot) => {
       hot.begin();
       write("border: 1.5px solid #ff0000");
       hot.ask();
-      await hot.after(UPDATE_LOST_MS - 200);
+      await hot.after(PAGE_UPDATE_LOST_MS - 200);
       expect(hot.answer()).toBeUndefined();
       await hot.after(1000);
       expect(hot.answer()).toEqual(expect.objectContaining({ outcome: "shown" }));
-      expect(hot.answered()).toBeLessThan(UPDATE_LOST_MS + 1000);
+      expect(hot.answered()).toBeLessThan(PAGE_UPDATE_LOST_MS + 1000);
     });
   });
 
@@ -3927,24 +3933,24 @@ describe("a stroke is checked on the live page as the code writes it, else as th
       hot.begin();
       write("border: 3px solid #ff0000");
       hot.ask();
-      await hot.after(UPDATE_LOST_MS + CHECK_SETTLE_MS + 1000);
+      await hot.after(PAGE_UPDATE_LOST_MS + CHECK_SETTLE_MS + 1000);
       expect(hot.answer()).toEqual(expect.objectContaining({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: 3, style: "solid" } }));
-      expect(hot.answered()).toBeLessThan(UPDATE_LOST_MS + CHECK_SETTLE_MS + 1000);
+      expect(hot.answered()).toBeLessThan(PAGE_UPDATE_LOST_MS + CHECK_SETTLE_MS + 1000);
     });
   });
 
-  test("a slow update that ends within UPDATE_LOST_MS is waited for to its end, as before", async () => {
+  test("a slow update that ends within PAGE_UPDATE_LOST_MS is waited for to its end, as before", async () => {
     await withUpdates(async ({ write }, hot) => {
       // The page draws the edit before the update's end.
       hot.begin();
       hot.ask();
       write("border: 1.5px solid #ff0000");
-      await hot.after(UPDATE_LOST_MS - 1000);
+      await hot.after(PAGE_UPDATE_LOST_MS - 1000);
       expect(hot.answer()).toBeUndefined();
       hot.end();
       await hot.after(1000);
       expect(hot.answer()).toEqual(expect.objectContaining({ outcome: "shown" }));
-      expect(hot.answered()).toBeGreaterThanOrEqual(UPDATE_LOST_MS - 1000);
+      expect(hot.answered()).toBeGreaterThanOrEqual(PAGE_UPDATE_LOST_MS - 1000);
     });
   });
 
@@ -3957,7 +3963,7 @@ describe("a stroke is checked on the live page as the code writes it, else as th
       hot.begin();
       hot.ask();
       write("border: 1.5px solid #ff0000");
-      await hot.after(UPDATE_LOST_MS - 1000);
+      await hot.after(PAGE_UPDATE_LOST_MS - 1000);
       expect(hot.answer()).toBeUndefined();
       hot.end();
       await hot.after(1000);
@@ -3967,9 +3973,38 @@ describe("a stroke is checked on the live page as the code writes it, else as th
       hot.begin();
       hot.end();
       hot.ask("done again");
-      await hot.after(UPDATE_LOST_MS);
+      await hot.after(PAGE_UPDATE_LOST_MS);
       expect(hot.answer("done again")).toEqual(expect.objectContaining({ outcome: "not shown", actual: { color: "#FF0000", opacity: 1, weight: 3, style: "solid" } }));
-      expect(hot.answered("done again")).toBeLessThan(UPDATE_LOST_MS - 2000);
+      expect(hot.answered("done again")).toBeLessThan(3000);
+    });
+  });
+
+  test("a healthy update that takes 7s, the page drawing the edit only at its end, is waited for: shown, as before", async () => {
+    await withUpdates(async ({ write }, hot) => {
+      hot.begin();
+      hot.ask();
+      await hot.after(7000);
+      expect(hot.answer()).toBeUndefined();
+      write("border: 1.5px solid #ff0000");
+      hot.end();
+      await hot.after(1000);
+      expect(hot.answer()).toEqual(expect.objectContaining({ outcome: "shown" }));
+    });
+  });
+
+  test("an update that lost its end in one round holds no done in the next: the page's checks, begun anew, still know it lost", async () => {
+    await withUpdates(async ({ write }, hot) => {
+      hot.begin();
+      await hot.after(1000);
+      hot.begin();
+      hot.end();
+      hot.nextRound();
+      // Asked with no update since (the edit in a file the page does not use, say): only as long as an edit that never comes is waited for.
+      write("border: 1.5px solid #ff0000");
+      hot.ask();
+      await hot.after(CHECK_SETTLE_MS + 2000);
+      expect(hot.answer()).toEqual(expect.objectContaining({ outcome: "shown" }));
+      expect(hot.answered()).toBeLessThan(CHECK_SETTLE_MS + 1000);
     });
   });
 

@@ -18,7 +18,7 @@
 import { CHECK_ARRIVE_MS, CHECK_SETTLE_MS, CODE_EVENT, type CheckAsk, type CheckReport, type CheckResult } from "../service-protocol";
 import type { Change } from "./changeset";
 import { checkAcross, checkHere, itself, outsideOf, uncheckable, widthsOf, type PageWidth } from "./check";
-import { codeUpdates, sliced, UPDATE_LOST_MS } from "./code-changes";
+import { codeUpdates, sliced } from "./code-changes";
 import { otherUsagesChanged, looksAtOtherUsages, noteChange, noteOutside, outsideChanged, unnoted, withOutside, type OtherUsagesNoted } from "./other-usages";
 import { CHECK_MEASURE } from "./host";
 import type { NotShownOutside } from "../outside-protocol";
@@ -65,6 +65,52 @@ const LOOK_EVERY_MS = 250;
 const SHOW_MS = 1500;
 /** How long the dev server is to have brought nothing in before the code an ask waits for counts as in. */
 const QUIET_MS = 500;
+/**
+ * An update begun this long ago with no word of its end is taken as over by
+ * the page's checks (ticket 123): one whose code never came, Vite's queue of
+ * updates held up behind it. Longer than the code changes' `UPDATE_LOST_MS`,
+ * so a slow update on a busy machine is still waited for; short enough to
+ * leave `SHOW_MS` within `CHECK_ARRIVE_MS`.
+ */
+export const PAGE_UPDATE_LOST_MS = 12_000;
+
+/**
+ * What the page's checks keep of the dev server's updates (ticket 123), for
+ * as long as the page is open, from one round to the next.
+ * - `began`: when the latest update began, as the count of them rose; as the
+ *   page first checked, if one was under way then.
+ * - `was`: the count, as last heard.
+ * - `lost`: of the count, the updates whose end will never come: those
+ *   counted as another began, as Vite begins one only once the one before is
+ *   over (its handler threw before it said so).
+ */
+interface HotUpdates {
+  began: number;
+  was: number;
+  lost: number;
+}
+const hotUpdatesOf = new WeakMap<Window, HotUpdates>();
+
+/** `win`'s `HotUpdates`, kept from the first time its checks begin; undefined with no word from the dev server (Next.js). */
+function hotUpdates(win: Window): HotUpdates | undefined {
+  const kept = hotUpdatesOf.get(win);
+  if (kept) return kept;
+  const updates = codeUpdates(win);
+  if (!updates) return undefined;
+  const hot: HotUpdates = { began: updates.updating ? performance.now() : -Infinity, was: updates.updating, lost: 0 };
+  hotUpdatesOf.set(win, hot);
+  // Never taken off: the page's checks come and go with the round, the updates they go by run on.
+  win.addEventListener(CODE_EVENT, () => {
+    const count = codeUpdates(win)?.updating ?? 0;
+    if (count > hot.was) {
+      hot.began = performance.now();
+      hot.lost = Math.max(hot.lost, hot.was);
+    }
+    hot.was = count;
+    hot.lost = Math.min(hot.lost, count);
+  });
+  return hot;
+}
 
 /**
  * Checks the round on `window`'s page till stopped. A change the page cannot
@@ -281,25 +327,19 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
 
   // When to look: as the dev server brings code in, and the page changes with it.
   let codeCameAt = -Infinity;
-  /** When the latest update under way began, as the dev server's count of them last rose: one under way as the page began to check, then. */
-  let updateBegan = code()?.updating ? performance.now() : -Infinity;
-  /** The dev server's count of updates under way, as last heard. */
-  let updatingWas = code()?.updating ?? 0;
+  const hot = hotUpdates(win);
   /**
-   * Of that count, the updates whose end will never come: those counted as
-   * another began, as Vite begins one only once the one before is over.
-   */
-  let lost = 0;
-  /**
-   * An update under way, as the dev server says. One that lost its end
-   * (ticket 123) is not: neither one counted as another began, nor one begun
-   * `UPDATE_LOST_MS` ago with no word of its end, as the code changes take
-   * it. Else it would hold every ask after it for all of `CHECK_ARRIVE_MS`.
+   * An update under way, as the dev server says, but for one that lost its
+   * end (ticket 123): one counted as another began (`HotUpdates.lost`), or
+   * the latest begun `PAGE_UPDATE_LOST_MS` ago with no word of its end. Else
+   * it would hold every ask after it for all of `CHECK_ARRIVE_MS`. Unlike
+   * the code changes' `UPDATE_LOST_MS`, timed from the latest update's
+   * beginning, not the last word, and with the lost ones taken off the count.
    */
   const updating = () => {
     const count = code()?.updating ?? 0;
-    lost = Math.min(lost, count);
-    return count > lost && performance.now() - updateBegan < UPDATE_LOST_MS;
+    if (!hot) return count > 0;
+    return count > hot.lost && performance.now() - hot.began < PAGE_UPDATE_LOST_MS;
   };
   /**
    * Till when the page's own changes are looked at too, with word from the
@@ -329,13 +369,6 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   });
   const onCode = () => {
     codeCameAt = performance.now();
-    const count = code()?.updating ?? 0;
-    if (count > updatingWas) {
-      updateBegan = codeCameAt;
-      lost = Math.max(lost, updatingWas);
-    }
-    updatingWas = count;
-    lost = Math.min(lost, count);
     follow();
     look();
   };
