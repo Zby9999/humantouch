@@ -326,6 +326,52 @@ describe("claim, how to write the changes (ticket 65)", () => {
     expect(rule(output, "Sizes in a Grid")).toContain("Hug fits its content in the cell: `fit-content`, Tailwind's `w-fit` (`h-fit`)");
   });
 
+  describe("a layer a third-party component draws (ticket 120)", () => {
+    /** acme-ui's Badge, as in ticket 88's third-party scenario: a locked layer, its JSX unmarked. */
+    const badge = {
+      ...inApp,
+      loc: null,
+      chain: [{ component: "Badge", usage: "src/App.tsx:21:11", thirdParty: true }, APP],
+      component: "Badge",
+      locked: true,
+      context: { path: ["Page", "App", "Stack", "Badge"], element: '<span class="inline-flex rounded-full bg-amber-100 px-2">' },
+    };
+    const width = (target: object) => style("width", { target, before: { type: "hug" }, after: { type: "fixed", value: 90 }, style: { width: "90px" } });
+    const dissolve = (target: object) => change("unstack", { before: settings, after: { width: 200, height: 100, layers: [{ layer: "5", target, x: 0, y: 0, width: 90, height: 20 }] } });
+    const stack = (target: object, unmargined: boolean) =>
+      change("stack", { before: null, after: { ...settings, place: place(1), layers: [{ layer: "5", target, from: place(1), ...(unmargined && { unmargined: true }) }] } });
+
+    test("its width says not to reach into its elements from the usage, after Every change, which is word for word as for a layer of the project's own", async () => {
+      saveRound({ ...width(inApp), id: 1 });
+      const own = await cli("claim");
+      expect(names(own.output)).not.toContain("Third-party components");
+
+      saveRound({ ...width(badge), id: 1 });
+      const output = (await cli("claim")).output;
+
+      expect(names(output).slice(0, 2)).toEqual(["Every change", "Third-party components"]);
+      expect(rule(output, "Every change")).toBe(rule(own.output, "Every change"));
+      const said = rule(output, "Third-party components");
+      expect(said).toContain("an element around it may place or size it as a whole, but do not reach into its elements from the usage");
+      expect(said).toContain("no child or descendant selectors on any element around it (`[&>span]:w-[90px]`, `*:…`, `:has()`)");
+      expect(said).toContain("a change that cannot be made without them is left out and reported");
+    });
+
+    test.each([
+      ["a move of it", change("move", { target: badge }), true],
+      ["a change to a layer with no usage chain", width({ ...badge, chain: [] }), false],
+      ["a Stack dissolved, it one of the layers placed absolute", dissolve(badge), true],
+      ["a Stack dissolved of the project's own layers", dissolve(inApp), false],
+      ["a Stack made of it, taking over its margins", stack(badge, true), true],
+      ["a Grid made of it, taking over its margins", { ...stack(badge, true), after: { grid: { type: "grid", columns: 2, rowGap: 8, columnGap: 8 }, padding: [0, 0, 0, 0], place: place(1), layers: [{ layer: "5", target: badge, from: place(1), unmargined: true }] } }, true],
+      ["a Stack made of it, its JSX only moved", stack(badge, false), false],
+    ])("%s: the rule said, %s", async (_, round, said) => {
+      saveRound({ ...round, id: 1 });
+
+      expect(names((await cli("claim")).output).includes("Third-party components")).toBe(said);
+    });
+  });
+
   test("a rule is said once, however many changes call for it; none a change of the round does not call for", async () => {
     saveRound({ ...change("move"), id: 1 }, { ...change("move", { before: place(2), after: place(1) }), id: 2 }, { ...change("text", { before: "A", after: "B" }), id: 3 });
 
