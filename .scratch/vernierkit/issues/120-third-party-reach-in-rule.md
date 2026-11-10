@@ -86,5 +86,5 @@
   - 只禁止伸进它的元素：不写子、后代选择器，不对它的类名写全局规则。
   - `done` 先不认出这种写法。
 - 真 Agent 复验等设计师给额度。规划会话准备的范围：
-  - 场景：`third-party`；118 的 3 个新场景（`stack-to-grid-and-cell-fill`、`make-grid-and-phone-stack`、`areas-grid-phone-stack`）；108 加的 `off-canvas-frame`，它还没有真 Agent 跑过。
+  - 场景：`third-party`；118 的 3 个新场景（`stack-to-grid-and-cell-fill`、`make-grid-and-phone-stack`、`areas-grid-phone-stack`）；108 加的 `off-canvas-frame`，它还没有真 Agent 跑过。（122 合进来后又加上 `fill-gap-brief`、`r18-card-gap`，见 ticket 122）
   - Claude 和 pi 各跑 3 次，一共 30 次。
