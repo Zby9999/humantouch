@@ -22,7 +22,7 @@
 - [x] Comments 里写明这四个测试各自在机器忙时失败的原因。
 - [x] 在人为压高 CPU 时，这四个测试各 `--repeat-each=20` 都不失败。压 CPU 的方式写进 Comments，比如并行开几个 `yes > /dev/null`，跑完要关掉。
 - [x] 检查的内容不变弱。Comments 里逐条对照修改前后各检查了什么。
-- [ ] 整套 e2e 一次跑过。
+- [x] 整套 e2e 一次跑过。（指挥合并前在同步了 main fb226c6 的分支上跑：页面组 436 过，挂 2 条不在这张票里的（`panel-headers.spec.ts:105` 表头滚动、`popover-exit.spec.ts:298` 工具栏提示的宽限），单独各重跑 5 次全过；"project files" 组 `--no-deps` 151 过 1 跳过；这张票的五条一次都没挂；`--dry` 29/29 和 main 逐字相同；`--scripted` 20/20）
 - [x] `packages/` 不动。
 
 ## 规划会话决定（设计师不在，2026-11-10，回来后确认）
