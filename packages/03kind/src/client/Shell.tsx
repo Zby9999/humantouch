@@ -1067,7 +1067,7 @@ const TOOLS = [
   { tool: "frame", label: "Frame", key: "F", icon: "frame" },
   { tool: "text", label: "Text", key: "T", icon: "text" },
   // A click on a layer writes its brief, on a card beside the views (ticket 121).
-  { tool: "brief", label: "Brief", key: "B", icon: "brief" },
+  { tool: "brief", label: "Brief", key: "B", icon: "brief-add" },
 ] as const;
 
 interface ToolsProps {
