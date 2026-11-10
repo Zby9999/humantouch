@@ -70,6 +70,12 @@ export interface ScenarioChange {
    * its own names, all of them to be written (`VariableNames`).
    */
   variable?: VariableNames;
+  /**
+   * In place of `variable`, for a value that is a Variable the code writes already and is to keep (a Stack's gap, its Grid's now,
+   * ticket 118): its names, as `variable`'s are. With nothing of it to write, the Agent's diff counts as using it unless it takes
+   * the name out and writes none of them in (`keepsVariable`: `gap-3` rewritten as `gap-[12px]` is a miss).
+   */
+  variableKept?: VariableNames;
   /** The page widths `shows` runs at; 1280 when not given. */
   widths?: number[];
   /** None for a brief: what it takes is the Agent's to work out, and the report's to say. A change `notOneToOne` has one: an Agent that finds a way after all is right to list it under ✓, and one that lists it there with the page not showing it gives a false ✓. */
@@ -267,6 +273,24 @@ async function endTheRound(page: Page) {
 async function titleAt(page: Page, size: string) {
   await page.waitForFunction((px) => getComputedStyle(document.querySelector("main h1")!).fontSize === px, size);
 }
+
+/** Picks how the selected layer is arranged, in the Design panel's Stack or Grid section (ticket 109): `Horizontal`, `Vertical` or `Grid`. */
+async function arrangeAs(page: Page, section: "Stack" | "Grid", option: "Horizontal" | "Vertical" | "Grid") {
+  await design(page).getByRole("region", { name: section }).getByRole("radiogroup", { name: "Direction" }).getByRole("radio", { name: option }).click();
+}
+
+/** The cards' Grid as the example writes it. */
+const CARDS_GRID_TAG = '<Surface className="grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3">';
+/** Its classes that place the cards by areas from 640px, the last card first: what a round before wrote (ticket 109's follow-up). */
+const AREAS = "sm:[grid-template-areas:'d_c_b'_'a_._.'] " + [..."abcd"].map((area, n) => `sm:[&>*:nth-child(${n + 1})]:[grid-area:${area}]`).join(" ");
+/** Four tiles, 100 × 40px, 24px apart across and 16px down, placed absolute in a Frame below the cards: what a round before drew (ticket 110). */
+const TILES = [
+  [20, 30],
+  [144, 30],
+  [20, 86],
+  [144, 86],
+].map(([left, top]) => `        <div className="absolute left-[${left}px] top-[${top}px] h-10 w-[100px] bg-stone-300" />\n`);
+const TILES_FRAME = `      <div className="relative h-60">\n${TILES.join("")}      </div>\n`;
 
 // The tests below run in the page: each stands on its own, with no names from here.
 
@@ -1391,6 +1415,218 @@ export const SCENARIOS: Scenario[] = [
       );
     },
   },
+  // Ticket 118: Stacks and Grids (tickets 109, 110 and 109's follow-up), each change as the editor layer makes it.
+  {
+    id: "stack-to-grid-and-cell-fill",
+    title:
+      "Set up by a round before: the cards fit their content in their cells (`w-fit` on the Card). Now, in the desktop view: the header, a horizontal Stack, made a Grid, then given 3 columns; the cards of the loop (the first Card's usage), Hug in the cards' Grid, made Fill.",
+    async design(desk) {
+      const { page } = desk;
+      // The round before, as an Agent applied it: every card fits its content.
+      await desk.edit("src/components/Card.tsx", "p-5 shadow-sm", "p-5 shadow-sm w-fit");
+      await desk.settle("The round before: the cards fit their content");
+      // The card has the class, and the stylesheet has the rule for it: a box of nothing with `w-fit` is 0px wide.
+      await page.waitForFunction(() => {
+        if (!document.querySelector("article")?.className.includes("w-fit")) return false;
+        const probe = document.createElement("div");
+        probe.className = "w-fit";
+        document.body.append(probe);
+        const fits = probe.getBoundingClientRect().width === 0;
+        probe.remove();
+        return fits;
+      });
+
+      await enterEditMode(page);
+      await layer(page, "Header").click();
+      await arrangeAs(page, "Stack", "Grid");
+      await setField(page, "Columns", "3");
+      await layer(page, "Card").click();
+      await design(page).getByRole("combobox", { name: "Width sizing" }).selectOption("fill");
+      await saved(desk, 2);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The header is a Grid of 3 equal columns, with a 12px row gap and a 12px column gap, the title and the Beta badge in it as before.",
+        checkable: true,
+        // Its gaps the Variable 3, as the header's `gap-3` has them now: kept, or written row and column apart.
+        variableKept: [
+          ["gap-3", "gap-y-3"],
+          ["gap-3", "gap-x-3"],
+        ],
+        // Made in the desktop view: at every width, the phone's too.
+        widths: [390, 1280],
+        shows: () => {
+          const header = document.querySelector('[data-testid="hero"] header')!;
+          const style = getComputedStyle(header);
+          // Equal columns, however written (`grid-cols-3`, `grid-cols-[repeat(3,minmax(0,1fr))]`): the tracks the browser computes, within 1px.
+          const tracks = style.gridTemplateColumns.split(" ").map(parseFloat);
+          return (
+            style.display === "grid" &&
+            tracks.length === 3 &&
+            Math.max(...tracks) - Math.min(...tracks) <= 1 &&
+            style.rowGap === "12px" &&
+            style.columnGap === "12px" &&
+            header.firstElementChild?.localName === "h1" &&
+            header.contains(document.querySelector('[data-testid="acme-badge"]'))
+          );
+        },
+      },
+      {
+        kind: "style",
+        expect: "The three cards of the loop fill their cells' width: at 390px, as wide as the cards' Grid; the fourth card (Your turn, another usage) still fits its content, narrower.",
+        checkable: true,
+        // At 390px the cell is wider than a card's content; at 1280px, as wide as the longer cards' text. Applied right, the fourth card
+        // is more than 40px narrower than its cell at both (`--scripted` with 40 in place of 16): 16 tells Hug from Fill with room to spare.
+        widths: [390, 1280],
+        shows: () => {
+          const cards = [...document.querySelectorAll("article")].map((card) => card.getBoundingClientRect().width);
+          const cell = parseFloat(getComputedStyle(document.querySelector("article")!.parentElement!).gridTemplateColumns.split(" ")[0]);
+          return cards.length === 4 && cards.slice(0, 3).every((width) => Math.abs(width - cell) <= 1) && cards[3] < cell - 16;
+        },
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", '<header className="flex items-center gap-3">', '<header className="grid grid-cols-3 items-center gap-3">');
+      // For the loop alone: the fourth card, a usage of its own, keeps fitting its content.
+      await desk.edit(
+        "src/components/Card.tsx",
+        'className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm w-fit"',
+        'className={title === "Your turn" ? "rounded-xl border border-stone-200 bg-white p-5 shadow-sm w-fit" : "rounded-xl border border-stone-200 bg-white p-5 shadow-sm w-full"}',
+      );
+    },
+  },
+  {
+    id: "make-grid-and-phone-stack",
+    title:
+      "Set up by a round before: four tiles placed absolute in a Frame below the cards, in two rows of two. Now: the four selected and made a Grid with ⇧A (2 columns, a 16px row gap, a 24px column gap); in the phone view (below 768px only), the cards' Grid made a vertical Stack.",
+    async design(desk) {
+      const { page } = desk;
+      // The round before, as an Agent applied it: the tiles are in the code.
+      await desk.edit("src/App.tsx", "      </Surface>\n", `      </Surface>\n${TILES_FRAME}`);
+      await desk.settle("The round before: four tiles below the cards");
+      await page.waitForFunction(() => {
+        const tile = document.querySelector(".bg-stone-300");
+        return !!tile && getComputedStyle(tile).position === "absolute" && getComputedStyle(tile).width === "100px";
+      });
+
+      await enterEditMode(page);
+      // The four tiles in the Layers panel, as grid.spec.ts selects them: the Frame is the page's last layer (the last row, opened by
+      // the click), its tiles the last four rows named Frame. Checked: four selected, and ⇧A makes a Grid of them, not a Stack.
+      const tree = page.getByRole("tree", { name: "Layers" });
+      const frames = tree.getByRole("treeitem").filter({ hasText: /^Frame$/ });
+      await tree.getByRole("treeitem").last().click();
+      await frames.nth(4).waitFor();
+      const rows = await frames.count();
+      await frames.nth(rows - 4).click();
+      for (const n of [3, 2, 1]) await frames.nth(rows - n).click({ modifiers: ["Shift"] });
+      const selected = await tree.getByRole("treeitem", { selected: true }).allTextContents();
+      if (selected.join() !== "Frame,Frame,Frame,Frame") throw new Error(`The tiles are not the four layers selected: ${selected.join(", ")}`);
+      await page.keyboard.press("Shift+A");
+      await design(page).getByRole("region", { name: "Grid" }).waitFor();
+      await saved(desk, 1);
+      await pickGrid(page, phone(page));
+      await arrangeAs(page, "Grid", "Vertical");
+      await saved(desk, 2);
+    },
+    changes: [
+      {
+        kind: "stack",
+        expect: "The four tiles are in a new Grid of their own in the Frame, in their order: 2 columns, a 16px row gap, a 24px column gap; none placed absolute now, each where it was in the Frame (within 1px).",
+        checkable: true,
+        widths: [390, 1280],
+        shows: () => {
+          const tiles = [...document.querySelectorAll(".bg-stone-300")];
+          const grid = tiles[0]?.parentElement;
+          const frame = grid?.parentElement;
+          if (tiles.length !== 4 || !grid || !frame) return false;
+          const style = getComputedStyle(grid);
+          const origin = frame.getBoundingClientRect();
+          // Where each tile was in the Frame, as the round before placed it: `TILES`.
+          const where = [
+            [20, 30],
+            [144, 30],
+            [20, 86],
+            [144, 86],
+          ];
+          return (
+            style.display === "grid" &&
+            style.gridTemplateColumns.split(" ").length === 2 &&
+            style.rowGap === "16px" &&
+            style.columnGap === "24px" &&
+            grid.children.length === 4 &&
+            tiles.every((tile, i) => {
+              const r = tile.getBoundingClientRect();
+              return tile.parentElement === grid && getComputedStyle(tile).position !== "absolute" && Math.abs(r.left - origin.left - where[i][0]) <= 1 && Math.abs(r.top - origin.top - where[i][1]) <= 1;
+            })
+          );
+        },
+      },
+      {
+        kind: "style",
+        expect: "Below 768px the cards are a vertical Stack with a 16px gap; at 768px and up the cards' Grid keeps 3 columns.",
+        checkable: true,
+        // Its gap the Variable 4, as the Grid's `gap-4` has it now.
+        variableKept: ["gap-4", "gap-y-4"],
+        // 700: between Tailwind's `sm` (640) and `md` (768), where a breakpoint one off shows; 800 and 1100, where one too wide (`max-lg:`, `max-xl:`) does.
+        widths: [390, 700, 800, 1100, 1280],
+        shows: ({ width }) => {
+          const style = getComputedStyle(document.querySelector("article")!.parentElement!);
+          return width < 768 ? style.display === "flex" && style.flexDirection === "column" && style.rowGap === "16px" : style.display === "grid" && style.gridTemplateColumns.split(" ").length === 3;
+        },
+      },
+    ],
+    async apply(desk) {
+      // As the notes say: a new Grid where the first tile was, the tiles' absolute placement taken off.
+      const grid =
+        '        <div className="absolute left-[20px] top-[30px] grid grid-cols-2 gap-x-6 gap-y-4">\n' +
+        TILES.map((tile) => `  ${tile.replace(/absolute left-\[\d+px\] top-\[\d+px\] /, "")}`).join("") +
+        "        </div>\n";
+      await desk.edit("src/App.tsx", TILES.join(""), grid);
+      await desk.edit("src/App.tsx", CARDS_GRID_TAG, '<Surface className="grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3 max-md:flex max-md:flex-col">');
+    },
+  },
+  {
+    id: "areas-grid-phone-stack",
+    title:
+      "Set up by a round before: from 640px the cards' Grid places the cards by areas, the last card first (`grid-template-areas`, each card's `grid-area`). Now, in the phone view (below 768px only): the cards' Grid made a vertical Stack, the cards in the order they are written.",
+    async design(desk) {
+      const { page } = desk;
+      // The round before, as an Agent applied it: the areas, in Tailwind's arbitrary values.
+      await desk.edit("src/App.tsx", CARDS_GRID_TAG, `<Surface className="grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3 ${AREAS}">`);
+      await desk.settle("The round before: the cards placed by areas");
+      await page.waitForFunction(() => getComputedStyle(document.querySelector("article")!).gridColumnStart === "a");
+
+      await enterEditMode(page);
+      await pickGrid(page, phone(page));
+      await arrangeAs(page, "Grid", "Vertical");
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect:
+          "Below 768px the cards are a vertical Stack with a 16px gap, in the order they are written (Freeze, Arrange, Apply, Your turn, top to bottom); at 768px and up the cards' Grid still places them by its areas, Your turn first.",
+        checkable: true,
+        // Its gap the Variable 4, as the Grid's `gap-4` has it now.
+        variableKept: ["gap-4", "gap-y-4"],
+        // 700: between Tailwind's `sm` (640) and `md` (768), where a breakpoint one off shows, and the areas place the cards when the Grid is kept;
+        // 800 and 1100, where one too wide (`max-lg:`, `max-xl:`) does.
+        widths: [390, 700, 800, 1100, 1280],
+        shows: ({ width }) => {
+          const cards = [...document.querySelectorAll("article")];
+          const style = getComputedStyle(cards[0].parentElement!);
+          const tops = cards.map((card) => card.getBoundingClientRect().top);
+          if (width < 768) return style.display === "flex" && style.flexDirection === "column" && style.rowGap === "16px" && tops.every((top, i) => i === 0 || top > tops[i - 1]);
+          return style.display === "grid" && style.gridTemplateAreas.replace(/\s+/g, " ") === '"d c b" "a . ."' && getComputedStyle(cards[0]).gridColumnStart === "a" && tops[0] > tops[3];
+        },
+      },
+    ],
+    async apply(desk) {
+      // As the notes say: the Stack below 768px, the areas left as they are, for the widths where it stays a Grid.
+      await desk.edit("src/App.tsx", `sm:grid-cols-3 ${AREAS}">`, `sm:grid-cols-3 ${AREAS} max-md:flex max-md:flex-col">`);
+    },
+  },
 ];
 
 /**
@@ -1410,8 +1646,10 @@ export function designProblems(scenario: Scenario, saved: SavedChange[]): string
     // Not applied, it writes no Variable either.
     if (change.notOneToOne) return;
     const bound = Object.values(saved[i].variables ?? {}).some(Boolean);
-    if (bound && !change.variable) problems.push(`change ${i + 1}: its value is a Variable, ${Object.values(saved[i].variables!).filter(Boolean).map((v) => v!.name).join(", ")}, which \`variable\` does not name`);
+    if (change.variable && change.variableKept) problems.push(`change ${i + 1}: it names both \`variable\` and \`variableKept\``);
+    if (bound && !change.variable && !change.variableKept) problems.push(`change ${i + 1}: its value is a Variable, ${Object.values(saved[i].variables!).filter(Boolean).map((v) => v!.name).join(", ")}, which \`variable\` does not name`);
     if (!bound && change.variable) problems.push(`change ${i + 1}: \`variable\` names a Variable, but its value is none`);
+    if (!bound && change.variableKept) problems.push(`change ${i + 1}: \`variableKept\` names a Variable, but its value is none`);
   });
   return problems;
 }

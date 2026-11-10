@@ -122,7 +122,9 @@
 - 机器：开跑时和每段跑完时一共看了 4 次（00:38–01:54），都没合盖（clamshell No）；1 分钟负载从 6.1 降到 2.3。最后补跑的 2 次 Claude（01:55–01:56）之后没再看。这两项记在跑的日志里，不在原始记录里。
 - 名单照「跑法」：Claude 用 `--allowedTools` 白名单，pi 用测量台的扩展。
 
-#### 2. 每家的数（goals 的标准写在旁边）
+#### 2. 每家的数（goals 的标准写在旁边；24 个场景时）
+
+这一节和下面两次复验的数都是 24 个标准场景时量的。之后 ticket 108 加到 25 个，ticket 118 加到 28 个（加的场景还没有真 Agent 跑过），新场景的数另算，不和这里的直接比。
 
 | 指标 | 标准 | Claude | 达标 | pi | 达标 |
 |---|---|---|---|---|---|
@@ -334,7 +336,7 @@ pi 34 次，除了 1 次撤销，都不改项目里的文件（跑构建工具�
 - 窗口模式的性能测试最后由规划会话跑，等设计师说离开电脑时。
 - 测量台留下的两个开发服务器（5445、5452，`03kind-bench-run-*` 临时目录里的 Vite）按设计师的意思关掉了。
 
-### 复验结果：pi 一侧（2026-11-05，规划会话）
+### 复验结果：pi 一侧（2026-11-05，规划会话；24 个场景时）
 
 在 main 19b1d30（97–101 都在）上跑 `TK_BENCH_PORT=5620 pnpm bench:agents --agents pi --runs 3`，北京时间 12:55–13:40，72 次，没有出错、超时。原始记录在主检出的 `bench-results/agents/2026-11-05T04-55-44-946Z/`（git 忽略）。和 88 的 pi（`88-real`）比，数从两份 `measures.json` 算：
 
@@ -357,7 +359,7 @@ pi 34 次，除了 1 次撤销，都不改项目里的文件（跑构建工具�
 - **虚假的 ✓**：`phone-breakpoints` run-3 第 1 条（手机断点上循环里三张卡片填红，768 及以上四张都是白）。pi 给 Card 加了 `fillClassName` 参数、默认 `bg-white`，在使用处传 `fillClassName="max-md:bg-[#FF0000]"`，把默认的 `bg-white` 整个换掉了：768 以下是红的，768 及以上卡片没有填色（透明），不是白。`done` 说「shows the change」，pi 列在 ✓ 下。原因在页面核对：断点改动只在它的范围里的宽度核对（`check.ts` 的 `widthsOf`），范围外的宽度该保持原样，没看。不是 97–101 带来的，88 里没碰上。
 - 设计师定：为这条虚假的 ✓ 开 ticket 104（断点上的改动也核对范围外的宽度），发布前修。ticket 103 放到发布以后（复验里页面核对没有读错元素）。Skill 第 2 步那一句等 Claude 一侧跑完再定。
 
-### 复验结果：Claude 一侧（2026-11-09，规划会话）
+### 复验结果：Claude 一侧（2026-11-09，规划会话；24 个场景时）
 
 设计师 2026-11-09：「claude的额度可以用了，跑sonnet med」。在 main 639a757（97–101、104 和调前端第 1 轮都在；第 1 轮之后 24 个场景的改动说明和 2d371c0 逐字一样，`--claim-out` 对比过）上跑 `TK_BENCH_PORT=5620 pnpm bench:agents --agents claude --runs 2`（claude-sonnet-5-5，`--effort medium`），北京时间 03:28–03:48，48 次；两次不一样的只有 third-party（报告一次 ✓ 一次 ✗），补第 3 次（`--out … --first-run 3`），共 49 次，没有出错、超时。开跑时负载约 2（设计师在休息，没有别的线在跑）。原始记录在主检出的 `bench-results/agents/2026-11-08T19-28-52-618Z/`（git 忽略）。和 88 的 Claude（`88-real`，50 次）比，数从两份 `measures.json` 算：
 
@@ -387,3 +389,8 @@ pi 34 次，除了 1 次撤销，都不改项目里的文件（跑构建工具�
 
 1. **Skill 第 2 步那一句加不加**（101 分诊时留到这里定：「The notes name the file and line of each change: read those, and search the project only where a section says the layer is not located.」）：建议**不加**。Claude 剩下的全仓搜索是在查其他使用处、变量定义，属于落地前的核实，这句话会把这些也劝掉；pi 从 46 次降到 19 次、Claude 从 15 次降到 7 次，靠的是 101 让 `claim` 写明位置，Skill 不用再加。
 2. **第三方组件**：建议在写法规则「Never change third-party code」后面补半句，例如「nor reach into its elements from the usage (a wrapper with descendant selectors such as `[&>span]:…`, a global rule on its class names): it depends on how the library draws them, and a change that needs it is left out and reported」。这条规则在「Every change」里，每份改动说明都有；为了别的改动说明逐字不变，补的这半句另起一条，只在改动的图层是第三方组件画的时候出现（`claim` 已经认得出来时）。改了以后用真实 Agent 只重跑 third-party 一个场景（Claude 3 次、pi 3 次，约 5 分钟）。也可以不改，把它当作 Agent 的合理变通。
+
+#### 设计师定了（2026-11-10）
+
+1. Skill 第 2 步那一句：不加。
+2. 第三方组件：选 A，不许从使用处伸进第三方组件改，单独一条规则，只对第三方图层出现，见 ticket 120。真 Agent 只重跑 `third-party`，Claude 和 pi 各 3 次，和 ticket 118 新场景的真跑一起，由规划会话在 118、120 合进 main 后跑，开跑前问额度。
