@@ -386,3 +386,35 @@ test("a card set before, opened again, grows down where it is, and the cards bel
   expect(overlap(open, moved)).toBe(false);
   expect(moved.y).toBeGreaterThan(below.y);
 });
+
+test.describe("with motion", () => {
+  test.use({ reducedMotion: "no-preference" });
+
+  test("a card opened again and closed, set or left with Esc, stays where it is: it does not bounce (designer, 2026-11-10)", async ({ page }) => {
+    await enterEditMode(page);
+    await writeBrief(page, canvas(page).locator("h1"), "A larger title, please, as it reads too small. ".repeat(4));
+    await page.keyboard.press("Escape");
+    for (const close of ["Enter", "Escape"]) {
+      await pressCard(page, "Third Kind");
+      await expect(field(page)).toBeFocused();
+      // Where its top is on the screen, each frame, from just before it is closed till it is still.
+      const tops = card(page, "Third Kind").evaluate(
+        (el) =>
+          new Promise<number[]>((done) => {
+            const out: number[] = [];
+            const t0 = performance.now();
+            const tick = () => {
+              out.push(el.isConnected ? el.getBoundingClientRect().y : NaN);
+              if (performance.now() - t0 < 700) requestAnimationFrame(tick);
+              else done(out);
+            };
+            requestAnimationFrame(tick);
+          }),
+      );
+      await page.waitForTimeout(100);
+      await page.keyboard.press(close);
+      const seen = (await tops).filter((y) => !Number.isNaN(y));
+      for (const y of seen) expect(Math.abs(y - seen[0])).toBeLessThan(1);
+    }
+  });
+});

@@ -118,8 +118,9 @@ const REVEAL_MARGIN = 24;
 const UNMEASURED = 120;
 
 export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritten, onReveal, placedNow }: Props) {
-  /** Each card's height as last measured, by its key: what it holds decides it. */
-  const [heights, setHeights] = useState<Record<string, number>>({});
+  /** Each card's height as last measured, by its key: what it holds decides it; and which card was written in then. */
+  const [measured, setMeasured] = useState<{ heights: Record<string, number>; writing: string | null }>({ heights: {}, writing: null });
+  const { heights } = measured;
   const layer = useRef<HTMLDivElement>(null);
   const measure = () => {
     const el = layer.current;
@@ -131,7 +132,7 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
       now[key] = card.offsetHeight;
       if (heights[key] !== now[key]) changed = true;
     }
-    if (changed) setHeights(now);
+    if (changed || measured.writing !== writing) setMeasured({ heights: now, writing });
   };
   // Measured again only once what the cards hold changes: not as a layer is dragged, or the canvas zoomed.
   const holds = cards.map((card) => `${card.key}\u0000${card.name}\u0000${card.text}`).join("\u0001") + `\u0001${writing}`;
@@ -139,15 +140,18 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
   // A card set before, opened again, is placed as tall as it was, so it grows down from where it is and does not move;
   // the cards below it move down to make room.
   const restHeights = useRef<Record<string, number>>({});
-  for (const key in heights) if (key !== writing) restHeights.current[key] = heights[key];
+  for (const key in heights) if (key !== measured.writing) restHeights.current[key] = heights[key];
   const restOf = (key: string) => (key === writing && key !== "new" ? restHeights.current[key] : undefined);
+  // Just closed, a card is as tall as it was when it was opened till it is measured again, not as tall as it was open:
+  // else it would be placed for a moment where it is not, and bounce back.
+  const heightOf = (key: string) => (key === measured.writing && key !== writing ? restHeights.current[key] : undefined) ?? heights[key] ?? UNMEASURED;
   const placed = placeCards(
     cards.map((card) => ({
       key: card.key,
       host: card.host,
       free: card.free,
       layer: card.layer,
-      height: heights[card.key] ?? UNMEASURED,
+      height: heightOf(card.key),
       restHeight: restOf(card.key),
     })),
     obstacles,
@@ -175,9 +179,10 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
     if (!was) return;
     const same = (a: Box, b: Box) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
     const i = cards.findIndex((c) => c.layer && same(c.layer, was.layer));
-    // Not drawn again within a few renders (its brief taken off, say): nothing to glide.
-    if (i < 0) {
-      if (++was.renders > 3) toGlide.current = null;
+    // Glides only to where it ends up: once it is drawn again, and measured as it is now, closed.
+    if (i < 0 || measured.writing !== writing || heights[cards[i].key] === undefined) {
+      // Not drawn again within a few renders (its brief taken off, say): nothing to glide.
+      if (++was.renders > 5) toGlide.current = null;
       return;
     }
     toGlide.current = null;
