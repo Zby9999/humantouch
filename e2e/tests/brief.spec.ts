@@ -159,6 +159,42 @@ test("changed on its card when left, taken off with Remove brief, each a step �
   await expect(badge(page)).toHaveText("1");
 });
 
+test("Remove pressed while the card is typed in takes the brief off in one edit: ⌘Z brings back the brief as it was, not what was typed", async ({ page }) => {
+  await enterEditMode(page);
+  await selectRow(page, "Button");
+  const button = canvas(page).getByRole("button", { name: "Get started" });
+  await writeBrief(page, button, "Press in a little");
+  await page.keyboard.press("Escape");
+  await card(page, "Button").click();
+  await field(page).fill("Something else");
+  await card(page, "Button").getByRole("button", { name: "Remove brief" }).click();
+  await expect(cards(page)).toHaveCount(0);
+  await expect(badge(page)).toHaveCount(0);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(button).toHaveAttribute("data-tk-brief", "Press in a little");
+  await expect(card(page, "Button")).toContainText("Press in a little");
+});
+
+test("a Brief press let go off the canvas writes nothing, and puts the tool down; the Select tool's next click selects as ever", async ({ page }) => {
+  await enterEditMode(page);
+  await selectRow(page, "Button");
+  await page.keyboard.press("b");
+  const at = await steadyBox(canvas(page).getByRole("button", { name: "Get started" }));
+  await page.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(1430, 400, { steps: 4 });
+  await page.mouse.up();
+  await expect(field(page)).toHaveCount(0);
+  await page.keyboard.press("v");
+  await expect(tool(page, "Select")).toHaveAttribute("aria-pressed", "true");
+  const heading = await steadyBox(canvas(page).locator("h1"));
+  await page.mouse.click(heading.x + 10, heading.y + heading.height / 2);
+  // A plain click, from the Button's depth: its sibling there.
+  await expect(layerTree(page).getByRole("treeitem", { selected: true })).toHaveText("Header");
+  await expect(field(page)).toHaveCount(0);
+  await expect(cards(page)).toHaveCount(0);
+});
+
 test("written in the phone view, the card is right of it, and stays there after a reload; a deleted layer's card goes, and comes back with ⌘Z", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Button");

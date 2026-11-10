@@ -54,6 +54,17 @@ export const briefViews = (() => {
       kept ??= all()[page()] ?? {};
       return kept[key];
     },
+    /** The card's brief taken off: its view is not kept, so a layer that takes its id later starts beside the desktop view. */
+    forget(key: string) {
+      kept ??= all()[page()] ?? {};
+      if (!(key in kept)) return;
+      delete kept[key];
+      try {
+        localStorage.setItem(VIEWS_KEY, JSON.stringify({ ...all(), [page()]: kept }));
+      } catch {
+        // Not kept: as with `write`.
+      }
+    },
     write(key: string, view: string) {
       kept ??= all()[page()] ?? {};
       if (kept[key] === view) return;
@@ -188,6 +199,8 @@ interface CardProps {
 }
 
 function Card({ card, box, writing, onWrite, onWritten, onRemove, onResize }: CardProps) {
+  /** Remove pressed while the card is written in: what was typed is not set first, so taking it off is one edit. */
+  const discard = useRef(false);
   return (
     <div
       class="tk-brief-card"
@@ -211,21 +224,22 @@ function Card({ card, box, writing, onWrite, onWritten, onRemove, onResize }: Ca
         <Icon name="brief" />
         <span class="tk-brief-card-layer">{card.name}</span>
         {card.text && (
-          <button type="button" class="tk-icon-button tk-brief-card-remove" aria-label="Remove brief" onClick={onRemove}>
+          <button type="button" class="tk-icon-button tk-brief-card-remove" aria-label="Remove brief" onPointerDown={() => (discard.current = writing)} onClick={onRemove}>
             <Icon name="close" />
           </button>
         )}
       </div>
-      {writing ? <Field text={card.text} onWritten={onWritten} onResize={onResize} /> : <p class="tk-brief-card-text">{card.text}</p>}
+      {writing ? <Field text={card.text} discard={discard} onWritten={onWritten} onResize={onResize} /> : <p class="tk-brief-card-text">{card.text}</p>}
     </div>
   );
 }
 
 /** The card's field, focused as it shows, as tall as what is typed in it. */
-function Field({ text, onWritten, onResize }: { text: string; onWritten(text: string | null): void; onResize(): void }) {
+function Field({ text, discard, onWritten, onResize }: { text: string; discard: { current: boolean }; onWritten(text: string | null): void; onResize(): void }) {
   const field = useRef<HTMLTextAreaElement>(null);
   /** Esc pressed: left as it was. */
   const cancelled = useRef(false);
+  useEffect(() => () => void (discard.current = false), []);
   const fit = () => {
     const el = field.current!;
     el.style.height = "auto";
@@ -249,7 +263,7 @@ function Field({ text, onWritten, onResize }: { text: string; onWritten(text: st
         fit();
         onResize();
       }}
-      onBlur={(event) => onWritten(cancelled.current ? null : event.currentTarget.value.trim())}
+      onBlur={(event) => onWritten(cancelled.current || discard.current ? null : event.currentTarget.value.trim())}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.stopPropagation();

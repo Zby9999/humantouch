@@ -207,7 +207,7 @@ export function CanvasView(props: Props) {
   /** The text being typed in, outlined in blue; null when none is. */
   const [typingLayer, setTypingLayer] = useState<Layer | null>(null);
   /** A press with the Brief tool, till it is let go: there, it writes the brief of the layer under it (ticket 121). */
-  const briefPress = useRef<{ pointerId: number } | null>(null);
+  const briefPress = useRef<{ pointerId: number; release(): void } | null>(null);
   /** Where the cards of the briefs are on the stage, as last drawn: ⇧1 fits them in too. */
   const cardsPlaced = useRef<Box[]>([]);
   /** The brief being written on its card: the layer, and the view (or the layer made in the blank space) its card is beside. */
@@ -722,6 +722,9 @@ export function CanvasView(props: Props) {
   };
 
   const onPointerDown = (event: TargetedPointerEvent<HTMLDivElement>) => {
+    // A Brief press let go out of reach (its pointer up never came) is over.
+    briefPress.current?.release();
+    briefPress.current = null;
     if (playing) return;
     // What is pressed on is read as the view pressed in shows it now: one beside a value just changed catches up first (ADR 0011).
     const over = viewAt(event);
@@ -734,7 +737,9 @@ export function CanvasView(props: Props) {
     if (over && !over.at.offCanvasLayer) views?.sync(over.at.view);
     if (event.button === 0 && !spaceHeld && tool === "brief") {
       // Written once let go: the press would otherwise take the focus from the card as it shows.
-      briefPress.current = { pointerId: event.pointerId };
+      // Held till let go, as a press on a layer is (ADR 0012): no key edits meanwhile.
+      event.currentTarget.setPointerCapture(event.pointerId);
+      briefPress.current = { pointerId: event.pointerId, release: holdPointer(event.pointerId) };
       return;
     }
     if (event.button === 0 && !spaceHeld && drawsWith(tool) && editor) {
@@ -867,8 +872,9 @@ export function CanvasView(props: Props) {
       return;
     }
     if (briefPress.current?.pointerId === event.pointerId) {
+      briefPress.current.release();
       briefPress.current = null;
-      if (event.type === "pointerup") briefAt(event);
+      if (event.type === "pointerup" && tool === "brief") briefAt(event);
       return;
     }
     if (press.current?.pointerId === event.pointerId) {
@@ -1288,13 +1294,15 @@ export function CanvasView(props: Props) {
       }
     }
     let writingKey: string | null = null;
-    if (writing && inTree(treeOf(writing.layer) ?? tree, writing.layer)) {
-      writingKey = cardKeyOf(writing.layer);
+    // Found again as the layers are now: they may have been built anew while it is written.
+    const writingNow = writing && (treeOf(writing.layer) ?? tree).layerOf(nodeOf(writing.layer));
+    if (writing && writingNow) {
+      writingKey = cardKeyOf(writingNow);
       if (!writingKey || !list.some((c) => c.card.key === writingKey)) {
         // None yet: a card of its own, empty, beside where it is written.
         writingKey = "new";
         const shown = writing.in.offCanvasLayer ? outside.find((o) => o.offCanvasLayer === writing.in.offCanvasLayer) : shownViews.find((s) => keyOf(s) === keyOf(writing.in));
-        if (shown) add(writing.layer, shown, "new", "");
+        if (shown) add(writingNow, shown, "new", "");
         else writingKey = null;
       }
     }
@@ -1314,9 +1322,13 @@ export function CanvasView(props: Props) {
     const was = writing;
     setWriting(null);
     if (!was || text === null) return;
-    const layer = treeOf(was.layer)?.layerOf(nodeOf(was.layer)) ?? was.layer;
-    const before = cardKeyOf(layer) ? (editorOf(layer)?.brief(layer) ?? "") : "";
+    // Gone meanwhile (deleted, say, by the Agent's code coming in): nothing to write on.
+    const layer = treeOf(was.layer)?.layerOf(nodeOf(was.layer));
+    if (!layer) return;
+    const had = cardKeyOf(layer);
+    const before = had ? (editorOf(layer)?.brief(layer) ?? "") : "";
     if (text === before) return;
+    if (!text && had && !was.in.offCanvasLayer) briefViews.forget(had);
     const own = onSetBrief(layer, text);
     const key = text && cardKeyOf(own);
     if (key && !was.in.offCanvasLayer) briefViews.write(key, keyOf(was.in));
@@ -1406,7 +1418,10 @@ export function CanvasView(props: Props) {
           onWritten={(_key, text) => written(text)}
           onRemove={(key) => {
             const found = cards.list.find((c) => c.card.key === key);
-            if (found) onSetBrief(found.layer, "");
+            if (!found) return;
+            const layer = treeOf(found.layer)?.layerOf(nodeOf(found.layer)) ?? found.layer;
+            onSetBrief(layer, "");
+            if (!found.in.offCanvasLayer) briefViews.forget(key);
           }}
           onReveal={(dx, dy) => setCamera((v) => ({ ...v, x: v.x + dx, y: v.y + dy }))}
           placedNow={cardsPlaced}
