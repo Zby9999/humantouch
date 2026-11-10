@@ -3,73 +3,16 @@
  * What is drawn over the canvas, above the views, so its lines stay 1px and
  * its labels one size at any zoom: the selection box and the outline of the
  * layer pointed at, the marks a dragged layer snaps to and the distances
- * measured, and, beside the layer selected, its brief and the selection toolbar,
- * and on it, its handles.
+ * measured, and, beside the layer selected, the selection toolbar, and on it,
+ * its handles.
  */
 import type { TargetedPointerEvent } from "preact";
-import { useState } from "preact/hooks";
 import type { Camera } from "./camera";
 import { Icon } from "./icons";
 import { role, type Layer } from "./layers";
 import { HANDLES, sides, type Handle } from "./resize";
 import type { Mark } from "./snap";
 import type { View } from "./views";
-
-interface BriefProps {
-  layer: Layer;
-  brief: string;
-  /** The view it sits beside the layer in. */
-  view: View;
-  camera: Camera;
-  onSetBrief(layer: Layer, brief: string): void;
-}
-
-/**
- * Beside a new Frame selected: the button that opens its brief, what the
- * Agent is to make in it. Typed in freely, set once left or on Enter; Esc
- * leaves it as it was.
- */
-export function Brief({ layer, brief, view, camera, onSetBrief }: BriefProps) {
-  const [open, setOpen] = useState(false);
-  const r = view.boxOf(layer);
-  const close = (text: string | null) => {
-    setOpen(false);
-    if (text !== null && text.trim() !== brief) onSetBrief(layer, text.trim());
-  };
-  if (!r) return null;
-  return (
-    <div
-      class="tk-brief"
-      style={{ left: `${camera.x + r.right * camera.zoom + 8}px`, top: `${camera.y + r.top * camera.zoom}px` }}
-      // A press here is not on the canvas.
-      onPointerDown={(event) => event.stopPropagation()}
-    >
-      <button type="button" class="tk-brief-button" aria-expanded={open} data-tk-tip={brief || undefined} onClick={() => setOpen(!open)}>
-        <Icon name="brief" />
-        {brief ? "Brief" : "Add brief"}
-      </button>
-      {open && (
-        <textarea
-          class="tk-textarea tk-brief-text"
-          aria-label="Brief"
-          placeholder="What should the Agent make here?"
-          defaultValue={brief}
-          ref={(el) => el?.focus()}
-          onBlur={(event) => close(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.stopPropagation();
-              close(null);
-            } else if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              event.currentTarget.blur();
-            }
-          }}
-        />
-      )}
-    </div>
-  );
-}
 
 interface SelectionToolbarProps {
   layer: Layer;

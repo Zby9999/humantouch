@@ -29,7 +29,6 @@ import { createFolds } from "./layer-folds";
 import { LayerTreeView } from "./LayerTreeView";
 import { Properties } from "./Properties";
 import { BreakpointBadge } from "./BreakpointBadge";
-import { BriefSection } from "./BriefSection";
 import { breakpointName, contains, readMediaBreakpoints, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
 import { promotedNote } from "./promote";
 import { viewName } from "./ViewLabels";
@@ -222,8 +221,6 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   const treeOf = (layer: Layer | undefined): LayerTree | null => (layer && outsideOf(layer)?.editor.tree()) || tree;
   /** A layer off the canvas itself, rather than one in it. */
   const isOutside = (layer: Layer) => !layer.text && outsideOf(layer)?.layer()?.el === layer.el;
-  /** In a layer made in the blank space off the canvas (ticket 106), which takes briefs as the canvas does: put back, it is made anew, briefs and all. */
-  const inMadeOff = (layer: Layer) => !!outsideOf(layer)?.origin.made;
   /** The layer off the canvas itself, while it is there: what undoing or redoing a step to it leaves selected. */
   const itself = (outside: OffCanvasLayer) => () => [outside.layer()].filter((layer) => layer !== null);
   /** The layer as the layers are now: a move builds them anew. Null once it is gone. */
@@ -451,16 +448,17 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     }));
   };
   /**
-   * A brief written on a layer of the canvas, or taken off: from the Design
-   * panel, or beside a new Frame. Loose text gets an element of its own for
-   * it, which is then selected; any other layer stays as selected.
+   * A brief written on a layer, or taken off, on its card beside the views
+   * (ticket 121). Loose text gets an element of its own for it, which is then
+   * selected; any other layer stays as selected. Returns the layer it is on.
    */
-  const writeBrief = (layer: Layer, brief: string) => {
+  const writeBrief = (layer: Layer, brief: string): Layer => {
     const editor = editorOf(layer);
-    if (!editor) return;
+    if (!editor) return layer;
     const own = editor.setBrief(layer, brief);
     onEdit();
     if (own.el !== layer.el) select([own]);
+    return own;
   };
   /** ⇧A: the layers made a Stack, which is then selected. */
   const makeStack = (layers: Layer[]) => {
@@ -1052,10 +1050,6 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
                 </ChangeMarksProvider>
               </CatalogProvider>
             </ToastProvider>
-            {/* A brief is on one layer of the canvas at a time; off the canvas, a layer moved out is kept as it looks, one made in the blank space takes briefs. */}
-            {selected.length === 1 && (!outsideOf(selected[0]) || inMadeOff(selected[0])) && (
-              <BriefSection editor={editorOf(selected[0])!} layer={selected[0]} onChange={(brief) => writeBrief(selected[0], brief)} />
-            )}
           </>
         )}
       </aside>
@@ -1072,6 +1066,8 @@ const TOOLS = [
   { tool: null, label: "Select", key: "V", icon: "pointer" },
   { tool: "frame", label: "Frame", key: "F", icon: "frame" },
   { tool: "text", label: "Text", key: "T", icon: "text" },
+  // A click on a layer writes its brief, on a card beside the views (ticket 121).
+  { tool: "brief", label: "Brief", key: "B", icon: "brief" },
 ] as const;
 
 interface ToolsProps {
@@ -1080,7 +1076,7 @@ interface ToolsProps {
 }
 
 /**
- * At the top right of the canvas, by the Design panel: the tools, as V, F and T pick them too. The chosen one is raised
+ * At the top right of the canvas, by the Design panel: the tools, as V, F, T and B pick them too. The chosen one is raised
  * on a backing of its own, which slides to a tool clicked and jumps to one a key picks (designer, 2026-11-08).
  * A tool pointed at or focused tells its name and key in the editor's dark tip, at the toolbar's left, level with it,
  * in place of the browser's gray one (designer, 2026-11-08).

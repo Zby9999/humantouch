@@ -198,6 +198,8 @@ test("a Stack's direction, gap, padding and alignment, in design language", asyn
   await expect.poll(() => canvasStyle(page, "header", "justify-content")).toBe("flex-end");
   await expect.poll(() => canvasStyle(page, "header", "align-items")).toBe("flex-end");
   await setField(page, "Gap", "24");
+  // Left, its Variables close: they would cover the direction (the panel, with no Brief section since ticket 121, has nothing to scroll that closes them).
+  await stack.getByRole("textbox", { name: "Gap", exact: true }).blur();
   const gap = await canvas(page)
     .locator("header")
     .evaluate((header) => header.children[1].getBoundingClientRect().left - header.children[0].getBoundingClientRect().right);
