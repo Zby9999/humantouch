@@ -33,6 +33,11 @@ const changeList = (page: Page) => page.getByRole("dialog", { name: "Changes" })
 /** The cards of the briefs, beside the views. */
 const cards = (page: Page) => page.locator(".tk-brief-card");
 const card = (page: Page, layer: string) => page.getByRole("group", { name: `Brief on ${layer}` });
+/** Presses a card near its right end: cards sit close beside the views, their middles at times under the Layers panel's edge. */
+async function pressCard(page: Page, layer: string) {
+  const box = await steadyBox(card(page, layer));
+  await page.mouse.click(box.x + box.width - 6, box.y + box.height / 2);
+}
 /** The field of the card being written in. */
 const field = (page: Page) => page.getByRole("textbox", { name: "Brief" });
 
@@ -115,8 +120,9 @@ test("a click in the blank space with the Brief tool puts it down; a card opened
   await expect(badge(page)).toHaveCount(0);
   await expect(tool(page, "Brief")).toHaveAttribute("aria-pressed", "true");
 
+  // Under the desktop view: the blank space, clear of the Layers panel's edge.
   const view = await steadyBox(page.locator('iframe[title="Canvas"]'));
-  await page.mouse.click(view.x - 40, view.y + 200);
+  await page.mouse.click(view.x + view.width / 2, view.y + view.height + 40);
   await expect(tool(page, "Select")).toHaveAttribute("aria-pressed", "true");
 });
 
@@ -128,7 +134,7 @@ test("changed on its card when left, taken off by leaving it empty, each a step 
   await page.keyboard.press("Escape");
 
   // Clicked, the card is written in; Esc, it is as it was.
-  await card(page, "Button").click();
+  await pressCard(page, "Button");
   await expect(field(page)).toBeFocused();
   await field(page).fill("Press in a little, and spring back");
   await field(page).press("Escape");
@@ -137,14 +143,14 @@ test("changed on its card when left, taken off by leaving it empty, each a step 
   await expect(button).toHaveAttribute("data-tk-brief", "Press in a little");
 
   // Left by a click elsewhere: set.
-  await card(page, "Button").click();
+  await pressCard(page, "Button");
   await field(page).fill("Press in a little, and spring back");
   await tool(page, "Select").click();
   await expect(button).toHaveAttribute("data-tk-brief", "Press in a little, and spring back");
   await expect(badge(page)).toHaveText("1");
 
   // Left empty, by its arrow: taken off (designer, 2026-11-10).
-  await card(page, "Button").click();
+  await pressCard(page, "Button");
   await field(page).fill("");
   await card(page, "Button").getByRole("button", { name: "Set brief" }).click();
   await expect(cards(page)).toHaveCount(0);
@@ -189,7 +195,7 @@ test("a card is a field with the accent's arrow beside it as it is written in, w
   await expect(card(page, "Button").getByRole("button")).toHaveCount(0);
   await expect(card(page, "Button")).toHaveText("Press in a little");
 
-  await card(page, "Button").click();
+  await pressCard(page, "Button");
   await field(page).fill("Something else");
   await card(page, "Button").getByRole("button", { name: "Set brief" }).click();
   await expect(field(page)).toHaveCount(0);
@@ -337,4 +343,28 @@ test("taken back one by one from the change list, in edit mode and in preview mo
   await enterEditMode(page);
   await expect(canvas(page).locator("[data-tk-brief]")).toHaveCount(0);
   await expect(cards(page)).toHaveCount(0);
+});
+
+test("a new brief is written on a card beside its layer, in its view; set, the card goes out beside the view; changed later, the card opens where it is (designer, 2026-11-10)", async ({ page }) => {
+  await enterEditMode(page);
+  const button = canvas(page).getByRole("button", { name: "Get started" });
+  await openBrief(page, button);
+  const [view, layer, writing] = await Promise.all([steadyBox(page.locator('iframe[title="Canvas"]')), steadyBox(button), steadyBox(cards(page).first())]);
+  // In the view, right of the layer, level with it.
+  expect(writing.x).toBeGreaterThan(layer.x + layer.width);
+  expect(writing.x + writing.width).toBeLessThanOrEqual(view.x + view.width);
+  expect(Math.abs(writing.y + writing.height / 2 - (layer.y + layer.height / 2))).toBeLessThanOrEqual(2);
+  await page.keyboard.type("Press in a little");
+  await page.keyboard.press("Enter");
+  await expect(field(page)).toHaveCount(0);
+  const set = await steadyBox(card(page, "Button"));
+  expect(set.x + set.width).toBeLessThan(view.x);
+
+  // Where it is on the canvas, in canvas px: the canvas may pan to bring it in sight, the card does not move on it.
+  const onCanvas = () => card(page, "Button").evaluate((el) => [(el as HTMLElement).style.left, (el as HTMLElement).style.top]);
+  const before = await onCanvas();
+  await page.keyboard.press("Escape");
+  await pressCard(page, "Button");
+  await expect(field(page)).toBeFocused();
+  expect(await onCanvas()).toEqual(before);
 });

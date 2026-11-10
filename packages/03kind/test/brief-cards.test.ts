@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { CARD_GAP, CARD_OFFSET, CARD_WIDTH, LABEL_ROOM, lineOf, placeCards, type Box, type CardToPlace } from "../src/client/brief-cards";
+import { CARD_GAP, CARD_OFFSET, CARD_WIDTH, LABEL_ROOM, lineOf, pathOf, placeCards, type Box, type CardToPlace } from "../src/client/brief-cards";
 
 const desktop: Box = { x: 0, y: 0, width: 1440, height: 3000 };
 const tablet: Box = { x: 1520, y: 0, width: 768, height: 3600 };
@@ -81,49 +81,72 @@ describe("the cards of the briefs, beside their views", () => {
     expect(lineOf({ x: 0, y: -300, width: 100, height: 60 }, layer)).toMatchObject({ from: { x: 50, y: -240 }, to: { x: 50, y: 0 } });
   });
 
-  test("the lines of cards stacked down a column are bent apart, none on another, and none crosses another", () => {
+  test("the lines of cards stacked down a column come to the middles of their layers' sides, bent apart, none on another, none crossing another", () => {
     const layers = [500, 505, 510, 515].map((y, i) => ({ x: 100 + i * 10, y, width: 50, height: 4 }));
     const placed = placeCards(layers.map((layer, i) => card(String(i), desktop, layer, 66)), views);
-    const bent = placed.filter((p) => p.line!.path.length === 4);
-    expect(bent.length).toBeGreaterThan(1);
-    const bends = bent.map((p) => p.line!.path[1].x);
+    for (const p of placed) {
+      const layer = layers[Number(p.key)];
+      expect(p.line!.to).toEqual({ x: layer.x, y: layer.y + layer.height / 2 });
+    }
+    const bends = placed.filter((p) => p.line!.path.length === 4).map((p) => p.line!.path[1].x);
+    expect(bends.length).toBeGreaterThan(1);
     expect(new Set(bends).size).toBe(bends.length);
-    for (const x of bends) expect(x).toBeGreaterThan(-CARD_OFFSET);
-    for (const x of bends) expect(x).toBeLessThan(0);
-    // No segment of one line crosses a segment of another.
+    const ends = placed.map((p) => `${p.line!.to.x},${p.line!.to.y}`);
+    expect(new Set(ends).size).toBe(ends.length);
     const segments = placed.flatMap((p) => p.line!.path.slice(1).map((to, j) => [p.key, p.line!.path[j], to] as const));
-    const cross = (a: readonly [string, { x: number; y: number }, { x: number; y: number }], b: typeof a) => {
+    type Segment = (typeof segments)[number];
+    const meet = (a: Segment, b: Segment) => {
       if (a[0] === b[0]) return false;
       const [, a1, a2] = a;
       const [, b1, b2] = b;
       const av = a1.x === a2.x;
       const bv = b1.x === b2.x;
-      if (av === bv) return false;
+      const span = (p: number, q: number) => [Math.min(p, q), Math.max(p, q)];
+      if (av === bv) {
+        // Along one another: on the same line, overlapping.
+        if (av ? a1.x !== b1.x : a1.y !== b1.y) return false;
+        const [p1, p2] = av ? span(a1.y, a2.y) : span(a1.x, a2.x);
+        const [q1, q2] = av ? span(b1.y, b2.y) : span(b1.x, b2.x);
+        return Math.min(p2, q2) - Math.max(p1, q1) > 0;
+      }
       const [v1, v2, h1, h2] = av ? [a1, a2, b1, b2] : [b1, b2, a1, a2];
       return v1.x > Math.min(h1.x, h2.x) && v1.x < Math.max(h1.x, h2.x) && h1.y > Math.min(v1.y, v2.y) && h1.y < Math.max(v1.y, v2.y);
     };
-    for (const a of segments) for (const b of segments) expect(cross(a, b)).toBe(false);
+    for (const a of segments) for (const b of segments) expect(meet(a, b)).toBe(false);
   });
 
-  test("the line goes across and down only, as Figma draws a note's: straight when the card is level with the layer's side, else bent once, halfway into the space beside the card", () => {
+  test("the line goes from the middle of the card's side to the middle of the layer's facing it, across and down only, as Figma draws a note's (designer, 2026-11-10)", () => {
     const layer = { x: 0, y: 0, width: 100, height: 100 };
-    // Level: from the card at the layer's middle, though not the card's.
-    expect(lineOf({ x: -260, y: 30, width: 220, height: 66 }, layer, "across").path).toEqual([{ x: -40, y: 50 }, { x: 0, y: 50 }]);
-    // Below it: from as near as its corner lets it, bent halfway across the 40px between.
-    expect(lineOf({ x: -260, y: 200, width: 220, height: 66 }, layer, "across").path).toEqual([
-      { x: -40, y: 212 },
-      { x: -20, y: 212 },
-      { x: -20, y: 50 },
-      { x: 0, y: 50 },
-    ]);
-    // A card above: down, across, down to the middle of the layer's top.
-    expect(lineOf({ x: 300, y: -200, width: 220, height: 66 }, layer, "down").path).toEqual([
-      { x: 312, y: -134 },
-      { x: 312, y: -114 },
-      { x: 50, y: -114 },
-      { x: 50, y: 0 },
-    ]);
+    // Level: straight.
+    expect(lineOf({ x: -260, y: 17, width: 220, height: 66 }, layer, "across").path).toEqual([{ x: -40, y: 50 }, { x: 0, y: 50 }]);
+    // Not level: bent twice, halfway into the space beside the card.
+    expect(lineOf({ x: -260, y: 200, width: 220, height: 66 }, layer, "across").path).toEqual([{ x: -40, y: 233 }, { x: -20, y: 233 }, { x: -20, y: 50 }, { x: 0, y: 50 }]);
+    // A card above it, off to its right: down, across, down into the middle of its top.
+    expect(lineOf({ x: 300, y: -200, width: 220, height: 66 }, layer, "down").path).toEqual([{ x: 410, y: -134 }, { x: 410, y: -114 }, { x: 50, y: -114 }, { x: 50, y: 0 }]);
     for (const line of [lineOf({ x: -900, y: 700, width: 220, height: 66 }, layer), lineOf({ x: 500, y: -500, width: 220, height: 90 }, layer, "down")])
       for (let i = 1; i < line.path.length; i++) expect(line.path[i].x === line.path[i - 1].x || line.path[i].y === line.path[i - 1].y).toBe(true);
+  });
+
+  test("a line that would go through another layer with a brief, or run on another line, comes into the middle of its layer's top or bottom instead (designer, 2026-11-10)", () => {
+    // Two layers in a row, level, as a heading and its badge.
+    const heading = { x: 100, y: 100, width: 200, height: 40 };
+    const badge = { x: 320, y: 105, width: 60, height: 30 };
+    const [toHeading, toBadge] = placeCards([card("h", desktop, heading, 66), card("b", desktop, badge, 66)], views);
+    expect(toHeading.line!.path).toEqual([{ x: -CARD_OFFSET, y: 120 }, { x: 100, y: 120 }]);
+    // Below them both: across under the heading, up into the badge's bottom.
+    expect(toBadge.line!.to).toEqual({ x: 350, y: 135 });
+    expect(toBadge.line!.path).toHaveLength(3);
+    // The card level with the heading but its line in the way of the badge's: round, into the badge's top.
+    const line = lineOf({ x: -260, y: 60, width: 220, height: 66 }, badge, "across", CARD_OFFSET / 2, { layers: [heading, badge], lines: [] });
+    expect(line.to).toEqual({ x: 350, y: 105 });
+    expect(line.path).toEqual([{ x: -40, y: 93 }, { x: 350, y: 93 }, { x: 350, y: 105 }]);
+    // A layer it is in is not in its way.
+    const page = { x: 0, y: 0, width: 1440, height: 3000 };
+    expect(lineOf({ x: -260, y: 87, width: 220, height: 66 }, heading, "across", CARD_OFFSET / 2, { layers: [page, heading], lines: [] }).path).toHaveLength(2);
+  });
+
+  test("a line's corners are rounded, 8px at most and never more than half a leg", () => {
+    expect(pathOf([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }])).toBe("M0,0 L92,0 Q100,0 100,8 L100,100");
+    expect(pathOf([{ x: 0, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 100 }])).toBe("M0,0 L3,0 Q6,0 6,3 L6,100");
   });
 });

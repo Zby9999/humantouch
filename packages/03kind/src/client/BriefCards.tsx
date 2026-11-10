@@ -9,9 +9,10 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { BRIEF_ATTR, LAYER_ID_ATTR } from "./canvas-style";
-import { CARD_WIDTH, placeCards, type Box } from "./brief-cards";
+import { CARD_WIDTH, pathOf, placeCards, type Box } from "./brief-cards";
 import { transformOf, type Camera } from "./camera";
 import { Icon } from "./icons";
+import { CHANGE_GLIDE_MS, EASE_IN_OUT, prefersReducedMotion } from "./motion";
 import type { Layer, LayerTree } from "./layers";
 
 /** The layers of `doc`, laid out as `tree`, that have a brief: one for each, the first of its instances. */
@@ -135,11 +136,53 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
   // Measured again only once what the cards hold changes: not as a layer is dragged, or the canvas zoomed.
   const holds = cards.map((card) => `${card.key}\u0000${card.name}\u0000${card.text}`).join("\u0001") + `\u0001${writing}`;
   useLayoutEffect(measure, [holds]);
+  // A card set before, opened again, is placed as tall as it was, so it grows down from where it is and does not move.
+  const restHeights = useRef<Record<string, number>>({});
+  for (const key in heights) if (key !== writing) restHeights.current[key] = heights[key];
+  const heightOf = (key: string) => (key === writing && key !== "new" ? restHeights.current[key] : undefined) ?? heights[key] ?? UNMEASURED;
   const placed = placeCards(
-    cards.map((card) => ({ key: card.key, host: card.host, free: card.free, layer: card.layer, height: heights[card.key] ?? UNMEASURED })),
+    cards.map((card) => ({ key: card.key, host: card.host, free: card.free, layer: card.layer, height: heightOf(card.key) })),
     obstacles,
+    // Only a new brief is written beside its layer; one set before is changed where its card is, so it does not jump (designer, 2026-11-10).
+    writing === "new" ? writing : null,
   );
   placedNow.current = placed;
+  // Written, the card goes from beside its layer back out beside its view (designer, 2026-11-10): it glides there, its
+  // line drawn again once it is. Found by its layer, once it is drawn again: a new brief's card is keyed anew as it is set.
+  const lastWriting = useRef<{ box: Box; layer: Box } | null>(null);
+  const toGlide = useRef<{ box: Box; layer: Box; renders: number } | null>(null);
+  useLayoutEffect(() => {
+    const now = writing === null ? null : placed.find((p) => p.key === writing);
+    const nowLayer = now && cards.find((c) => c.key === writing)?.layer;
+    if (now && nowLayer) {
+      lastWriting.current = { box: now, layer: nowLayer };
+      toGlide.current = null;
+      return;
+    }
+    if (writing === null && lastWriting.current) {
+      toGlide.current = { ...lastWriting.current, renders: 0 };
+      lastWriting.current = null;
+    }
+    const was = toGlide.current;
+    if (!was) return;
+    const same = (a: Box, b: Box) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+    const i = cards.findIndex((c) => c.layer && same(c.layer, was.layer));
+    // Not drawn again within a few renders (its brief taken off, say): nothing to glide.
+    if (i < 0) {
+      if (++was.renders > 3) toGlide.current = null;
+      return;
+    }
+    toGlide.current = null;
+    const key = CSS.escape(cards[i].key);
+    const el = layer.current?.querySelector<HTMLElement>(`.tk-brief-card[data-key="${key}"]`);
+    const line = layer.current?.querySelector<SVGGElement>(`.tk-brief-lines g[data-key="${key}"]`);
+    const to = placed[i];
+    const dx = was.box.x - to.x;
+    const dy = was.box.y - to.y;
+    if (!el || (!dx && !dy) || prefersReducedMotion()) return;
+    el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: CHANGE_GLIDE_MS, easing: EASE_IN_OUT });
+    line?.animate([{ opacity: 0 }, { opacity: 0, offset: 0.7 }, { opacity: 1 }], { duration: CHANGE_GLIDE_MS + 120, easing: "linear" });
+  });
   // Opened, a card out of sight is brought in, as little as it takes: it may be off the screen, beside the views.
   useLayoutEffect(() => {
     const at = writing === null ? null : placed.find((p) => p.key === writing);
@@ -162,8 +205,8 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
         {placed.map(
           (p, i) =>
             p.line && (
-              <g key={p.key} data-selected={cards[i].selected || undefined}>
-                <polyline points={p.line.path.map((at) => `${at.x},${at.y}`).join(" ")} />
+              <g key={p.key} data-key={p.key} data-selected={cards[i].selected || undefined}>
+                <path d={pathOf(p.line.path)} />
                 <circle cx={p.line.to.x} cy={p.line.to.y} r={3 / camera.zoom} />
               </g>
             ),

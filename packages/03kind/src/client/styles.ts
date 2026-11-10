@@ -1453,12 +1453,12 @@ button.tk-change-text:focus-visible { outline: 2px solid var(--tk-accent); outli
 .tk-selection-tool:focus-visible { outline: 2px solid var(--tk-instance); outline-offset: 2px; }
 /*
  * The briefs (ticket 121): cards on the stage, beside the views, in canvas px, so they pan and zoom with the
- * canvas as notes on it do; a dashed line from each to its layer, across and down only, 1px at any zoom.
+ * canvas as notes on it do; a grey dashed line from each to its layer, across and down only, 1px at any zoom (designer, 2026-11-10).
  */
 .tk-brief-cards { position: absolute; top: 0; left: 0; transform-origin: 0 0; pointer-events: none; }
 .tk-brief-lines { position: absolute; top: 0; left: 0; overflow: visible; }
-.tk-brief-lines polyline { fill: none; stroke: var(--tk-accent); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
-.tk-brief-lines circle { fill: var(--tk-accent); }
+.tk-brief-lines path { fill: none; stroke: var(--tk-text-muted); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.tk-brief-lines circle { fill: var(--tk-text-muted); }
 .tk-brief-lines g:not([data-selected]) { opacity: 0.6; }
 /*
  * A card as the designer drew it in Figma (2026-11-10): the brief alone in the editor's small type, 220px wide, a
@@ -1481,6 +1481,8 @@ button.tk-change-text:focus-visible { outline: 2px solid var(--tk-accent); outli
   pointer-events: auto;
   cursor: text;
 }
+/* Written in, over the card under it: a card opened again grows down from where it is (designer, 2026-11-10). */
+.tk-brief-card[data-writing] { z-index: 1; }
 .tk-brief-card-text { align-self: stretch; box-sizing: border-box; margin: 0; padding: 4px; min-height: 24px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tk-brief-card-field { all: unset; display: block; align-self: stretch; box-sizing: border-box; padding: 4px; min-height: 24px; font: inherit; color: inherit; white-space: pre-wrap; overflow-wrap: anywhere; resize: none; overflow: hidden; }
 .tk-brief-card-field::placeholder { color: var(--tk-text-muted); }
