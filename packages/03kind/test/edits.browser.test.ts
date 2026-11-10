@@ -8542,6 +8542,13 @@ describe("free layers in rows and columns made a Grid, and a Grid dissolved (tic
     const row = open(board([placed("a", [20, 30, 100, 40]), placed("b", [140, 30, 100, 40]), placed("c", [264, 30, 100, 40]), placed("d", [394, 30, 100, 40])].join("")));
     expect(row.editor.stacksAsGrid(IDS.map(row.layer))).toBe(false);
     expect(row.editor.stacksAsGrid([row.layer("board")])).toBe(false);
+
+    // One of them in the Frame's flow, not free: a Stack, as ⇧A makes it, the Frame alone too.
+    const mixed = open(board(`${TILES}<div id="e" ${at("30:7")} style="width: 100px; height: 40px"></div>`));
+    expect(mixed.editor.canStack([...IDS, "e"].map(mixed.layer))).toBe(true);
+    expect(mixed.editor.stacksAsGrid([...IDS, "e"].map(mixed.layer))).toBe(false);
+    expect(mixed.editor.stacksAsGrid([mixed.layer("board")])).toBe(false);
+    expect(mixed.editor.stack([...IDS, "e"].map(mixed.layer)).kind).toBe("stack");
   });
 
   test("a Frame selected alone becomes the Grid, its padding the room round its cells; a row of them, a Stack as ever", () => {

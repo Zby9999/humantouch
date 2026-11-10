@@ -107,7 +107,7 @@
 **做了什么**
 
 - 判断（`structure-edits.ts`）：⇧A 原来在 `stack` 里判断合成 Stack 还是 Grid，抽成 `stacking`（同一套：选中的是单独一个能变 Stack 的 Frame 时看它的子图层，都是自由定位时量边框、`inferGrid`），`stack` 和新的 `editor.stacksAsGrid(layers)` 都用它，所以按钮说的和 ⇧A 做的是同一个判断。`stacksAsGrid` 遇到不够三个、或不全是自由定位的，不量（不读布局）。⇧A 本身没改，照旧自己选 Stack 或 Grid。
-- 按钮（`Properties.tsx` 的 `MakeLayoutButton`）：多选、或单独选中能变 Stack 的 Frame 时，Stack 一节的 + 写「Make Grid (⇧A)」（会合成 Grid）或照旧「Make Stack (⇧A)」，按钮名字（`aria-label`）同样是 Make Grid / Make Stack。判断在选中时做一次（按选中的元素记住，之后改动重画面板不再算），提示出来时（指针移上去 `pointerover`、键盘聚焦 `focusin`）再算一次：选中后图层挪过、排成了行列，提示读之前就改好。进入编辑模式时什么都没选，面板不画这一节，不走这条路。样子没变，还是原来那个 +。
+- 按钮（`Properties.tsx` 的 `MakeLayoutButton`）：多选、或单独选中能变 Stack 的 Frame 时，Stack 一节的 + 写「Make Grid (⇧A)」（会合成 Grid）或照旧「Make Stack (⇧A)」，按钮名字（`aria-label`）同样是 Make Grid / Make Stack。判断在选中时做一次（按选中的元素记住，之后改动重画面板不再算），提示出来时（指针移上去 `pointerover`、键盘聚焦 `focus`）再算一次：选中后图层挪过、排成了行列，提示读之前就改好。进入编辑模式时什么都没选，面板不画这一节，不走这条路。样子没变，还是原来那个 +。
 - Grid 一节（`GridSection.tsx`）标题栏加「Dissolve Grid (⌥⇧A)」（−，用 Stack 一节同一个 `RemoveButton`，没有新样式）：能 ⌥⇧A 解散的 Grid 才有（`canUnstack`，页面原有的 Grid 也有，只在这一节显示时才问），点了走和 ⌥⇧A 同一个 `dissolve`。子图层是循环渲染的 Grid（示例的卡片 Grid）不能解散，没有这个按钮。
 - 这一轮 ⇧A 合成的 Grid（新建的，或 Frame 变的）照 Stack 一节（设计师 2026-11-08）：− 是强调色，点了把合成和之后对它的改动一起撤回；这一节的字段不标改动、没有重置。一起撤回的属性加上了列数、行间距、列间距（`ChangeMarks.tsx` 的 `MADE_LAYOUT`；原来只有 Stack 的属性，Frame 变的 Grid 之后改的间距会留下来）。
 - spec「合成与解散 Stack」的 ⇧A 合成 Grid、⌥⇧A 解散 Grid 两条补了这两个按钮。
@@ -137,10 +137,21 @@
 
 **包**：切换按钮 `react.dev.js` 1423 B（`bd6c2389b64451f0`）、`chunk-2GJY7MXB.js` 21372 B（`a8c4c0d4bc3db6a8`）、`react.js`，和 d996f27 逐字节相同（`cmp`）。编辑层 `editor.dev.js` 515694 → 516664 B（+970 B），gzip -9 182078 → 182687 B（+609 B）。
 
+**Review 后的修正（2026-11-10，指挥的 review）**
+
+- 回到之前的选中时按钮名字是旧的（最严重）：原来提示出来时重算的结果按选中记着，换走再选回同一批图层时还拿这个旧结果（比如提示说过 Grid，之后挪出列、再选回四个，还写 Make Grid，⇧A 却合成 Stack）。现在每换一次选中就重新判断（`useMemo` 按选中的元素和视图的 editor，提示时改的是这一次选中自己的结果），不留旧的。注释写明为什么不按 `layers` 本身：改动后同一批元素会是新的 `Layer`，算同一个选中。
+- 键盘聚焦那条路原来是死的：Preact 的 `onFocusIn` 在 Chrome 里挂的是不存在的「FocusIn」事件，从来不触发。改成按钮自己的 `focus`（在面板根上的 `focusin` 之前到）。
+- Grid 一节的两种 −（这一轮合成的、能 ⌥⇧A 的）合成一个元素；`ChangeMarks` 的 `stacked` / `unstack` / `madeStack` 和 `STACK_PROPERTIES` 的说明写明也管 Grid（名字没改）；`grid.spec.ts` 里放错位置的说明挪回 `pickBoxes`。
+- 新测试：
+  - 单测：混着一个不是自由定位的图层（走 `stacksAsGrid` 不量布局的那条），四个加一个、单独的 Frame 都是 false，⇧A 合成的是 Stack。
+  - e2e「a selection gone back to …」：第四个方块偏 6px，画布上挪进列里、悬停提示说 Grid；挪回去、选两个、再选四个，按钮是 Make Stack（上一个提交上这条挂）；再挪进列里、键盘聚焦，按钮变 Make Grid。
+  - e2e「a Stack made in this round, made a Grid …」：Frame 先改圆角 8，⇧A 合成 Stack，选 Grid、列数 3，再改一个子图层圆角 4，点强调色的 −：Frame 回到 `display: block`、没有列，圆角 8 和子图层的 4 都留着，改动列表剩两条。另外核过：把 `MADE_LAYOUT` 换回只有 Stack 属性时，这条照样过（转 Grid 后改的列数并进了 `arrangement` 那条），挂的是之前那条「a Frame of free boxes …」（Frame 变的 Grid 之后改的间距留了一条），所以修正由那条盯着。
+- 重跑：`pnpm typecheck` 过；`pnpm test` vitest 1146 过 1 跳过、node 126 过；`grid.spec.ts`、`properties.spec.ts`、`stack.spec.ts`、`shell.spec.ts` 87 过；`--dry` 28/28，认领说明和 d996f27 的 28 份 `diff -r` 逐字相同；`--scripted` 19/19。包：切换按钮 `react.dev.js`（`bd6c2389b64451f0`）、`chunk-2GJY7MXB.js`（`a8c4c0d4bc3db6a8`）同前；`editor.dev.js` 516620 B（比 d996f27 +926 B），gzip -9 182693 B（+615 B）。性能没重跑（只改了选中时的判断，进入编辑模式的路径没动）。
+
 #### 代定的事（待设计师确认）
 
 1. 按钮的名字（读屏读到的 `aria-label`）跟提示一起变成「Make Grid」，不只改提示。
-2. 判断只在选中时和提示出来时做：选中后用方向键、拖动把图层挪成（或挪出）行列，提示出来之前按钮名字是旧的；按 ⇧A、点按钮都照按下那一刻判断，不受影响。
+2. 判断只在选中时和提示出来时做：选中后用方向键、拖动把图层挪成（或挪出）行列，提示出来之前按钮名字是旧的；按 ⇧A、点按钮都照按下那一刻判断，不受影响。换到别的视图（平板、手机，也就是别的断点）里选中算新的选中，重新判断（每个视图的图层是它自己的元素）；浏览器窗口或视图宽度变了、同一个选中没变时，同样要等提示出来才重算（review 后）。
 3. 这一节的标题仍是「Stack」，只有 + 的名字和提示变（一节的样子、名字交给调前端，第 2 轮改成「Layout」）。
 4. 这一轮 ⇧A 合成的 Grid，Grid 一节的 − 是强调色，点了是撤回合成（连同之后改的列数、间距），不是 ⌥⇧A 那样记一条「Dissolve Grid」；字段不标改动、没有重置。照 Stack 一节（设计师 2026-11-08）。⌥⇧A 本身照旧解散。
 5. 子图层是循环渲染的 Grid（示例的卡片 Grid）没有「Dissolve Grid」按钮，和 ⌥⇧A 一样不能解散（110 原来就这样）。

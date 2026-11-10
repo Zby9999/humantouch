@@ -548,10 +548,13 @@ function sizeOf(layers: Layer[], axis: "width" | "height"): ValuePart {
  */
 function MakeLayoutButton({ editor, layers, onStack }: { editor: Editor; layers: Layer[]; onStack(): void }) {
   const key = keyOf(layers);
-  // Once a selection, by its layers' elements.
-  const chosen = useMemo(() => editor.stacksAsGrid(layers), [key]);
-  const [looked, setLooked] = useState<{ key: string; grid: boolean } | null>(null);
-  const grid = looked?.key === key ? looked.grid : chosen;
+  // Worked out afresh for each selection, by its layers' elements, and for each view's editor: another view, or another
+  // breakpoint's, has elements of its own, so a selection there is another key. `layers` itself is left out: a selection
+  // found again after an edit is new `Layer`s of the same elements, and is the same selection. A selection gone back to is
+  // worked out again, not taken from what its tip last said: `seen` is made anew with each.
+  const seen = useMemo(() => ({ grid: editor.stacksAsGrid(layers) }), [key, editor]);
+  const [, redraw] = useState(0);
+  const grid = seen.grid;
   const label = (grid: boolean) => (grid ? "Make Grid" : "Make Stack");
   /**
    * As its tip shows, by the pointer or by focus: said again where the layers have moved, before the tip reads it. On the
@@ -563,10 +566,11 @@ function MakeLayoutButton({ editor, layers, onStack }: { editor: Editor; layers:
     const el = event.currentTarget as HTMLElement;
     el.setAttribute("aria-label", label(now));
     el.setAttribute(TIP_ATTR, `${label(now)} (⇧A)`);
-    setLooked({ key, grid: now });
+    seen.grid = now;
+    redraw((n) => n + 1);
   };
   return (
-    <button type="button" class="tk-icon-button" aria-label={label(grid)} data-tk-tip={`${label(grid)} (⇧A)`} onPointerOver={look} onFocusIn={look} onClick={onStack}>
+    <button type="button" class="tk-icon-button" aria-label={label(grid)} data-tk-tip={`${label(grid)} (⇧A)`} onPointerOver={look} onFocus={look} onClick={onStack}>
       <Icon name="plus" />
     </button>
   );

@@ -340,7 +340,6 @@ async function addBoard(page: Page, off = 0) {
   }, off);
 }
 
-/** Selects the board's boxes, `count` of them, from the first, in the Layers panel. */
 /** Whether what `selector` finds in the desktop view is where it was when this was called, and as large, within 1px. */
 async function inPlace(page: Page, selector: string) {
   const boxes = () =>
@@ -355,9 +354,10 @@ async function inPlace(page: Page, selector: string) {
   };
 }
 
+/** Selects the board's boxes, `count` of them, from the first, in the Layers panel. */
 async function pickBoxes(page: Page, count: number) {
   const boxRows = layers(page).getByRole("treeitem").filter({ hasText: /^Frame$/ });
-  // The board, the last row, clicked first: it opens, listing its boxes; then the first box alone, the others added.
+  // The last row clicked first, as the ticket 110 test does, so the panel lists the board's boxes; then the first box alone, the others added.
   await layers(page).getByRole("treeitem").last().click();
   await expect(boxRows).toHaveCount(5);
   await boxRows.nth(1).click();
@@ -406,6 +406,75 @@ test("the multi-select button says what ⇧A makes: Make Grid for free layers in
   await expect(layers(page).getByRole("treeitem", { name: "Grid", exact: true })).toHaveCount(1);
   await expect.poll(near).toBe(true);
   await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
+});
+
+test("a selection gone back to says what ⇧A makes of it now, not what its tip said before; focused from the keyboard, the button says it again too (review of ticket 110's follow-up)", async ({ page }) => {
+  // The fourth box 6px out of its column.
+  await addBoard(page, 6);
+  await enterEditMode(page);
+  const make = (name: string) => design(page).getByRole("button", { name, exact: true });
+  const four = desktop(page).contentFrame().locator("#four");
+  /** The fourth box put in its column on the canvas itself, the selection left as it is; or, `back`, out of it again. */
+  const place = (back = false) =>
+    four.evaluate((el, back) => el.style.setProperty("left", back ? "150px" : "144px", "important"), back);
+  const left = () => four.evaluate((el) => (el as HTMLElement).offsetLeft);
+
+  // In its column: shown, the tip says a Grid.
+  await pickBoxes(page, 4);
+  await expect(make("Make Stack")).toBeVisible();
+  await place();
+  await expect.poll(left).toBe(144);
+  await make("Make Stack").hover();
+  await expect(page.getByRole("tooltip")).toHaveText("Make Grid (⇧A)");
+  await page.mouse.move(0, 0);
+
+  // Out of it again, two of them selected, then all four once more: a Stack, as ⇧A makes it, not the Grid its tip said.
+  await place(true);
+  await expect.poll(left).toBe(150);
+  await pickBoxes(page, 2);
+  await pickBoxes(page, 4);
+  await expect(make("Make Stack")).toHaveAttribute("data-tk-tip", "Make Stack (⇧A)");
+
+  // In its column again, the selection the same: focused, the button says a Grid.
+  await place();
+  await expect.poll(left).toBe(144);
+  await make("Make Stack").focus();
+  await expect(make("Make Grid")).toHaveAttribute("data-tk-tip", "Make Grid (⇧A)");
+});
+
+test("a Stack made in this round, made a Grid and its columns changed: its − in the accent takes all of that back, and leaves what was changed of it before and of its layers (review of ticket 110's follow-up)", async ({ page }) => {
+  // The fourth box out of its column: the board is made a Stack.
+  await addBoard(page, 6);
+  await enterEditMode(page);
+  const board = desktop(page).contentFrame().locator("#board");
+  const four = desktop(page).contentFrame().locator("#four");
+  await pickBoxes(page, 1);
+  await page.keyboard.press("Escape");
+  await setField(page, "Corner radius", "8");
+  await expect(board).toHaveCSS("border-top-left-radius", "8px");
+
+  await design(page).getByRole("button", { name: "Make Stack", exact: true }).click();
+  await design(page).getByRole("radio", { name: "Grid", exact: true }).click();
+  await setField(page, "Columns", "3");
+  await expect(board).toHaveCSS("grid-template-columns", /^(\S+ ){2}\S+$/);
+  // A layer of it changed since, then the Grid selected again.
+  const box = (await four.boundingBox())!;
+  await page.keyboard.down("Meta");
+  await page.mouse.click(box.x + 4, box.y + 4);
+  await page.keyboard.up("Meta");
+  await setField(page, "Corner radius", "4");
+  await expect(four).toHaveCSS("border-top-left-radius", "4px");
+  await layers(page).getByRole("treeitem", { name: "Grid", exact: true }).last().click();
+  const dissolve = design(page).getByRole("button", { name: "Dissolve Grid" });
+  await expect(dissolve).toHaveClass(/\bis-added\b/);
+
+  await dissolve.click();
+  await expect(board).toHaveCSS("display", "block");
+  await expect(board).toHaveCSS("grid-template-columns", "none");
+  await expect(board).toHaveCSS("border-top-left-radius", "8px");
+  await expect(four).toHaveCSS("border-top-left-radius", "4px");
+  // Two changes left: the two corner radii.
+  await expect(await changeRows(page)).toHaveCount(2);
 });
 
 test("a Frame of free boxes in rows and columns, selected alone: its button says Make Grid; made one, its − in the accent takes the Grid back out, a gap changed since too (ticket 110's follow-up)", async ({ page }) => {

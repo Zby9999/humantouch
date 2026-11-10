@@ -36,8 +36,9 @@ export function GridSection({ editor, layers, onEdit, variable, arrange, dissolv
   if (!layers.every((layer) => editor.can(layer, "columns"))) return null;
   // Made a Grid by ⇧A in this round: as the Stack section, its fields unmarked, with no resets, and its −, alone in the accent,
   // takes the Grid back out (designer, 2026-11-08).
+  // `stacked`: made by ⇧A, whichever it made (`ChangeMarks`).
   const added = marks.stacked();
-  const dissolve = added ? null : dissolvable();
+  const dissolve = added ? () => marks.unstack() : dissolvable();
   /** The value the Grids share; null when they do not: Mixed. */
   const shown = (property: GridProperty) => {
     const [first, ...rest] = layers.map((layer) => editor.read(layer, property));
@@ -60,11 +61,7 @@ export function GridSection({ editor, layers, onEdit, variable, arrange, dissolv
         </h3>
         {/* As every section's: shown for two changes or more (designer, 2026-11-08). */}
         <SectionReset title="Grid" properties={["columns", "rowGap", "columnGap", "arrangement"]} />
-        {added ? (
-          <RemoveButton label="Dissolve Grid" added onClick={() => marks.unstack()} />
-        ) : (
-          dissolve && <RemoveButton label="Dissolve Grid" title="Dissolve Grid (⌥⇧A)" onClick={dissolve} />
-        )}
+        {dissolve && <RemoveButton label="Dissolve Grid" title={added ? undefined : "Dissolve Grid (⌥⇧A)"} added={added} onClick={dissolve} />}
       </div>
       {arrange && (
         <div class="tk-row">
