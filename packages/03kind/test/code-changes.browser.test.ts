@@ -31,7 +31,7 @@ afterEach(() => {
   delete (window as unknown as Record<string, unknown>)[CODE_GLOBAL];
 });
 function watch() {
-  (window as unknown as Record<string, CodeUpdates>)[CODE_GLOBAL] = { at: Date.now(), updating: 0 };
+  (window as unknown as Record<string, CodeUpdates>)[CODE_GLOBAL] = { at: Date.now(), updating: 0, inTurn: true };
   let changes = 0;
   stop = watchCodeChanges(window, () => changes++, { quietMs: QUIET_MS });
   return () => changes;

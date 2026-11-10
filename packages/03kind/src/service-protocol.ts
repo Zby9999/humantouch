@@ -100,14 +100,17 @@ export const CHECK_ARRIVE_MS = 20_000;
 /**
  * Global the dev server's code updates are kept in on the page, when it can
  * say (Vite): `at`, when the code the page has was last brought in (ms since
- * the epoch, the dev server's clock); `updating`, updates under way. A
- * `CODE_EVENT` on the window follows each change.
+ * the epoch, the dev server's clock); `updating`, updates under way;
+ * `inTurn`, whether the dev server handles its updates one at a time, each
+ * over before the next begins (Vite 6.3.0 on, ticket 125). A `CODE_EVENT`
+ * on the window follows each change.
  */
 export const CODE_GLOBAL = "__THIRD_KIND_CODE__";
 export const CODE_EVENT = "03kind:code";
 export interface CodeUpdates {
   at: number;
   updating: number;
+  inTurn: boolean;
 }
 
 /** Why a brief is never checked on the page: it asks for what no value of a property shows. */

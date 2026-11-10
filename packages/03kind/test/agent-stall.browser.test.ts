@@ -21,7 +21,7 @@ afterEach(() => {
 });
 /** Watches with a short threshold; what it said, in order. */
 function watch() {
-  (window as unknown as Record<string, CodeUpdates>)[CODE_GLOBAL] = { at: Date.now(), updating: 0 };
+  (window as unknown as Record<string, CodeUpdates>)[CODE_GLOBAL] = { at: Date.now(), updating: 0, inTurn: true };
   const said: boolean[] = [];
   const watcher = watchStall(window, (stalled) => said.push(stalled), { ms: STALL_MS });
   stop = watcher.stop;
