@@ -97,6 +97,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     ...(change.kind === "style" ? [variablesLine(change)].filter((line) => line !== null) : []),
     ...(change.copiedBreakpoints?.length ? [copiedBreakpoints(change.copiedBreakpoints, list)] : []),
     ...(change.asStack && !madeGridAfter(change, list) ? [AS_STACK] : []),
+    ...(change.marginsDropped?.length ? [dropMarginsBetween(change)] : []),
     ...(change.kind === "style" ? gridNotes(change) : []),
     ...(change.data ? [dataChange(change)] : []),
     ...(change.wrap ? [change.kind === "move" ? WRAP : WRAP_TO_PLACE] : []),
@@ -112,6 +113,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Reference style:** ${change.kind === "delete" ? "none: the layer goes" : style.length ? style.join(", ") : NO_STYLE[change.kind]}`,
     ...(change.kind === "style" || change.kind === "unstack" ? [`**Currently set by:** ${madeBefore(target, list) ? "unknown: the layer was made in a round before" : target.made ? "nothing yet: the layer is new" : setBy(change.sources ?? [], root)}`] : []),
     ...(change.kind === "stack" && change.sources?.length ? [`**Currently set by** (the margins): ${setBy(change.sources, root)}`] : []),
+    ...(change.marginsDropped?.some((member) => member.sources.length) ? [`**Currently set by** (the margins): ${setBy(change.marginsDropped.flatMap((member) => member.sources), root)}`] : []),
   ];
   return `## ${change.id}. ${changeTitle(change)}\n\n${lines.map((line) => `- ${line}\n`).join("")}\n`;
 }
@@ -784,6 +786,23 @@ function dropMargins(change: Change): string[] {
   const gap = kind === "Grid" ? "its gaps" : "its gap";
   const room = place ? `the room between them is ${gap}, and the ${kind} has no margin` : `the room between them is ${gap}, and the room around them its padding`;
   return [`**Drop the margins:** ${margined.join(", ")} ${margined.length === 1 ? "has" : "have"} margins now. In the ${kind}, ${room}: take their margins off.`];
+}
+
+/**
+ * The layers of a Stack whose gap takes over their margins between them
+ * (`Change.marginsDropped`, ticket 122), as ⇧A's line has those of a new one:
+ * each, and those margins. Those around the first and the last stay.
+ */
+function dropMarginsBetween(change: Change): string {
+  const dropped = change.marginsDropped!;
+  // A text layer named by its words, without the full stop they end with.
+  const named = (target: Target) => member({ ...target, context: { ...target.context, path: [...target.context.path.slice(0, -1), target.context.path.at(-1)!.replace(/\.$/, "")] } });
+  const items = dropped.map(({ target, margins }) => `${listed(Object.entries(margins).map(([side, px]) => `\`${side}: ${px}\``))} on ${named(target)}`);
+  const one = dropped.flatMap((layer) => Object.keys(layer.margins)).length === 1;
+  return (
+    `**Drop the margins:** the layers have ${one ? "a margin" : "margins"} between them: ${listed(items)}. ` +
+    `In the Stack, the room between them is its gap alone: take ${one ? "it" : "them"} off${change.breakpoint ? " at these widths only" : ""}, and keep any margin around the first and the last.`
+  );
 }
 
 /** The Stack as it was, the Frame it becomes, and where each of its layers is placed. A Grid's, as a Stack's (ticket 110). */

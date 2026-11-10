@@ -1372,7 +1372,7 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
   test.afterEach(async () => {
     // Run before the file's own hooks, which put the Card back: App.tsx is put back here, and the next page must open on it as it was.
     if (readFileSync(APP, "utf8") !== originalApp) writeFileSync(APP, originalApp);
-    await expect.poll(async () => /gap: "gap-3"|flex flex-col gap-3|opacity-50|bg-\[#ff0000\]/.test(await (await fetch(`${DEV_URL}/src/App.tsx`)).text())).toBe(false);
+    await expect.poll(async () => /gap: "gap-3"|flex flex-col gap-[03]|opacity-50|bg-\[#ff0000\]/.test(await (await fetch(`${DEV_URL}/src/App.tsx`)).text())).toBe(false);
   });
 
   /** The live page's four cards, the loop's three and "Your turn", as the browser computes `property` for each. */
@@ -1447,23 +1447,25 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
     expect(result.applied).toEqual([]);
   });
 
-  test("playbook: the loop's cards given a 12px gap, the Agent writing it into the Card with an 8px gap for every other usage (fill-gap-brief #3): the fourth card is a Stack with an 8px gap", async ({ page }) => {
+  // Since ticket 122 the gap is the room between the title and the body, the body's `mt-2` in it: fill-gap-brief #3's 8px gap for every
+  // other usage, the margin off, looks as the fourth card did (8px), so here the Agent gives the others 16px, which is a leak.
+  test("playbook: the loop's cards given a 12px gap, the Agent writing it into the Card with a 16px gap for every other usage (after fill-gap-brief #3): the fourth card is a Stack with a 16px gap", async ({ page }) => {
     await changeACard(page, 0, [["Gap", "12"]]);
     const result = await applyTheChange(
       page,
       [
-        [CARD, CARD_PROPS, 'export function Card({ title, body, gap = "gap-2" }: { title: string; body: string; gap?: string }) {'],
+        [CARD, CARD_PROPS, 'export function Card({ title, body, gap = "gap-4" }: { title: string; body: string; gap?: string }) {'],
         [CARD, '<article className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">', "<article className={`flex flex-col ${gap} rounded-xl border border-stone-200 bg-white p-5 shadow-sm`}>"],
         [CARD, '<p className="mt-2 text-sm', '<p className="text-sm'],
         [APP, LOOP_USAGE, '<Card key={feature.title} title={feature.title} body={feature.body} gap="gap-3" />'],
       ],
-      async () => (await cardsOnThePage(page, "rowGap")).join() === "12px,12px,12px,8px",
+      async () => (await cardsOnThePage(page, "rowGap")).join() === "12px,12px,12px,16px",
     );
     const fourth = { display: (await cardsOnThePage(page, "display"))[3], rowGap: (await cardsOnThePage(page, "rowGap"))[3] };
     const told = toldLeak(result, /src\/App\.tsx:\d+:\d+/);
     record("usage-leak-gap", { ...kept(result), fourthCard: fourth, told, found: told ? 1 : 0 });
-    // Ticket 77: the gap alone is looked at (the fourth card's display, flex now, is not), 0 to 8px.
-    expect(result.done).toMatch(/its gap from 0px to 8px since the round was claimed/);
+    // Ticket 77: the gap alone is looked at (the fourth card's display, flex now, is not): the room between its title and body, 8 to 16px (ticket 122).
+    expect(result.done).toMatch(/its gap from 8px to 16px since the round was claimed/);
     expect(told).toBe(true);
     expect(result.ringAfterDone).toBe(0);
     expect(result.applied).toEqual([]);
@@ -1476,7 +1478,8 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
       [
         [CARD, CARD_PROPS, 'export function Card({ title, body, className = "" }: { title: string; body: string; className?: string }) {'],
         [CARD, '<article className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">', "<article className={`rounded-xl border border-stone-200 bg-white p-5 shadow-sm ${className}`}>"],
-        [APP, LOOP_USAGE, '<Card key={feature.title} title={feature.title} body={feature.body} className="flex flex-col gap-3" />'],
+        // The body's margin off for that usage too (ticket 122): the gap is all the room between title and body.
+        [APP, LOOP_USAGE, '<Card key={feature.title} title={feature.title} body={feature.body} className="flex flex-col gap-3 [&>p]:mt-0" />'],
       ],
       async () => (await cardsOnThePage(page, "rowGap")).join() === "12px,12px,12px,normal",
     );
@@ -1484,6 +1487,24 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
     record("usage-only-gap", { ...kept(result), falseLeaks });
     expect(falseLeaks).toBe(0);
     expect(result.ticked).toEqual([1]);
+  });
+
+  test("playbook: the loop's cards given no gap (ticket 122), the Agent passing `flex flex-col gap-0` to the loop's usage alone and leaving the body's `mt-2`: done says not shown, naming the body's margin", async ({ page }) => {
+    await changeACard(page, 0, [["Gap", "0"]]);
+    const result = await applyTheChange(
+      page,
+      [
+        [CARD, CARD_PROPS, 'export function Card({ title, body, className = "" }: { title: string; body: string; className?: string }) {'],
+        [CARD, '<article className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">', "<article className={`rounded-xl border border-stone-200 bg-white p-5 shadow-sm ${className}`}>"],
+        [APP, LOOP_USAGE, '<Card key={feature.title} title={feature.title} body={feature.body} className="flex flex-col gap-0" />'],
+      ],
+      async () => (await cardsOnThePage(page, "rowGap")).join() === "0px,0px,0px,normal",
+    );
+    const told = result.checks.outcomes[1] === "not shown" && /room between the Stack's layers is 8px, not 0px: .+ \(`margin-top: 8px`\) has a margin between the layers/.test(result.done);
+    record("gap-margins-left", { ...kept(result), told, found: told ? 1 : 0 });
+    expect(result.done).toMatch(/it does not show the change\. The room between the Stack's layers is 8px, not 0px: .+ \(`margin-top: 8px`\) has a margin between the layers, which adds to its gap\. Take it off \(Drop the margins\)/);
+    expect(told).toBe(true);
+    expect(result.ticked).not.toContain(1);
   });
 
   test("playbook: the fourth card filled red, the Agent passing the fill to its usage alone: the loop's cards stay white (no false leak)", async ({ page }) => {
