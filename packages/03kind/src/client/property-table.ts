@@ -418,16 +418,19 @@ export interface MarginBetween {
  * ones are left out (they place a layer, in what room is left over), as
  * are those around the first and the last.
  */
-export function roomBetween(el: Element): { gap: number; spaces: number[] | null; margins: MarginBetween[] } {
+export function roomBetween(el: Element): { gap: number; written: number; spaces: number[] | null; margins: MarginBetween[] } {
   const style = getComputedStyle(el);
   const { direction, flex } = stackOf(el);
   const gap = flex ? px(style.getPropertyValue(direction === "horizontal" ? "column-gap" : "row-gap")) : 0;
-  const layers = [...el.children].filter((child) => {
+  const shown = [...el.children].filter((child) => {
     const own = getComputedStyle(child);
     // In a plain flow, inline layers have no margins above and below.
     return !/^(absolute|fixed)$/.test(own.position) && !/^(none|contents)$/.test(own.display) && (flex || !own.display.startsWith("inline"));
   });
-  if (layers.length < 2) return { gap, spaces: null, margins: [] };
+  // Next to each other as drawn: in a flex container, by their `order` (as `ordersOf` reads it), then as written.
+  const orderOf = (child: Element) => (flex ? Number(getComputedStyle(child).order) || 0 : 0);
+  const layers = shown.map((child, i) => ({ child, i, order: orderOf(child) })).sort((a, b) => a.order - b.order || a.i - b.i).map(({ child }) => child);
+  if (layers.length < 2) return { gap, written: gap, spaces: null, margins: [] };
   // The side of each layer facing the one before it in the code, and the side facing the next: reversed, or right to left, the other way round.
   const [start, end] = direction === "horizontal" ? (["left", "right"] as const) : (["top", "bottom"] as const);
   const backwards = (flex && style.flexDirection.endsWith("reverse")) !== (direction === "horizontal" && style.direction === "rtl");
@@ -444,8 +447,19 @@ export function roomBetween(el: Element): { gap: number; spaces: number[] | null
     // A plain flow collapses two margins that meet into the larger, less a negative one.
     return flex ? gap + trailing + leading : Math.max(0, trailing, leading) + Math.min(0, trailing, leading);
   });
-  if (!margins.length) return { gap, spaces: null, margins };
-  return { gap: round(median(spaces)), spaces: spaces.map(round), margins };
+  if (!margins.length) return { gap, written: gap, spaces: null, margins };
+  return { gap: round(median(spaces)), written: gap, spaces: spaces.map(round), margins };
+}
+
+/**
+ * The room between a Stack's layers as a gap edit starts from (ticket 122):
+ * where it differs between them, each, as a list (`[8, 24]`), which no gap
+ * set is the same as, so the median shown can be set too, and an undo back
+ * to it takes the change off; else what the panel reads.
+ */
+export function gapBefore(el: Element): number | number[] {
+  const { gap, spaces } = roomBetween(el);
+  return spaces && spaces.some((space) => space !== spaces[0]) ? spaces : gap;
 }
 
 /** The middle one of `values`, or halfway between the two in the middle. */

@@ -75,7 +75,7 @@ test("layout changes are told in design language; a plain flow given a gap is to
     "- **Design intent:** Change the gap from 8px to 16px.\n- **Variables:** the gap is the Variable `4`, from the Tailwind theme: use its class, `gap-4` (in CSS, `calc(var(--spacing) * 4)`).\n- **Make it a Stack:**",
   );
   // The gap takes the margin over, and the notes say to take it off, and what sets it.
-  expect(gap).toMatch(/- \*\*Drop the margins:\*\* the layers have a margin between them now: `margin-top: 8px` on .+ \(`<p[^`]*>`, at `src\/components\/Card\.tsx:\d+:\d+`\)\. In the Stack, the room between them is its gap alone: take it off, and keep any margin around the first and the last\.\n/);
+  expect(gap).toMatch(/- \*\*Drop the margins:\*\* the layers have a margin between them: `margin-top: 8px` on .+ \(`<p[^`]*>`, at `src\/components\/Card\.tsx:\d+:\d+`\)\. In the Stack, the room between them is its gap alone: take it off, and keep any margin around the first and the last\.\n/);
   expect(gap).toMatch(/- \*\*Currently set by\*\* \(the margins\): class `mt-2`/);
   expect(gap).toContain("- **Reference style:** `display: flex`, `flex-direction: column`, `gap: 16px`\n");
 });

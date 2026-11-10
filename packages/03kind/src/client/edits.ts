@@ -18,7 +18,7 @@ import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer, type LayerK
 import { colorReader } from "./paint";
 import { MAX_AXIS, middleOf, PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Edge, type Share, type Side } from "./checkable";
 import { arrangedAs } from "./arrangement";
-import { ARRANGED, cssOf, definitionOf, inGrid, isTextProperty, isGrid, ofText, ordersOf, placesItself, readAsShown, roomBetween, round, same, stackOf, type Arrangement, type Definition, type Property, type PropertyValues, type Size } from "./property-table";
+import { ARRANGED, cssOf, definitionOf, inGrid, isTextProperty, isGrid, ofText, ordersOf, gapBefore, placesItself, readAsShown, roomBetween, round, same, stackOf, type Arrangement, type Definition, type Property, type PropertyValues, type Size } from "./property-table";
 import { autoMarginBefore, computedShareOf, extentOf, heldCentered, middleShareOf, pastShare, placedFrom, sideMoves, sideShareOf } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
@@ -257,7 +257,8 @@ export function createEditor(
     const definition = definitionOf(property);
     // Read, and written, as laid out at the breakpoint, in the view that stands for it.
     const el = working.shownAt(breakpoint, layer.el);
-    const before = readAsShown(el, property, colors);
+    // A gap whose layers have uneven room between them goes from that room, each (ticket 122): no gap set is the same.
+    const before = (property === "gap" ? asShown(el, () => gapBefore(el)) : readAsShown(el, property, colors)) as PropertyValues[P];
     // A change keeps the source it started from: the cascade is walked once, not on each step of a drag.
     const known = layer.el.getAttribute(LAYER_ID_ATTR);
     const earlier = known ? changes.find(known, property, breakpoint) : null;
@@ -314,7 +315,7 @@ export function createEditor(
     const placedBy = PLACED_BY[property];
     const { placedOtherwiseAt, offsetInLayoutAt } = !earlier && !breakpoint && placedBy ? viewsMovedOtherwise(layer, placedBy, !!centeredBy) : { placedOtherwiseAt: [], offsetInLayoutAt: [] };
     // Of two Variables of the same value, the one the code writes the value with (ticket 119): read as the change starts, kept for its steps.
-    const code = layer.made || !inCode ? undefined : earlier && codeAtStart.get(el)?.has(property) ? codeAtStart.get(el)!.get(property) : (inCode(el, property, before) ?? undefined);
+    const code = layer.made || !inCode ? undefined : earlier && codeAtStart.get(el)?.has(property) ? codeAtStart.get(el)!.get(property) : (inCode(el, property, readAsShown(el, property, colors)) ?? undefined);
     if (inCode && !layer.made) codeAtStart.set(el, (codeAtStart.get(el) ?? new Map()).set(property, code));
     const variables = bind?.(property, value, picked, earlier?.variables, code);
     changes.record(id, {
@@ -485,7 +486,10 @@ export function createEditor(
   ) => {
     // A new adjustment, though this edit may change nothing.
     if (!continues) steps.begin();
-    const read = () => readAsShown(working.shownAt(breakpoint, layer.el), property, colors);
+    const read = () => {
+      const el = working.shownAt(breakpoint, layer.el);
+      return (property === "gap" ? asShown(el, () => gapBefore(el)) : readAsShown(el, property, colors)) as PropertyValues[P];
+    };
     let before = from === undefined ? read() : from;
     if (same(before, value) && !picked) return;
     if (cut) {
@@ -681,8 +685,23 @@ export function createEditor(
    * the value in it, which that change takes, so the round has one change for
    * how it is laid out (ticket 109). Null for any other.
    */
+  /**
+   * Whether a gap set on the Stack `layer` in the view worked in takes over
+   * margins between its layers (ticket 122): it has some there now, or its
+   * gap took them over there already this round.
+   */
+  const takesMargins = (layer: Layer) => {
+    const el = working.shown(layer.el);
+    if (asShown(el, () => roomBetween(el).margins.length)) return true;
+    const id = layer.el.getAttribute(LAYER_ID_ATTR);
+    const here = working.beside() ? changesHereOf(layer, "gap") : id ? [changes.find(id, "gap", null)].filter((change) => !!change) : [];
+    return here.some((change) => !!change!.marginsDropped);
+  };
+
   const arrangedAnew = (layer: Layer, property: Property, value: unknown): Arrangement | null => {
     if (!ARRANGED.has(property) || !arrangementHere(layer)) return null;
+    // A gap that takes over margins between its layers (ticket 122) is a change of its own, which takes them off, and the page checks by the room between them.
+    if (property === "gap" && takesMargins(layer)) return null;
     const now = editor.read(layer, "arrangement");
     if (now.type === "grid") return property === "columns" || property === "rowGap" || property === "columnGap" ? { ...now, [property]: value as number } : null;
     if (property === "direction") return { ...now, direction: value as PropertyValues["direction"] };

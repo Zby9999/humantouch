@@ -367,9 +367,9 @@ test("a gap set in the phone view takes the margin between the layers off there 
   const card = phone.contentFrame().locator("article").first();
   // The first Card, picked in the phone view: the view worked in from then on.
   const box = await steadyBox(card);
-  await page.keyboard.down("Meta");
+  await page.keyboard.down("ControlOrMeta");
   await page.mouse.click(box.x + 4, box.y + 4);
-  await page.keyboard.up("Meta");
+  await page.keyboard.up("ControlOrMeta");
   await rows(page, "Card").first().click();
   await expect(design(page).getByRole("textbox", { name: "Gap", exact: true })).toHaveValue("8");
 

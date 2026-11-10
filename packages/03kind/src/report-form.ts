@@ -74,12 +74,15 @@ function pageShows(change: Change, check: CheckResult): string {
   if (PLACED_BY[change.property] && check.actual === null) return `${at}the layer is not placed absolute on the page`;
   if (check.actual !== null && typeof check.actual === "object" && change.margins) return `${at}the page does not draw it where the canvas does`;
   // A gap, its layers with margins between them still (ticket 122): the room between them, those margins in it.
-  if (change.property === "gap" && isMarginsLeft(check.actual)) return `${at}the room between the layers on the page is ${value("gap", check.actual.gap)}, not ${value("gap", change.after)}: ${marginsLeftWords(check.actual)} still`;
+  if (change.property === "gap" && isMarginsLeft(check.actual)) return `${at}the room between the layers on the page is ${roomWords(check.actual)}, not ${value("gap", change.after)}: ${marginsLeftWords(check.actual)} still`;
   return `${at}the page shows the ${propertyName(change.property)} ${value(change.property, check.actual)}, not ${value(change.property, change.after)}`;
 }
 
 /** Whether a gap's check answered with margins left between its layers (`MarginsLeft`, ticket 122). */
-export const isMarginsLeft = (actual: unknown): actual is MarginsLeft => actual !== null && typeof actual === "object" && "margins" in actual && "gap" in actual;
+export const isMarginsLeft = (actual: unknown): actual is MarginsLeft => actual !== null && typeof actual === "object" && "margins" in actual && "room" in actual;
+
+/** The room between a Stack's layers its check read (`MarginsLeft`): "8px", or from the least to the most, "0px–8px". */
+export const roomWords = ({ room: { min, max } }: MarginsLeft) => (min === max ? `${min}px` : `${min}px–${max}px`);
 
 /** The margins left between a Stack's layers, in words: "Body has a margin between the layers (`margin-top: 8px`)". */
 export function marginsLeftWords({ margins }: MarginsLeft): string {

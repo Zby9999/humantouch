@@ -795,10 +795,12 @@ function dropMargins(change: Change): string[] {
  */
 function dropMarginsBetween(change: Change): string {
   const dropped = change.marginsDropped!;
-  const items = dropped.map(({ target, margins }) => `${listed(Object.entries(margins).map(([side, px]) => `\`${side}: ${px}\``))} on ${member(target)}`);
+  // A text layer named by its words, without the full stop they end with.
+  const named = (target: Target) => member({ ...target, context: { ...target.context, path: [...target.context.path.slice(0, -1), target.context.path.at(-1)!.replace(/\.$/, "")] } });
+  const items = dropped.map(({ target, margins }) => `${listed(Object.entries(margins).map(([side, px]) => `\`${side}: ${px}\``))} on ${named(target)}`);
   const one = dropped.flatMap((layer) => Object.keys(layer.margins)).length === 1;
   return (
-    `**Drop the margins:** the layers have ${one ? "a margin" : "margins"} between them now: ${listed(items)}. ` +
+    `**Drop the margins:** the layers have ${one ? "a margin" : "margins"} between them: ${listed(items)}. ` +
     `In the Stack, the room between them is its gap alone: take ${one ? "it" : "them"} off${change.breakpoint ? " at these widths only" : ""}, and keep any margin around the first and the last.`
   );
 }

@@ -8771,11 +8771,86 @@ describe("a Stack's gap, its layers with margins between them (ticket 122)", () 
     write(flexCard(GAPPED));
     expect(checkChange(page, change, onCanvas([change]))).toEqual({
       outcome: "not shown",
-      actual: { gap: 8, margins: [{ layer: change.marginsDropped![0].target.context.path.at(-1), side: "margin-top", px: 8 }] },
+      actual: { room: { min: 8, max: 8 }, margins: [{ layer: change.marginsDropped![0].target.context.path.at(-1), side: "margin-top", px: 8 }] },
     });
 
     write(flexCard(GAPPED).replace("margin: 8px 0 0", "margin: 0"));
     expect(checkChange(page, change, onCanvas([change]))).toEqual({ outcome: "shown" });
+
+    // A margin the notes never named, which the canvas shows too: not the Agent's to take off (review).
+    write(flexCard(GAPPED).replace("margin: 8px 0 0", "margin: 0").replace('style="margin: 4px 0 0; height: 20px"', 'style="margin: 4px 0 6px; height: 20px"'));
+    expect(checkChange(page, change, onCanvas([change]))).toEqual({ outcome: "shown" });
+    // A gap with none to take off is checked by its gap as written, as ever.
+    editor.set(at("row"), "gap", 20);
+    const row = changes.list()[1];
+    write(GAPPED.replace("display: flex; gap: 10px; width: 400px", "display: flex; gap: 20px; width: 400px").replace("height: 10px; margin-left: auto", "height: 10px; margin-left: 6px"));
+    expect(checkChange(page, row, onCanvas([row]))).toEqual({ outcome: "shown" });
+  });
+
+  test("uneven room between the layers: the median shown can be set, and is a change that takes their margins off; one undo puts them back", () => {
+    const { doc, editor, changes, at, el } = open();
+    const list = at("list");
+    const rooms = () => {
+      const [one, two, three] = ["one", "two", "three"].map((id) => doc.getElementById(id)!.getBoundingClientRect());
+      return [two.top - one.bottom, three.top - two.bottom];
+    };
+    expect(editor.read(list, "gap")).toBe(8);
+
+    editor.set(list, "gap", 8);
+    expect(rooms()).toEqual([8, 8]);
+    expect(changes.list()).toHaveLength(1);
+    expect(changes.list()[0]).toMatchObject({ property: "gap", before: [12, 4], after: 8 });
+    expect([style(el("one")).marginBottom, style(el("two")).marginTop]).toEqual(["0px", "0px"]);
+
+    // 12, then the median again: still the one change.
+    editor.set(list, "gap", 12);
+    editor.set(list, "gap", 8, { continues: true });
+    expect(changes.list()).toHaveLength(1);
+    expect(rooms()).toEqual([8, 8]);
+
+    editor.undo();
+    editor.undo();
+    expect(changes.list()).toEqual([]);
+    expect(rooms()).toEqual([12, 4]);
+    expect([style(el("one")).marginBottom, style(el("two")).marginTop]).toEqual(["6px", "2px"]);
+  });
+
+  test("layers next to each other as drawn: by their `order` in a flex container", () => {
+    const { doc, editor, changes } = openCanvas(`<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="ordered" ${loc("5:5")} style="display: flex; flex-direction: column; width: 200px">
+    <div id="x" ${loc("6:7")} style="height: 10px; margin-top: 8px">X</div>
+    <div id="y" ${loc("7:7")} style="height: 10px; order: -1">Y</div>
+  </div>
+</body>`);
+    const layer = (id: string) => find(editor.tree().root, (l) => l.el === doc.getElementById(id) && !l.text)!;
+    // Y is drawn first: X's top margin is between them.
+    expect(editor.read(layer("ordered"), "gap")).toBe(8);
+    editor.set(layer("ordered"), "gap", 0);
+    expect(style(doc.getElementById("x")!).marginTop).toBe("0px");
+    expect(changes.list()[0].marginsDropped!.map((member) => member.margins)).toEqual([{ "margin-top": "8px" }]);
+  });
+
+  test("a gap set right after a Grid is made a Stack takes the margins between its layers off, as a change of its own", () => {
+    const { doc, editor, changes, layerOf } = openCanvas(`<!DOCTYPE html>
+<body style="margin: 0">
+  <div id="grid" ${loc("5:5")} style="display: grid; grid-template-columns: 1fr; width: 200px">
+    <div id="g1" ${loc("6:7")} style="height: 10px">One</div>
+    <div id="g2" ${loc("7:7")} style="height: 10px; margin-top: 8px">Two</div>
+  </div>
+</body>`);
+    editor.set(layerOf(doc.getElementById("grid")!), "arrangement", { type: "stack", direction: "vertical", wrap: false, gap: 0 });
+    const stack = find(editor.tree().root, (l) => l.el === doc.getElementById("grid") && !l.text)!;
+    expect(editor.read(stack, "gap")).toBe(8);
+    editor.set(stack, "gap", 4);
+
+    expect(changes.list().map((change) => change.property)).toEqual(["arrangement", "gap"]);
+    expect(changes.list()[1].marginsDropped!.map((member) => member.margins)).toEqual([{ "margin-top": "8px" }]);
+    expect(style(doc.getElementById("g2")!).marginTop).toBe("0px");
+    // Set again: the same change.
+    editor.set(stack, "gap", 6);
+    expect(changes.list().map((change) => change.property)).toEqual(["arrangement", "gap"]);
+    expect(doc.getElementById("g2")!.getBoundingClientRect().top - doc.getElementById("g1")!.getBoundingClientRect().bottom).toBe(6);
   });
 });
 

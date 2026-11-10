@@ -13,7 +13,7 @@ import { AUTO_MARGINS, AUTO_MARGINS_CLASS, AXIS_SIZE, CENTERING_SIGN, centeringS
 import type { Change, Composed, Created, GridSettings, Margins, Place, SavedChangeSet } from "./client/changeset";
 import type { Axis } from "./client/snap";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
-import { canvasOffset, isMarginsLeft, isOffsetInLayout, marginsLeftWords, movedWords, reportFor } from "./report-form";
+import { canvasOffset, isMarginsLeft, isOffsetInLayout, marginsLeftWords, movedWords, reportFor, roomWords } from "./report-form";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult, type OtherUsageChanged } from "./service-protocol";
@@ -222,7 +222,7 @@ function beforeOf(change: Change, actual: unknown): unknown {
     return { x, y };
   }
   // A gap read with margins between its layers (ticket 122): the room between them.
-  if (change.property === "gap" && isMarginsLeft(actual)) return actual.gap;
+  if (change.property === "gap" && isMarginsLeft(actual)) return actual.room.min === actual.room.max ? actual.room.min : undefined;
   return actual;
 }
 
@@ -392,7 +392,7 @@ function notShown(change: Change, actual: unknown, width?: number): string {
   if (change.property === "gap" && isMarginsLeft(actual)) {
     const one = actual.margins.length === 1;
     return (
-      `${sentenceAt(width)} room between the Stack's layers is ${value("gap", actual.gap)}, not ${value("gap", change.after)}: ${marginsLeftWords(actual)}, which ${one ? "adds" : "add"} to its gap. ` +
+      `${sentenceAt(width)} room between the Stack's layers is ${roomWords(actual)}, not ${value("gap", change.after)}: ${marginsLeftWords(actual)}, which ${one ? "adds" : "add"} to its gap. ` +
       `Take ${one ? "it" : "them"} off (Drop the margins), and ${again}.`
     );
   }

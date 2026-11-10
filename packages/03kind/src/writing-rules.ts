@@ -331,7 +331,7 @@ const HOW_CHECKED: HowChecked[] = [
   {
     // Said only where a gap takes over margins (ticket 122).
     calledFor: (change, list) => checkable(change, list) && !!change.marginsDropped?.length,
-    text: "a gap that takes over its layers' margins (**Drop the margins**) by the room between each two of its layers as drawn: its gap and any margin left between them together",
+    text: "a gap that takes over its layers' margins (**Drop the margins**) by its gap as the browser computes it and by those margins being gone from the layers named, each side named",
   },
   {
     calledFor: (change, list) => checkable(change, list) && placing(change) && !isEndOffsetChange(change) && !change.centeredOn,

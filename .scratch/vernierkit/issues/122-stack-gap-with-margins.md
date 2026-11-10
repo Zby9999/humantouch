@@ -116,21 +116,37 @@
 
 **包**：切换按钮 `react.dev.js` 1423 B（`bd6c2389b64451f0`）、`chunk-2GJY7MXB.js` 21372 B（`a8c4c0d4bc3db6a8`），和 69234b6 逐字节相同。编辑层 `editor.dev.js` 528657 → 531273 B（+2616 B），gzip -9 187444 → 188275 B（+831 B）。
 
+#### Review 后的修正（2026-11-10）
+
+- 中位数能设（必修 1）：距离不一样时，改间距的起点记成每处的距离（`before: [8, 24]`，`gapBefore`），所以输入任何值、包括显示的中位数，都记一条改动并清零外边距；先输 12 再输 16 也不会因为「回到起点」把改动删掉。⌘Z、撤回到起点（值就是那个列表）才删掉改动、外边距回来。说明的设计意图写「Change the gap from 8px and 24px between its layers to 16px.」。
+- `done` 不再说「is 0px, not 0px」（必修 2）：留着外边距时报的是每处距离的最小到最大（「0px–8px」，一样时一个值）。
+- 转换之后改间距（必修 3）：本轮转成 Stack 之后，子图层之间有外边距（或这个视图里间距已经清过外边距）时，改间距不再并进转换那条，而是一条自己的间距改动，记 `marginsDropped`、清零、`done` 照新核对；转换那条的核对本来就不比之后另有改动的字段（`arrangedOver`），所以不会误报。见代定 7。
+- `order`（必修 4）：`roomBetween` 在 flex 里按 `order`（和 `ordersOf` 一样读）再按代码顺序排，算画面上相邻的两个。有单测。
+- 每个宽度外边距不同（必修 5，选便宜的做法，代定 8）：`lookGap` 只看改动点名的那几边（按图层的源码标记和边）有没有去掉，加上写的间距等于选的值；说明里没点名、画布上也有的外边距不看，不怪 Agent。没有 `marginsDropped` 的间距改动照旧只比写的间距（和改前一样）。
+- 措辞：去掉「now」（「the layers have a margin between them: …」）；文字图层名字末尾的句号去掉（「on Turn the current page into a canvas (`<p …>`, at …)」）。How the page checks 那一项随核对改成「a gap that takes over its layers' margins (**Drop the margins**) by its gap as the browser computes it and by those margins being gone from the layers named, each side named」。
+- `layout.spec.ts` 里手机视图那条用 `ControlOrMeta`。ticket 88 的记录补了一句：标准场景现在 29 个，`fill-gap-brief` 的间距那条从 122 起多看标题和正文之间正好 12px，前后结果不能直接比。
+- 新单测 3 条（中位数能设、⌘Z 两步回到起点；`order`；Grid 改 Stack 后改间距是单独一条），核对那条加了「没点名的外边距不怪」「没有 `marginsDropped` 的照旧比写的间距」；`cli.test.ts` 加 1 条（不均匀的起点怎么写）。
+- 重跑：`pnpm typecheck` 过；`pnpm test` 1185 过 1 跳过，node 126 过；`--dry` 29/29；`--scripted` 20/20；e2e 页面组 layout/stack/properties/grid/undo/layers/views 171 过，"project files" 组 `--no-deps` 跑 claim、applying-bench、bench-scenarios 92 过。认领说明和 69234b6 比仍只有 `fill-gap-brief.md` 不同、多一份 `r18-card-gap.md`；`fill-gap-brief.md` 的差别和上面列的一样，只是 Drop the margins 那行没有「now」、名字后没有句号，How the page checks 那一项是上面的新写法。包：切换按钮仍逐字节相同；`editor.dev.js` 532092 B，gzip -9 188603 B（比 69234b6 +3435 B / +1159 B）。性能没重跑（改动只在读间距、改间距和核对里）。
+
 #### 代定的事（待设计师确认）
 
-1. 距离不一样时面板显示中位数（照 ⇧A 合成取中位数），不显示 Mixed：Mixed 在面板里是多选时的意思，单选一个 Stack 显示 Mixed 会以为选了几个；Figma 的自动布局也只有一个间距值。改了以后每处都是选的值。
+1. 距离不一样时面板显示中位数（照 ⇧A 合成取中位数），不显示 Mixed：Mixed 在面板里是多选时的意思，单选一个 Stack 显示 Mixed 会以为选了几个；Figma 的自动布局也只有一个间距值。这时输入任何值，包括显示的中位数，都算一条改动、清零外边距，改完每处都是那个值（review 后）。
 2. 最外侧的外边距（第一个图层前、最后一个图层后）留着不动，不像 ⇧A 那样挪到 Stack 上：改间距只管子图层之间，挪到 Stack 上会连带改它的内边距或外边距（Figma 里间距和内边距也分开）。说明里写「keep any margin around the first and the last」。交叉方向的外边距（竖排时左右）也不动。
 3. 「Make it a Stack」规则原句不改，只在这一轮有清零外边距的改动时补一句「Where its gap changes, the change says which margins to take off (**Drop the margins**): take those off, and its gap is all the room between its children.」：只改对齐、方向、换行的普通排列仍要「看起来和原来一样」，原句对它们还对；没有外边距的轮次说明逐字不变。
 4. 说明那一行点名图层用 `名字 (\`<标签>\`, at \`位置\`)`（和解散 Stack 列图层一样），不只写名字：文字图层的名字就是它的字（「Turn the current page into a canvas.」），光写名字 Agent 不好找。`done` 那句只写名字（按源码位置对上改动里的图层，对不上时写标签和字）。
 5. 只有改 `gap` 时清零外边距；转 Grid / Stack（`arrangement`）、改对齐、改方向不动外边距，转换的推算仍按写好的间距（ticket 109 的读法没改）。
 6. 按住方向键、拖动改间距：外边距按第一次记下时清零，之后不再重读。
+7. （review 后）本轮把 Grid 转成 Stack 之后再改间距，子图层之间有外边距时，间距是一条自己的改动（改动列表里两条），不并进转换那条；没有外边距时照 109 并进去。这样不用给转换那条另加「哪一步清零」的撤销逻辑。间距的设计变量这时记在间距那条上。
+8. （review 后）每个宽度外边距不同时选了便宜的做法：核对只看改动点名的边有没有去掉、写的间距对不对，不按每个打开的视图分别记外边距。代价：某个宽度上点名的那几边之外还有外边距（说明没提、画布上也有），那里画面上的距离不等于选的值，`done` 仍答显示了。
 
 #### 遗留风险
 
 1. 普通排列只算相邻两个兄弟的外边距合并；外边距穿过空元素、或从子图层里面穿出来合并（子图层的第一个孩子有 `mt-*`）时，读出来和画面不一样，清零的也不是那一处。
-2. `order` 改过顺序的 flex Stack 按代码里写的顺序算相邻；`flex-wrap` 换行处前后两个图层的外边距也算成「之间」并清零。
+2. （review 后 `order` 已按画面顺序）`flex-wrap` 换行处前后两个图层的外边距也算成「之间」并清零。
 3. 页面在不同宽度用不同外边距（`mt-2 md:mt-4`）时，桌面视图改间距只清零桌面视图读到的那几边，按所有宽度写 0；别的宽度才有的边不清。
 4. 「代码里的设计变量」（ticket 119）读间距用新读法的值：有外边距时和代码里写的 `gap-*` 对不上，就不说代码用的是哪个变量。
-5. 推广到组件（Promote）的间距改动，清零的外边距跟着改动走，但没有专门测；复制图层（`copiedBreakpoints`）不带 `marginsDropped`。
+5. 推广到组件（Promote）的间距改动，清零的外边距跟着改动走，但没有专门测。
+5a. （review 6，没做）清零的外边距跟着图层走：之后把那个图层换到第一个、或挪出这个 Stack，它的那一边仍是 0，说明里仍点名它；没有在换序、挪出时重算。要做得在每次移动改动后重算间距改动的 `marginsDropped`，和撤销步骤交织，不便宜。
+5b. （review 7，没做）复制一个在某断点改过间距的图层时，`copiedBreakpoints` 只带间距值和 `asStack`，不带 `marginsDropped`：副本里的子图层是新图层，原来记的图层 id 对不上，要带得按副本里的图层重新对应。副本的说明因此不提去外边距。
 6. 新措辞（Drop the margins 那行、规则补的那句、`done` 的那句）都是英文，没跑过真 Agent。
 7. 整套 e2e 没跑：页面组里别的用到卡片间距的测试（例如 `undo.spec.ts`、`views.spec.ts` 改间距的）这次跑了的都过，没跑到的交给指挥的整套。
