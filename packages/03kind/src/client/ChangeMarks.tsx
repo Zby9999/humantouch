@@ -37,9 +37,15 @@ export interface ChangeMarks {
    * (designer, 2026-11-08).
    */
   added(property: Property, item?: (before: unknown, after: unknown) => boolean): boolean;
-  /** Whether the selected layers were made Stacks in this round: added, as `added` says of a property. */
+  /**
+   * Whether the selected layers were made Stacks or Grids in this round, by ⇧A (a `stack` change, whichever it made, ticket 110):
+   * added, as `added` says of a property.
+   */
   stacked(): boolean;
-  /** Takes the Stacks the selected layers were made in this round back out, with what was changed of them as Stacks since, as one edit that can be undone. */
+  /**
+   * Takes the Stacks or Grids the selected layers were made in this round back out, with what was changed of their layout since
+   * (`MADE_LAYOUT`), as one edit that can be undone.
+   */
   unstack(): void;
 }
 
@@ -72,8 +78,10 @@ export const NO_MARKS: ChangeMarks = { changed: () => false, reset: () => {}, be
 /** The part `part` is of `before`, matched to it as it is in `after`. */
 const wasOf = (part: ValuePart, before: unknown, after: unknown) => (part.was ? part.was(before, after) : part.of(before));
 
-/** What a Stack sets of its layout: taken back with a Stack made in this round. */
+/** What a Stack sets of its layout, as the Stack section resets it. Taken back with one made in this round, a Grid's too: `MADE_LAYOUT`. */
 export const STACK_PROPERTIES: Property[] = ["direction", "gap", "align", "wrap", "padding", "arrangement"];
+/** What is taken back with a Stack or Grid made in this round: a Stack's properties, and a Grid's (ticket 110's follow-up), a Frame made one too. */
+const MADE_LAYOUT: Property[] = [...STACK_PROPERTIES, "columns", "rowGap", "columnGap"];
 
 /**
  * The marks of `layers`, from the round's changes: those to a property of
@@ -174,7 +182,7 @@ export function changeMarks(changes: Change[], editor: Editor, layers: Layer[], 
       editor.batch(() => {
         for (const stack of made) {
           // What was changed of it as a Stack since it was made, first; then the Stack itself, as if it never was.
-          const since = changes.filter((change) => change.kind === "style" && change.layer === stack.layer && change.id > stack.id && STACK_PROPERTIES.includes(change.property as Property));
+          const since = changes.filter((change) => change.kind === "style" && change.layer === stack.layer && change.id > stack.id && MADE_LAYOUT.includes(change.property as Property));
           for (const change of since) editor.revert(change.id);
           editor.revert(stack.id);
         }
@@ -182,7 +190,7 @@ export function changeMarks(changes: Change[], editor: Editor, layers: Layer[], 
       onEdit();
     },
   };
-  /** The change that made the layer `id` a Stack in this round, not dissolved since; null when there is none. */
+  /** The change that made the layer `id` a Stack or a Grid in this round (⇧A), not dissolved since; null when there is none. */
   function madeStack(id: string | null): Change | null {
     const made = [...changes].reverse().find((change) => change.kind === "stack" && change.layer === id);
     return made && !changes.some((change) => change.kind === "unstack" && change.layer === id && change.id > made.id) ? made : null;

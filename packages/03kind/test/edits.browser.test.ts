@@ -8526,6 +8526,31 @@ describe("free layers in rows and columns made a Grid, and a Grid dissolved (tic
     expect(styles(doc)).toEqual(original);
   });
 
+  test("the panel's button asks what ⇧A makes, and changes nothing: a Grid of free layers in rows and columns, else a Stack (its follow-up)", () => {
+    const { editor, changes, layer } = open(board(TILES));
+    expect(editor.stacksAsGrid(IDS.map(layer))).toBe(true);
+    expect(editor.stacksAsGrid([layer("board")])).toBe(true);
+    expect(editor.stacksAsGrid(["a", "b", "c"].map(layer))).toBe(true);
+    // Too few, a row of them, or what ⇧A cannot stack: not a Grid.
+    expect(editor.stacksAsGrid(["a", "b"].map(layer))).toBe(false);
+    expect(editor.stacksAsGrid(["a", "d"].map(layer))).toBe(false);
+    expect(editor.stacksAsGrid([])).toBe(false);
+    expect(changes.list()).toHaveLength(0);
+    // As ⇧A then does.
+    expect(editor.stack(IDS.map(layer)).kind).toBe("grid");
+
+    const row = open(board([placed("a", [20, 30, 100, 40]), placed("b", [140, 30, 100, 40]), placed("c", [264, 30, 100, 40]), placed("d", [394, 30, 100, 40])].join("")));
+    expect(row.editor.stacksAsGrid(IDS.map(row.layer))).toBe(false);
+    expect(row.editor.stacksAsGrid([row.layer("board")])).toBe(false);
+
+    // One of them in the Frame's flow, not free: a Stack, as ⇧A makes it, the Frame alone too.
+    const mixed = open(board(`${TILES}<div id="e" ${at("30:7")} style="width: 100px; height: 40px"></div>`));
+    expect(mixed.editor.canStack([...IDS, "e"].map(mixed.layer))).toBe(true);
+    expect(mixed.editor.stacksAsGrid([...IDS, "e"].map(mixed.layer))).toBe(false);
+    expect(mixed.editor.stacksAsGrid([mixed.layer("board")])).toBe(false);
+    expect(mixed.editor.stack([...IDS, "e"].map(mixed.layer)).kind).toBe("stack");
+  });
+
   test("a Frame selected alone becomes the Grid, its padding the room round its cells; a row of them, a Stack as ever", () => {
     const { doc, editor, changes, layer, rects } = open(board(TILES).replace("position: relative;", "position: relative; box-sizing: border-box;"));
     const before = rects(...IDS);

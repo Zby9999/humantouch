@@ -187,6 +187,11 @@ export interface Editor {
    */
   canStack(layers: Layer[]): boolean;
   /**
+   * Whether ⇧A makes the layers, which can be made a Stack, a Grid (ticket 110): free layers in rows and columns.
+   * False for any it makes a Stack, and any it cannot.
+   */
+  stacksAsGrid(layers: Layer[]): boolean;
+  /**
    * Makes the layers a Stack that holds them where they are (⇧A): a new one
    * around them, or the Frame selected alone. Returns the Stack.
    */
