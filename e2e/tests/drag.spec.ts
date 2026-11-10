@@ -369,5 +369,5 @@ test("a reorder is listed as one; the page keeps the code's order", async ({ pag
 
   await expect.poll(() => page.locator(HERO).evaluate((el) => [...el.children].map((child) => child.localName))).toEqual(["header", "p", "button"]);
   await page.getByRole("button", { name: /not applied yet/ }).click();
-  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Reorder.*Button.*3rd → 2nd/]);
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toReadAs([/Reorder.*Button.*3rd → 2nd/]);
 });

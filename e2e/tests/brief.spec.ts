@@ -62,7 +62,7 @@ test("a brief written on a layer from the Design panel marks it on the canvas, i
   );
   await expect(badge(page)).toHaveText("1");
   await badge(page).click();
-  await expect(changeList(page).getByRole("listitem")).toHaveText([/Brief.*Card.*“Bounce back harder when pressed”/]);
+  await expect(changeList(page).getByRole("listitem")).toReadAs([/Brief.*Card.*“Bounce back harder when pressed”/]);
 });
 
 test("a copy of a layer with a brief has none: the brief stays with the layer it was written on", async ({ page }) => {

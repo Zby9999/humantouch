@@ -361,6 +361,16 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       readOnly={!!claimed}
       takeFocus={!openedBySelf.current}
       onRevert={revert}
+      // In edit mode, a row clicked shows its change on the canvas (designer, 2026-11-10); in preview mode there is none to show it on.
+      onShow={
+        shellShown.current
+          ? (id) => {
+              setListOpen(false);
+              control.current?.show(id);
+            }
+          : undefined
+      }
+      onHover={shellShown.current ? (id) => control.current?.hover(id) : undefined}
       // In edit mode ⌘Z is the canvas's already, list undos included.
       onUndo={shellShown.current ? undefined : () => replayList(false)}
       onRedo={shellShown.current ? undefined : () => replayList(true)}

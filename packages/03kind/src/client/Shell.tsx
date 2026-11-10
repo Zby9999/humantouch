@@ -7,9 +7,10 @@ import type { Camera } from "./camera";
 import { CanvasView, type Tool } from "./CanvasView";
 import { editorCommand, heldKey, historyKey, isEditable } from "./canvas-keys";
 import { Icon } from "./icons";
-import { FIELD_SETTLE_MS, TIP_DELAY_MS, TIP_GRACE_MS } from "./motion";
+import { FIELD_SETTLE_MS, ping, prefersReducedMotion, TIP_DELAY_MS, TIP_GRACE_MS } from "./motion";
 import { pointerHeld, watchHolds } from "./pointer-held";
-import { createChangeSet, withDependents, type Change, type ChangeSet, type Created, type PutBack, type RangePart } from "./changeset";
+import { createChangeSet, withDependents, type Change, type ChangeSet, type Created, type Place, type PutBack, type RangePart } from "./changeset";
+import { DELETED_ATTR, LAYER_ID_ATTR } from "./canvas-style";
 import { createClipboard } from "./clipboard";
 import { copyStyle, pasteStyle, type CopiedStyle } from "./style-copy";
 import type { Destination, Editor } from "./edit-commands";
@@ -52,6 +53,10 @@ export interface RoundControl {
   discard(): void;
   /** Saves now what is waiting to be saved: the round about to be claimed, or the canvas frozen afresh. */
   save(): void;
+  /** Shows change `id` on the canvas: its layer selected and glided to, in the view it applies in, the fields it changed blinking (designer, 2026-11-10). */
+  show(id: number): void;
+  /** Change `id`'s row pointed at (null: none): its layer outlined on the canvas, as one pointed at there is (designer, 2026-11-10). */
+  hover(id: number | null): void;
 }
 
 interface Props {
@@ -399,6 +404,50 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     const doc = layers.at(-1)?.el.ownerDocument;
     setSelected(layers.every((layer) => layer.el.ownerDocument === doc) ? layers : layers.filter((layer) => layer.el.ownerDocument === doc));
   };
+  /** The layer a change is of, as the canvas has it now: one deleted, the layer it was in; one moved off the canvas, there. */
+  const layerOfChange = (change: Change): Layer | null => {
+    if (!tree || !offCanvas) return null;
+    const byId = (doc: Document, id: string) => doc.querySelector(`[${LAYER_ID_ATTR}="${CSS.escape(id)}"]:not([${DELETED_ATTR}])`);
+    const moved = change.offCanvas ? offCanvas.list().find((outside) => outside.id === change.offCanvas)?.layer() : null;
+    if (moved) return moved;
+    const id = change.kind === "delete" ? (change.before as Place).container.layer : change.layer;
+    const el = byId(tree.root.el.ownerDocument, id);
+    if (el) return tree.layerOf(el);
+    for (const outside of offCanvas.list()) {
+      const found = byId(outside.document, id);
+      const layer = found && outside.editor.tree().layerOf(found);
+      if (layer) return layer;
+    }
+    return null;
+  };
+  /** The layer of the change whose row in the change list is pointed at: outlined on the canvas (designer, 2026-11-10). */
+  const [changeHovered, setChangeHovered] = useState<Layer | null>(null);
+  /** A change shown from the change list, for the canvas to glide to; a new `key` each time. */
+  const [focus, setFocus] = useState<{ layer: Layer; breakpoint: Breakpoint | null; key: number; shown(): void } | null>(null);
+  /**
+   * A change clicked in the change list (designer, 2026-11-10): its layer selected, glided to on the canvas, and then
+   * the fields it changed flashing in the Design panel, the first scrolled into sight. A layer deleted shows the one it
+   * was in, with no field; one moved off the canvas, there.
+   */
+  const show = (change: Change) => {
+    const layer = layerOfChange(change);
+    if (!layer) return;
+    setChangeHovered(null);
+    select([layer]);
+    // A text layer's text shadows show as its shadows.
+    const property = change.kind !== "style" ? null : change.property === "textShadows" ? "shadows" : change.property;
+    setFocus((was) => ({
+      layer: layer!,
+      breakpoint: change.breakpoint ?? null,
+      key: (was?.key ?? 0) + 1,
+      shown() {
+        if (!property) return;
+        const fields = [...shell.current!.querySelectorAll(`[data-tk-mark="${CSS.escape(property)}"]`)];
+        fields[0]?.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+        for (const field of fields) ping(field);
+      },
+    }));
+  };
   /**
    * A brief written on a layer of the canvas, or taken off: from the Design
    * panel, or beside a new Frame. Loose text gets an element of its own for
@@ -658,8 +707,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   }, []);
 
   // ⌘Z / ⇧⌘Z (Ctrl on other systems): through the edits in the order they were made (`historyKey`); held down, nothing.
-  const latest = useRef({ editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, copyStyleOf, pasteStyleOn, playing });
-  latest.current = { editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, copyStyleOf, pasteStyleOn, playing };
+  const latest = useRef({ editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, copyStyleOf, pasteStyleOn, playing, show, layerOfChange, setChangeHovered });
+  latest.current = { editor, onEdit, changed, select, selected, makeStack, dissolve, remove, duplicate, ungroup, nudge, copy, cut, paste, copyStyleOf, pasteStyleOn, playing, show, layerOfChange, setChangeHovered };
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { editor, onEdit, select, playing } = latest.current;
@@ -856,6 +905,14 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
               edited(undefined);
             },
             save: flush,
+            show(id) {
+              const change = changeSet.list().find((change) => change.id === id);
+              if (change) latest.current.show(change);
+            },
+            hover(id) {
+              const change = id === null ? undefined : changeSet.list().find((change) => change.id === id);
+              latest.current.setChangeHovered(change ? latest.current.layerOfChange(change) : null);
+            },
           };
         }}
         offCanvas={offCanvas}
@@ -870,7 +927,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         selected={selected}
         hideSelection={adjusting}
         // The panel hidden, no row is pointed at.
-        rowHovered={layersShown ? rowHovered : null}
+        rowHovered={changeHovered ?? (layersShown ? rowHovered : null)}
+        focus={focus}
         onSelect={select}
         editor={editor}
         onMove={(layer: Layer, to: Destination) => {

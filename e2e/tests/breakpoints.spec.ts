@@ -295,3 +295,21 @@ test("a view wider than the desktop view's range stands for its own range, `2xl:
   await setField(page, "Fill color", "ff0000");
   await expect.poll(() => fills(desktop(page), tablet(page), phone(page), wide)).toEqual([WHITE, WHITE, WHITE, RED]);
 });
+
+test("a change made in the phone view, clicked in the change list, is shown there: the phone view is the one worked in again (designer, 2026-11-10)", async ({ page }) => {
+  await enterEditMode(page);
+  await pick(page, phone(page), "article");
+  await setField(page, "Fill color", "ff0000");
+  // Back in the desktop view, something else selected.
+  await pick(page, desktop(page), "h1");
+  await expect(design(page).getByRole("note", { name: "Phone breakpoint" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: /not applied yet/ }).click();
+  const row = page.getByRole("dialog", { name: "Changes" }).getByRole("listitem");
+  await expect(row).toHaveText([/^Fill · Card · below 768px$/]);
+  await row.locator("button.tk-change-text").click();
+
+  await expect(page.getByRole("dialog", { name: "Changes" })).toHaveCount(0);
+  await expect(design(page).getByRole("note", { name: "Phone breakpoint" })).toBeVisible();
+  await expect(design(page).locator('[data-tk-mark="fill"]').first()).toHaveClass(/\btk-ping\b/);
+});

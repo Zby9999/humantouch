@@ -688,7 +688,7 @@ test("a double click on text in the phone view types in it there, the caret in t
   await expect(page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Third 基", exact: true })).toBeVisible();
   // The same change as typed in the desktop view: words for every width.
   await page.getByRole("button", { name: /not applied yet/ }).click();
-  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Text.*“Third Kind” → “Third 基”/]);
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toReadAs([/Text.*“Third Kind” → “Third 基”/]);
   await page.keyboard.press("Escape");
 
   await page.keyboard.press("ControlOrMeta+z");

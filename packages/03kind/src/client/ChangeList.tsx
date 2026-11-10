@@ -19,6 +19,10 @@ interface Props {
   /** Focused as it opens, for Esc and the keys; opened by itself as the Agent applies the round, it takes none. */
   takeFocus?: boolean;
   onRevert(id: number): void;
+  /** A row clicked: its change shown on the canvas, the list closing (designer, 2026-11-10). Without it, rows are not clicked. */
+  onShow?(id: number): void;
+  /** A row pointed at, or none (null): its change's layer outlined on the canvas (designer, 2026-11-10). */
+  onHover?(id: number | null): void;
   /** ⌘Z / ⇧⌘Z (and Ctrl+Y) in the list, as on the canvas: undo or redo what was undone from it. Without them, the keys are left alone. */
   onUndo?(): void;
   onRedo?(): void;
@@ -33,7 +37,7 @@ interface Props {
  * its title and Discard all stay where they are and the rows scroll between them, an
  * edge with rows past it fading out (designer, 2026-11-09).
  */
-export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUndo, onRedo, onDiscard, onClose }: Props) {
+export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onShow, onHover, onUndo, onRedo, onDiscard, onClose }: Props) {
   const dialog = useRef<HTMLDivElement>(null);
   const [confirming, setConfirming] = useState(false);
   const cancel = useRef<HTMLButtonElement>(null);
@@ -59,6 +63,10 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUn
   }
   const latestOnClose = useRef(onClose);
   latestOnClose.current = onClose;
+  // Gone, no row of it is pointed at.
+  const latestOnHover = useRef(onHover);
+  latestOnHover.current = onHover;
+  useEffect(() => () => latestOnHover.current?.(null), []);
   /** The list's height as last drawn: a row applied, it closes up over the rise, not at once. */
   const height = useRef(0);
   /** The rows as last drawn with any: every change applied, the list fades out at once as it was, its last row in it (designer, 2026-11-09). */
@@ -146,6 +154,7 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUn
   };
 
   const count = rowsShown.length === 1 ? "1 change" : `${rowsShown.length} changes`;
+  const names = namesOf(rowsShown);
   return (
     <div
       ref={dialog}
@@ -175,8 +184,10 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUn
             }}
             class={readOnly && index === 0 ? "tk-change is-current" : "tk-change"}
             aria-current={readOnly && index === 0 ? "step" : undefined}
+            onPointerEnter={onHover && (() => onHover(change.id))}
+            onPointerLeave={onHover && (() => onHover(null))}
           >
-            {rowText(change)}
+            {rowText(change, names, onShow)}
             {readOnly && index === 0 && <span class="tk-change-spinner" aria-hidden="true" />}
             {!readOnly && (
               <button
@@ -187,6 +198,7 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUn
                 onClick={() => {
                   // Its row goes: focus stays in the list, so Esc still closes it.
                   dialog.current!.focus({ preventScroll: true });
+                  onHover?.(null);
                   onRevert(change.id);
                 }}
               >
@@ -208,7 +220,7 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUn
               setGone((n) => n + 1);
             }}
           >
-            {rowText(change)}
+            {rowText(change, names)}
             {current && <span class="tk-change-spinner" />}
           </li>
         ))}
@@ -238,19 +250,49 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onUn
   );
 }
 
-/** A change's name and values, as its row in the list shows them. */
-function rowText(change: Change) {
-  return (
-    <span class="tk-change-text">
-      <span class="tk-change-name">
-        {changeTitle(change)} · {layerName(change)}
-      </span>
-      <span class="tk-change-values">
-        {changeValues(change)}
-        {change.scope === "component" && <span> · {change.target.component} itself</span>}
-        {change.breakpoint && <span class="tk-change-breakpoint"> · {breakpointName(change.breakpoint)}</span>}
-        {!!change.copiedBreakpoints?.length && <span class="tk-change-breakpoint"> · with copied breakpoints</span>}
-      </span>
+/** A change as its row names it: what changed, of which layer, and where it applies, the same for two changes alike. */
+function nameOf(change: Change): string {
+  const itself = change.scope === "component" ? ` · ${change.target.component} itself` : "";
+  return `${changeTitle(change)} · ${layerName(change)}${itself}`;
+}
+
+/**
+ * Each change's name in the list: one that would read as another's, the
+ * layer's words after it, as the canvas shows them ("Start free"), to tell
+ * the two apart (designer, 2026-11-10).
+ */
+function namesOf(changes: Change[]): Map<number, string> {
+  const key = (change: Change) => `${nameOf(change)} ${breakpointName(change.breakpoint)}`;
+  const counts = new Map<string, number>();
+  for (const change of changes) counts.set(key(change), (counts.get(key(change)) ?? 0) + 1);
+  return new Map(
+    changes.map((change) => {
+      const words = change.target.context.text;
+      return [change.id, counts.get(key(change))! > 1 && words ? `${nameOf(change)} “${words}”` : nameOf(change)];
+    }),
+  );
+}
+
+/**
+ * A change's row: what changed, of which layer, and where, on one line; its
+ * values in its tip, pointed at (designer, 2026-11-10). With `onShow`, a
+ * button that shows the change on the canvas.
+ */
+function rowText(change: Change, names: Map<number, string>, onShow?: (id: number) => void) {
+  const name = (
+    <span class="tk-change-name">
+      {names.get(change.id) ?? nameOf(change)}
+      {change.breakpoint && <span class="tk-change-breakpoint"> · {breakpointName(change.breakpoint)}</span>}
+    </span>
+  );
+  const values = `${changeValues(change)}${change.copiedBreakpoints?.length ? " · with copied breakpoints" : ""}`;
+  return onShow ? (
+    <button type="button" class="tk-change-text" data-tk-tip={values} onClick={() => onShow(change.id)}>
+      {name}
+    </button>
+  ) : (
+    <span class="tk-change-text" data-tk-tip={values}>
+      {name}
     </span>
   );
 }

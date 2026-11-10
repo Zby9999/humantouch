@@ -111,3 +111,53 @@ export const LAYERS_FOLD_RISE_PX = 8;
 export const APPLIED_LEAVE_MS = 200;
 export const APPLIED_SCALE = 0.94;
 export const APPLIED_RISE_MS = 240;
+
+/**
+ * A change in the list clicked (designer, 2026-11-10): the camera glides over `CHANGE_GLIDE_MS` on `EASE_IN_OUT` to its
+ * layer, in the view it applies in, then the layer's outline and the fields it changed each blink lighter twice over
+ * `CHANGE_PING_MS`, the whole of each (designer, 2026-11-10). With reduced motion the camera is there at once; the
+ * blinks, a color alone, stay.
+ */
+export const CHANGE_GLIDE_MS = 300;
+export const CHANGE_PING_MS = 1200;
+
+/** Blinks `el` lighter (`.tk-ping`), started afresh if it is blinking still. */
+export function ping(el: Element): void {
+  el.classList.remove("tk-ping");
+  void (el as HTMLElement).offsetWidth;
+  el.classList.add("tk-ping");
+  const end = (event: Event) => {
+    if (event.target !== el) return;
+    el.classList.remove("tk-ping");
+    el.removeEventListener("animationend", end);
+  };
+  el.addEventListener("animationend", end);
+}
+
+/** `EASE_IN_OUT` as a function of time, 0 to 1, for what a script moves frame by frame: the camera. */
+export const easeInOut = cubicBezier(0.77, 0, 0.175, 1);
+
+/** A CSS `cubic-bezier()` easing as a function of time, solved for x by Newton's method, then halving. */
+function cubicBezier(x1: number, y1: number, x2: number, y2: number): (t: number) => number {
+  const at = (a: number, b: number, s: number) => 3 * a * s * (1 - s) ** 2 + 3 * b * s ** 2 * (1 - s) + s ** 3;
+  const slope = (a: number, b: number, s: number) => 3 * a * (1 - s) ** 2 + 6 * (b - a) * s * (1 - s) + 3 * (1 - b) * s ** 2;
+  return (t) => {
+    if (t <= 0 || t >= 1) return Math.min(1, Math.max(0, t));
+    let s = t;
+    for (let i = 0; i < 8; i++) {
+      const d = slope(x1, x2, s);
+      if (Math.abs(d) < 1e-6) break;
+      s -= (at(x1, x2, s) - t) / d;
+    }
+    if (s < 0 || s > 1 || Math.abs(at(x1, x2, s) - t) > 1e-4) {
+      let [lo, hi] = [0, 1];
+      s = t;
+      for (let i = 0; i < 30; i++) {
+        if (at(x1, x2, s) < t) lo = s;
+        else hi = s;
+        s = (lo + hi) / 2;
+      }
+    }
+    return at(y1, y2, s);
+  };
+}

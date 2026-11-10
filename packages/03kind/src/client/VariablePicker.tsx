@@ -305,7 +305,7 @@ export function VariableSlot({ label, slot, property, part, rowReset, children }
   return (
     <div class={offered ? "tk-variable-slot" : "tk-variable-slot is-alone"}>
       {bound ? (
-        <div class={`tk-field tk-variable-chip${changed ? " is-changed" : ""}`}>
+        <div class={`tk-field tk-variable-chip${changed ? " is-changed" : ""}`} data-tk-mark={changed ? property : undefined}>
           {own.icon ? <Icon name={own.icon} /> : own.glyph ? <span class={own.small ? "tk-glyph is-small" : "tk-glyph"}>{own.glyph}</span> : <Icon name="variable" />}
           <button
             type="button"

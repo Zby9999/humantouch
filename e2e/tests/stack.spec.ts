@@ -127,7 +127,7 @@ test("making and dissolving Stacks are listed as such", async ({ page }) => {
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
 
   await page.getByRole("button", { name: /not applied yet/ }).click();
-  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toReadAs([
     /Dissolve Stack.*Header.*horizontal Stack → Frame/,
     // The button's margin above it is the gap now.
     /Make Stack.*Stack.*2 layers, vertical, gap 24px/,
@@ -145,5 +145,5 @@ test("⌘⇧G ungroups: the Header's layers take its place in the hero's layout,
   const shown = await canvas(page).locator(`${HERO} > *`).evaluateAll((els) => els.filter((el) => getComputedStyle(el).display !== "none").map((el) => el.localName));
   expect(shown).toEqual(["h1", "span", "p", "button"]);
   await page.getByRole("button", { name: /not applied yet/ }).click();
-  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Move/, /Move/, /Delete.*Header/]);
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toReadAs([/Move/, /Move/, /Delete.*Header/]);
 });

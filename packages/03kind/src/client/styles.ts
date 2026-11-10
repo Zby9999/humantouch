@@ -1,4 +1,4 @@
-import { APPLIED_LEAVE_MS, APPLIED_SCALE, EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, GRIP_ENTER_MS, GRIP_EXIT_MS, HEADER_LINE_MS, POPOVER_EXIT_MS, RESET_POP_MS, TIP_IN_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
+import { APPLIED_LEAVE_MS, APPLIED_SCALE, CHANGE_PING_MS, EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, GRIP_ENTER_MS, GRIP_EXIT_MS, HEADER_LINE_MS, POPOVER_EXIT_MS, RESET_POP_MS, TIP_IN_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
 import { EDITOR_FONT_FAMILY } from "./editor-font";
 import { FONT_STACK } from "./toggle-styles";
 
@@ -138,7 +138,7 @@ export const styles = /* css */ `
 }
 .tk-changes-list.is-above { --tk-fade-above: 24px; }
 .tk-changes-list.is-below { --tk-fade-below: 24px; }
-/* A row as a menu's option, two lines high: light grey under the pointer; its undo muted, darker under the pointer. */
+/* A row as a menu's option, as high as two lines were, one line now (designer, 2026-11-10): light grey under the pointer; its undo muted, darker under the pointer. */
 .tk-change {
   display: flex;
   align-items: center;
@@ -179,9 +179,17 @@ export const styles = /* css */ `
   .tk-change.is-applied { animation-name: tk-change-applied-fade; }
 }
 @keyframes tk-change-applied-fade { to { opacity: 0; } }
-.tk-change-text { display: grid; flex: 1; min-width: 0; }
-.tk-change-name, .tk-change-values { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tk-change-values { color: var(--tk-text-muted); }
+.tk-change-text { display: flex; flex: 1; align-items: center; align-self: stretch; min-width: 0; }
+/* The whole row but its undo shows the change, clicked. */
+button.tk-change-text { all: unset; display: flex; flex: 1; align-items: center; align-self: stretch; min-width: 0; }
+button.tk-change-text:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: -2px; border-radius: 6px; }
+.tk-change-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A change shown from the list: its layer's outline and each field it changed blink lighter twice, the whole of each; a color alone, kept with reduced motion (designer, 2026-11-10). */
+.tk-ping { animation: tk-ping ${CHANGE_PING_MS}ms ${EASE_IN_OUT}; }
+@keyframes tk-ping {
+  25%, 75% { opacity: 0.35; }
+  0%, 50%, 100% { opacity: 1; }
+}
 .tk-changes-confirm { margin-top: 4px; padding: 8px 8px 0; border-top: 1px solid var(--tk-border); }
 .tk-changes-confirm p { margin: 0; }
 .tk-changes-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 8px 4px; }

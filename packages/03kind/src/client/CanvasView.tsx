@@ -7,13 +7,13 @@ import { Brief, handleCursor, Handles, Marks, Outline, SelectionToolbar, SizeLab
 import { canvasKey, type Tool } from "./canvas-keys";
 import { marksNow, resizeStep, type ResizePointer, type ResizeSession, type ResizeStep } from "./canvas-resize";
 import { boxFrom, DRAG_THRESHOLD, laidOut, moveWhole, restoreDragStyles, shift, SNAP_PX, startDragSession, type At, type DragSession, type Pointer } from "./canvas-drag";
-import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scrolled, showsWhole, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
+import { boundsOf, cameraIn, centredOn, currentCamera, fitCamera, initialCamera, place, scrolled, showsWhole, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edit-commands";
 import { fitHeight, freeze, restore } from "./freezer";
 import { ENTER_MARK } from "./host";
-import { chromePush, EASE_IN_OUT, EASE_OUT, MODE_FADE_MS, MODE_SWITCH_MS, prefersReducedMotion } from "./motion";
+import { CHANGE_GLIDE_MS, chromePush, EASE_IN_OUT, EASE_OUT, easeInOut, MODE_FADE_MS, MODE_SWITCH_MS, ping, prefersReducedMotion } from "./motion";
 import { framedText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { createLater } from "./later";
 import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
@@ -26,7 +26,7 @@ import type { Handle } from "./resize";
 import { CAUGHT_UP_MS, createViews, type View, type Views } from "./views";
 import { keyOf, LABEL_OFFSET, layoutViews, placeOffCanvas, shownAt, viewsWidth, type Placed, type Shown } from "./view-layout";
 import { AddView, desktopRange, readViewWidths, viewName, ViewLabel, withWidth, writeViewWidths } from "./ViewLabels";
-import type { Breakpoint } from "./breakpoints";
+import { contains, type Breakpoint } from "./breakpoints";
 
 export type { Tool } from "./canvas-keys";
 
@@ -77,6 +77,12 @@ interface Props {
   hideSelection: boolean;
   /** The layer whose row in the Layers panel is pointed at: outlined in every view alike, as the layer pointed at is (designer, 2026-11-10). */
   rowHovered: Layer | null;
+  /**
+   * A change clicked in the change list (designer, 2026-11-10): its layer, glided to in the view its range
+   * `breakpoint` applies in (the desktop view's: null), its outline then flashing once, and `shown` called. A new
+   * `key` each time.
+   */
+  focus: { layer: Layer; breakpoint: Breakpoint | null; key: number; shown(): void } | null;
   onSelect(layers: Layer[]): void;
   /** What a dragged layer can be moved into; null until there is a canvas to edit. */
   editor: Editor | null;
@@ -130,7 +136,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, rowHovered, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, rowHovered, focus, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -1189,6 +1195,55 @@ export function CanvasView(props: Props) {
   const briefEditor = madeOff ? madeOff.offCanvasLayer!.editor : editor;
   /** Whether a view, or a layer off the canvas, shows the layer: those of the canvas show in every view, those off it in their own. */
   const shows = (shown: Shown, layer: Layer) => layer.el.ownerDocument === (shown.offCanvasLayer ? shown.offCanvasLayer.document : canvas?.document);
+  // A change shown from the list: in the view it applies in, pressed in as if by the designer, the camera glides till
+  // its layer is in the middle, zooming out only if it does not fit; a wheel turned or a press meanwhile stops it there.
+  useEffect(() => {
+    if (!focus || playing || travelling) return;
+    const { layer, breakpoint } = focus;
+    const showing = [...shownViews, ...outside].filter((shown) => shows(shown, layer));
+    const inRange = showing.filter((shown) => !shown.offCanvasLayer && (breakpoint ? contains(breakpoint, shown.width) : shown.desktop));
+    const shown = inRange.find((each) => each.view === active) ?? inRange[0] ?? showing[0];
+    if (!shown) return;
+    if (!shown.offCanvasLayer) {
+      views?.sync(shown.view);
+      setActive(shown.view);
+    }
+    const el = viewport.current!;
+    const r = shown.view.boxOf(layer);
+    const to = r && (r.width || r.height) ? centredOn(camera, { x: shown.x + r.left, y: shown.y + r.top, width: r.width, height: r.height }, el.getBoundingClientRect()) : null;
+    let frame = 0;
+    const stop = () => {
+      cancelAnimationFrame(frame);
+      el.removeEventListener("wheel", stop, true);
+      el.removeEventListener("pointerdown", stop, true);
+    };
+    // There, drawn where it is: its outline in that view flashes, then what else shows it.
+    const arrived = () => {
+      stop();
+      frame = requestAnimationFrame(() => {
+        for (const outline of el.querySelectorAll(`.tk-selection[data-view="${CSS.escape(shown.name)}"]`)) ping(outline);
+        focus.shown();
+      });
+    };
+    if (!to || prefersReducedMotion()) {
+      if (to) setCamera(to);
+      arrived();
+      return stop;
+    }
+    const from = camera;
+    const start = performance.now();
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / CHANGE_GLIDE_MS);
+      const k = easeInOut(t);
+      setCamera({ x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k, zoom: from.zoom + (to.zoom - from.zoom) * k });
+      if (t < 1) frame = requestAnimationFrame(step);
+      else arrived();
+    };
+    el.addEventListener("wheel", stop, true);
+    el.addEventListener("pointerdown", stop, true);
+    frame = requestAnimationFrame(step);
+    return stop;
+  }, [focus?.key]);
   /** The new Frame selected alone, which has the button that writes its brief beside it, in `briefIn`. */
   const newFrame =
     briefIn && briefEditor && primary && selected.length === 1 && shows(briefIn, primary) && !travelling && !playing && !drag && !resize && !hideSelection && briefEditor.isNewFrame(primary)

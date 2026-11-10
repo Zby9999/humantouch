@@ -300,7 +300,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
                     <LimitField label={label} icon={LIMIT_ICONS[property]} property={property} value={shown(property)!} onChange={set(property)} />
                   </VariableSlot>
                 </ChangeMarksProvider>
-                <RemoveButton label={`Remove ${label.toLowerCase()}`} added={addedHere} onClick={() => removeLimit(property)} />
+                <RemoveButton label={`Remove ${label.toLowerCase()}`} added={addedHere} mark={property} onClick={() => removeLimit(property)} />
               </div>
             );
           })}
@@ -479,7 +479,7 @@ function SizeRow({ axis, size, layers, offers, measure, update, variable, after 
           onChange={(value, continues) => update(axis, () => ({ type: "fixed", value }), continues)}
         />
       </VariableSlot>
-      <span class={`tk-select-field${sizingChanged ? " is-changed" : ""}`}>
+      <span class={`tk-select-field${sizingChanged ? " is-changed" : ""}`} data-tk-mark={sizingChanged ? axis : undefined}>
         <Select
           class="tk-select"
           aria-label={`${label} sizing`}
@@ -581,7 +581,7 @@ function StackSection({ direction, arrange, dissolve, gap, padding, align, wrap,
       </div>
       {/* As the designer drew it (2026-11-07): the alignment at the left; the gap, then the direction and wrap, beside it. */}
       <div class="tk-row tk-align-row">
-        <div class={`tk-align${changed ? " is-changed" : ""}`} role="radiogroup" aria-label="Alignment">
+        <div class={`tk-align${changed ? " is-changed" : ""}`} data-tk-mark={changed ? "align" : undefined} role="radiogroup" aria-label="Alignment">
           {ALIGNMENTS.map((y) =>
             ALIGNMENTS.map((x) => {
               const name = y === "center" && x === "center" ? "Center" : `${ROWS[y]} ${COLUMNS[x]}`;
@@ -616,7 +616,7 @@ function StackSection({ direction, arrange, dissolve, gap, padding, align, wrap,
             {/* Wrap: a button that stays on, as Figma's; Mixed shows it off. */}
             <button
               type="button"
-              class={`tk-icon-button${wrapChanged ? " is-changed" : ""}`}
+              class={`tk-icon-button${wrapChanged ? " is-changed" : ""}`} data-tk-mark={wrapChanged ? "wrap" : undefined}
               aria-label="Wrap"
               data-tk-tip="Wrap"
               aria-pressed={wrap === true}
@@ -646,9 +646,18 @@ export function arrangements(grid: boolean): { value: ArrangeAs; label: string; 
  * An item's −, taking it off. Added in this round, it alone is marked: in the accent, as a button that stays on (Wrap, on),
  * and taking it off takes the addition back (designer, 2026-11-08).
  */
-function RemoveButton({ label, title, added = false, disabled, onClick }: { label: string; title?: string; added?: boolean; disabled?: boolean; onClick(): void }) {
+/** Its `mark`: the property it takes off, for a change shown from the change list to find it by, added in this round, its fields unmarked (designer, 2026-11-10). */
+function RemoveButton({ label, title, added = false, mark, disabled, onClick }: { label: string; title?: string; added?: boolean; mark?: Property; disabled?: boolean; onClick(): void }) {
   return (
-    <button type="button" class={`tk-icon-button${added ? " is-added" : ""}`} aria-label={label} data-tk-tip={title ?? label} disabled={disabled} onClick={onClick}>
+    <button
+      type="button"
+      class={`tk-icon-button${added ? " is-added" : ""}`}
+      aria-label={label}
+      data-tk-tip={title ?? label}
+      data-tk-mark={added && mark ? mark : undefined}
+      disabled={disabled}
+      onClick={onClick}
+    >
       <Icon name="minus" />
     </button>
   );
@@ -682,7 +691,7 @@ function GapField({ gap, align, set, update, variable }: { gap: Shown<number>; a
     // Auto, as the alignment keeps it: marked when that part of it changed, the point left as it is.
     const changed = marks.changed("align", DISTRIBUTE);
     return (
-      <div class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip="Gap">
+      <div class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip="Gap" data-tk-mark={changed ? "align" : undefined}>
         <Icon name="gap" />
         <span class="tk-input tk-auto">Auto</span>
         {mode}
@@ -736,7 +745,7 @@ function Check({ label, checked, onChange, property }: { label: string; checked:
   const marks = useChangeMarks();
   const changed = !!property && marks.changed(property);
   return (
-    <label class={`tk-check${changed ? " is-changed" : ""}`}>
+    <label class={`tk-check${changed ? " is-changed" : ""}`} data-tk-mark={changed ? property : undefined}>
       <input
         type="checkbox"
         checked={checked === true}
@@ -760,7 +769,7 @@ function LimitField({ label, icon, value, onChange, property }: {
   const marks = useChangeMarks();
   const changed = !!property && marks.changed(property);
   return (
-    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label}>
+    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label} data-tk-mark={changed ? property : undefined}>
       <Icon name={icon} />
       <TextField
         label={label}
@@ -787,7 +796,7 @@ function PercentField({ label, icon, value, onChange, property }: {
   const changed = !!property && marks.changed(property);
   const scrubbed = { value: value === null ? null : Math.round(value * 100), min: 0, max: 100, onChange: (percent: number, continues: boolean) => onChange(percent / 100, continues) };
   return (
-    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label}>
+    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label} data-tk-mark={changed ? property : undefined}>
       <Scrub icon={icon} {...scrubbed} />
       <TextField
         label={label}
@@ -1117,6 +1126,7 @@ export function Segmented<T extends string>({ label, class: className, property,
     <div
       class={`tk-segmented-field${className ? ` ${className}` : ""}${changed ? " is-changed" : ""}${goes ? " is-leaving" : ""}`}
       role="radiogroup"
+      data-tk-mark={changed ? property : undefined}
       aria-label={label}
       data-keyed={keyed.current || undefined}
       onClickCapture={(event) => {
@@ -1166,7 +1176,7 @@ function TextLengthField({ label, icon, property, value, min = -Infinity, auto, 
   /** What a drag starts from: from Auto, what it comes to. */
   const dragged = length?.value ?? (value === "auto" ? auto! : null);
   return (
-    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label}>
+    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label} data-tk-mark={changed ? property : undefined}>
       <Scrub icon={icon} value={dragged} min={min} onChange={change} />
       <TextField
         label={label}
@@ -1243,7 +1253,7 @@ function FillSection({ fill, box, conic, onChange, update, variable, onGradientP
   /** Added in this round: its row unmarked, and all in its picker, with no resets; its − alone in the accent (designer, 2026-11-08). */
   const added = marks.added("fill");
   /** At the end of the fill's row, as Figma has it (designer, 2026-11-07). */
-  const remove = <RemoveButton label="Remove fill" added={added} onClick={() => onChange(null)} />;
+  const remove = <RemoveButton label="Remove fill" added={added} mark="fill" onClick={() => onChange(null)} />;
   return (
     <section class="tk-section" role="group" aria-label="Fill">
       <div class="tk-section-header">
@@ -1602,7 +1612,7 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
             // Pressed anywhere in its row, the stop is the one the picker sets.
             onPointerDown={() => onChoose(index)}
           >
-            <label class={`tk-field tk-stop-position${movedHere ? " is-changed" : ""}`} data-tk-tip="Position">
+            <label class={`tk-field tk-stop-position${movedHere ? " is-changed" : ""}`} data-tk-tip="Position" data-tk-mark={movedHere ? "fill" : undefined}>
               <TextField
                 label={`Stop ${index + 1} at`}
                 value={`${s.position}${s.unit}`}
@@ -1611,7 +1621,7 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
                 onChange={({ position, unit }) => place(index, position, unit)}
               />
             </label>
-            <div class={`tk-field tk-color-field${coloredHere ? " is-changed" : ""}`}>
+            <div class={`tk-field tk-color-field${coloredHere ? " is-changed" : ""}`} data-tk-mark={coloredHere ? "fill" : undefined}>
               <button type="button" class="tk-swatch tk-swatch-button" aria-label={`Choose stop ${index + 1}`} style={{ "--tk-swatch": cssColor(s) }} onClick={() => onChoose(index)} />
               <ColorValue
                 name={`Stop ${index + 1}`}
@@ -1621,7 +1631,7 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
                 onOpen={() => onChoose(index)}
               />
             </div>
-            <RemoveButton label={`Remove stop ${index + 1}`} added={added} disabled={stops.length <= 2} onClick={() => remove(index)} />
+            <RemoveButton label={`Remove stop ${index + 1}`} added={added} mark="fill" disabled={stops.length <= 2} onClick={() => remove(index)} />
           </div>
         );
       })}
@@ -1693,7 +1703,7 @@ function MarkedSelect({ label, property, part, class: className, children }: { l
   const marks = useChangeMarks();
   const changed = marks.changed(property, part);
   return (
-    <span class={`tk-select-field${className ? ` ${className}` : ""}${changed ? " is-changed" : ""}`}>
+    <span class={`tk-select-field${className ? ` ${className}` : ""}${changed ? " is-changed" : ""}`} data-tk-mark={changed ? property : undefined}>
       {children}
       {changed && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([property], part)} />}
     </span>
@@ -1767,7 +1777,7 @@ function StrokeSection({ stroke, onChange, update, variable }: {
               variable={variable}
             />
           )}
-          <RemoveButton label="Remove stroke" added={added} onClick={() => onChange(null)} />
+          <RemoveButton label="Remove stroke" added={added} mark="stroke" onClick={() => onChange(null)} />
         </div>
       )}
       {stroke && stroke !== MIXED && (
@@ -2206,6 +2216,7 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
           <RemoveButton
             label={`Remove ${label.toLowerCase()}`}
             added={addedHere}
+            mark={property}
             onClick={() => {
               set(property)(null);
               unplace(property);
@@ -2262,6 +2273,7 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
                 <RemoveButton
                   label={`Remove shadow ${i + 1}`}
                   added={added[i]}
+                  mark="shadows"
                   onClick={() => {
                     update("shadows", (current) => current.filter((_, j) => j !== i));
                     shiftBlurs(i, -1);
@@ -2323,7 +2335,7 @@ function ColorField({ name, color, onChange, variable, top, shown, onPicker, pro
   /** Typed as hex: its opacity in a field of its own, joined to it, as the designer drew it (2026-11-07). */
   const typed = !shown && !offered?.bound;
   return (
-    <div class={`tk-color-row${changed ? " is-changed" : ""}`}>
+    <div class={`tk-color-row${changed ? " is-changed" : ""}`} data-tk-mark={changed ? property : undefined}>
       {/* One reset takes the color and its opacity back together (a gradient, all of it): at the row's left, outside the fields, both marked with none of their own (designer, 2026-11-08). */}
       {changed && <ResetButton label={name.toLowerCase()} onReset={() => marks.reset([property!], part)} />}
       <div class={`tk-field tk-color-field${typed ? " is-joined" : ""}${changed ? " is-changed" : ""}`}>
@@ -2451,7 +2463,7 @@ export function NumberField({ label, icon, glyph, small, value, unit = "", min =
   const marks = useChangeMarks();
   const changed = !!property && marks.changed(property, part);
   return (
-    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label}>
+    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label} data-tk-mark={changed ? property : undefined}>
       <Scrub icon={icon} glyph={glyph} small={small} value={value} min={min} onChange={onChange} />
       <TextField
         label={label}

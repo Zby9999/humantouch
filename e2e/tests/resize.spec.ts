@@ -438,7 +438,7 @@ test("a locked layer stops at the minimum width its own styles give it", async (
   await expect(field(page, "Width")).toHaveValue("50");
   // Recorded as it shows: the change says 50px, not the smaller width the pointer went to.
   await badge(page).click();
-  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/^Width.*Fixed 50px$/]);
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toReadAs([/^Width.*Fixed 50px$/]);
 });
 
 test("pressed with ⌘ held, a handle selects the deepest layer under it, as anywhere on the canvas", async ({ page }) => {

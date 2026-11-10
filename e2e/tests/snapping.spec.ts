@@ -242,7 +242,7 @@ test("in a Stack, the arrow keys along it swap the layer with the next one that 
   await expect(layerTree(page).getByRole("treeitem", { name: "Button", exact: true })).toHaveAttribute("aria-selected", "true");
 
   await page.locator("[data-tk-changes-opener]").click();
-  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Reorder.*Button.*3rd → 1st/]);
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toReadAs([/Reorder.*Button.*3rd → 1st/]);
   await page.keyboard.press("Escape");
   await page.keyboard.press(`${mod}+z`);
   await expect.poll(order).toEqual(["header", "p", "button"]);
@@ -287,7 +287,7 @@ test("nudged in the phone view, a layer in a Frame's flow is placed freely there
   await expect.poll(() => position(desktop(page))).toBe("static");
   await expect.poll(() => placeIn(desktop(page), "#chip")).toEqual(was);
   await page.locator("[data-tk-changes-opener]").click();
-  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Absolute.*in the layout → X 8px, Y 18px.*below 768px/]);
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toReadAs([/Absolute.*below 768px.*in the layout → X 8px, Y 18px/]);
 
   // Its X and Y there are what places it: undone from the change list (the breakpoint lists none, designer, 2026-11-07), it is in the flow again.
   await page.getByRole("dialog", { name: "Changes" }).getByRole("button", { name: /^Undo the absolute/ }).click();

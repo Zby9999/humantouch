@@ -89,7 +89,7 @@ test("a Card changed on one usage offers Promote on the top right of its selecti
   // All of its changes went to the Card, which the badge shows the edit of: nothing stays to tell of.
   await expect(toast(page)).toHaveCount(0);
   await badge(page).click();
-  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveText([/Corner radius · Card.* · Card itself/]);
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toReadAs([/Corner radius · Card.* · Card itself/]);
 });
 
 test("Promote goes as the layer is deselected and comes back as it is selected again; promoting is one step ⌘Z takes back", async ({ page }) => {

@@ -69,7 +69,7 @@ test("T and a drag in a Stack make new text there, in the page's body text style
   const body = await canvas(page).locator("body").evaluate((el) => getComputedStyle(el).fontFamily);
   await expect(text).toHaveCSS("font-family", body);
   await expect(layerTree(page).getByRole("treeitem", { name: "Hello there", exact: true })).toHaveAttribute("aria-selected", "true");
-  await expect(await changeRows(page)).toHaveText([/New text.*“Hello there”/]);
+  await expect(await changeRows(page)).toReadAs([/New text.*“Hello there”/]);
 });
 
 test("the toolbar picks the same tools as V, F and T; text typed in is boxed in blue as it grows", async ({ page }) => {
@@ -169,7 +169,7 @@ test("F and a drag in a Frame's empty space make an absolute Frame, with no fill
   await expect(page.locator('.tk-brief-mark[data-view="Desktop"]')).toHaveCount(0);
   await expect(page.locator('.tk-brief-mark[data-view="Tablet"]')).toHaveCount(1);
   await expect(page.locator('.tk-brief-mark[data-view="Phone"]')).toHaveCount(1);
-  await expect(await changeRows(page)).toHaveText([/New Frame.*200 × 120px, “A pricing table with three plans”/]);
+  await expect(await changeRows(page)).toReadAs([/New Frame.*200 × 120px, “A pricing table with three plans”/]);
   await page.keyboard.press("Escape");
 
   // Its copy is made by the brief too: marked as it is, in every view and in the Layers panel.
@@ -291,7 +291,7 @@ test("a double click on the selected text types in it; the words change as an ed
 
   await expect(canvas(page).locator("h1")).toHaveText("Third");
   await expect(layerTree(page).getByRole("treeitem", { name: "Third", exact: true })).toBeVisible();
-  await expect(await changeRows(page)).toHaveText([/Text.*“Third Kind” → “Third”/]);
+  await expect(await changeRows(page)).toReadAs([/Text.*“Third Kind” → “Third”/]);
   await page.keyboard.press("Escape");
 
   await page.keyboard.press("ControlOrMeta+z");
@@ -352,7 +352,7 @@ test("while text is typed in, a click outside it ends typing and sets the words 
 
   await expect(canvas(page).locator("h1")).not.toHaveAttribute("contenteditable");
   await expect(canvas(page).locator("h1")).toHaveText("Third");
-  await expect(await changeRows(page)).toHaveText([/Text.*“Third Kind” → “Third”/]);
+  await expect(await changeRows(page)).toReadAs([/Text.*“Third Kind” → “Third”/]);
 });
 
 test("Delete deletes the selected layer; ⌘D copies a card of the loop beside it", async ({ page }) => {
@@ -367,7 +367,7 @@ test("Delete deletes the selected layer; ⌘D copies a card of the loop beside i
   await page.keyboard.press("ControlOrMeta+d");
 
   await expect.poll(() => canvas(page).locator("article h3").allTextContents()).toEqual(["Freeze", "Arrange", "Arrange", "Apply", "Your turn"]);
-  await expect(await changeRows(page)).toHaveText([/Delete.*Button.*from Stack/, /Duplicate.*Card.*copy in Grid, 3rd/]);
+  await expect(await changeRows(page)).toReadAs([/Delete.*Button.*from Stack/, /Duplicate.*Card.*copy in Grid, 3rd/]);
 });
 
 test("⌥ held as a dragged layer is let go leaves it where it was, and puts a copy there", async ({ page }) => {
@@ -412,5 +412,5 @@ test("⌘C and ⌘V paste a copy into the Stack selected; ⌘X takes a layer awa
   await page.keyboard.press("ControlOrMeta+v");
   await expect(header.locator("> p")).toBeVisible();
 
-  await expect(await changeRows(page)).toHaveText([/Duplicate.*Button/, /Move.*A Framer-style/]);
+  await expect(await changeRows(page)).toReadAs([/Duplicate.*Button/, /Move.*A Framer-style/]);
 });
