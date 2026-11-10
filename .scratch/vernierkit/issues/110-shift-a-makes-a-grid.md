@@ -101,3 +101,56 @@
   - 多选时面板上那个按钮（现在提示「Make Stack (⇧A)」）照这次会合成的写：排成行列、会合成 Grid 时写「Make Grid (⇧A)」，否则照旧。判断放在选中时，或者放在悬停出提示时，不进进入编辑模式的路径。
   - Grid 一节加「Dissolve Grid (⌥⇧A)」按钮，和 Stack 一节的「Dissolve Stack」一样；页面原有的 Grid 也有（代定 7 已能解散）。
   - 样子交给调前端。
+
+### 110 follow-up（代定 6 改了之后，2026-11-10；起点 d996f27，分支 worktree-agent-a71747e069783b933）
+
+**做了什么**
+
+- 判断（`structure-edits.ts`）：⇧A 原来在 `stack` 里判断合成 Stack 还是 Grid，抽成 `stacking`（同一套：选中的是单独一个能变 Stack 的 Frame 时看它的子图层，都是自由定位时量边框、`inferGrid`），`stack` 和新的 `editor.stacksAsGrid(layers)` 都用它，所以按钮说的和 ⇧A 做的是同一个判断。`stacksAsGrid` 遇到不够三个、或不全是自由定位的，不量（不读布局）。⇧A 本身没改，照旧自己选 Stack 或 Grid。
+- 按钮（`Properties.tsx` 的 `MakeLayoutButton`）：多选、或单独选中能变 Stack 的 Frame 时，Stack 一节的 + 写「Make Grid (⇧A)」（会合成 Grid）或照旧「Make Stack (⇧A)」，按钮名字（`aria-label`）同样是 Make Grid / Make Stack。判断在选中时做一次（按选中的元素记住，之后改动重画面板不再算），提示出来时（指针移上去 `pointerover`、键盘聚焦 `focusin`）再算一次：选中后图层挪过、排成了行列，提示读之前就改好。进入编辑模式时什么都没选，面板不画这一节，不走这条路。样子没变，还是原来那个 +。
+- Grid 一节（`GridSection.tsx`）标题栏加「Dissolve Grid (⌥⇧A)」（−，用 Stack 一节同一个 `RemoveButton`，没有新样式）：能 ⌥⇧A 解散的 Grid 才有（`canUnstack`，页面原有的 Grid 也有，只在这一节显示时才问），点了走和 ⌥⇧A 同一个 `dissolve`。子图层是循环渲染的 Grid（示例的卡片 Grid）不能解散，没有这个按钮。
+- 这一轮 ⇧A 合成的 Grid（新建的，或 Frame 变的）照 Stack 一节（设计师 2026-11-08）：− 是强调色，点了把合成和之后对它的改动一起撤回；这一节的字段不标改动、没有重置。一起撤回的属性加上了列数、行间距、列间距（`ChangeMarks.tsx` 的 `MADE_LAYOUT`；原来只有 Stack 的属性，Frame 变的 Grid 之后改的间距会留下来）。
+- spec「合成与解散 Stack」的 ⇧A 合成 Grid、⌥⇧A 解散 Grid 两条补了这两个按钮。
+
+**测试**
+
+- 单测 `edits.browser.test.ts`（110 那个 describe）1 条：`stacksAsGrid` 在两行两列、单独的 Frame、三个（最后一行不满）时是 true；两个、一行、空选择是 false；不记改动；之后 ⇧A 合成的确实是 Grid。
+- e2e `grid.spec.ts` 3 条（照 93 的写法：web-first 断言、`expect.poll`；按按钮自己的名字找，不按一节的名字找，调前端第 2 轮把两节改名「Layout」后也能用）：
+  - 第四个方块偏 6px：Make Stack；画布上把它挪回列里、选中不变，悬停的提示说「Make Grid (⇧A)」，按钮名字也变；只选两个是 Make Stack，四个又是 Make Grid；点了合成 Grid、不动；字段不标改动、没有重置；改行间距后点强调色的 −，回到原样、没有改动。
+  - 单独选中这个 Frame：Make Grid；合成后改两个间距，点强调色的 −，Frame 回到 `display: block`、不动、没有改动。
+  - 页面上的 Grid（注入的四个格子）：Dissolve Grid (⌥⇧A)、不是强调色；点了变 Frame、格子不动、改动列表「Dissolve Grid · Grid → Frame」，⌘Z 一步回去；卡片 Grid（循环）没有这个按钮。
+- 性能测量（`flex.perf.ts`）加一项：大页面顶上注入 4 行 3 列 12 个自由方块，在 Layers 面板里按住 ⇧ 逐个加选到 12 个，每次量处理按下、松开、点击，加上画出选中那一帧的主线程时间；最后按钮是 Make Grid（确实跑了推断）。只作前后比较，没设目标、不判。
+
+**验证**：`pnpm typecheck` 过；`pnpm test` vitest 1146 过 1 跳过、node 126 过；`grid.spec.ts`、`properties.spec.ts`、`stack.spec.ts`、`shell.spec.ts` 一起 85 过（`TK_E2E_PORT=6100`）；`--dry` 28/28；`--scripted` 19/19；`--dry --claim-out` 在 d996f27（scratchpad 里的 detached worktree）和分支上各 28 份，`diff -r` 逐字相同。整套 e2e 没跑（指挥合并前跑）。
+
+**性能**（`TK_PERF_HEADLESS=1 TK_PERF_PORT=6110 pnpm test:perf -g …`，只跑进入编辑模式和新的 ⇧ 逐个选中两项，headless 只作前后比较）。改前 d996f27（scratchpad 里的 detached worktree，测量文件换成分支的、产品代码不动）和分支轮流跑了 4 对；机器上一直有别的会话在跑 e2e，load 3–15，第 4 对在 load 7–10。前 3 对的分支是 review 修正前的代码（修正不碰进入编辑模式的路径）。
+
+| | 改前 1 | 分支 1 | 改前 2 | 分支 2 | 改前 3 | 分支 3 | 改前 4 | 分支 4（最终） |
+|---|---|---|---|---|---|---|---|---|
+| 进入编辑模式 全部 中位数 | 135.8 | 160.2 | 158.9 | 143.5 | 142.1 | 166.2 | 162.9 | 158.7ms |
+| 再进入 中位数 | 124.0 | 140.5 | 151.5 | 124.8 | 120.8 | 143.7 | 148.7 | 140.0ms |
+| ⇧ 加选 work 中位数 / p95 | 6.3 / 11.1 | 7.4 / 11.3 | 7.9 / 12.7 | 7.3 / 9.1 | 7.1 / 8.3 | 7.0 / 9.0 | 7.0 / 8.3 | 6.8 / 8.2ms |
+| ⇧ 加选 按下到画出 中位数 | 17.3 | 17.2 | 15.7 | 17.4 | 17.1 | 17.2 | 17.1 | 17.5ms |
+
+- 进入编辑模式：两边轮流高低，跟着负载走，在噪声里；这条路径没加东西（进入时什么都没选，按钮的判断不跑），只多了编辑层包里的几百字节。
+- ⇧ 加选：12 个方块里排成行列的选中（4 个起）每次多一次量 n 个边框和推断，work 中位数前后都在 7ms 左右，看不出差别。
+
+**包**：切换按钮 `react.dev.js` 1423 B（`bd6c2389b64451f0`）、`chunk-2GJY7MXB.js` 21372 B（`a8c4c0d4bc3db6a8`）、`react.js`，和 d996f27 逐字节相同（`cmp`）。编辑层 `editor.dev.js` 515694 → 516664 B（+970 B），gzip -9 182078 → 182687 B（+609 B）。
+
+#### 代定的事（待设计师确认）
+
+1. 按钮的名字（读屏读到的 `aria-label`）跟提示一起变成「Make Grid」，不只改提示。
+2. 判断只在选中时和提示出来时做：选中后用方向键、拖动把图层挪成（或挪出）行列，提示出来之前按钮名字是旧的；按 ⇧A、点按钮都照按下那一刻判断，不受影响。
+3. 这一节的标题仍是「Stack」，只有 + 的名字和提示变（一节的样子、名字交给调前端，第 2 轮改成「Layout」）。
+4. 这一轮 ⇧A 合成的 Grid，Grid 一节的 − 是强调色，点了是撤回合成（连同之后改的列数、间距），不是 ⌥⇧A 那样记一条「Dissolve Grid」；字段不标改动、没有重置。照 Stack 一节（设计师 2026-11-08）。⌥⇧A 本身照旧解散。
+5. 子图层是循环渲染的 Grid（示例的卡片 Grid）没有「Dissolve Grid」按钮，和 ⌥⇧A 一样不能解散（110 原来就这样）。
+6. 撤回这一轮合成的 Stack 时，之后改的列数、行列间距也一起撤回（原来只点名撤回 Stack 的属性，Frame 变的 Stack 转成 Grid 后改的列数可能留下；新加的 `MADE_LAYOUT`）。
+7. 性能测量加的「⇧ 逐个加选 12 个自由方块」没有目标，只报数。
+
+#### 遗留风险
+
+1. 代定 2 的情况下，屏幕阅读器不聚焦按钮、只用浏览方式读面板时，读到的可能是旧名字。
+2. 指针在按钮和里面的图标之间移动会再触发 `pointerover`，每次重算一遍（量 n 个边框），n 是选中的图层数，便宜，没有单独测。
+3. 选中 Grid 时，每次重画面板都问一遍 `canUnstack`（原来只有 Stack 一节问）；改数值的性能测量选的是卡片的 Stack，没有覆盖选中 Grid 改数值。
+4. 进入编辑模式的 headless 数一直受别的会话负载影响，4 对轮流跑才看得出是噪声；窗口模式没测。
+5. 调前端第 2 轮（`claude/musing-hellman-3caa3c`）把两节改名「Layout」：新加的测试按按钮名字、Columns 字段找，不受影响；`grid.spec.ts` 原有按「Grid」一节名字找的测试由那条线改。

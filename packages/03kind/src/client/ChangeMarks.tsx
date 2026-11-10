@@ -74,6 +74,8 @@ const wasOf = (part: ValuePart, before: unknown, after: unknown) => (part.was ? 
 
 /** What a Stack sets of its layout: taken back with a Stack made in this round. */
 export const STACK_PROPERTIES: Property[] = ["direction", "gap", "align", "wrap", "padding", "arrangement"];
+/** What is taken back with a Stack or Grid made in this round: a Stack's properties, and a Grid's (ticket 110's follow-up), a Frame made one too. */
+const MADE_LAYOUT: Property[] = [...STACK_PROPERTIES, "columns", "rowGap", "columnGap"];
 
 /**
  * The marks of `layers`, from the round's changes: those to a property of
@@ -174,7 +176,7 @@ export function changeMarks(changes: Change[], editor: Editor, layers: Layer[], 
       editor.batch(() => {
         for (const stack of made) {
           // What was changed of it as a Stack since it was made, first; then the Stack itself, as if it never was.
-          const since = changes.filter((change) => change.kind === "style" && change.layer === stack.layer && change.id > stack.id && STACK_PROPERTIES.includes(change.property as Property));
+          const since = changes.filter((change) => change.kind === "style" && change.layer === stack.layer && change.id > stack.id && MADE_LAYOUT.includes(change.property as Property));
           for (const change of since) editor.revert(change.id);
           editor.revert(stack.id);
         }
