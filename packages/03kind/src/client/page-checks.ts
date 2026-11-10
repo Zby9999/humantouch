@@ -18,7 +18,7 @@
 import { CHECK_ARRIVE_MS, CHECK_SETTLE_MS, CODE_EVENT, type CheckAsk, type CheckReport, type CheckResult } from "../service-protocol";
 import type { Change } from "./changeset";
 import { checkAcross, checkHere, itself, outsideOf, uncheckable, widthsOf, type PageWidth } from "./check";
-import { codeUpdates, sliced } from "./code-changes";
+import { codeUpdates, sliced, UPDATE_LOST_MS } from "./code-changes";
 import { otherUsagesChanged, looksAtOtherUsages, noteChange, noteOutside, outsideChanged, unnoted, withOutside, type OtherUsagesNoted } from "./other-usages";
 import { CHECK_MEASURE } from "./host";
 import type { NotShownOutside } from "../outside-protocol";
@@ -281,6 +281,26 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
 
   // When to look: as the dev server brings code in, and the page changes with it.
   let codeCameAt = -Infinity;
+  /** When the latest update under way began, as the dev server's count of them last rose: one under way as the page began to check, then. */
+  let updateBegan = code()?.updating ? performance.now() : -Infinity;
+  /** The dev server's count of updates under way, as last heard. */
+  let updatingWas = code()?.updating ?? 0;
+  /**
+   * Of that count, the updates whose end will never come: those counted as
+   * another began, as Vite begins one only once the one before is over.
+   */
+  let lost = 0;
+  /**
+   * An update under way, as the dev server says. One that lost its end
+   * (ticket 123) is not: neither one counted as another began, nor one begun
+   * `UPDATE_LOST_MS` ago with no word of its end, as the code changes take
+   * it. Else it would hold every ask after it for all of `CHECK_ARRIVE_MS`.
+   */
+  const updating = () => {
+    const count = code()?.updating ?? 0;
+    lost = Math.min(lost, count);
+    return count > lost && performance.now() - updateBegan < UPDATE_LOST_MS;
+  };
   /**
    * Till when the page's own changes are looked at too, with word from the
    * dev server: a while after it brought code in, and after the page began to
@@ -309,6 +329,13 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   });
   const onCode = () => {
     codeCameAt = performance.now();
+    const count = code()?.updating ?? 0;
+    if (count > updatingWas) {
+      updateBegan = codeCameAt;
+      lost = Math.max(lost, updatingWas);
+    }
+    updatingWas = count;
+    lost = Math.min(lost, count);
     follow();
     look();
   };
@@ -332,7 +359,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
         if (stopped || !updates || performance.now() >= deadline) return done();
         // The dev server has gone quiet too: one file's update may come in before another's has begun.
         const quiet = performance.now() - codeCameAt >= QUIET_MS;
-        if (!updates.updating && quiet && (codeAt == null || updates.at >= codeAt || waited >= CHECK_SETTLE_MS)) return done();
+        if (!updating() && quiet && (codeAt == null || updates.at >= codeAt || waited >= CHECK_SETTLE_MS)) return done();
         later(test, 100);
       };
       const done = () => {
@@ -373,10 +400,9 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       });
       watch.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
       const wait = () => {
-        const updates = code();
         const now = performance.now();
         const until = Math.min(deadline, Math.max(since, codeCameAt) + ms);
-        if (!stopped && now < deadline && (updates?.updating || now < until)) later(wait, Math.max(50, Math.min(until - now, 250)));
+        if (!stopped && now < deadline && (updating() || now < until)) later(wait, Math.max(50, Math.min(until - now, 250)));
         else {
           looking = false;
           lookAgain(end);
