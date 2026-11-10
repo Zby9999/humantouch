@@ -52,3 +52,9 @@
   - `property-table.ts` 的 `gap.read` 在 `!stack.flex` 时直接返回 0；
   - `edits.ts` 改 Stack 属性时对还不是 flex 的排版写 `display: flex` 和 `flex-direction`（`asStack`），不碰子图层的外边距；
   - ⇧A 合成时的 `unmargined` 和说明里的「Drop the margins」在 `structure-edits.ts`、`change-notes.ts`。
+
+## 设计师决定（2026-11-10）
+
+- 发布前做。
+- 接在 109 那条线后面，排在 120 之后（120 → 122）。照那条线的做法：设指挥，派一个新的实现子 agent、一个审查子 agent，都用 effort medium。
+- 代定的几件（距离不一样时怎么显示、最外侧的外边距、「Make it a Stack」那条规则的措辞）由那条线先定，回来给设计师确认。
