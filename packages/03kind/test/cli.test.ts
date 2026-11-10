@@ -564,6 +564,24 @@ describe("claim, how to write the changes (ticket 65)", () => {
     expect(rule(output, "How the page checks")).not.toContain("margins");
   });
 
+  test.each([
+    ["with margins", { x: 0, y: 16 }, true],
+    ["with margins of 0", { x: 0, y: 0 }, false],
+    ["with no margins recorded", undefined, false],
+  ])("a move placing a layer absolute %s: the Moves rule says its `left` and `top` are its X and Y and that it keeps its margins only where it has some (ticket 132)", async (_name, margins, said) => {
+    saveRound(change("move", { before: place(2), after: { ...place(2), absolute: { x: 24, y: 35 } }, ...(margins && { margins }) }));
+
+    const moves = rule((await cli("claim")).output, "Moves");
+
+    if (said) {
+      expect(moves).toContain("A layer placed absolute gets `position: absolute`, its `left` and `top` the X and Y given, in a container that is its positioning reference");
+      expect(moves).toContain("Keep its margins: it is drawn at `left` and `top` plus its margins, so one taken off moves it by as much.");
+    } else {
+      expect(moves).toContain("A layer placed absolute gets `position: absolute` and the `left` / `top` given, in a container that is its positioning reference");
+      expect(moves).not.toContain("margins");
+    }
+  });
+
   test("a layer placed from its container's right or bottom edge, or centered, resized: its changes say it stays placed so, and which value changes; how to write and check them, only in such a round (ticket 75)", async () => {
     const fixed = (value: number) => ({ type: "fixed", value });
     saveRound(

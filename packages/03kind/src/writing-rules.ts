@@ -139,9 +139,13 @@ const HOW_TO_WRITE: HowToWrite[] = [
   {
     name: "Moves",
     calledFor: (change) => change.kind === "move",
-    text:
+    text: (list) =>
       "move the JSX itself, to the container and the place the design intent gives; for a data change, the item in the data instead. " +
-      "A layer placed absolute gets `position: absolute` and the `left` / `top` given, in a container that is its positioning reference: give the container `position: relative` (`relative`) if it is not positioned yet.",
+      // Said only where a layer placed absolute has margins (ticket 132, as ticket 100 for a dissolve): an Agent took one off where the page could not check it. The notes of every other round stay as they were.
+      (list.some(placedWithMargins)
+        ? "A layer placed absolute gets `position: absolute`, its `left` and `top` the X and Y given, in a container that is its positioning reference: give the container `position: relative` (`relative`) if it is not positioned yet. " +
+          "Keep its margins: it is drawn at `left` and `top` plus its margins, so one taken off moves it by as much."
+        : "A layer placed absolute gets `position: absolute` and the `left` / `top` given, in a container that is its positioning reference: give the container `position: relative` (`relative`) if it is not positioned yet."),
   },
   {
     name: "Cells of a Grid",
@@ -297,6 +301,8 @@ function layersStyled(change: Change): Target[] {
 
 /** A layer placed absolute, as the page checks it: where it is drawn. */
 const placing = (change: Change) => (change.kind === "style" && PLACING.includes(change.property as Property)) || (change.kind === "move" && !!(change.after as Place).absolute);
+/** A move placing a layer absolute that has margins on the canvas (ticket 132): drawn past its X and Y by them. */
+const placedWithMargins = (change: Change) => change.kind === "move" && !!(change.after as Place).absolute && !!(change.margins?.x || change.margins?.y);
 /** A change to the `right` or `bottom` of a layer placed from that edge of its container (ticket 75). */
 const isEndOffsetChange = (change: Change) => change.kind === "style" && isEndOffset(change.property);
 /**
