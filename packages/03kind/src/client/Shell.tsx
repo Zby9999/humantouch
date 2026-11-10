@@ -338,18 +338,18 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     }
   };
   /** An edit made: the panel and the Layers panel follow it; `adjust`, a value set, the selection box steps aside meanwhile. Resized by a handle, it stays. */
-  /** Where a Variable of each group goes on `layer`, as the Variants list sets one: the property, and the part of it; none for spacing, which could be any of several. */
+  /** Where a Variable of each group goes on `layer`, as the Variables list sets one: the property, and the part of it; none for spacing, which could be any of several. */
   const slotFor = (layer: Layer, group: VariableGroup): [Property, string] | null => {
     const editor = editorOf(layer);
     const at = ({ color: editor?.can(layer, "textColor") ? ["textColor", ""] : ["fill", "color"], radius: ["radius", ""], fontSize: ["fontSize", ""], shadow: ["shadows", ""] } as Partial<Record<VariableGroup, [Property, string]>>)[group];
     return at && editor?.can(layer, at[0]) ? at : null;
   };
-  /** The groups a Variable picked in the Variants list can be set on every selected layer for, by what it sets there. */
+  /** The groups a Variable picked in the Variables list can be set on every selected layer for, by what it sets there. */
   const takenBy = (layers: Layer[]) => {
     const names: Partial<Record<VariableGroup, string>> = { color: "Fill", radius: "corner radius", fontSize: "font size", shadow: "shadow" };
     return Object.fromEntries(Object.entries(names).filter(([group]) => layers.length && layers.every((layer) => slotFor(layer, group as VariableGroup)))) as Partial<Record<VariableGroup, string>>;
   };
-  /** The Variables the layer selected alone has where the Variants list sets them. */
+  /** The Variables the layer selected alone has where the Variables list sets them. */
   const usedBy = (layers: Layer[]): Variable[] => {
     if (layers.length !== 1) return [];
     const [layer] = layers;
@@ -360,7 +360,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       return bound ? [bound] : [];
     });
   };
-  /** Sets the Variable picked in the Variants list on each selected layer, where it takes one of its group, as one edit. */
+  /** Sets the Variable picked in the Variables list on each selected layer, where it takes one of its group, as one edit. */
   const applyVariable = (entry: Resolved) => {
     const editor = editorOf(selected[0]);
     if (!editor) return;
@@ -955,7 +955,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         <div ref={watchPanelScrolled} class="tk-panel-header">
           {/* No tabs (designer, 2026-11-08): with nothing selected, the project's Variables, as Figma's panel shows the page's; with layers selected, their design. */}
           {/* In the Layers' title's type: one header style for both panels (designer, 2026-11-08). */}
-          <h2 class="tk-panel-title">{designing ? "Design" : "Variants"}</h2>
+          <h2 class="tk-panel-title">{designing ? "Design" : "Variables"}</h2>
           {controls}
         </div>
         {!designing ? (

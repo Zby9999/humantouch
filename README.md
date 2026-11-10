@@ -42,7 +42,7 @@ Click the toggle. The page freezes into a canvas, shown side by side in the Desk
 - Drag layers to move them, or move them off the canvas: they stay beside it as off-canvas layers, for you to put back later. Select a few and press ⇧A to make a Stack.
 - Set Position, Size, Stack, Padding, Fill, Stroke, Appearance, Effects and Text in the Design panel. Draw a new Frame (F) or Text (T) on the canvas.
 - A change made in the Desktop view applies at every width, except at a breakpoint where you have already changed that property in its own view; one made in the Tablet or Phone view applies only at that view's breakpoint.
-- With nothing selected, the Design panel lists the project's Variables (Variants).
+- With nothing selected, the Design panel lists the project's Variables.
 - When the Design panel cannot say what you want, add a Brief to the layer: "What should the Agent achieve here?"
 - Click the full screen button at the top right of a view to see the canvas at full size, at that view's width; press Esc to come back.
 

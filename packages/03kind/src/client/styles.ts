@@ -263,7 +263,7 @@ export const styles = /* css */ `
   --tk-prominent-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15);
   --tk-panel-label: #525351; /* neutral 600: the tools' icons */
   --tk-raised-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1px rgb(0 0 0 / 0.15);
-  --tk-tab-track: #d4d4d3; /* neutral 300: the Design and Variants tabs */
+  --tk-tab-track: #d4d4d3; /* neutral 300: the Design and Variables tabs */
   /* The panels' widths: each set by its edge (designer, 2026-11-08), on the shell's style, as panel-widths.ts fits them. */
   --tk-layers-width: 320px;
   --tk-design-width: 320px;
@@ -535,7 +535,7 @@ export const styles = /* css */ `
 
 /*
  * A panel's top, one style for both (designer, 2026-11-08). The Layers': a button that hides them, and their title.
- * The Design panel's: what it shows (Design, or Variants with nothing selected) at the left, the changes so far and the
+ * The Design panel's: what it shows (Design, or Variables with nothing selected) at the left, the changes so far and the
  * way back at the right. Under both, the line the Design panel's had, inset by the panel's padding.
  * Sticky, on the panel's own color: what scrolls up goes under it. It reaches over the panel's padding (16px) to the
  * panel's edges, so nothing shows above or beside it; sticky keeps to the panel's padding, so it sticks 16px up.
@@ -1612,7 +1612,7 @@ export const styles = /* css */ `
   background: var(--tk-swatch);
 }
 .tk-swatch-button:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 1px; }
-/* A color pointed at, wherever one is chosen: a white line inside it and a darker one round it, as the Variants tab's swatches have;
+/* A color pointed at, wherever one is chosen: a white line inside it and a darker one round it, as the Variables tab's swatches have;
    in a color's field, pointing anywhere on the field does it, not over its open picker (designer, 2026-11-08). */
 .tk-swatch-button:hover,
 .tk-color-field:hover:not(:has(.tk-popover:hover)) > .tk-swatch-button,
@@ -1757,7 +1757,7 @@ export const styles = /* css */ `
   background: var(--tk-field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23737472' stroke-width='1.43' stroke-linecap='round'%3E%3Ccircle cx='7.25' cy='7.25' r='4.5'/%3E%3Cline x1='10.5' y1='10.5' x2='13.25' y2='13.25'/%3E%3C/svg%3E") no-repeat 8px center / 14px 14px;
 }
 .tk-variable-search::placeholder { color: var(--tk-text-muted); font-weight: 500; }
-/* The picker's colors: the palette of the Variants tab, without its ramps' names. */
+/* The picker's colors: the palette of the Variables tab, without its ramps' names. */
 .tk-variants-ramp.is-bare { grid-template-columns: repeat(var(--tk-steps, 11), minmax(0, 1fr)); }
 .tk-variants-swatch[aria-selected="true"] { box-shadow: inset 0 0 0 1px #fff, 0 0 0 2px var(--tk-accent); }
 .tk-variable-list { overflow: auto; min-height: 0; margin: 0 -12px; padding: 0 12px; }
@@ -1819,7 +1819,7 @@ export const styles = /* css */ `
 .tk-mark[data-type="gap"][data-across] .tk-mark-label { top: auto; bottom: 4px; transform: translateX(-50%); }
 .tk-mark[data-type="gap"]:not([data-across]) .tk-mark-label { left: 4px; transform: translateY(-50%); }
 
-/* The Variants tab: the project's Variables, by group (designer, 2026-11-07). */
+/* The Variables tab: the project's Variables, by group (designer, 2026-11-07). */
 .tk-variants { display: flex; flex-direction: column; gap: 16px; }
 .tk-variants .tk-row > .tk-field { flex: 1; }
 /* The Variables source (All): tracked as the other muted labels (designer, 2026-11-08). */

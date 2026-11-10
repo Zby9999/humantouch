@@ -224,7 +224,7 @@ export interface MenuItem {
   /**
    * What it is, more than its label shows, while a mouse points at it: drawn
    * from where it is (`at`) and the panel it is in (`beside`), as a shadow
-   * Variable's layers beside the menu, as the Variants tab has them (designer, 2026-11-08).
+   * Variable's layers beside the menu, as the Variables tab has them (designer, 2026-11-08).
    */
   details?(at: DOMRect, beside: DOMRect): ComponentChildren;
   /**

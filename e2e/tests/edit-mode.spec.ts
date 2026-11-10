@@ -348,8 +348,8 @@ test("the Design panel's top: its label at the left, the count and the way back 
     }
   }
 
-  // Nothing selected: Variants.
-  await expect(label).toHaveText("Variants");
+  // Nothing selected: Variables.
+  await expect(label).toHaveText("Variables");
   await expect(count).toHaveCount(0);
   await atTheEnds();
 

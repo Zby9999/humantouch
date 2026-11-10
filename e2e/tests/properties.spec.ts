@@ -2012,7 +2012,7 @@ test("an effect's fold, as a layer's chevron in the Layers panel but 28px as the
   await expect(blur.getByRole("textbox")).toHaveCount(0);
 });
 
-test("a color pointed at, wherever one is chosen, has the Variants tab's white line inside it and a darker one round it", async ({ page }) => {
+test("a color pointed at, wherever one is chosen, has the Variables tab's white line inside it and a darker one round it", async ({ page }) => {
   await page.goto(DEV_URL);
   await enterEditMode(page);
   await selectRow(page, "Card");
