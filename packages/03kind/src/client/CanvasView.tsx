@@ -2,9 +2,11 @@
 import type { TargetedPointerEvent } from "preact";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "preact/hooks";
-import { BriefMark, briefedLayers } from "./BriefMark";
-import { Brief, handleCursor, Handles, Marks, Outline, SelectionToolbar, SizeLabel } from "./AboveCanvas";
-import { canvasKey, type Tool } from "./canvas-keys";
+import { BriefCards, briefedLayers, briefViews, type BriefCard } from "./BriefCards";
+import { handleCursor, Handles, Marks, Outline, SelectionToolbar, SizeLabel } from "./AboveCanvas";
+import { LABEL_ROOM, type Box } from "./brief-cards";
+import { BRIEF_ATTR, LAYER_ID_ATTR } from "./canvas-style";
+import { canvasKey, drawsWith, type Tool } from "./canvas-keys";
 import { marksNow, resizeStep, type ResizePointer, type ResizeSession, type ResizeStep } from "./canvas-resize";
 import { boxFrom, DRAG_THRESHOLD, laidOut, moveWhole, restoreDragStyles, shift, SNAP_PX, startDragSession, type At, type DragSession, type Pointer } from "./canvas-drag";
 import { boundsOf, cameraIn, currentCamera, fitCamera, initialCamera, place, scrolled, showsWhole, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
@@ -99,8 +101,8 @@ interface Props {
   onTool(tool: Tool): void;
   /** A layer drawn with the text or Frame tool; `size` when drawn rather than clicked. Returns the new layer. */
   onCreate(type: Created["type"], to: Destination, size?: { width: number; height: number }): Layer;
-  /** A new Frame's brief written, from the button beside it. */
-  onSetBrief(layer: Layer, brief: string): void;
+  /** A brief written on a layer, on its card, or taken off (""): one edit. Returns the layer the brief is on (loose text gets an element of its own). */
+  onSetBrief(layer: Layer, brief: string): Layer;
   /** Promote, from the selection toolbar: the layer's changes made changes to its component. */
   onPromote(layer: Layer): void;
   /** Typing in a text layer begins: returns the layer with an element of its own to type in. */
@@ -148,7 +150,7 @@ export function CanvasView(props: Props) {
   const frames = useRef(new Map<number, HTMLIFrameElement>());
   /** Each view beside the desktop view shown on the canvas so far, by width; `gone` once taken away before it was laid out. */
   const attached = useRef(new Map<number, { view: View | null; gone: boolean }>());
-  /** The view the designer last pressed in: a new Frame's brief shows there. */
+  /** The view the designer last pressed in: the one worked in. */
   const [active, setActive] = useState<View | null>(null);
   /** The view whose name and widths above it are pointed at (`keyOf`): its page is outlined, as a Frame's is in Figma. */
   const [titled, setTitled] = useState<string | null>(null);
@@ -204,6 +206,12 @@ export function CanvasView(props: Props) {
   const typedPress = useRef<{ pointerId: number | null; in: Shown; time: number; x: number; y: number; count: number } | null>(null);
   /** The text being typed in, outlined in blue; null when none is. */
   const [typingLayer, setTypingLayer] = useState<Layer | null>(null);
+  /** A press with the Brief tool, till it is let go: there, it writes the brief of the layer under it (ticket 121). */
+  const briefPress = useRef<{ pointerId: number; release(): void } | null>(null);
+  /** Where the cards of the briefs are on the stage, as last drawn: ⇧1 fits them in too. */
+  const cardsPlaced = useRef<Box[]>([]);
+  /** The brief being written on its card: the layer, and the view (or the layer made in the blank space) its card is beside. */
+  const [writing, setWriting] = useState<{ layer: Layer; in: Shown } | null>(null);
   /** Bumped as the words are typed: the blue outline grows with them. */
   const [, typedOn] = useReducer((n: number) => n + 1, 0);
   const modeSwitch = useRef<Animation | null>(null);
@@ -628,7 +636,7 @@ export function CanvasView(props: Props) {
       }
       else if (key.action === "select parents") onSelect(selectParents(selected));
       // The layers off the canvas too.
-      else if (key.action === "fit" && bounds) setCamera(fitCamera(boundsOf([...placed, ...latest.current.outside]), viewport.current!.getBoundingClientRect()));
+      else if (key.action === "fit" && bounds) setCamera(fitCamera(boundsOf([...placed, ...latest.current.outside, ...cardsPlaced.current]), viewport.current!.getBoundingClientRect()));
     };
     const release = () => {
       setSpaceHeld(false);
@@ -714,6 +722,9 @@ export function CanvasView(props: Props) {
   };
 
   const onPointerDown = (event: TargetedPointerEvent<HTMLDivElement>) => {
+    // A Brief press let go out of reach (its pointer up never came) is over.
+    briefPress.current?.release();
+    briefPress.current = null;
     if (playing) return;
     // What is pressed on is read as the view pressed in shows it now: one beside a value just changed catches up first (ADR 0011).
     const over = viewAt(event);
@@ -724,7 +735,14 @@ export function CanvasView(props: Props) {
       return;
     }
     if (over && !over.at.offCanvasLayer) views?.sync(over.at.view);
-    if (event.button === 0 && !spaceHeld && tool && editor) {
+    if (event.button === 0 && !spaceHeld && tool === "brief") {
+      // Written once let go: the press would otherwise take the focus from the card as it shows.
+      // Held till let go, as a press on a layer is (ADR 0012): no key edits meanwhile.
+      event.currentTarget.setPointerCapture(event.pointerId);
+      briefPress.current = { pointerId: event.pointerId, release: holdPointer(event.pointerId) };
+      return;
+    }
+    if (event.button === 0 && !spaceHeld && drawsWith(tool) && editor) {
       // Drawn in the view pressed in, or in a layer off the canvas; outside them all, in the blank space, a layer off the canvas of its own (ticket 106).
       event.currentTarget.setPointerCapture(event.pointerId);
       const start = over ? { x: over.x, y: over.y } : toCanvas(event);
@@ -849,7 +867,14 @@ export function CanvasView(props: Props) {
       drawing.current = null;
       release();
       setDrawn(null);
-      if (event.type === "pointerup" && tool && editor) draw(tool, shown, start, boxFrom(start, toIn(event, shown)));
+      const type = drawsWith(tool);
+      if (event.type === "pointerup" && type && editor) draw(type, shown, start, boxFrom(start, toIn(event, shown)));
+      return;
+    }
+    if (briefPress.current?.pointerId === event.pointerId) {
+      briefPress.current.release();
+      briefPress.current = null;
+      if (event.type === "pointerup" && tool === "brief") briefAt(event);
       return;
     }
     if (press.current?.pointerId === event.pointerId) {
@@ -860,6 +885,41 @@ export function CanvasView(props: Props) {
     if (pan.current?.pointerId !== event.pointerId) return;
     pan.current = null;
     setPanning(false);
+  };
+
+  /**
+   * The Brief tool let go over a layer (ticket 121): that layer selected, as a
+   * click selects, and its brief written on its card, beside the view let go in,
+   * or opened there to change. In the blank space, the tool is put down. A layer
+   * moved off the canvas takes none: it is kept as it looks.
+   */
+  const briefAt = (event: TargetedPointerEvent<HTMLDivElement>) => {
+    const over = viewAt(event);
+    if (!over) return onTool(null);
+    const hit = pointedAt(event);
+    const off = over.at.offCanvasLayer;
+    if (!hit || (off && !off.origin.made)) return;
+    const layer = event.metaKey || event.ctrlKey ? selectDeepest(hit.layer) : selectOnClick(hit.layer, primary);
+    if (!layer) return;
+    if (!off) {
+      views?.sync(over.at.view);
+      setActive(over.at.view);
+    }
+    onSelect([layer]);
+    writeIn(layer, hit.in);
+  };
+  /** Writes the brief of `layer` on its card, beside `shown`: a card there already moves there. */
+  const writeIn = (layer: Layer, shown: Shown) => {
+    const key = cardKeyOf(layer);
+    if (key && !shown.offCanvasLayer) briefViews.write(key, keyOf(shown));
+    setWriting({ layer, in: shown });
+  };
+  /** The key of the card of `layer`'s brief: its id, in the document it is in; null when it has none yet, nor an element of its own. */
+  const cardKeyOf = (layer: Layer): string | null => {
+    const id = layer.text ? null : layer.el.getAttribute(LAYER_ID_ATTR);
+    if (id === null || !layer.el.hasAttribute(BRIEF_ATTR)) return null;
+    const off = offCanvas?.of(layer.el);
+    return off ? `off ${off.id} ${id}` : id;
   };
 
   /** Where the pointer is on the stage, in canvas px: the desktop view's px. */
@@ -1169,22 +1229,14 @@ export function CanvasView(props: Props) {
 
   /** The views laid out so far. */
   const shownViews = placed.filter((p): p is Shown => p.view !== null);
-  /** A new Frame's brief shows beside it in the view last pressed in, or else the desktop view; in a layer made in the blank space, there (ticket 106). */
-  const madeOff = primary ? outside.find((shown) => shown.offCanvasLayer?.origin.made && shown.offCanvasLayer.document === primary.el.ownerDocument) : undefined;
-  const briefIn = madeOff ?? shownViews.find((p) => p.view === active) ?? shownViews[0];
-  /** What edits the layer a new Frame's brief is written on. */
-  const briefEditor = madeOff ? madeOff.offCanvasLayer!.editor : editor;
+  /** The view worked in, pressed in last, or else the desktop view: the selection toolbar shows there. */
+  const toolbarIn = shownViews.find((p) => p.view === active) ?? shownViews[0];
   /** Whether a view, or a layer off the canvas, shows the layer: those of the canvas show in every view, those off it in their own. */
   const shows = (shown: Shown, layer: Layer) => layer.el.ownerDocument === (shown.offCanvasLayer ? shown.offCanvasLayer.document : canvas?.document);
-  /** The new Frame selected alone, which has the button that writes its brief beside it, in `briefIn`. */
-  const newFrame =
-    briefIn && briefEditor && primary && selected.length === 1 && shows(briefIn, primary) && !travelling && !playing && !drag && !resize && !hideSelection && briefEditor.isNewFrame(primary)
-      ? { layer: primary, in: briefIn, brief: briefEditor.brief(primary) }
-      : null;
-  /** The layer of the canvas selected alone, with the selection toolbar on its top right, in `briefIn`. */
+  /** The layer of the canvas selected alone, with the selection toolbar on its top right, in `toolbarIn`. */
   const toolbar =
-    briefIn && editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && !travelling && !playing && !drag && !resize && !hideSelection && !typingLayer
-      ? { layer: primary, in: briefIn, promote: editor.canPromote(primary) }
+    toolbarIn && editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && !travelling && !playing && !drag && !resize && !hideSelection && !typingLayer
+      ? { layer: primary, in: toolbarIn, promote: editor.canPromote(primary) }
       : null;
   /**
    * The layer selected alone that can be resized, with handles in every view that shows it: not the page,
@@ -1204,12 +1256,84 @@ export function CanvasView(props: Props) {
     (primary && selected.length === 1 && primary !== treeOf(primary)?.root && !travelling && !playing && !drag && !hideSelection && !typingLayer && !tool && (editorOf(primary)?.can(primary, "width") || editorOf(primary)?.can(primary, "height"))
       ? primary
       : null);
-  /** The layers of the canvas with a brief: marked in every view, as in the Layers panel. */
-  const briefed = [
-    ...(canvas && tree ? briefedLayers(canvas.document, tree) : []),
+  const cards = travelling || playing ? null : briefCards();
+  if (!cards?.list.length) cardsPlaced.current = [];
+  /**
+   * The cards of the briefs (ticket 121): one for each layer with a brief,
+   * beside the view it was written in (the desktop view, if that view is gone,
+   * or it was written before there were cards), or beside the layer made in the
+   * blank space it is in; and the one being written, on a layer with none yet.
+   * Null with none, so nothing is done for them.
+   */
+  function briefCards(): { list: { card: BriefCard; layer: Layer; in: Shown }[]; obstacles: Box[]; writing: string | null } | null {
+    if (!canvas || !tree || !shownViews.length) return null;
+    const desktopView = shownViews[0];
+    const last = placed.at(-1)!;
+    const list: { card: BriefCard; layer: Layer; in: Shown }[] = [];
+    const add = (layer: Layer, shown: Shown, key: string, text: string) => {
+      const r = shown.view.boxOf(layer);
+      const free = shown.offCanvasLayer ? { left: true, right: true } : { left: shown.desktop, right: keyOf(shown) === keyOf(last) };
+      const box = r && (r.width || r.height) ? { x: shown.x + r.left, y: shown.y + r.top, width: r.width, height: r.height } : null;
+      const doc = layer.el.ownerDocument;
+      const selectedHere = selected.some((s) => s.el.ownerDocument === doc && (s === layer || (key !== "new" && cardKeyOf(s) === key)));
+      list.push({ layer, in: shown, card: { key, name: layer.name, text, host: shown, free, layer: box, selected: selectedHere } });
+    };
+    for (const layer of briefedLayers(canvas.document, tree)) {
+      const key = cardKeyOf(layer);
+      if (!key) continue;
+      const at = briefViews.read(key);
+      add(layer, shownViews.find((s) => keyOf(s) === at) ?? desktopView, key, editor?.brief(layer) ?? "");
+    }
     // Those in the layers made in the blank space too, which take briefs (ticket 106).
-    ...outside.flatMap(({ offCanvasLayer }) => (offCanvasLayer?.origin.made ? briefedLayers(offCanvasLayer.document, offCanvasLayer.editor.tree()) : [])),
-  ];
+    for (const shown of outside) {
+      const off = shown.offCanvasLayer!;
+      if (!off.origin.made) continue;
+      for (const layer of briefedLayers(off.document, off.editor.tree())) {
+        const key = cardKeyOf(layer);
+        if (key) add(layer, shown, key, off.editor.brief(layer));
+      }
+    }
+    let writingKey: string | null = null;
+    // Found again as the layers are now: they may have been built anew while it is written.
+    const writingNow = writing && (treeOf(writing.layer) ?? tree).layerOf(nodeOf(writing.layer));
+    if (writing && writingNow) {
+      writingKey = cardKeyOf(writingNow);
+      if (!writingKey || !list.some((c) => c.card.key === writingKey)) {
+        // None yet: a card of its own, empty, beside where it is written.
+        writingKey = "new";
+        const shown = writing.in.offCanvasLayer ? outside.find((o) => o.offCanvasLayer === writing.in.offCanvasLayer) : shownViews.find((s) => keyOf(s) === keyOf(writing.in));
+        if (shown) add(writingNow, shown, "new", "");
+        else writingKey = null;
+      }
+    }
+    if (!list.length) return null;
+    const obstacles: Box[] = [
+      ...placed.map((p) => ({ x: p.x, y: p.y - LABEL_ROOM, width: p.width, height: p.height + LABEL_ROOM })),
+      ...outside.map(({ x, y, width, height }) => ({ x, y, width, height })),
+    ];
+    return { list, obstacles, writing: writingKey };
+  }
+  /**
+   * The card written in left: what was typed set as the brief of its layer, as
+   * one edit, unless it is as it was; "" takes the brief off. Null: Esc, left
+   * as it was. Its card stays beside the view it was written in.
+   */
+  function written(text: string | null) {
+    const was = writing;
+    setWriting(null);
+    if (!was || text === null) return;
+    // Gone meanwhile (deleted, say, by the Agent's code coming in): nothing to write on.
+    const layer = treeOf(was.layer)?.layerOf(nodeOf(was.layer));
+    if (!layer) return;
+    const had = cardKeyOf(layer);
+    const before = had ? (editorOf(layer)?.brief(layer) ?? "") : "";
+    if (text === before) return;
+    if (!text && had && !was.in.offCanvasLayer) briefViews.forget(had);
+    const own = onSetBrief(layer, text);
+    const key = text && cardKeyOf(own);
+    if (key && !was.in.offCanvasLayer) briefViews.write(key, keyOf(was.in));
+  }
+
   /**
    * ⌥ held: the distances from the layers selected, all of them as one box,
    * to the layer pointed at, in the view pointed in; pointed at one of them or
@@ -1232,7 +1356,7 @@ export function CanvasView(props: Props) {
   return (
     <div
       ref={viewport}
-      class={`tk-viewport${panning ? " is-panning" : spaceHeld ? " is-pan-ready" : tool ? " is-drawing" : ""}${travelling ? " is-travelling" : ""}`}
+      class={`tk-viewport${panning ? " is-panning" : spaceHeld ? " is-pan-ready" : tool === "brief" ? " is-briefing" : tool ? " is-drawing" : ""}${travelling ? " is-travelling" : ""}`}
       style={resize ? { cursor: handleCursor(resize.handle) } : undefined}
       role="region"
       aria-label="Canvas viewport"
@@ -1278,6 +1402,31 @@ export function CanvasView(props: Props) {
         {/* The layers off the canvas, drawn over the views; each an iframe of its own, put there by `off-canvas.ts`. Only the canvas is played. */}
         <div ref={workspace} class="tk-off-canvas-layers" style={{ visibility: playing || travelling ? "hidden" : undefined }} />
       </div>
+      {/* The briefs, on cards beside the views, under what is drawn over the layers; none, nothing (ticket 121). */}
+      {cards && cards.list.length > 0 && (
+        <BriefCards
+          cards={cards.list.map((c) => c.card)}
+          obstacles={cards.obstacles}
+          camera={camera}
+          writing={cards.writing}
+          onWrite={(key) => {
+            const found = cards.list.find((c) => c.card.key === key);
+            if (!found) return;
+            onSelect([found.layer]);
+            writeIn(found.layer, found.in);
+          }}
+          onWritten={(_key, text) => written(text)}
+          onRemove={(key) => {
+            const found = cards.list.find((c) => c.card.key === key);
+            if (!found) return;
+            const layer = treeOf(found.layer)?.layerOf(nodeOf(found.layer)) ?? found.layer;
+            onSetBrief(layer, "");
+            if (!found.in.offCanvasLayer) briefViews.forget(key);
+          }}
+          onReveal={(dx, dy) => setCamera((v) => ({ ...v, x: v.x + dx, y: v.y + dy }))}
+          placedNow={cardsPlaced}
+        />
+      )}
       {/* In every view alike: the layer pointed at, the selection, the text being typed in. */}
       {!travelling &&
         !playing &&
@@ -1310,23 +1459,9 @@ export function CanvasView(props: Props) {
                   onEdit={onFillEdited}
                 />
               )}
-              {briefed.map(
-                (layer, i) =>
-                  shows(shown, layer) && !(shown === newFrame?.in && layer === newFrame.layer) && <BriefMark key={`brief ${i}`} layer={layer} view={view} name={name} camera={at} />,
-              )}
             </Fragment>
           );
         })}
-      {newFrame && (
-        <Brief
-          key={newFrame.layer.el.getAttribute("data-tk-layer")}
-          layer={newFrame.layer}
-          view={newFrame.in.view}
-          brief={newFrame.brief}
-          camera={cameraIn(camera, newFrame.in)}
-          onSetBrief={onSetBrief}
-        />
-      )}
       {toolbar && (
         <SelectionToolbar
           key={toolbar.layer.el.getAttribute("data-tk-layer") ?? undefined}

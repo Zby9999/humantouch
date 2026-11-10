@@ -1,6 +1,6 @@
 /**
  * What a key does on the canvas, as Figma's keys do: Space held pans, T and F
- * pick the text and Frame tools and V puts them down, Esc puts a tool down,
+ * pick the text and Frame tools, B the Brief tool (ticket 121), and V puts them down, Esc puts a tool down,
  * cancels a drag or selects the parents, ⇧1 fits every view in. Playing, the
  * keys scroll the canvas as on a page, and Esc stops (ADR 0010). A field, or
  * a dialog over the canvas, keeps its keys. ⌘Z and ⇧⌘Z go through the edits
@@ -10,8 +10,14 @@
  */
 import type { Created } from "./changeset";
 
-/** The tool picked: what the next drag on the canvas draws, new text or a new Frame; null to select. */
-export type Tool = Created["type"] | null;
+/** The tool picked: what the next drag on the canvas draws, new text or a new Frame; the Brief tool, whose click on a layer writes its brief (ticket 121); null to select. */
+export type Tool = Created["type"] | "brief" | null;
+
+/** What the tool draws, if it draws: the text and Frame tools. */
+export const drawsWith = (tool: Tool): Created["type"] | null => (tool === "brief" ? null : tool);
+
+/** The tool each key picks. */
+const TOOL_KEYS: Record<string, Tool> = { v: null, f: "frame", t: "text", b: "brief" };
 
 /** What a key pressed or let go does on the canvas; the canvas keeps the key from anything else. */
 export type CanvasKey =
@@ -63,7 +69,7 @@ export function canvasKey(event: KeyboardEvent, { playing, page, tool, dragging,
   if (event.key === "Escape" && tool) return { action: "tool", tool: null };
   const key = event.key.toLowerCase();
   const plain = !event.metaKey && !event.ctrlKey && !event.altKey;
-  if ((key === "t" || key === "f" || key === "v") && plain && !event.shiftKey) return { action: "tool", tool: key === "t" ? "text" : key === "f" ? "frame" : null };
+  if (Object.hasOwn(TOOL_KEYS, key) && plain && !event.shiftKey) return { action: "tool", tool: TOOL_KEYS[key] };
   if (event.key === "Escape" && dragging) return { action: "cancel drag" };
   if (event.key === "Escape" && selected) return { action: "select parents" };
   if (event.code === "Digit1" && event.shiftKey && plain) return { action: "fit" };
