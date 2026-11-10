@@ -78,3 +78,13 @@
 1. 规则没有真 Agent 跑过：要等规划会话在 118、120 合进 main 后重跑 `third-party`（Claude、pi 各 3 次）才知道包一层的写法是不是没了。
 2. 使用链靠 React 开发构建里的 fiber；读不到使用链（`chain` 为空）时这条不出现，只剩「Every change」那半句。
 3. 组件收 `className`、只是不传到要改的那个元素上时，Agent 可能把 class 传到组件外层就当改了（宽度等会在外层显示出来）；规则没有专门说这种。
+
+#### 规划会话代定（设计师不在，2026-11-10，回来后确认）
+
+- 1–3 照代定。
+  - 最终措辞允许从外面整体摆放、定大小，和 GLOSSARY 里锁定图层能做的一致。
+  - 只禁止伸进它的元素：不写子、后代选择器，不对它的类名写全局规则。
+  - `done` 先不认出这种写法。
+- 真 Agent 复验等设计师给额度。规划会话准备的范围：
+  - 场景：`third-party`；118 的 3 个新场景（`stack-to-grid-and-cell-fill`、`make-grid-and-phone-stack`、`areas-grid-phone-stack`）；108 加的 `off-canvas-frame`，它还没有真 Agent 跑过。
+  - Claude 和 pi 各跑 3 次，一共 30 次。
