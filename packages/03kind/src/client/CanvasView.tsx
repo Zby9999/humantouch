@@ -177,8 +177,19 @@ export function CanvasView(props: Props) {
   const clickPress = useRef<{ pointerId: number; time: number; x: number; y: number; second: boolean; plain: boolean; dragged: boolean } | null>(null);
   /** The last plain press let go as a click, which the next press may make a double click of. */
   const lastClick = useRef<{ time: number; x: number; y: number } | null>(null);
-  /** The drag under way: how far the layer has gone, and where it would go, in the view it is dragged in, in its px; `out`: off the canvas. */
-  const [drag, setDrag] = useState<{ layer: Layer; in: Shown; box: DOMRect; drop: Drop | null; out: boolean; away?: boolean } | null>(null);
+  /**
+   * The drag under way: how far the layer has gone, and where it would go, in the view it is dragged in, in its px; `out`: off the canvas.
+   * `whole`: a layer off the canvas dragged whole, and how far it has gone on the stage, its outline going along (designer, 2026-11-10).
+   */
+  const [drag, setDrag] = useState<{
+    layer: Layer;
+    in: Shown;
+    box: DOMRect;
+    drop: Drop | null;
+    out: boolean;
+    away?: boolean;
+    whole?: { of: OffCanvasLayer; dx: number; dy: number };
+  } | null>(null);
   /**
    * A handle of the layer selected pressed, and dragged: held from the moment it is pressed till it is let
    * go, or the resize cancelled with Esc (ADR 0012). `resize` has what it shows: the view, the handle (its
@@ -916,7 +927,7 @@ export function CanvasView(props: Props) {
       session.to = into ? null : { x: offCanvasLayer.x + dx, y: offCanvasLayer.y + dy };
       session.back = drop;
       // Nothing makes room for it: coming from outside, the layers would slide away from under the pointer as it enters.
-      setDrag({ layer, in: into ?? shown, box: drop?.box ?? there ?? box, drop, out: false });
+      setDrag({ layer, in: into ?? shown, box: drop?.box ?? there ?? box, drop, out: false, whole: { of: offCanvasLayer, dx, dy } });
       return;
     }
     // Over another document than its own (ticket 108): a layer off the canvas, from the canvas or another off it, or a view, from off it.
@@ -1285,7 +1296,9 @@ export function CanvasView(props: Props) {
         !playing &&
         [...shownViews, ...outside].map((shown) => {
           const { view, name } = shown;
-          const at = cameraIn(camera, shown);
+          // A layer off the canvas dragged whole: what is drawn over it goes along with it.
+          const by = drag?.whole && drag.whole.of === shown.offCanvasLayer ? drag.whole : null;
+          const at = cameraIn(camera, by ? { x: shown.x + by.dx, y: shown.y + by.dy } : shown);
           // The selection lighter in the views other than the one worked in, pressed in last (designer, 2026-11-09).
           const away = !shown.offCanvasLayer && view !== (active ?? views?.list()[0]);
           return (

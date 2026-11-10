@@ -96,6 +96,27 @@ test("F and a drag in the blank space make a Frame there, a layer off the canvas
   await expect(badge(page)).toHaveCount(0);
 });
 
+test("a Frame off the canvas dragged whole: its selection's outline goes along with it, not left where it was (designer, 2026-11-10)", async ({ page }) => {
+  await enterEditMode(page);
+  const at = await blankSpace(page);
+  await page.keyboard.press("f");
+  await drawFrom(page, at, { x: at.x + 200, y: at.y + 120 });
+  const outline = page.locator('.tk-selection[data-view="Off canvas"]');
+  const near = async () => {
+    const [frame, line] = [(await offCanvas(page).boundingBox())!, (await outline.boundingBox())!];
+    return Math.max(Math.abs(frame.x - line.x), Math.abs(frame.y - line.y)) < 2;
+  };
+  await expect.poll(near).toBe(true);
+
+  await page.mouse.move(at.x + 100, at.y + 60);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 180, at.y + 100, { steps: 8 });
+  // Mid-drag.
+  await expect.poll(near).toBe(true);
+  await page.mouse.up();
+  await expect.poll(near).toBe(true);
+});
+
 test("T clicked in the blank space makes text there, typed in at once, in the page's body text style; kept where it is after a reload", async ({ page }) => {
   await enterEditMode(page);
   const at = await blankSpace(page);
