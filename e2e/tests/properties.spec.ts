@@ -1,4 +1,4 @@
-import { canvasInPlace, expectSegmentedChanged, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
+import { canvasInPlace, expectFolding, expectSegmentedChanged, holdMotion, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
 function canvas(page: Page) {
@@ -1196,22 +1196,26 @@ test.describe("with motion", () => {
     await addEffect(effects, "Layer blur");
     const shadow = effects.getByRole("group", { name: "Shadow 1", exact: true });
     const copies = shadow.locator(".tk-effect-fold");
+    // Its motion held where it starts, so that it is read midway however busy the machine (ticket 126).
+    const letGo = await holdMotion(page);
     await shadow.getByRole("button", { name: "Shadow 1 details" }).click();
     // Folded at once for its readers: its fields gone, copies of them hidden from them, showing what they did.
     await expect(shadow.getByRole("textbox")).toHaveCount(0);
     await expect(copies).toHaveAttribute("aria-hidden", "true");
     await expect(copies.locator("input").first()).toHaveValue("0");
-    const keyframes = await copies.evaluate((el) =>
-      el.getAnimations({ subtree: true }).map((animation) => (animation.effect as KeyframeEffect).getKeyframes().map((frame) => frame.transform ?? frame.clipPath)),
-    );
-    expect(keyframes).toEqual(expect.arrayContaining([["none", "translateY(-8px)"], ["inset(0px)", "inset(0px 0px 100%)"]]));
-    expect(await effects.getByRole("group", { name: "Layer blur", exact: true }).evaluate((el) => el.getAnimations().length)).toBe(1);
-    // Then gone.
+    // Its details' copies going up 8px and fading over the fold's time, the effect after rising from where it was.
+    await expectFolding(copies, copies.locator(":scope > .tk-effect"), effects.getByRole("group", { name: "Layer blur", exact: true }));
+    // Then, played on, gone.
+    await letGo();
     await expect(copies).toHaveCount(0);
 
+    // Opened, at once: motion held, its fields are there and nothing of it moves (a hover's colour aside); read once, not waited for.
+    const letGoAgain = await holdMotion(page);
     await shadow.getByRole("button", { name: "Shadow 1 details" }).click();
     await expect(shadow.getByRole("textbox", { name: "Shadow 1 X" })).toBeVisible();
-    await expect(copies).toHaveCount(0);
+    expect(await copies.count()).toBe(0);
+    expect(await shadow.evaluate((el) => el.getAnimations({ subtree: true }).filter((a) => !(a instanceof CSSTransition)).length)).toBe(0);
+    await letGoAgain();
   });
 });
 
