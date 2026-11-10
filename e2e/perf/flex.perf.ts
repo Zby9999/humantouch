@@ -1112,32 +1112,72 @@ test("dragging a layer's handle keeps 60fps", async ({ page }) => {
 const BRIEFS = 20;
 
 /**
- * Writes a brief on each of the first `BRIEFS` product cards with the Brief
- * tool (ticket 121), each on its card beside the desktop view; then puts the
- * tool down. A card out of sight is brought into it with the wheel first.
+ * Writes `BRIEFS` briefs with the Brief tool (ticket 121), each on its card
+ * beside the desktop view: on the deepest layers (⌘ held) of the page's
+ * headings, words, buttons and sections in sight, one brief to a layer (the
+ * product cards are one usage, all of them one layer), till there are as many
+ * cards; then puts the tool down, and enters edit mode again.
  */
 async function withBriefs(page: Page) {
-  await selectCard(page, 1, { parent: true });
+  // Every view in sight, the whole page with it: most of its elements are of the same few looped usages.
+  await page.keyboard.press("Shift+1");
+  await settle(page, 300);
   await page.keyboard.press("b");
   const viewport = (await host(page).getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
-  for (let n = 1; n <= BRIEFS; n++) {
-    let box = (await canvas(page).locator(card(n)).boundingBox())!;
-    while (box.y + box.height > viewport.y + viewport.height - 40 || box.x + box.width > viewport.x + viewport.width - 40) {
+  const cards = host(page).locator(".tk-brief-card");
+  const frame = page.locator('iframe[title="Canvas"]');
+  let written = 0;
+  /** The elements clicked so far, by their place among those read. */
+  const tried = new Set<number>();
+  for (let tries = 0, pans = 0; written < BRIEFS && tries < 600 && pans < 20; tries++) {
+    // Where the page's headings, words, buttons and sections are on screen, read afresh: a card opened may have brought the canvas round.
+    const view = (await frame.boundingBox())!;
+    const zoom = view.width / (await frame.evaluate((el: HTMLIFrameElement) => el.offsetWidth));
+    const points = await canvas(page)
+      .locator("body")
+      .evaluate((body) =>
+        [...body.querySelectorAll("h1, h2, h3, p, button, img, header, nav, aside, section, footer")].map((el) => {
+          const r = el.getBoundingClientRect();
+          return { x: r.x + Math.min(r.width / 2, 6), y: r.y + Math.min(r.height / 2, 6), big: r.width >= 4 && r.height >= 4 };
+        }),
+      );
+    const next = points.findIndex((p, i) => {
+      const at = { x: view.x + p.x * zoom, y: view.y + p.y * zoom };
+      return p.big && !tried.has(i) && at.x > viewport.x + 8 && at.y > viewport.y + 8 && at.x < viewport.x + viewport.width - 8 && at.y < viewport.y + viewport.height - 8;
+    });
+    if (next < 0) {
+      // None left in sight: the canvas panned down a screen.
+      pans++;
       await page.mouse.move(viewport.x + viewport.width / 2, viewport.y + viewport.height / 2);
-      await page.mouse.wheel(box.x + box.width > viewport.x + viewport.width - 40 ? 300 : 0, box.y + box.height > viewport.y + viewport.height - 40 ? 300 : 0);
-      await settle(page, 100);
-      box = (await canvas(page).locator(card(n)).boundingBox())!;
+      await page.mouse.wheel(0, viewport.height * 0.8);
+      await settle(page, 200);
+      continue;
     }
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-    await expect(host(page).getByRole("textbox", { name: "Brief" })).toBeFocused();
-    await page.keyboard.type(`Brief ${n}: a little more room between the price and the button`);
+    tried.add(next);
+    const at = { x: view.x + points[next].x * zoom, y: view.y + points[next].y * zoom };
+    await page.keyboard.down("ControlOrMeta");
+    await page.mouse.click(at.x, at.y);
+    await page.keyboard.up("ControlOrMeta");
+    const field = host(page).getByRole("textbox", { name: "Brief" });
+    await expect(field).toBeFocused();
+    // A layer with a brief already opens its card: left as it was.
+    if (await field.inputValue()) {
+      await page.keyboard.press("Escape");
+      continue;
+    }
+    written++;
+    await page.keyboard.type(`Brief ${written}: a little more room around it`);
     await page.keyboard.press("Enter");
+    await expect(cards).toHaveCount(written);
   }
   await page.keyboard.press("Escape");
-  await expect(host(page).locator(".tk-brief-card")).toHaveCount(BRIEFS);
-  // The canvas where it starts: every view in, the cards with them.
-  await page.keyboard.press("Shift+1");
-  await settle(page, 500);
+  await expect(cards).toHaveCount(BRIEFS);
+  // Back to preview mode and in again: the canvas where the other drags start it, the cards back with the round.
+  await page.getByRole("button", { name: EXIT_LABEL }).click();
+  await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
+  await settle(page, 600);
+  await enterEditMode(page);
+  await expect(cards).toHaveCount(BRIEFS);
 }
 
 /** Zooms the canvas in and out with the wheel, ⌘ (Ctrl) held, about the middle of the viewport for `DRAG_MS`, recording the frames, as `dragFor` does a drag. */
