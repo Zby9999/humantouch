@@ -151,7 +151,7 @@ function headingOf({ name, group, own }: Variable): string {
 /**
  * A Variable in a list: its preview, name and what it draws. A button in a
  * picker's list; in the list under a field typed into, a row that leaves the
- * focus in the field, chosen as the pointer passes over it.
+ * focus in the field, chosen as the pointer moves over it.
  */
 function Option({ as, id, entry, selected, onChoose, onPick }: {
   as: "button" | "div";
@@ -168,7 +168,8 @@ function Option({ as, id, entry, selected, onChoose, onPick }: {
       {...(as === "button" ? { type: "button" } : {
         // The field keeps the focus, and what is typed, until one is picked.
         onPointerDown: (event: PointerEvent) => event.preventDefault(),
-        onPointerEnter: onChoose,
+        // The pointer moved over it, not one it was left at that it came under, the list scrolled by the keys (ticket 131).
+        onPointerMove: () => !selected && onChoose?.(),
       })}
       id={id}
       role="option"
