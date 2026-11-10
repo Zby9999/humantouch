@@ -1592,7 +1592,12 @@ export function CanvasView(props: Props) {
       )}
       {(drag?.layer.text || drag?.out || drag?.away) && <div class="tk-drag-ghost" aria-hidden="true" style={place(drag.box, cameraIn(camera, drag.in))} />}
       {drawn && <div class="tk-drag-ghost" aria-hidden="true" style={place(drawn.box, drawn.in ? cameraIn(camera, drawn.in) : camera)} />}
-      {failed && <p class="tk-viewport-message">The page could not be frozen. See the browser console for details.</p>}
+      {/* No way to try again here: the Agent, sent to the console, finds why (designer, 2026-11-10). */}
+      {failed && (
+        <p class="tk-viewport-message" role="alert">
+          Couldn't turn this page into a canvas. Ask your Agent to look into it: the error is in the browser console.
+        </p>
+      )}
     </div>
   );
 }

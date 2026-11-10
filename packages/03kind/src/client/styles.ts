@@ -1326,7 +1326,10 @@ button.tk-change-text:focus-visible { outline: 2px solid var(--tk-accent); outli
   display: grid;
   place-items: center;
   margin: 0;
+  padding: 16px;
   color: var(--tk-text-muted);
+  text-align: center;
+  text-wrap: balance;
 }
 .tk-viewport.is-panning { cursor: grabbing; }
 /*
