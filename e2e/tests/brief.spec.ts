@@ -154,7 +154,7 @@ test("changed on its card when left, taken off by leaving it empty, each a step 
   await page.keyboard.press("ControlOrMeta+z");
   await expect(card(page, "Button")).toContainText("Press in a little, and spring back");
   await page.keyboard.press("ControlOrMeta+z");
-  await expect(card(page, "Button")).toHaveText(/^Press in a little$/);
+  await expect(card(page, "Button")).toContainText(/^Button\s*Press in a little$/);
   await page.keyboard.press("ControlOrMeta+z");
   await expect(cards(page)).toHaveCount(0);
   await page.keyboard.press("ControlOrMeta+Shift+z");
@@ -185,9 +185,9 @@ test("a card is a field with the accent's arrow beside it as it is written in, w
   const button = canvas(page).getByRole("button", { name: "Get started" });
   await writeBrief(page, button, "Press in a little");
   await page.keyboard.press("Escape");
-  // Not written in: the brief alone, no arrow, no layer's name.
+  // Not written in: its layer's name over the brief, no arrow.
   await expect(card(page, "Button").getByRole("button")).toHaveCount(0);
-  await expect(card(page, "Button")).toHaveText("Press in a little");
+  await expect(card(page, "Button")).toHaveText(/^Button\s*Press in a little$/);
 
   await card(page, "Button").click();
   await field(page).fill("Something else");

@@ -1461,19 +1461,15 @@ button.tk-change-text:focus-visible { outline: 2px solid var(--tk-accent); outli
 .tk-brief-lines circle { fill: var(--tk-accent); }
 .tk-brief-lines g:not([data-selected]) { opacity: 0.6; }
 /*
- * A card as the Design panel's fields look, on the canvas (designer, 2026-11-10), laid out as at twice their size:
- * 8px in from its edges, the brief's line and, written in, the arrow's place each 48px high; in them, the brief in
- * the editor's small type and the arrow as large as the count of changes, drawn as it is. Its soft edge and shadow
- * whether selected or written in, never the accent's.
+ * A card laid out as ticket 121 first had it, its layer's name over the brief, looking as the Design panel's fields
+ * do (designer, 2026-11-10): the editor's small type, a soft edge and shadow whether selected or written in, never the
+ * accent's; and, written in, the accent's arrow that sets it at the top right, as the count of changes is drawn.
  */
 .tk-brief-card {
   position: absolute;
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
   box-sizing: border-box;
-  padding: 8px;
-  border-radius: 20px;
+  padding: 16px 20px 20px;
+  border-radius: 16px;
   background: var(--tk-input);
   box-shadow: 0 2px 2px rgb(0 0 0 / 0.15), inset 0 0 0 1px rgb(0 0 0 / 0.1);
   color: var(--tk-text);
@@ -1481,21 +1477,24 @@ button.tk-change-text:focus-visible { outline: 2px solid var(--tk-accent); outli
   pointer-events: auto;
   cursor: text;
 }
-.tk-brief-card-text { flex: 1; min-width: 0; min-height: 16px; margin: 0; padding: 16px 4px 16px 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.tk-brief-card-field { all: unset; display: block; flex: 1; box-sizing: border-box; min-width: 0; min-height: 48px; padding: 16px 4px 16px 8px; font: inherit; color: inherit; white-space: pre-wrap; overflow-wrap: anywhere; resize: none; overflow: hidden; }
+.tk-brief-card-header { display: flex; align-items: center; gap: 8px; height: 32px; margin-bottom: 6px; color: var(--tk-text-muted); font-weight: 500; }
+.tk-brief-card-header > .tk-icon { flex: none; }
+.tk-brief-card-layer { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-brief-card-text { margin: 0; min-height: 31px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tk-brief-card-field { all: unset; display: block; box-sizing: border-box; width: 100%; min-height: 31px; font: inherit; color: inherit; white-space: pre-wrap; overflow-wrap: anywhere; resize: none; overflow: hidden; }
 .tk-brief-card-field::placeholder { color: var(--tk-text-muted); }
-.tk-brief-card-set { all: unset; position: relative; isolation: isolate; display: grid; flex: none; place-items: center; width: 48px; height: 48px; color: #daecff; cursor: pointer; }
+.tk-brief-card-set { all: unset; position: relative; isolation: isolate; display: grid; flex: none; place-items: center; width: 24px; height: 24px; color: #daecff; cursor: pointer; }
 .tk-brief-card-set::before {
   content: "";
   position: absolute;
-  inset: 12px;
+  inset: 0;
   z-index: -1;
   border-radius: 6px;
   background: linear-gradient(var(--tk-accent-on), var(--tk-accent));
   box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.15), 0 1px 1px rgb(0 0 0 / 0.15);
 }
 .tk-brief-card-set:hover::before { background: linear-gradient(var(--tk-accent), var(--tk-accent-strong)); }
-.tk-brief-card-set:focus-visible::before { outline: 2px solid var(--tk-accent); outline-offset: 0; }
+.tk-brief-card-set:focus-visible { outline: 2px solid var(--tk-accent); outline-offset: 0; border-radius: 6px; }
 
 /* Typing in text, as in Figma: a thin blue box round the words, which grows as they do. */
 .tk-selection[data-kind="typing"] { transition: none; }

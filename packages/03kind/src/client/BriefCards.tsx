@@ -195,9 +195,9 @@ interface CardProps {
 }
 
 /**
- * A card as the Design panel's fields look, on the canvas: the brief in a field, in the editor's small type, and,
- * written in, the accent's arrow beside it that sets it, as the count of changes is drawn (designer, 2026-11-10). Left empty, the
- * brief is taken off.
+ * A card as ticket 121 laid it out, its layer's name over the brief, looking as the Design panel's fields do: written
+ * in, the accent's arrow at its top right sets it, as the count of changes is drawn (designer, 2026-11-10). Left
+ * empty, the brief is taken off.
  */
 function Card({ card, box, writing, onWrite, onWritten, onResize }: CardProps) {
   return (
@@ -219,19 +219,23 @@ function Card({ card, box, writing, onWrite, onWritten, onResize }: CardProps) {
         onWrite();
       }}
     >
+      <div class="tk-brief-card-header">
+        <Icon name="brief" />
+        <span class="tk-brief-card-layer">{card.name}</span>
+        {writing && (
+          <button
+            type="button"
+            class="tk-brief-card-set"
+            aria-label="Set brief"
+            // The field keeps the focus till it is left, by this: what is typed is set as it is left.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={(event) => (event.currentTarget.closest(".tk-brief-card")!.querySelector("textarea") as HTMLTextAreaElement | null)?.blur()}
+          >
+            <Icon name="arrow-up" />
+          </button>
+        )}
+      </div>
       {writing ? <Field text={card.text} onWritten={onWritten} onResize={onResize} /> : <p class="tk-brief-card-text">{card.text}</p>}
-      {writing && (
-        <button
-          type="button"
-          class="tk-brief-card-set"
-          aria-label="Set brief"
-          // The field keeps the focus till it is left, by this: what is typed is set as it is left.
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={(event) => event.currentTarget.parentElement!.querySelector("textarea")?.blur()}
-        >
-          <Icon name="arrow-up" />
-        </button>
-      )}
     </div>
   );
 }
