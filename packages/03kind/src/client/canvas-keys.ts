@@ -99,23 +99,39 @@ export function historyKey(event: KeyboardEvent, { held }: { held: boolean }): H
 }
 
 /** What the editor does with ⌘ (Ctrl) and a letter: the Shell's keys. */
-export type EditorCommand = "copy" | "cut" | "paste" | "duplicate" | "ungroup" | "undo" | "redo";
+export type EditorCommand = "copy" | "cut" | "paste" | "duplicate" | "ungroup" | "undo" | "redo" | "copy style" | "paste style";
 
 /**
  * Which of the editor's commands the key `event` is: ⌘C, ⌘X, ⌘V and ⌘D copy,
  * cut, paste and duplicate, ⌘⇧G ungroups, ⌘Z undoes, ⇧⌘Z redoes, and so does
- * Ctrl+Y. ⌘ or Ctrl alike, on any system; never with ⌥. By the letter typed,
- * wherever the keyboard has it. The same letter with other modifiers (⌘Y,
- * ⌘G, ⌘⇧C, ⌘⇧V) is none of them: the browser's, if anything. Null: none.
+ * Ctrl+Y; ⌥⌘C and ⌥⌘V copy and paste a layer's style (ticket 117, Figma's
+ * Copy properties and Paste properties). ⌘ or Ctrl alike, on any system; with
+ * ⌥, those two alone. By the letter typed, wherever the keyboard has it; with
+ * ⌥, a Mac types ç and √ for C and V (`ALT_TYPED`). The same letter with other
+ * modifiers (⌘Y, ⌘G, ⌘⇧C, ⌘⇧V, ⌥⌘Z, ⌥⇧⌘C) is none of them: the browser's, if anything. Null: none.
  */
 export function editorCommand(event: KeyboardEvent): EditorCommand | null {
-  if (!(event.metaKey || event.ctrlKey) || event.altKey) return null;
+  if (!(event.metaKey || event.ctrlKey)) return null;
+  if (event.altKey) {
+    if (event.shiftKey) return null;
+    const letter = ALT_TYPED[event.key] ?? event.key.toLowerCase();
+    return letter === "c" ? "copy style" : letter === "v" ? "paste style" : null;
+  }
   const key = event.key.toLowerCase();
   if (key === "z") return event.shiftKey ? "redo" : "undo";
   if (key === "y") return event.metaKey || event.shiftKey ? null : "redo";
   if (key === "g") return event.shiftKey ? "ungroup" : null;
   return (!event.shiftKey && SHORTCUTS[key]) || null;
 }
+
+/**
+ * The letters a Mac types as ç and √ with ⌥: ⌥⌘C and ⌥⌘V come so, by the
+ * character typed, not the key, so a layout that has another letter on that
+ * key (Dvorak's ⌥⌘J there opens the browser's console) is not the editor's.
+ * Any other character typed with ⌥ is none of them: what AltGr (Ctrl+Alt)
+ * types on Windows, as ć or @ on C or V in some layouts, is typed text.
+ */
+const ALT_TYPED: Record<string, string | undefined> = { "ç": "c", "√": "v" };
 
 /** The editor's commands made with ⌘ and a letter alone, but undo, redo and ungroup. */
 const SHORTCUTS: Record<string, EditorCommand | undefined> = { c: "copy", x: "cut", v: "paste", d: "duplicate" };
