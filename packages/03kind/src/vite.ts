@@ -1,19 +1,19 @@
-import { version as viteVersion, type Plugin } from "vite";
+import type { Plugin } from "vite";
 import { CODE_EVENT, CODE_GLOBAL, SERVICE_GLOBAL, type ServiceConfig } from "./service-protocol";
 import { startService, type Service } from "./service";
 import { markSource } from "./source-marker";
-import { updatesInTurn } from "./vite-version";
+import { updatesInTurn, viteVersionFor } from "./vite-version";
 
 /**
  * Keeps on the page when the dev server last brought code in, and whether it
  * is bringing some in now, as `CodeUpdates`: from Vite's own HMR events. The
- * page's code is as new as it loaded, until an update. Whether this Vite
- * handles its updates one at a time goes with them, read from its version
- * here on the server (ticket 125).
+ * page's code is as new as it loaded, until an update. `inTurn`, whether
+ * the Vite serving it handles its updates one at a time, goes with them,
+ * read from its version here on the server (ticket 125).
  */
 const CODE_MODULE = "virtual:03kind/code-updates";
 const RESOLVED_CODE_MODULE = `\0${CODE_MODULE}`;
-const CODE_UPDATES = `const code = (window.${CODE_GLOBAL} = { at: Date.now(), updating: 0, inTurn: ${updatesInTurn(viteVersion)} });
+const codeUpdates = (inTurn: boolean) => `const code = (window.${CODE_GLOBAL} = { at: Date.now(), updating: 0, inTurn: ${inTurn} });
 const changed = () => dispatchEvent(new Event(${JSON.stringify(CODE_EVENT)}));
 if (import.meta.hot) {
   import.meta.hot.on("vite:beforeUpdate", () => { code.updating++; changed(); });
@@ -34,6 +34,7 @@ export default function thirdKind(): Plugin {
   let root = process.cwd();
   let base = "/";
   let service: Promise<Service> | undefined;
+  let inTurn = false;
 
   return {
     name: "03kind",
@@ -44,9 +45,12 @@ export default function thirdKind(): Plugin {
       // more than the page is to load with it (docs/goals.md). The rest of the editor layer still loads only as needed.
       return { optimizeDeps: { exclude: ["03kind"] } };
     },
-    configResolved(config) {
+    async configResolved(config) {
       root = config.root;
       base = config.base;
+      // The Vite serving the page, not the one 03kind resolves: on Vite 7 on, it says; before, as the project resolves it.
+      const told = (this as { meta?: { viteVersion?: string } } | undefined)?.meta?.viteVersion;
+      inTurn = updatesInTurn(await viteVersionFor(root, told));
     },
     configureServer(server) {
       service = startService({ root });
@@ -72,7 +76,7 @@ export default function thirdKind(): Plugin {
       return id === CODE_MODULE ? RESOLVED_CODE_MODULE : undefined;
     },
     load(id) {
-      return id === RESOLVED_CODE_MODULE ? CODE_UPDATES : undefined;
+      return id === RESOLVED_CODE_MODULE ? codeUpdates(inTurn) : undefined;
     },
     transform(code, id) {
       return markSource(code, { id, root });

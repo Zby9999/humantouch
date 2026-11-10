@@ -68,6 +68,30 @@ Agent 读到「没显示」，可能去改本来没错的代码。
 #### 遗留风险
 
 1. 6.3 以前，丢过一次以后，接下来 12 秒内开始的更新，`done` 要等到它开始后 12 秒（再加显示的时间）才答，不论它多快结束：分不出结尾是哪一次的。
-2. 读到的是 03kind 包解析到的 `vite`，不一定是正在跑的那个（比如 monorepo 里 03kind 带着另一份 Vite）。旧服务器配上新 Vite 包时会误当成一条一条处理，回到本票之前的样子。
+2. 读到的是 03kind 包解析到的 `vite`，不一定是正在跑的那个（比如 monorepo 里 03kind 带着另一份 Vite）。旧服务器配上新 Vite 包时会误当成一条一条处理，回到本票之前的样子。（审查后已修，见下面「Review 后的修正」。）
 3. 代定 1 的边界：A 是一次超过 12 秒的正常更新，之后 B 开始，A 被当丢了；A 结束时数目降下来，B 也就不再等了。只在单次更新超过 12 秒时出现。
 4. 示例都是 Vite 8.3.4，6.3 以前的路径只有单测覆盖，没在真的 Vite 5 / 6.0–6.2 服务器上跑过。要不要加一个老 Vite 的示例或提高 peer 下限，仍等设计师定。
+
+**Review 后的修正（2026-11-10）**（上面「版本怎么到页面」、代定 3、风险 1–2 里说的，以这一节为准）
+
+- 不再在模块顶层 `import { version } from "vite"`。那样读到的是 03kind 自己解析到的 Vite：workspace、`npm link`、`file:` 装的时候是 03kind 的 devDependency，不是服务器的（这个仓库里示例永远读到 8.3.4，老 Vite 的示例也会得 `inTurn: true`）。而且插件原来只按类型引 `vite`，改成运行时引以后，项目只经框架间接带着 Vite、自己没写 `vite` 的，加载 `03kind/vite` 就报 `ERR_MODULE_NOT_FOUND`。
+- 现在在 `configResolved(config)` 里读（`vite-version.ts` 的 `viteVersionFor`），依次试：
+  1. `this.meta.viteVersion`（Vite 7 起有，7 起的都 ≥6.3）；
+  2. 在 try 里，从项目根 `createRequire(path.join(config.root, "package.json"))("vite/package.json").version`；
+  3. 在 try 里，懒加载 `import("vite")`。
+  都读不到按否。`CODE_UPDATES` 改成在 `load` 里按读到的结果生成。构建出的 `dist/vite.js` 里没有静态的 `vite` 运行时引入，只剩第 3 步那一处动态 `import("vite")`。
+- `vite-version.ts` 里不具名的 `(-)?` 改成具名组 `(?<prerelease>-)?`。
+- 测试：`vite-version.test.ts` 先调 `configResolved` 再看 `load`。新加：项目根下假的 `node_modules/vite/package.json` 写 5.4.11（和 03kind 自己的 8.3.4 不同），得 `inTurn: false`；同一个根、`this.meta.viteVersion` 说 7.1.0，得 `inTurn: true`；03kind 包自己的根，得 `inTurn: true`。
+
+**重跑（修正后，已合 main d0ddcc5）**：`pnpm typecheck` 过；`pnpm test` 1200 过 1 跳过（48 个文件），node 的 bench、old-names 测试过；`--dry` 29/29，`--dry --claim-out` 和 main 的 29 份 `diff -r` 逐字相同（d0ddcc5 比 dc5121f 只多文档，用的是先前 dc5121f 的那 29 份）；`--scripted` 20/20；`round.spec.ts`、`code-changes.spec.ts`（`--project="project files" --no-deps`，端口 6100，示例的开发服务器照常起来）52 过。整套 e2e 留给指挥。
+
+**包（修正后）**：切换按钮 `react.dev.js` 1423 B（`bd6c2389b64451f0`）、`chunk-2GJY7MXB.js` 21372 B（`a8c4c0d4bc3db6a8`），和 dc5121f 逐字节相同。编辑层 `editor.dev.js` 532459 → 532509 B（+50 B），gzip -9 188710 → 188735 B（+25 B），和修正前一样。插件 `vite.js` 42712 → 43623 B（+911 B，服务器那边）。
+
+#### 代定（修正后，替换上面 3）
+
+3. 版本依次从 `this.meta.viteVersion`、项目根解析到的 `vite/package.json`、03kind 懒加载的 `vite` 读，都读不到按否。
+
+#### 遗留风险（修正后，替换上面 1–2）
+
+1. 6.3 以前，丢过一次以后，接下来 12 秒内开始的更新，`done` 要等到它开始后 12 秒（再加显示的时间）才答，不论它多快结束：分不出结尾是哪一次的。审查补充：代定 1 只在 12 秒里没有新开始时才把卡住的那次算丢了；一个 Agent 的更新如果总是相隔不到 12 秒开始，卡住的那次就一直不算丢了，每次 `done` 都等到最近一次开始后 12 秒。只会慢，不会误答。
+2. 前两步都读不到时（Vite 6 及以前、项目根解析不到 `vite`，比如 Vite 只装在框架自己的依赖里），退到 03kind 自己解析到的 `vite`，这时仍可能不是正在跑的那个；连这也读不到就按否，只会慢、不会误答。
