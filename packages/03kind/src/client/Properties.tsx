@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import type { ComponentChildren, TargetedFocusEvent, TargetedKeyboardEvent, TargetedPointerEvent } from "preact";
-import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ArrangeAs } from "./arrangement";
 import type { Editor, SetOptions } from "./edit-commands";
 import type { Align, Alignment, ColorStop, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./property-table";
@@ -9,6 +9,7 @@ import { matchItems } from "./list-match";
 import { Icon, type IconName } from "./icons";
 import { DIGIT_BLUR_PX, DIGIT_FADE_MS, DIGIT_ROLL_EM, DIGIT_ROLL_MS, EASE_OUT, FIELD_SETTLE_MS, GRIP_SWAY_MAX_PX, LAYERS_FOLD_MS, LAYERS_FOLD_RISE_PX, prefersReducedMotion, RESET_POP_MS } from "./motion";
 import { GridSection } from "./GridSection";
+import { TIP_ATTR } from "./Tips";
 import type { Layer } from "./layers";
 import { draws, shadow, type Blur, type Shadow } from "./effects";
 import {
@@ -250,6 +251,8 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
   const shadows = shownEffect("shadows");
   const fontSize = shown("fontSize");
   const textColor = shown("textColor");
+  // The Stacks or Grids selected dissolved, as ⌥⇧A does; null when they cannot all be. Asked only where a Stack or Grid section shows.
+  const dissolvable = () => (layers.every((layer) => editor.canUnstack(layer)) ? onDissolve : null);
   const marks = useChangeMarks();
   return (
     <>
@@ -310,9 +313,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
         <section class="tk-section" role="group" aria-label="Stack">
           <div class="tk-section-header">
             <h3 class="tk-section-title">Stack</h3>
-            <button type="button" class="tk-icon-button" aria-label="Make Stack" data-tk-tip="Make Stack (⇧A)" onClick={onStack}>
-              <Icon name="plus" />
-            </button>
+            <MakeLayoutButton editor={editor} layers={layers} onStack={onStack} />
           </div>
         </section>
       )}
@@ -320,7 +321,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
         <StackSection
           direction={direction}
           arrange={arrange}
-          dissolve={layers.every((layer) => editor.canUnstack(layer)) ? onDissolve : null}
+          dissolve={dissolvable()}
           gap={shown("gap")!}
           padding={padding!}
           align={shown("align")!}
@@ -340,7 +341,14 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
           <PaddingFields padding={padding} update={update} variable={variable} />
         </section>
       )}
-      <GridSection editor={editor} layers={layers} onEdit={onEdit} variable={variable} arrange={arrange} />
+      <GridSection
+        editor={editor}
+        layers={layers}
+        onEdit={onEdit}
+        variable={variable}
+        arrange={arrange}
+        dissolvable={dissolvable}
+      />
       {(opacity !== undefined || visible !== undefined) && (
         <AppearanceSection
           selection={keyOf(layers)}
@@ -533,6 +541,41 @@ function sizeOf(layers: Layer[], axis: "width" | "height"): ValuePart {
   };
 }
 
+/**
+ * The Stack section's +, ⇧A's button: it says what ⇧A makes of the layers, a Grid of free layers in rows and columns, a
+ * Stack of others; ⇧A chooses, as Figma's (ticket 110's follow-up). Worked out as the selection changes, and again as its
+ * tip shows, the layers maybe moved since: never as edit mode is entered, with nothing selected, nor on each edit.
+ */
+function MakeLayoutButton({ editor, layers, onStack }: { editor: Editor; layers: Layer[]; onStack(): void }) {
+  const key = keyOf(layers);
+  // Worked out afresh for each selection, by its layers' elements, and for each view's editor: another view, or another
+  // breakpoint's, has elements of its own, so a selection there is another key. `layers` itself is left out: a selection
+  // found again after an edit is new `Layer`s of the same elements, and is the same selection. A selection gone back to is
+  // worked out again, not taken from what its tip last said: `seen` is made anew with each.
+  const seen = useMemo(() => ({ grid: editor.stacksAsGrid(layers) }), [key, editor]);
+  const [, redraw] = useState(0);
+  const grid = seen.grid;
+  const label = (grid: boolean) => (grid ? "Make Grid" : "Make Stack");
+  /**
+   * As its tip shows, by the pointer or by focus: said again where the layers have moved, before the tip reads it. On the
+   * button itself, `pointerover` comes before the tips' own at the panel's root (`Tips`); `pointerenter` would come after.
+   */
+  const look = (event: Event) => {
+    const now = editor.stacksAsGrid(layers);
+    if (now === grid) return;
+    const el = event.currentTarget as HTMLElement;
+    el.setAttribute("aria-label", label(now));
+    el.setAttribute(TIP_ATTR, `${label(now)} (⇧A)`);
+    seen.grid = now;
+    redraw((n) => n + 1);
+  };
+  return (
+    <button type="button" class="tk-icon-button" aria-label={label(grid)} data-tk-tip={`${label(grid)} (⇧A)`} onPointerOver={look} onFocus={look} onClick={onStack}>
+      <Icon name="plus" />
+    </button>
+  );
+}
+
 const ALIGNMENTS: Alignment[] = ["start", "center", "end"];
 const ROWS = { start: "Top", center: "Center", end: "Bottom" };
 const COLUMNS = { start: "left", center: "center", end: "right" };
@@ -644,7 +687,7 @@ export function arrangements(grid: boolean): { value: ArrangeAs; label: string; 
  * An item's −, taking it off. Added in this round, it alone is marked: in the accent, as a button that stays on (Wrap, on),
  * and taking it off takes the addition back (designer, 2026-11-08).
  */
-function RemoveButton({ label, title, added = false, disabled, onClick }: { label: string; title?: string; added?: boolean; disabled?: boolean; onClick(): void }) {
+export function RemoveButton({ label, title, added = false, disabled, onClick }: { label: string; title?: string; added?: boolean; disabled?: boolean; onClick(): void }) {
   return (
     <button type="button" class={`tk-icon-button${added ? " is-added" : ""}`} aria-label={label} data-tk-tip={title ?? label} disabled={disabled} onClick={onClick}>
       <Icon name="minus" />
