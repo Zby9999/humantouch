@@ -128,6 +128,24 @@ export function declarationsOf(el: Element, properties: string[]): (string | nul
   return properties.map((property) => winners.get(property)?.source.declaration ?? null);
 }
 
+/**
+ * For each list of CSS properties of `el`, the declaration that wins the
+ * cascade among all of them, as written, and the class its rule is (see
+ * `StyleSource`); null when none of them is set. A list holds the properties
+ * that set the same on the element, physical and logical (`padding-left`,
+ * `padding-inline-start`, `padding-inline`). One walk of the cascade for all.
+ */
+export function winnersAmong(el: Element, lists: string[][]): ({ declaration: string; className: string | null } | null)[] {
+  const { winners } = cascade(el, [...new Set(lists.flat())]);
+  return lists.map((list) => {
+    const winner = list.reduce<Candidate | null>((best, property) => {
+      const c = winners.get(property) ?? null;
+      return c && (!best || beats(c, best)) ? c : best;
+    }, null);
+    return winner?.source.declaration ? { declaration: winner.source.declaration, className: winner.source.className } : null;
+  });
+}
+
 /** The declaration that wins the cascade for each of `properties` of `el` (null: none), and whether any stylesheet could not be read. */
 function cascade(el: Element, properties: string[]): { winners: Map<string, Candidate | null>; unreadable: boolean } {
   const doc = el.ownerDocument;

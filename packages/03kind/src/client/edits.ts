@@ -11,8 +11,8 @@
 import { createWorkingView, rangeOfEdit } from "./breakpoint-edits";
 import { contains, outside, widestFirst, within, writtenWith, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
 import { AS_STACK_ATTR, asShown, changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
-import { changeKey, type Change, type ChangeSet, type Picked } from "./changeset";
-import type { Binder, Editor, SetOptions } from "./edit-commands";
+import { changeKey, type Bindings, type Change, type ChangeSet, type Picked } from "./changeset";
+import type { Binder, CodeReader, Editor, SetOptions } from "./edit-commands";
 import { targetOf } from "./layer-target";
 import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer, type LayerKind } from "./layers";
 import { colorReader } from "./paint";
@@ -35,6 +35,8 @@ export interface EditorOptions {
   sources?: boolean;
   /** Which Variables a change's value is: none are told when not given. */
   bind?: Binder;
+  /** Which Variables the code gives a value: none are read when not given. */
+  inCode?: CodeReader;
 }
 
 /**
@@ -46,7 +48,7 @@ export function createEditor(
   views: Views,
   changes: ChangeSet,
   project: ProjectBreakpoints | null = null,
-  { history = createHistory(), sources: readSources = true, bind }: EditorOptions = {},
+  { history = createHistory(), sources: readSources = true, bind, inCode }: EditorOptions = {},
 ): Editor {
   /** What sets `properties` of `el` in the page's styles, where the editor reads them. */
   const sourcesFor = (el: Element, properties: string[]) => (readSources ? sourcesOf(el, properties) : []);
@@ -242,6 +244,11 @@ export function createEditor(
     return { placedInGrid: true as const, ...(layerOrders.some(({ orders }) => orders.some(Boolean)) && { layerOrders }) };
   };
 
+  /** Per element at a breakpoint, the Variables the code gave each property as its change began (ticket 119). */
+  const codeAtStart = new WeakMap<Element, Map<Property, Bindings | undefined>>();
+  /** Per element shown, the Variables the code gives each property, and the changes to it they were read for: read again once those differ. */
+  const codeShown = new WeakMap<Element, Map<Property, { stamp: string; code: Bindings | undefined }>>();
+
   /** The edit itself, at every width or at `breakpoint`: on the canvas and in the ChangeSet. `picked`: Variables the designer chose for the value. */
   const apply = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], breakpoint: Breakpoint | null, picked?: Picked) => {
     const definition = definitionOf(property);
@@ -301,7 +308,10 @@ export function createEditor(
     // Its X or Y, or its `right` or `bottom`, changed at every width: where the canvas places it otherwise, the value moves nothing.
     const placedBy = PLACED_BY[property];
     const { placedOtherwiseAt, offsetInLayoutAt } = !earlier && !breakpoint && placedBy ? viewsMovedOtherwise(layer, placedBy, !!centeredBy) : { placedOtherwiseAt: [], offsetInLayoutAt: [] };
-    const variables = bind?.(property, value, picked, earlier?.variables);
+    // Of two Variables of the same value, the one the code writes the value with (ticket 119): read as the change starts, kept for its steps.
+    const code = layer.made || !inCode ? undefined : earlier && codeAtStart.get(el)?.has(property) ? codeAtStart.get(el)!.get(property) : (inCode(el, property, before) ?? undefined);
+    if (inCode && !layer.made) codeAtStart.set(el, (codeAtStart.get(el) ?? new Map()).set(property, code));
+    const variables = bind?.(property, value, picked, earlier?.variables, code);
     changes.record(id, {
       // A text style written on a Frame drawn around its text is its text's.
       target: targetOf(layer.framesText && isTextProperty(property) ? textOnFrame(layer) : layer, instances.length),
@@ -699,6 +709,19 @@ export function createEditor(
     arrangedAs(layer, as) {
       const el = working.shown(layer.el);
       return asShown(el, () => arrangedAs(el, as));
+    },
+    inCode(layer, property) {
+      if (layer.made || !inCode) return undefined;
+      const el = working.shown(layer.el);
+      // Its value changes with its changes alone: read again, and checked against it, only once they do.
+      const folded = ARRANGED_GAPS.has(property) ? "arrangement" : null;
+      const stamp = JSON.stringify(changes.list().flatMap((change) => (change.kind === "style" && (change.property === property || change.property === folded) && ofLayer(layer, change) ? [[change.breakpoint, change.after]] : [])));
+      const known = codeShown.get(el)?.get(property);
+      if (known?.stamp === stamp) return known.code;
+      const code = inCode(el, property, readAsShown(el, property, colors));
+      // Read before the Variables are in, it is read again once they are.
+      if (code !== null) codeShown.set(el, (codeShown.get(el) ?? new Map()).set(property, { stamp, code }));
+      return code ?? undefined;
     },
     measure(layer) {
       const el = layer.text ? layer.el : working.shown(layer.el);

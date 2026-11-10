@@ -48,9 +48,13 @@ export interface SetOptions {
 
 /**
  * Which Variables a property's value is, by part, given those the designer
- * picked now and those the change had before; undefined when no part can be one.
+ * picked now, those the change had before and those the code gives it
+ * (`Editor.inCode`); undefined when no part can be one.
  */
-export type Binder = (property: Property, value: unknown, picked: Picked | undefined, previous: Bindings | undefined) => Bindings | undefined;
+export type Binder = (property: Property, value: unknown, picked: Picked | undefined, previous: Bindings | undefined, code?: Bindings) => Bindings | undefined;
+
+/** Which Variables the code gives `property` of `el`, part by part, for its value `value` now (ticket 119); undefined for none; null: the Variables are not in yet. */
+export type CodeReader = (el: Element, property: Property, value: unknown) => Bindings | undefined | null;
 
 export interface Editor {
   /**
@@ -102,6 +106,13 @@ export interface Editor {
   batch(edits: () => void, options?: SetOptions): void;
   /** Which Variables the layer's value of `property` is, as changed this round and shown in the view worked in; undefined when unchanged or none. */
   variables(layer: Layer, property: Property): Bindings | undefined;
+  /**
+   * Which Variables the code gives the layer's value of `property`, by part,
+   * as the view worked in shows it (ticket 119): each part the page's own
+   * styles write with a Variable that draws exactly its value now. Undefined
+   * for none, and for a layer made this round. Only read: it records nothing.
+   */
+  inCode(layer: Layer, property: Property): Bindings | undefined;
   /** Where the layer is in the view worked in, in its px; for a hidden layer, where it is when shown. */
   measure(layer: Layer): DOMRect;
   /**
