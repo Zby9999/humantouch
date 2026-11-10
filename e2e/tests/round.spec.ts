@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
-import { canvasInPlace, expect, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, test, type Locator, type Page } from "./fixtures";
 import { clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind, servesAsWritten } from "./project-files";
 
 /** These tests save into the example project's `.03kind/` for real. */
@@ -345,6 +345,26 @@ test.describe("done checks the change on the page", () => {
     writeFileSync(file, file === CARD ? forTheLoopAlone(text, from, to) : text.replace(from, to));
   }
 
+  /**
+   * Once the page draws `layer` as the edited code writes it: with each of
+   * `classes`, and each with its rule in the page's styles. The dev server
+   * brings an edit in a while after it is written: a `done` run before reads
+   * the page as it was, or asks it while the edit is coming in (ticket 102).
+   */
+  async function drawnWith(layer: Locator, ...classes: string[]) {
+    await expect
+      .poll(() =>
+        layer.evaluate(
+          (el, names) => names.every((name) => el.classList.contains(name) && [...document.querySelectorAll("style")].some((style) => style.textContent?.includes(`.${window.CSS.escape(name)}`))),
+          classes,
+        ),
+      )
+      .toBe(true);
+  }
+
+  /** The example's button, on the page. */
+  const button = (page: Page) => page.locator("main button", { hasText: "Get started" });
+
   test("a change the code really makes is shown; one a page rule overrides is not, until it is fixed", async ({ page }) => {
     await page.goto(DEV_URL);
     await enterEditMode(page);
@@ -356,10 +376,12 @@ test.describe("done checks the change on the page", () => {
 
     // A utility class: the example's own `button` rule, in no CSS layer, beats it.
     editSource(APP, 'className="mt-6 flex items-center gap-2 self-start px-4 py-2 text-white"', 'className="mt-6 flex items-center gap-2 self-start bg-[#2563eb] px-4 py-2 text-white"');
+    await drawnWith(button(page), "bg-[#2563eb]");
     const overridden = await npx03kind("done", "1");
     expect(overridden).toContain("Checked on the page: it does not show the change. The fill is #DC2626, not #2563EB, as the browser computes");
 
     editSource(CSS, "background: rgb(220, 38, 38);", "background: #2563eb;");
+    await expect(button(page)).toHaveCSS("background-color", "rgb(37, 99, 235)");
     const fixed = await npx03kind("done", "1");
     expect(fixed).toContain("Checked on the page: it shows the change.");
 
@@ -399,6 +421,7 @@ test.describe("done checks the change on the page", () => {
     await npx03kind("claim");
 
     editSource(CARD, "border border-stone-200", "border border-[#ff0000]");
+    await drawnWith(page.locator("article").first(), "border-[#ff0000]");
     expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
   });
 
@@ -412,6 +435,7 @@ test.describe("done checks the change on the page", () => {
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
     editSource(APP, "flex items-center gap-2 self-start px-4", "flex items-center gap-2 self-stretch px-4");
+    await drawnWith(button(page), "self-stretch");
 
     expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
   });
@@ -434,6 +458,7 @@ test.describe("done checks the change on the page", () => {
 
     expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change.");
     editSource(APP, "flex items-center gap-2 self-start px-4", `flex w-[${width}px] items-center gap-2 self-start px-4`);
+    await drawnWith(button(page), `w-[${width}px]`);
     expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
   });
 
@@ -478,6 +503,7 @@ test.describe("done checks the change on the page", () => {
 
     for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it does not show the change.");
     editSource(APP, "top-[30px] left-[40px] h-[40px] w-[80px]", "top-[20px] left-[30px] h-[50px] w-[90px]");
+    await drawnWith(page.getByTestId("pin"), "top-[20px]", "left-[30px]", "h-[50px]", "w-[90px]");
     for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it shows the change.");
   });
 
@@ -576,6 +602,9 @@ test.describe("done checks the change on the page", () => {
     editSource(APP, "top-[30px] right-[40px] h-[40px] w-[80px]", "top-[30px] right-[70px] h-[40px] w-[50px]");
     editSource(APP, "bottom-[60px] left-[40px] h-[40px] w-[80px]", "bottom-[40px] left-[40px] h-[60px] w-[80px]");
     editSource(APP, "left-1/2 h-[40px] w-[80px] -translate-x-1/2", "left-1/2 h-[40px] w-[140px] -translate-x-1/2");
+    await drawnWith(page.getByTestId("from-right"), "right-[70px]", "w-[50px]");
+    await drawnWith(page.getByTestId("from-bottom"), "bottom-[40px]", "h-[60px]");
+    await drawnWith(page.getByTestId("centered"), "w-[140px]");
     for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it shows the change.");
     // Where the canvas drew them: the page places them so, at its own width as at the views'.
     const right = await page.getByTestId("from-right").evaluate((el) => el.parentElement!.getBoundingClientRect().right - el.getBoundingClientRect().right);
@@ -618,12 +647,15 @@ test.describe("done checks the change on the page", () => {
     // Not as the notes say: placed by its left, where the canvas draws it as wide as the window. The other, as they say.
     editSource(APP, "top-[30px] right-10 h-[40px] w-20", `top-[30px] left-[${hero - 20 - 100}px] right-auto h-[40px] w-[100px]`);
     editSource(APP, "right-[100px] h-[40px] w-[80px]", "right-[140px] h-[40px] w-[40px]");
+    await drawnWith(page.getByTestId("from-right"), `left-[${hero - 20 - 100}px]`, "right-auto", "w-[100px]");
+    await drawnWith(page.getByTestId("left-on-phones"), "right-[140px]", "w-[40px]");
     expect(await npx03kind("done", width)).toContain("Checked on the page: it shows the change.");
     expect(await npx03kind("done", right)).toContain("Checked on the page: it does not show the change. At 768px wide, the right position is drawn at");
     for (const id of [otherWidth, otherRight]) expect(await npx03kind("done", id)).toContain("Checked on the page: it shows the change.");
 
     // As the notes say: shown at every width.
     editSource(APP, `left-[${hero - 20 - 100}px] right-auto`, "right-[20px]");
+    await drawnWith(page.getByTestId("from-right"), "right-[20px]");
     expect(await npx03kind("done", right)).toContain("Checked on the page: it shows the change.");
   });
 
@@ -664,6 +696,8 @@ test.describe("done checks the change on the page", () => {
     // As the notes say for the first; the second written placed freely from `md` up only, in the hero's layout on phones, unlike the canvas.
     editSource(APP, "md:top-[30px] md:left-[40px]", "md:top-[40px] md:left-[60px]");
     editSource(APP, 'className="absolute top-[90px] left-[40px]', 'className="md:absolute md:top-[90px] md:left-[60px]');
+    await drawnWith(page.getByTestId("from-md"), "md:top-[40px]", "md:left-[60px]");
+    await drawnWith(page.getByTestId("everywhere"), "md:absolute", "md:top-[90px]", "md:left-[60px]");
     for (const id of [x, y]) expect(await npx03kind("done", id)).toContain("Checked on the page: it shows the change.");
     expect(await npx03kind("done", other)).toContain(
       `Checked on the page: it does not show the change. At 390px wide, the layer is not placed absolute, not absolute at X 60px: check its \`position\` and \`left\`, and that its container is its positioning reference, then run \`npx 03kind done ${other}\` again.`,
@@ -694,6 +728,7 @@ test.describe("done checks the change on the page", () => {
 
     // Written from `md` up only: on phones, the page does not move it.
     editSource(APP, "md:top-[30px] md:left-[40px]", "md:top-[30px] md:left-[60px]");
+    await drawnWith(page.getByTestId("relative-below-md"), "md:left-[60px]");
     expect(await npx03kind("done", String(change.id))).toContain("Checked on the page: it does not show the change. At 390px wide,");
   });
 
@@ -729,12 +764,14 @@ test.describe("done checks the change on the page", () => {
 
     // Written from `md` up only: on phones, the page does not move it from where the hero lays it out.
     editSource(APP, "md:top-[30px] md:left-[40px]", "md:top-[30px] md:left-[60px]");
+    await drawnWith(page.getByTestId("relative-below-md"), "md:left-[60px]");
     expect(await npx03kind("done", id)).toBe(
       "Change 1 done: 0 of 1 change applied.\n" +
         "Checked on the page: it does not show the change. At 390px wide, the page does not move the layer, where the canvas moves it 60px right of where its container lays it out: give it `left` 60px at this width too, then run `npx 03kind done 1` again.\n",
     );
     // Written at every width, as the notes say.
     editSource(APP, "md:left-[60px]", "left-[60px]");
+    await drawnWith(page.getByTestId("relative-below-md"), "left-[60px]");
     expect(await npx03kind("done", id)).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
     expect(await npx03kind("finish")).toContain("Round finished: 1 of 1 change applied.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n✓ Applied\n- 1. X: <the layer, and what you changed>\n```\n");
   });
@@ -764,6 +801,7 @@ test.describe("done checks the change on the page", () => {
 
     // Written from `md` up only: on phones, the page does not move it from where the hero lays it out.
     editSource(APP, "md:right-[40px]", "md:right-[20px]");
+    await drawnWith(page.getByTestId("right-from-md"), "md:right-[20px]");
     expect(await npx03kind("done", id)).toBe(
       "Change 1 done: 0 of 1 change applied.\n" +
         "Checked on the page: it does not show the change. At 390px wide, the page does not move the layer, where the canvas moves it 20px left of where its container lays it out: give it `right` 20px at this width too, then run `npx 03kind done 1` again.\n",
@@ -799,12 +837,14 @@ test.describe("done checks the change on the page", () => {
 
     // Written from `md` up only: on phones, the page moves it by its `right` as it was.
     editSource(APP, "md:right-[40px]", "md:right-[20px]");
+    await drawnWith(page.getByTestId("both-sides"), "md:right-[20px]");
     expect(await npx03kind("done", id)).toBe(
       "Change 1 done: 0 of 1 change applied.\n" +
         "Checked on the page: it does not show the change. At 390px wide, the page moves the layer 40px left, where the canvas moves it 20px left of where its container lays it out: give it `right` 20px at this width too, then run `npx 03kind done 1` again.\n",
     );
     // Written at every width, as the notes say: its `left` there moves it nothing, right to left.
     editSource(APP, "right-[40px] h-[40px]", "right-[20px] h-[40px]");
+    await drawnWith(page.getByTestId("both-sides"), "right-[20px]");
     expect(await npx03kind("done", id)).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
     expect(await npx03kind("finish")).toContain("Round finished: 1 of 1 change applied.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n✓ Applied\n- 1. Right: <the layer, and what you changed>\n```\n");
   });
@@ -857,10 +897,14 @@ test.describe("done checks the change on the page", () => {
     editSource(APP, "bottom-[60px] left-[40px]", "bottom-[80px] left-[40px]");
     // Not as the notes say: in px, right as wide as the window only.
     editSource(APP, "left-1/2 h-[40px] w-[80px]", `left-[${hero / 2 + 40}px] h-[40px] w-[80px]`);
+    await drawnWith(page.getByTestId("from-right"), "right-[30px]", "w-[100px]");
+    await drawnWith(page.getByTestId("from-bottom"), "bottom-[80px]");
+    await drawnWith(page.getByTestId("centered"), `left-[${hero / 2 + 40}px]`);
     for (const { id } of changes.slice(0, 3)) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it shows the change.");
     const centered = String(changes[3].id);
     expect(await npx03kind("done", centered)).toContain("Checked on the page: it does not show the change. At 768px wide, the layer's `left` is");
     editSource(APP, `left-[${hero / 2 + 40}px] h-[40px] w-[80px]`, "left-[calc(50%+40px)] h-[40px] w-[80px]");
+    await drawnWith(page.getByTestId("centered"), "left-[calc(50%+40px)]");
     expect(await npx03kind("done", centered)).toContain("Checked on the page: it shows the change.");
   });
 
@@ -903,12 +947,16 @@ test.describe("done checks the change on the page", () => {
     const id = String(change.id);
     expect(await npx03kind("done", id)).toContain("Checked on the page: it does not show the change. The layer is drawn at");
     // Not as the notes say: in px from its left, right as wide as the window only.
+    const layer = page.getByTestId("by-margins");
     editSource(APP, "absolute inset-x-0 top-[120px] mx-auto", `absolute left-[${hero / 2}px] top-[120px] mx-auto`);
+    await drawnWith(layer, `left-[${hero / 2}px]`);
     expect(await npx03kind("done", id)).toContain("Checked on the page: it does not show the change. At 768px wide, the layer is drawn at");
     editSource(APP, `absolute left-[${hero / 2}px] top-[120px] mx-auto`, "absolute left-[40px] right-[-40px] top-[120px] mx-auto");
+    await drawnWith(layer, "left-[40px]", "right-[-40px]");
     expect(await npx03kind("done", id)).toContain("Checked on the page: it shows the change.");
     // Its auto margins gone: drawn at its `left`.
     editSource(APP, "right-[-40px] top-[120px] mx-auto", "right-[-40px] top-[120px]");
+    await expect(layer).not.toHaveClass(/(^|\s)mx-auto(\s|$)/);
     expect(await npx03kind("done", id)).toContain("Checked on the page: it does not show the change. The layer is drawn at 40px");
   });
 
@@ -932,6 +980,7 @@ test.describe("done checks the change on the page", () => {
     expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change. At 639px wide, the fill is #FFFFFF, not #FF0000, as the browser computes");
     // Applied below `md` only, as the notes say: the window, 1280px wide, still shows them white.
     editSource(CARD, "bg-white p-5", "bg-white p-5 max-md:bg-[#ff0000]");
+    await drawnWith(page.locator("article").first(), "max-md:bg-[#ff0000]");
     expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
     await expect(page.locator("article").first()).toHaveCSS("background-color", "rgb(255, 255, 255)");
     // The copy of the page at the phone's width is kept while the round is claimed, and goes with it.
@@ -949,11 +998,14 @@ test.describe("done checks the change on the page", () => {
     await npx03kind("claim");
 
     // As both Agents did on the bench (ticket 63): the phone still has one column.
+    const grid = page.locator("main").locator('[class~="pb-16"]');
     editSource(APP, "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3", "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2");
+    await drawnWith(grid, "sm:grid-cols-2");
     expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change. At 390px wide, the number of columns is 1, not 2, as the browser computes `grid-template-columns` on the layer.");
     await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
 
     editSource(APP, "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2", "grid grid-cols-2 gap-4 pb-16");
+    await drawnWith(grid, "grid-cols-2");
     expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
     await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
   });
@@ -971,8 +1023,12 @@ test.describe("done checks the change on the page", () => {
     await npx03kind("claim");
 
     // Applying the button's fill, the Agent adds a line at the top of App.tsx: every marker below moves.
+    const at = await button(page).getAttribute("data-tk-loc");
     editSource(CSS, "background: rgb(220, 38, 38);", "background: #2563eb;");
     editSource(APP, 'import { Badge, Surface } from "acme-ui";', '// Buttons are blue now.\nimport { Badge, Surface } from "acme-ui";');
+    await expect(button(page)).toHaveCSS("background-color", "rgb(37, 99, 235)");
+    // Its marker a line lower.
+    await expect(button(page)).not.toHaveAttribute("data-tk-loc", at!);
 
     expect(await npx03kind("done", "2")).toContain("Checked on the page: it shows the change.");
   });

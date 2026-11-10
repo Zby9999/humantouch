@@ -30,7 +30,7 @@ let busy = false;
 let runs: CodeRun[] = [];
 
 beforeEach(() => {
-  (window as unknown as Record<string, CodeUpdates>)[CODE_GLOBAL] = { at: Date.now(), updating: 0 };
+  (window as unknown as Record<string, CodeUpdates>)[CODE_GLOBAL] = { at: Date.now(), updating: 0, inTurn: true };
   root = document.createElement("main");
   root.innerHTML = `<style>.card { color: red; }</style><article class="card" data-tk-loc="src/Card.tsx:3:5"><h3 data-tk-loc="src/Card.tsx:4:7">Freeze</h3><p data-tk-loc="src/Card.tsx:5:7">Turn the page into a canvas.</p></article>`;
   document.body.append(root);

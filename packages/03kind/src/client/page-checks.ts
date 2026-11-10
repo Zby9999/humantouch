@@ -65,6 +65,56 @@ const LOOK_EVERY_MS = 250;
 const SHOW_MS = 1500;
 /** How long the dev server is to have brought nothing in before the code an ask waits for counts as in. */
 const QUIET_MS = 500;
+/**
+ * An update begun this long ago with no word of its end is taken as over by
+ * the page's checks (ticket 123): one whose code never came, Vite's queue of
+ * updates held up behind it. Longer than the code changes' `UPDATE_LOST_MS`,
+ * so a slow update on a busy machine is still waited for; short enough to
+ * leave `SHOW_MS` within `CHECK_ARRIVE_MS`.
+ */
+export const PAGE_UPDATE_LOST_MS = 12_000;
+
+/**
+ * What the page's checks keep of the dev server's updates (ticket 123), for
+ * as long as the page is open, from one round to the next.
+ * - `began`: when the latest update began, as the count of them rose; as the
+ *   page first checked, if one was under way then.
+ * - `was`: the count, as last heard.
+ * - `lost`: of the count, the updates whose end will never come: those
+ *   counted as another began, where Vite begins one only once the one before
+ *   is over (its handler threw before it said so; `CodeUpdates.inTurn`,
+ *   6.3.0 on). Where updates run side by side, as before 6.3.0, another's
+ *   beginning says nothing of those under way (ticket 125): only those begun
+ *   `PAGE_UPDATE_LOST_MS` before it are counted lost then.
+ */
+interface HotUpdates {
+  began: number;
+  was: number;
+  lost: number;
+}
+const hotUpdatesOf = new WeakMap<Window, HotUpdates>();
+
+/** `win`'s `HotUpdates`, kept from the first time its checks begin; undefined with no word from the dev server (Next.js). */
+function hotUpdates(win: Window): HotUpdates | undefined {
+  const kept = hotUpdatesOf.get(win);
+  if (kept) return kept;
+  const updates = codeUpdates(win);
+  if (!updates) return undefined;
+  const hot: HotUpdates = { began: updates.updating ? performance.now() : -Infinity, was: updates.updating, lost: 0 };
+  hotUpdatesOf.set(win, hot);
+  // Never taken off: the page's checks come and go with the round, the updates they go by run on.
+  win.addEventListener(CODE_EVENT, () => {
+    const updates = codeUpdates(win);
+    const count = updates?.updating ?? 0;
+    if (count > hot.was) {
+      if (updates?.inTurn || performance.now() - hot.began >= PAGE_UPDATE_LOST_MS) hot.lost = Math.max(hot.lost, hot.was);
+      hot.began = performance.now();
+    }
+    hot.was = count;
+    hot.lost = Math.min(hot.lost, count);
+  });
+  return hot;
+}
 
 /**
  * Checks the round on `window`'s page till stopped. A change the page cannot
@@ -281,6 +331,20 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
 
   // When to look: as the dev server brings code in, and the page changes with it.
   let codeCameAt = -Infinity;
+  const hot = hotUpdates(win);
+  /**
+   * An update under way, as the dev server says, but for one that lost its
+   * end (ticket 123): one counted lost as another began (`HotUpdates.lost`), or
+   * the latest begun `PAGE_UPDATE_LOST_MS` ago with no word of its end. Else
+   * it would hold every ask after it for all of `CHECK_ARRIVE_MS`. Unlike
+   * the code changes' `UPDATE_LOST_MS`, timed from the latest update's
+   * beginning, not the last word, and with the lost ones taken off the count.
+   */
+  const updating = () => {
+    const count = code()?.updating ?? 0;
+    if (!hot) return count > 0;
+    return count > hot.lost && performance.now() - hot.began < PAGE_UPDATE_LOST_MS;
+  };
   /**
    * Till when the page's own changes are looked at too, with word from the
    * dev server: a while after it brought code in, and after the page began to
@@ -332,7 +396,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
         if (stopped || !updates || performance.now() >= deadline) return done();
         // The dev server has gone quiet too: one file's update may come in before another's has begun.
         const quiet = performance.now() - codeCameAt >= QUIET_MS;
-        if (!updates.updating && quiet && (codeAt == null || updates.at >= codeAt || waited >= CHECK_SETTLE_MS)) return done();
+        if (!updating() && quiet && (codeAt == null || updates.at >= codeAt || waited >= CHECK_SETTLE_MS)) return done();
         later(test, 100);
       };
       const done = () => {
@@ -373,10 +437,9 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       });
       watch.observe(doc.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
       const wait = () => {
-        const updates = code();
         const now = performance.now();
         const until = Math.min(deadline, Math.max(since, codeCameAt) + ms);
-        if (!stopped && now < deadline && (updates?.updating || now < until)) later(wait, Math.max(50, Math.min(until - now, 250)));
+        if (!stopped && now < deadline && (updating() || now < until)) later(wait, Math.max(50, Math.min(until - now, 250)));
         else {
           looking = false;
           lookAgain(end);
