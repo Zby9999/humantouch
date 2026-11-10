@@ -2762,7 +2762,7 @@ export function TextField<T>({ label, class: className, value, placeholder, pars
     if (event.key === "Enter") {
       commit();
       // Applied, its Variables close: they would cover what is under the field (ticket 127).
-      typeahead.committed();
+      typeahead.closedOnEnter();
       event.currentTarget.select();
     } else if (event.key === "Escape") {
       setDraft(null);

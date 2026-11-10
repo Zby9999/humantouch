@@ -107,8 +107,7 @@ test("in the phone view, the Grid's columns and gaps change at its breakpoint on
   await setField(page, "Row gap", "8");
   await expect.poll(() => grids(page)).toEqual(["3 16px 16px", "3 16px 16px", "2 8px 16px"]);
 
-  // Each marked on its field and reset on its own (designer, 2026-11-07); the row gap's Variables, listed as it was typed in, closed first.
-  await field(page, "Row gap").blur();
+  // Each marked on its field and reset on its own (designer, 2026-11-07).
   await expect(design(page).getByRole("button", { name: "Reset row gap" })).toBeVisible();
   await design(page).getByRole("button", { name: "Reset columns" }).click();
   await expect(design(page).getByRole("button", { name: "Reset columns" })).toHaveCount(0);

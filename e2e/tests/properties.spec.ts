@@ -211,7 +211,7 @@ test("while a gradient's stop is dragged, ⌘Z, ⇧⌘Z, Delete and the arrows d
   const color = fill.getByRole("textbox", { name: "Stop 1 color", exact: true });
   await color.fill("ff0000");
   await color.press("Enter");
-  // On: the colors the focused field lists, which open over the rows above it low in the popover.
+  // On: the field left with Tab, its colors, listed left of the popover, closed.
   await color.press("Tab");
   // Something to redo that adds a stop: one added and that undone.
   await fill.getByRole("button", { name: "Add stop" }).click();
@@ -1718,8 +1718,7 @@ test("the row's reset looks as a button that stays on (Wrap, on): its size, its 
   const width = panel.getByRole("textbox", { name: "Width", exact: true });
   await width.fill("300");
   await width.press("Enter");
-  // Its Variables listed close as it leaves it: with 28px rows, they reach over Wrap.
-  await width.blur();
+  // Applied with Enter, its Variables close.
   await expect(panel.getByRole("listbox", { name: "Matching variables" })).toHaveCount(0);
   const rowReset = panel.locator(".tk-size-row > .tk-reset");
   const fieldReset = panel.locator(".tk-field").getByRole("button", { name: "Reset corner radius" });

@@ -245,6 +245,28 @@ test("the gap typed into, then the direction clicked at once: one click sets the
   await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toReadAs(["Gap", "Direction"]);
 });
 
+test("a field near the panel's top lists its Variables clear of the tools: a tool is clicked at once, no Variable picked (ticket 127)", async ({ page }) => {
+  await enterEditMode(page);
+  await rows(page, "Header").click();
+  const panel = design(page);
+  const width = panel.getByRole("textbox", { name: "Width", exact: true });
+  const was = await width.inputValue();
+  const matches = page.getByRole("listbox", { name: "Matching variables" });
+  await width.click();
+  await expect(matches).toBeVisible();
+  const toolbar = page.getByRole("toolbar", { name: "Tools" });
+  const [list, tools, aside] = [await steadyBox(matches), await steadyBox(toolbar), await steadyBox(panel)];
+  expect(list.x + list.width).toBeLessThanOrEqual(aside.x);
+  const apart = list.y >= tools.y + tools.height || list.y + list.height <= tools.y || list.x + list.width <= tools.x || list.x >= tools.x + tools.width;
+  expect(apart).toBe(true);
+
+  const brief = toolbar.getByRole("button", { name: "Brief", exact: true });
+  await brief.click();
+  await expect(brief).toHaveAttribute("aria-pressed", "true");
+  await expect(matches).toHaveCount(0);
+  await expect(width).toHaveValue(was);
+});
+
 test("the gap applied with Enter: its Variables close, the direction under it clicked at once, and open again as it is typed into (ticket 127)", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Header").click();
@@ -257,6 +279,12 @@ test("the gap applied with Enter: its Variables close, the direction under it cl
   await expect(matches).toHaveCount(0);
   await expect(gap).toBeFocused();
   await expect.poll(() => canvasStyle(page, "header", "column-gap")).toBe("30px");
+  // Focused again, the field lists them again.
+  await panel.getByRole("textbox", { name: "Padding left", exact: true }).click();
+  await gap.click();
+  await expect(matches).toBeVisible();
+  await gap.press("Enter");
+  await expect(matches).toHaveCount(0);
   await gap.pressSequentially("2");
   await expect(matches).toBeVisible();
   await gap.press("Enter");
@@ -271,7 +299,7 @@ test("the gap applied with Enter: its Variables close, the direction under it cl
   await expect.poll(() => canvasStyle(page, "header", "row-gap")).toBe("16px");
 });
 
-test("the gap's sizing opens its menu from the gap typed into: the Variables listed under it close, and stay closed once Auto is picked (designer, 2026-11-08)", async ({ page }) => {
+test("the gap's sizing opens its menu from the gap typed into: the Variables it lists close, and stay closed once Auto is picked (designer, 2026-11-08)", async ({ page }) => {
   await enterEditMode(page);
   await rows(page, "Header").click();
   const panel = design(page);
