@@ -42,7 +42,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sh } from "../tests/install-copy.ts";
 import { agentVersion, AGENTS, BENCH_FILES, commandLine, NO_SKILL_PROMPT, PROMPT, runAgent, type AgentRun } from "./agents.ts";
-import { checkReport, fffProblem, measureRun, parseTranscript, pooled, reportedAsExpected, scenarioExpectationsHold, summarize, toolCallStats, usesVariable, variableParts, type AgentName, type VariableNames } from "./metrics.ts";
+import { checkReport, fffProblem, measureRun, parseTranscript, pooled, reportedAsExpected, scenarioExpectationsHold, summarize, toolCallStats, keepsVariable, usesVariable, variableParts, type AgentName, type VariableNames } from "./metrics.ts";
 import { canvasUpdatedNoticesShown, pageChangedNoticesShown, recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
 import { shellDenied } from "./pi-extension.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
@@ -98,7 +98,7 @@ interface RawRun {
   headlessShell?: string | null;
   /** Browsers that came up under the Agent with a window. */
   headedBrowsers: string[];
-  changes: { id: number; kind: string; checkable: boolean; variable?: VariableNames; notOneToOne?: true; shownBefore: boolean | null; shownAtEnd: boolean | null }[];
+  changes: { id: number; kind: string; checkable: boolean; variable?: VariableNames; variableKept?: VariableNames; notOneToOne?: true; shownBefore: boolean | null; shownAtEnd: boolean | null }[];
   /** The scenario's own expectations (ticket 86): whether each held before the Agent started and at the end, and whether it is to hold before too. Missing in runs before. */
   scenarioExpectations?: { kept: boolean; before: boolean; atEnd: boolean }[];
   /**
@@ -440,6 +440,7 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
         if (atEnd[i] === null && change.kind !== "brief") problems.push(`change ${i + 1} has no test of its own (\`shows\`) to show it by`);
         if (change.checkable && checks[id]?.outcome !== "shown") problems.push(`change ${i + 1}: the page's check says ${checks[id]?.outcome ?? "nothing"}`);
         if (change.variable && !usesVariable(diff, change.variable)) problems.push(`change ${i + 1}: the code does not write ${variableParts(change.variable).map((names) => names.join(" or ")).join(", and ")}`);
+        if (change.variableKept && !keepsVariable(diff, change.variableKept)) problems.push(`change ${i + 1}: the code does not keep ${variableParts(change.variableKept).map((names) => names.join(" or ")).join(", and ")}`);
       });
       if (!report) return problems;
       const check = checkReport(report, saved.map((change) => change.id));
@@ -667,6 +668,7 @@ async function runOnce({
         kind: change.kind,
         checkable: change.checkable,
         ...(change.variable && { variable: change.variable }),
+        ...(change.variableKept && { variableKept: change.variableKept }),
         ...(change.notOneToOne && { notOneToOne: true as const }),
         shownBefore: before[i],
         shownAtEnd: atEnd[i],
@@ -690,7 +692,7 @@ export function measureFolder(folder: string) {
     ...saved,
     changes: saved.changes.map((change, i) => {
       const now = scenario?.changes[i];
-      return now?.kind === change.kind ? { ...change, checkable: now.checkable, variable: now.variable, notOneToOne: now.notOneToOne ? (true as const) : undefined } : change;
+      return now?.kind === change.kind ? { ...change, checkable: now.checkable, variable: now.variable, variableKept: now.variableKept, notOneToOne: now.notOneToOne ? (true as const) : undefined } : change;
     }),
   };
   /** A change of the run, for a list of misses: its id, its kind, and what the page is to show, as the scenario has it now (none when it has changed since). */
@@ -701,8 +703,9 @@ export function measureFolder(folder: string) {
   const report = checkReport(transcript.finalText, ids);
   const count = raw.changes.length;
   const diff = readFileSync(join(folder, "diff.patch"), "utf8");
-  const withVariable = raw.changes.filter((change) => change.variable);
-  const usedVariable = withVariable.filter((change) => usesVariable(diff, change.variable!));
+  // A Variable the code writes already and is to keep (`variableKept`) counts as one too: kept, it is used.
+  const withVariable = raw.changes.filter((change) => change.variable || change.variableKept);
+  const usedVariable = withVariable.filter((change) => (change.variable ? usesVariable(diff, change.variable) : keepsVariable(diff, change.variableKept!)));
   // A scenario with no changes to apply (an undo) has no round: what is measured by the round, the report or per change is null.
   const applying = count > 0;
   const round =

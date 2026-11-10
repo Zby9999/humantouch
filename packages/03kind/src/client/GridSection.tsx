@@ -2,7 +2,8 @@
 import type { ArrangeAs } from "./arrangement";
 import type { Editor } from "./edit-commands";
 import type { Layer } from "./layers";
-import { arrangements, NumberField, SectionReset, Segmented, stepOptions, type SlotOf } from "./Properties";
+import { ChangeMarksProvider, NO_MARKS, useChangeMarks } from "./ChangeMarks";
+import { arrangements, NumberField, RemoveButton, SectionReset, Segmented, stepOptions, type SlotOf } from "./Properties";
 import { VariableSlot } from "./VariablePicker";
 
 interface Props {
@@ -15,6 +16,8 @@ interface Props {
   variable: SlotOf;
   /** Makes the Grids Stacks (ticket 109), one that places its layers itself too, its layers then in the order they are written (its follow-up); null when they cannot be. */
   arrange: ((as: ArrangeAs) => void) | null;
+  /** What dissolves the Grids, as ⌥⇧A does (ticket 110's follow-up); null when they cannot be. Asked once the section shows. */
+  dissolvable(): (() => void) | null;
 }
 
 /** What the section edits. */
@@ -28,8 +31,14 @@ type GridProperty = "columns" | "rowGap" | "columnGap";
  * Mixed, and a change goes to each. As in Figma's auto layout, it is made a
  * horizontal or vertical Stack where the Stack section makes a Stack a Grid (ticket 109).
  */
-export function GridSection({ editor, layers, onEdit, variable, arrange }: Props) {
+export function GridSection({ editor, layers, onEdit, variable, arrange, dissolvable }: Props) {
+  const marks = useChangeMarks();
   if (!layers.every((layer) => editor.can(layer, "columns"))) return null;
+  // Made a Grid by ⇧A in this round: as the Stack section, its fields unmarked, with no resets, and its −, alone in the accent,
+  // takes the Grid back out (designer, 2026-11-08).
+  // `stacked`: made by ⇧A, whichever it made (`ChangeMarks`).
+  const added = marks.stacked();
+  const dissolve = added ? () => marks.unstack() : dissolvable();
   /** The value the Grids share; null when they do not: Mixed. */
   const shown = (property: GridProperty) => {
     const [first, ...rest] = layers.map((layer) => editor.read(layer, property));
@@ -44,6 +53,7 @@ export function GridSection({ editor, layers, onEdit, variable, arrange }: Props
     onEdit();
   };
   return (
+    <ChangeMarksProvider value={added ? NO_MARKS : marks}>
     <section class="tk-section" aria-labelledby="tk-grid">
       <div class="tk-section-header">
         {/* Layout, as the Stack's section is titled: one section, a Stack or a Grid (designer, 2026-11-10). */}
@@ -52,6 +62,7 @@ export function GridSection({ editor, layers, onEdit, variable, arrange }: Props
         </h3>
         {/* As every section's: shown for two changes or more (designer, 2026-11-08). */}
         <SectionReset title="Layout" properties={["columns", "rowGap", "columnGap", "arrangement"]} />
+        {dissolve && <RemoveButton label="Dissolve Grid" title={added ? undefined : "Dissolve Grid (⌥⇧A)"} added={added} onClick={dissolve} />}
       </div>
       {/* The direction beside the columns, a row the fewer (designer, 2026-11-10). */}
       <div class="tk-grid-2">
@@ -71,5 +82,6 @@ export function GridSection({ editor, layers, onEdit, variable, arrange }: Props
         </VariableSlot>
       </div>
     </section>
+    </ChangeMarksProvider>
   );
 }

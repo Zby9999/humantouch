@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { DENIED } from "./allowlist.ts";
-import { checkReport, fffProblem, isRepoWideSearch, measureRun, parseTranscript, pooled, reportedAsExpected, scenarioExpectationsHold, summarize, toolCallStats, usesVariable, type ToolCall } from "./metrics.ts";
+import { checkReport, fffProblem, isRepoWideSearch, measureRun, parseTranscript, pooled, reportedAsExpected, scenarioExpectationsHold, summarize, toolCallStats, keepsVariable, usesVariable, type ToolCall } from "./metrics.ts";
 
 const lines = (...events: object[]) => events.map((event) => JSON.stringify(event)).join("\n");
 
@@ -433,6 +433,22 @@ test("a value of several parts, each its own Variable, counts as using them when
   assert.equal(usesVariable(diff, padding), false);
   assert.equal(usesVariable(diff.replace("pl-[8px]", "pl-2"), padding), true);
   assert.equal(usesVariable(diff, ["pt-3", "pl-2"]), true);
+});
+
+test("a Variable the code wrote already counts as kept when its line is left, rewritten with it, or written another of its ways; taken out for none of its names, it is not (ticket 118)", () => {
+  const gaps = [
+    ["gap-3", "gap-y-3"],
+    ["gap-3", "gap-x-3"],
+  ];
+  const rewrite = (to: string) => ['-  <header className="flex items-center gap-3">', `+  <header className="${to}">`].join("\n");
+
+  assert.equal(keepsVariable("", gaps), true);
+  assert.equal(keepsVariable(rewrite("grid grid-cols-3 items-center gap-3"), gaps), true);
+  assert.equal(keepsVariable(rewrite("grid grid-cols-3 items-center gap-x-3 gap-y-3"), gaps), true);
+  assert.equal(keepsVariable(rewrite("grid grid-cols-3 items-center gap-[12px]"), gaps), false);
+  assert.equal(keepsVariable(rewrite("grid grid-cols-3 items-center gap-x-3 gap-y-[12px]"), gaps), false);
+  // As a `variable`, none of these would count as used: nothing of it is written in.
+  assert.equal(usesVariable(rewrite("grid grid-cols-3 items-center gap-3"), ["gap-3"]), false);
 });
 
 test("a Variable only carried along in a line the Agent rewrote for another change is not counted as used", () => {

@@ -104,6 +104,7 @@ export type StructureEdits = Pick<
   | "canPromote"
   | "promote"
   | "canStack"
+  | "stacksAsGrid"
   | "stack"
   | "canUnstack"
   | "canUngroup"
@@ -412,6 +413,24 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
   /** A Frame that can become a Stack of its layers. */
   const isFrameOfLayers = (layer: Layer) =>
     layer.kind === "frame" && !!layer.parent && layer.children.length > 0 && layer.children.every((child) => placeable(child) && repeatsWith(child, layer));
+
+  /**
+   * What ⇧A makes of `layers`, which can be made a Stack: the Frame selected alone, if it is one, and the layers it stacks,
+   * measured as they show, margins left out: in the Stack, the room between them is its gap. The Stack has no margin of its
+   * own either, which no one could see or set: the room the margins made around them goes. Placed freely in a Frame, they
+   * are placed again, by the Stack. Free layers in rows and columns make a Grid, which holds them where they are (ticket 110);
+   * `grid` is null for others, made a Stack, as ever. The panel's button asks it too, to say which (its follow-up): `gridOnly`,
+   * nothing is measured for layers that cannot be a Grid, three free ones at least.
+   */
+  const stacking = (layers: Layer[], gridOnly = false) => {
+    const frame = layers.length === 1 && isFrameOfLayers(layers[0]) ? layers[0] : null;
+    const members = frame ? frame.children : layers;
+    const free = members.every((member) => member.absolute);
+    if (gridOnly && (!free || members.length < 3)) return { frame, members, free, boxes: [], grid: null };
+    const boxes = members.map((member) => borderBox(member.el));
+    const grid = free ? inferGrid(boxes, frame && paddingBox(frame.el)) : null;
+    return { frame, members, free, boxes, grid };
+  };
 
   /**
    * The changes of the layer `id` promoted to the component that writes it at
@@ -730,6 +749,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       structural([id], [id], swap([...taken, ...before], after), swap(after, [...before, ...taken]));
       return { promoted: taken, stays: changes.list().filter((change) => change.layer === id && change.scope === "usage" && ofLayer(layer, change)) };
     },
+    stacksAsGrid: (layers) => editor().canStack(layers) && !!stacking(layers, true).grid,
     canStack(layers) {
       if (layers.length === 1 && isFrameOfLayers(layers[0])) return true;
       const parent = layers[0]?.parent;
@@ -737,17 +757,9 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
     },
     stack(layers) {
       if (!editor().canStack(layers)) throw new Error(`03Kind: ${layers.map((layer) => layer.name).join(", ")} cannot be made a Stack`);
-      const frame = layers.length === 1 && isFrameOfLayers(layers[0]) ? layers[0] : null;
-      const members = frame ? frame.children : layers;
+      const { frame, members, free, boxes, grid } = stacking(layers);
       const container = frame ?? layers[0].parent!;
       const count = tree().acrossInstances(container).length;
-      // Measured as they show, margins left out: in the Stack, the room between them is its gap. The Stack has no
-      // margin of its own either, which no one could see or set: the room the margins made around them goes.
-      // Placed freely in a Frame, they are placed again, by the Stack.
-      const boxes = members.map((member) => borderBox(member.el));
-      // Free layers in rows and columns make a Grid, which holds them where they are (ticket 110); others a Stack, as ever.
-      const free = members.every((member) => member.absolute);
-      const grid = free ? inferGrid(boxes, frame && paddingBox(frame.el)) : null;
       const inferred = grid ?? inferStack(boxes, frame && paddingBox(frame.el), !!frame && free);
       const ordered = inferred.order.map((i) => members[i]);
       const margins = ordered.map((member) => marginsOf(member.el));

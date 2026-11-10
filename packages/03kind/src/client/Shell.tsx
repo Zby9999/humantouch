@@ -39,6 +39,7 @@ import { toggleIn } from "./selection";
 import { Toast, ToastProvider, type ShowToast, type ToastMessage } from "./Toast";
 import { loadVariables } from "./service";
 import { bind, bindRecorded, resolveVariables, withPart, type Catalog, type Resolved } from "./variables";
+import { variablesInCode } from "./code-variables";
 import { VariantsPanel } from "./VariantsPanel";
 import { ChangeMarksProvider, changeMarks } from "./ChangeMarks";
 import { CatalogProvider } from "./VariablePicker";
@@ -363,7 +364,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     const editor = editorOf(layer);
     return (["color", "radius", "fontSize", "shadow"] as VariableGroup[]).flatMap((group) => {
       const at = slotFor(layer, group);
-      const bound = at && editor?.variables(layer, at[0])?.[at[1]];
+      // As the panel shows it: changed this round, else as the code writes it (ticket 119).
+      const bound = at && (editor?.variables(layer, at[0])?.[at[1]] ?? editor?.inCode(layer, at[0])?.[at[1]]);
       return bound ? [bound] : [];
     });
   };
@@ -846,6 +848,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           const editor = createEditor(views, changeSet, breakpoints ?? readMediaBreakpoints(document), {
             history,
             bind: (...args) => (catalogNow.current ? bind(catalogNow.current, ...args) : undefined),
+            inCode: (...args) => (catalogNow.current ? variablesInCode(catalogNow.current, ...args) : null),
           });
           void variables.then((list) => {
             if (!list.length) return;

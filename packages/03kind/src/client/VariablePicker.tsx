@@ -42,8 +42,10 @@ export interface Slot {
   group: VariableGroup;
   /** Tells the selected layers apart: what was typed for some is not hinted at for others. */
   selection: string;
-  /** The Variable the designer picked for it, shared by the selected layers; null when none. */
+  /** The Variable the designer picked for it, else the one the code writes it with (ticket 119), shared by the selected layers; null when none. */
   bound: Variable | null;
+  /** `bound` is the code's, not picked: shown alike, but nothing is changed. */
+  inCode?: boolean;
   /** Picks a Variable for it; null detaches it, keeping the value. */
   onPick(entry: Resolved | null): void;
 }
@@ -277,6 +279,24 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
  * its focus, what is typed and what is selected in it (ticket 98). With no
  * button beside it, that element lays out as if the field were in its place.
  */
+/**
+ * Whether a field in the element the handlers go on is being typed into:
+ * there, the Variable the code writes the value with (ticket 119) is not shown
+ * in the field's place till it is left, though the Variables come in meanwhile.
+ */
+export function useTypedIn() {
+  const [typing, setTyping] = useState(false);
+  return {
+    typing,
+    handlers: {
+      onFocusIn: (event: FocusEvent) => setTyping(event.target instanceof HTMLInputElement),
+      onFocusOut: (event: FocusEvent) => {
+        if (!(event.relatedTarget instanceof HTMLInputElement && (event.currentTarget as Element).contains(event.relatedTarget))) setTyping(false);
+      },
+    },
+  };
+}
+
 export function VariableSlot({ label, slot, property, part, rowReset, children }: {
   label: string;
   /** Its reset is its row's, at the row's left (a size's, with its sizing): marked, the name has none of its own (designer, 2026-11-08). */
@@ -291,7 +311,9 @@ export function VariableSlot({ label, slot, property, part, rowReset, children }
   const marks = useChangeMarks();
   const [open, setOpen] = useState<HTMLElement | null>(null);
   const exit = useExit(open);
-  const offered = slot && catalog?.of(slot.group).length ? slot : undefined;
+  const typedIn = useTypedIn();
+  const listed = slot && catalog?.of(slot.group).length ? slot : undefined;
+  const offered = listed?.inCode && typedIn.typing ? { ...listed, bound: null, inCode: undefined } : listed;
   const pick = (entry: Resolved | null) => {
     setOpen(null);
     offered!.onPick(entry);
@@ -303,7 +325,7 @@ export function VariableSlot({ label, slot, property, part, rowReset, children }
   /** The field's own icon, or its letter, kept by the Variable's name, so what the value is for still shows (designer, 2026-11-08). With no field (a shadow's), the Variable's mark. */
   const own = (isValidElement(children) ? children.props : {}) as { icon?: IconName; glyph?: string; small?: boolean };
   return (
-    <div class={offered ? "tk-variable-slot" : "tk-variable-slot is-alone"}>
+    <div class={offered ? "tk-variable-slot" : "tk-variable-slot is-alone"} {...typedIn.handlers}>
       {bound ? (
         <div class={`tk-field tk-variable-chip${changed ? " is-changed" : ""}`} data-tk-mark={changed ? property : undefined}>
           {own.icon ? <Icon name={own.icon} /> : own.glyph ? <span class={own.small ? "tk-glyph is-small" : "tk-glyph"}>{own.glyph}</span> : <Icon name="variable" />}
@@ -317,7 +339,7 @@ export function VariableSlot({ label, slot, property, part, rowReset, children }
           >
             {bound.name}
           </button>
-          <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} variable`} data-tk-tip="Detach variable" onClick={() => pick(null)}>
+          <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} variable`} data-tk-tip="Detach variable" data-tk-in-code={offered?.inCode ? "" : undefined} onClick={() => pick(null)}>
             <Icon name="detach" />
           </button>
           {changed && !rowReset && <ResetButton label={lower} onReset={() => marks.reset([property!], typeof part === "object" ? part : undefined)} />}
