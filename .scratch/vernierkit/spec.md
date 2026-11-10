@@ -558,13 +558,13 @@ ticket 65 起，Skill 只有一轮的流程和报告格式，不到原来的三�
 - 插入或替换图片（已承诺；ticket 111、112）
 - 编辑层直接把简单改动写进源码（已承诺；ADR 0015，ticket 115、116）
 - 锥形渐变
-- 新建 Grid（ticket 110，发布前做，做完从这里去掉）
 - 重命名图层
 - 改动单附带截图（待评估）
 - Vue、Svelte 等其他框架；styled-components、Emotion 等 CSS-in-JS（待评估）
 - 中文界面（待评估）
 - MCP、发送按钮；在编辑层界面上标出落地结果的不一致（`done` 时的核对只把结果告诉 Agent，见 ADR 0006）
 - 线上预览地址或生产环境中运行
+- Agent 在画布上一起改（已承诺，第一版之后，见 docs/roadmap.md）
 - 多人协作、账号、云端、使用数据统计
 
 ## Further Notes
