@@ -154,13 +154,21 @@ export async function enterEditMode(page: Page) {
   await phone(page).contentFrame().locator("article").first().waitFor();
 }
 
-export async function setField(page: Page, name: string, value: string) {
-  // A value the code writes with a Variable shows it by name (ticket 119): detached, as in Figma, the field is there to type into.
+/**
+ * A field of the Design panel to type into. A value the code writes with a
+ * Variable shows it by name (ticket 119): detached, as in Figma, the field is
+ * there. Gone already, it may be: a test page detaches the code's Variables itself (`detachCodeVariables`).
+ */
+async function typeInto(page: Page, name: string) {
   const detach = design(page).getByRole("button", { name: `Detach ${name.toLowerCase()} variable`, exact: true });
   const field = design(page).getByRole("textbox", { name, exact: true });
   await field.or(detach).first().waitFor();
-  // Gone already, it may be: a test page detaches the code's Variables itself (`detachCodeVariables`).
   if (await detach.isVisible()) await detach.click({ timeout: 2000 }).catch(() => {});
+  return field;
+}
+
+export async function setField(page: Page, name: string, value: string) {
+  const field = await typeInto(page, name);
   await field.fill(value);
   await field.press("Enter");
 }
@@ -172,7 +180,7 @@ async function numberIn(page: Page, name: string) {
 
 /** Picks the color Variable `name` for a color field (`Fill color`), as a designer finds it by typing its name in the field. */
 async function pickColorVariable(page: Page, field: string, name: string) {
-  const hex = design(page).getByRole("textbox", { name: field, exact: true });
+  const hex = await typeInto(page, field);
   await hex.click();
   await hex.press("ControlOrMeta+a");
   await hex.pressSequentially(name);

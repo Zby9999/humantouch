@@ -103,7 +103,7 @@ test("⌥⌘C carries the Variables the code writes, ⌥⌘V sets them: pasted, 
 
 test("on a Tailwind v4 project, a class writes its theme's Variable through `var()`: the header's `gap-3`, the button's `px-4`", async ({ page }) => {
   await enterEditMode(page, DEV_URL);
-  await pick(page, desktop(page), "header");
+  await selectRow(page, "Header");
   await expect(chip(page, "Gap")).toHaveText("3");
   await pick(page, desktop(page), "[data-testid=hero] button");
   await expect(chip(page, "Padding left")).toHaveText("4");
