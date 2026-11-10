@@ -212,11 +212,68 @@ async function enterEditMode(page: Page) {
 const cardBody = (n: number) => `[data-testid=big-products] [data-testid=product]:nth-of-type(${n}) > div:nth-of-type(2)`;
 const card = (n: number) => `[data-testid=big-products] [data-testid=product]:nth-of-type(${n})`;
 
-/** Selects the deepest layer at a point just inside `box`: a click with ⌘ (Ctrl) held. */
+/**
+ * What the designer would click at a point, if not the canvas: nothing, the
+ * point being out of the window, or the editor's own toolbar, panel or brief
+ * card floating over the canvas there (ticket 124). Undefined when the
+ * canvas, a view on it, is there to click.
+ */
+function coveringAt(page: Page, at: { x: number; y: number }) {
+  return page.evaluate(({ x, y }) => {
+    if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return `out of the ${innerWidth}×${innerHeight} window`;
+    const hit = document.querySelector("third-kind")!.shadowRoot!.elementFromPoint(x, y);
+    // Over the canvas, the editor's own controls: the selection toolbar, a brief card, a view's label.
+    const over = hit?.closest(".tk-viewport") ? hit.closest("button, input, textarea, select, a, [role=toolbar], .tk-brief-card, .tk-view-title") : hit;
+    return over ? `${over.tagName.toLowerCase()}.${[...over.classList].join(".")}` : hit ? undefined : "nothing";
+  }, at);
+}
+
+/** Expects the canvas at a point, nothing over it, for a click: else fails saying what covers it (ticket 124). */
+async function expectCanvasAt(page: Page, at: { x: number; y: number }) {
+  expect(await coveringAt(page, at), `the canvas to click at ${at.x.toFixed(0)}, ${at.y.toFixed(0)}, nothing covering it`).toBeUndefined();
+}
+
+/** How far in from the Canvas viewport's edges a point to click must be: off the panels' and the window's edges beside it. */
+const EDGE_MARGIN = 8;
+/** How far in a card `bringCardIntoSight` brings is: well in sight, not half out at an edge, as the designer would scroll it. */
+const SIGHT_MARGIN = 40;
+
+/** Whether a point is in the Canvas viewport, `margin` in from its edges. */
+function inViewport(viewport: { x: number; y: number; width: number; height: number }, at: { x: number; y: number }, margin = EDGE_MARGIN) {
+  return at.x > viewport.x + margin && at.y > viewport.y + margin && at.x < viewport.x + viewport.width - margin && at.y < viewport.y + viewport.height - margin;
+}
+
+/** Where `selectDeepestIn` clicks for `box`: just inside its top left corner. */
+const justInside = (box: { x: number; y: number }) => ({ x: box.x + 3, y: box.y + 3 });
+
+/** Selects the deepest layer at a point just inside `box`: a click with ⌘ (Ctrl) held, on the canvas, nothing over it. */
 async function selectDeepestIn(page: Page, box: { x: number; y: number }) {
+  const at = justInside(box);
+  await expectCanvasAt(page, at);
   await page.keyboard.down("ControlOrMeta");
-  await page.mouse.click(box.x + 3, box.y + 3);
+  await page.mouse.click(at.x, at.y);
   await page.keyboard.up("ControlOrMeta");
+}
+
+/**
+ * Pans the canvas with the wheel, as the designer scrolls it, till the point
+ * `selectDeepestIn` clicks in the body of the `n`th card of the desktop view
+ * is on the canvas, nothing over it, away from the viewport's edges. A card
+ * below the window's bottom otherwise takes a click no designer could make
+ * (ticket 124).
+ */
+async function bringCardIntoSight(page: Page, n: number) {
+  const viewport = (await host(page).getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
+  const middle = { x: viewport.x + viewport.width / 2, y: viewport.y + viewport.height / 2 };
+  for (let pans = 0; ; pans++) {
+    const box = (await canvas(page).locator(cardBody(n)).boundingBox())!;
+    const at = justInside(box);
+    if (inViewport(viewport, at, SIGHT_MARGIN) && !(await coveringAt(page, at))) return;
+    expect(pans, `card ${n} brought into sight`).toBeLessThan(5);
+    await page.mouse.move(middle.x, middle.y);
+    await page.mouse.wheel(at.x - middle.x, at.y - middle.y);
+    await settle(page, 200);
+  }
 }
 
 /** Selects the deepest layer at a point in the body's padding, the body itself, in the desktop view; with `parent`, the card around it. */
@@ -1033,6 +1090,8 @@ test("selecting one of 96 cards shows it in the Design panel in the next frame, 
   await enterEditMode(page);
   const samples: ParentSample[] = [];
   for (let i = 0; i < 20; i++) {
+    // At 813px tall, the later cards are below the window's bottom (ticket 124).
+    await bringCardIntoSight(page, 10 + i);
     await selectCard(page, 10 + i);
     await settle(page, 150);
     await page.evaluate(armSelectParent);
@@ -1247,10 +1306,15 @@ async function withBriefs(page: Page) {
           return { x: r.x + Math.min(r.width / 2, 6), y: r.y + Math.min(r.height / 2, 6), big: r.width >= 4 && r.height >= 4 };
         }),
       );
-    const next = points.findIndex((p, i) => {
+    let next = -1;
+    for (const [i, p] of points.entries()) {
       const at = { x: view.x + p.x * zoom, y: view.y + p.y * zoom };
-      return p.big && !tried.has(i) && at.x > viewport.x + 8 && at.y > viewport.y + 8 && at.x < viewport.x + viewport.width - 8 && at.y < viewport.y + viewport.height - 8;
-    });
+      if (!p.big || tried.has(i) || !inViewport(viewport, at)) continue;
+      // Not under the selection toolbar or a brief card floating over the canvas (ticket 124): left for later, not tried, as they move with the selection and the canvas.
+      if (await coveringAt(page, at)) continue;
+      next = i;
+      break;
+    }
     if (next < 0) {
       // None left in sight: the canvas panned down a screen.
       pans++;
@@ -1261,6 +1325,8 @@ async function withBriefs(page: Page) {
     }
     tried.add(next);
     const at = { x: view.x + points[next].x * zoom, y: view.y + points[next].y * zoom };
+    // As `selectDeepestIn` does: a control come over the point since fails here, saying what, not as the Brief field not coming.
+    await expectCanvasAt(page, at);
     await page.keyboard.down("ControlOrMeta");
     await page.mouse.click(at.x, at.y);
     await page.keyboard.up("ControlOrMeta");
