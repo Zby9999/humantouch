@@ -87,13 +87,12 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator("h1")).toBeVisible();
 });
 
-test("the layer selected alone has handles on its corners and edges in every view; with two selected, there are none", async ({ page }) => {
+test("the layer selected alone has handles on its corners and edges in the view worked in, none in the others (designer, 2026-11-10); with two selected, there are none", async ({ page }) => {
   await enterEditMode(page);
   await layerTree(page).getByRole("treeitem", { name: "Button", exact: true }).click();
 
-  for (const view of ["Desktop", "Tablet", "Phone"]) {
-    await expect(page.locator(`.tk-handles[data-view="${view}"] .tk-handle`)).toHaveCount(8);
-  }
+  await expect(page.locator(`.tk-handles[data-view="Desktop"] .tk-handle`)).toHaveCount(8);
+  for (const view of ["Tablet", "Phone"]) await expect(page.locator(`.tk-handles[data-view="${view}"] .tk-handle`)).toHaveCount(0);
   // The corners show as squares; the edges only as the cursor over them.
   await expect(handle(page, "se")).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(handle(page, "e")).toHaveCSS("cursor", "ew-resize");
@@ -257,7 +256,13 @@ test("dragged in the tablet view, it is resized at the tablet's breakpoint only,
   await enterEditMode(page);
   await layerTree(page).getByRole("treeitem", { name: "Button", exact: true }).click();
   const before = await boxIn(desktop(page), `${HERO} > button`);
+  /** Pressed in `view`, the button is worked on there: its handles there alone (designer, 2026-11-10). */
+  const workIn = async (view: Locator) => {
+    const box = (await view.contentFrame().locator(`${HERO} > button`).boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  };
 
+  await workIn(tablet(page));
   await dragHandle(page, handle(page, "e", "Tablet"), { x: 30, y: 0 }, { view: tablet(page) });
 
   await expect.poll(() => boxIn(tablet(page), `${HERO} > button`).then((b) => b.width)).toBe(Math.round(before.width + 30));
@@ -268,6 +273,7 @@ test("dragged in the tablet view, it is resized at the tablet's breakpoint only,
   await expect(design(page).getByRole("button", { name: /^Reset width/ })).toHaveCount(1);
   await expect(design(page).locator(`.tk-size-row > .tk-select-field:has([aria-label="Width sizing"])`)).toHaveClass(/\bis-changed\b/);
 
+  await workIn(desktop(page));
   await dragHandle(page, handle(page, "e"), { x: 20, y: 0 });
   await expect.poll(() => boxIn(phone(page), `${HERO} > button`).then((b) => b.width)).toBe(Math.round(before.width + 20));
   // The tablet keeps its own.
@@ -446,7 +452,8 @@ test("pressed with ⌘ held, a handle selects the deepest layer under it, as any
   // The box, the layer around what is under the pointer.
   await pick(page, desktop(page), "#inner");
   await page.keyboard.press("Escape");
-  await expect(page.locator(".tk-handle")).toHaveCount(24);
+  // In the view worked in alone (designer, 2026-11-10).
+  await expect(page.locator(".tk-handle")).toHaveCount(8);
   const edge = (await handle(page, "w").boundingBox())!;
 
   // Just inside the box's left edge, on what fills it.

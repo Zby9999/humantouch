@@ -99,6 +99,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
    * 2026-11-08). Nothing kept for the next entry.
    */
   const [layersShown, setLayersShown] = useState(false);
+  /** The layer whose row in the Layers panel is pointed at, outlined on the canvas (designer, 2026-11-10). */
+  const [rowHovered, setRowHovered] = useState<Layer | null>(null);
   const layersToggle = useRef<HTMLButtonElement>(null);
   const toggledLayers = useRef(false);
   const showLayers = (shown: boolean) => {
@@ -759,6 +761,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
               folds={folds}
               broughtBack={broughtBack}
               onSelect={(layer, extend) => select(extend ? toggleIn(selected, layer) : [layer])}
+              onHover={setRowHovered}
             />
           )}
         </aside>
@@ -866,6 +869,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         tree={tree}
         selected={selected}
         hideSelection={adjusting}
+        // The panel hidden, no row is pointed at.
+        rowHovered={layersShown ? rowHovered : null}
         onSelect={select}
         editor={editor}
         onMove={(layer: Layer, to: Destination) => {

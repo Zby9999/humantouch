@@ -75,6 +75,8 @@ interface Props {
   selected: Layer[];
   /** Keep the selection box out of the way, as while a value is being adjusted. */
   hideSelection: boolean;
+  /** The layer whose row in the Layers panel is pointed at: outlined in every view alike, as the layer pointed at is (designer, 2026-11-10). */
+  rowHovered: Layer | null;
   onSelect(layers: Layer[]): void;
   /** What a dragged layer can be moved into; null until there is a canvas to edit. */
   editor: Editor | null;
@@ -128,7 +130,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, rowHovered, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -1288,12 +1290,15 @@ export function CanvasView(props: Props) {
           const away = !shown.offCanvasLayer && view !== (active ?? views?.list()[0]);
           return (
             <Fragment key={keyOf(shown)}>
-              {hovered && !selected.includes(hovered) && shows(shown, hovered) && <Outline layer={hovered} view={view} name={name} camera={at} hover />}
+              {hovered && !selected.includes(hovered) && shows(shown, hovered) && (
+                <Outline layer={hovered} view={view} name={name} camera={at} hover away={!shown.offCanvasLayer && keyOf(shown) !== keyOf(hover!.in)} />
+              )}
+              {rowHovered && !selected.includes(rowHovered) && !drag && !resize && !hideSelection && shows(shown, rowHovered) && <Outline layer={rowHovered} view={view} name={name} camera={at} hover />}
               {tree && titled === keyOf(shown) && !selected.includes(tree.root) && <Outline layer={tree.root} view={view} name={name} camera={at} hover />}
               {selected.map((layer, i) => layer !== typingLayer && shows(shown, layer) && <Outline key={i} layer={layer} view={view} name={name} camera={at} hidden={hideSelection} away={away} />)}
               {typingLayer && shows(shown, typingLayer) && <Outline layer={typingLayer} view={view} name={name} camera={at} typing />}
-              {withHandles && shows(shown, withHandles) && (!spaceHeld || resize) && (
-                <Handles layer={withHandles} view={view} name={name} camera={at} away={away} onPress={(handle, event) => pressHandle(withHandles, shown, handle, event)} />
+              {withHandles && !away && shows(shown, withHandles) && (!spaceHeld || resize) && (
+                <Handles layer={withHandles} view={view} name={name} camera={at} onPress={(handle, event) => pressHandle(withHandles, shown, handle, event)} />
               )}
               {withGradient && !shown.offCanvasLayer && shows(shown, withGradient) && (
                 <GradientHandles

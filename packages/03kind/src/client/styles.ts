@@ -1500,9 +1500,11 @@ export const styles = /* css */ `
 .tk-handle { position: absolute; box-sizing: border-box; pointer-events: auto; touch-action: none; }
 .tk-handle[data-corner] { border: 1px solid var(--tk-selection); background: #fff; }
 .tk-handles:not([data-small]) .tk-handle[data-corner]::before { content: ""; position: absolute; inset: -3px; }
-/* In the views other than the one worked in, the selection lighter, its handles' squares white still (designer, 2026-11-09). */
-.tk-selection[data-away] { border-color: color-mix(in srgb, var(--tk-selection) 40%, transparent); }
-.tk-handles[data-away] .tk-handle[data-corner] { border-color: color-mix(in srgb, var(--tk-selection) 40%, #fff); }
+/*
+ * In the views other than the one worked in, the selection lighter, with no handles: they are not resized there (designer, 2026-11-09,
+ * 2026-11-10). So too the layer pointed at, in the views other than the one pointed in.
+ */
+:is(.tk-selection, .tk-hover)[data-away] { border-color: color-mix(in srgb, var(--tk-selection) 40%, transparent); }
 /* A gradient's handles on the layer, while its fill's picker is open: drawn by the editor layer alone. */
 .tk-gradient-handles { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .tk-gradient-handles g { pointer-events: all; touch-action: none; }
