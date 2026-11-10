@@ -1,5 +1,4 @@
-import { canvasInPlace, expect, holdMotion, midway, steadyBox, test, type Locator, type Page } from "./fixtures";
-import { LAYERS_FOLD_MS, LAYERS_FOLD_RISE_PX } from "../../packages/03kind/src/client/motion";
+import { canvasInPlace, expect, expectFolding, holdMotion, steadyBox, test, type Locator, type Page } from "./fixtures";
 import { readFileSync } from "node:fs";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
@@ -332,19 +331,8 @@ test("a level closed folds up: its rows go a little way up and fade as the rows 
   await expect(fold).toHaveAttribute("aria-hidden", "true");
   await expect(fold.locator(".tk-tree-row")).not.toHaveCount(0);
   await expect(fold.locator('[role="treeitem"]')).toHaveCount(0);
-  // The copies going up 8px and fading, however many, shown only above the rows rising after them; the row after rising from where it was.
-  const keyframes = await fold.evaluate((el) =>
-    el.getAnimations({ subtree: true }).map((animation) => (animation.effect as KeyframeEffect).getKeyframes().map((frame) => frame.transform ?? frame.clipPath)),
-  );
-  expect(keyframes).toEqual(expect.arrayContaining([["none", "translateY(-8px)"], ["inset(0px)", "inset(0px 0px 100%)"]]));
-  expect(await next.evaluate((el) => el.getAnimations().length)).toBe(1);
-  // Halfway: the copies part of the way up and faded part of the way, the row after still below its place, rising.
-  const copies = await midway(fold.locator(".tk-tree-rows"), LAYERS_FOLD_MS / 2);
-  expect(copies.y).toBeLessThan(0);
-  expect(copies.y).toBeGreaterThan(-LAYERS_FOLD_RISE_PX);
-  expect(copies.opacity).toBeGreaterThan(0);
-  expect(copies.opacity).toBeLessThan(1);
-  expect((await midway(next, LAYERS_FOLD_MS / 2)).y).toBeGreaterThan(0);
+  // The copies going up 8px and fading over the fold's time, however many, shown only above the rows rising after them; the row after rising from where it was.
+  await expectFolding(fold, fold.locator(".tk-tree-rows"), next);
   // Then, played on, gone.
   await letGo();
   await expect(fold).toHaveCount(0);
@@ -353,9 +341,13 @@ test("a level closed folds up: its rows go a little way up and fade as the rows 
   await header.locator(".tk-tree-chevron").click();
   await expect(header).toHaveAttribute("aria-expanded", "true");
   await page.emulateMedia({ reducedMotion: "reduce" });
+  // Motion held: a fold, had it started, would still be there; read once, not waited for.
+  const letGoAgain = await holdMotion(page);
   await header.locator(".tk-tree-chevron").click();
   await expect(header).toHaveAttribute("aria-expanded", "false");
-  await expect(fold).toHaveCount(0);
+  expect(await fold.count()).toBe(0);
+  expect(await next.evaluate((el) => el.getAnimations().filter((a) => !(a instanceof CSSTransition)).length)).toBe(0);
+  await letGoAgain();
 });
 
 test("an instance's disclosure (a row under Components) is drawn as every other row's; its icon stays purple (designer, 2026-11-08)", async ({ page }) => {

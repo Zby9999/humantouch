@@ -1,5 +1,4 @@
-import { canvasInPlace, expectSegmentedChanged, holdMotion, midway, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
-import { LAYERS_FOLD_MS, LAYERS_FOLD_RISE_PX } from "../../packages/03kind/src/client/motion";
+import { canvasInPlace, expectFolding, expectSegmentedChanged, holdMotion, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 
 function canvas(page: Page) {
@@ -1204,26 +1203,19 @@ test.describe("with motion", () => {
     await expect(shadow.getByRole("textbox")).toHaveCount(0);
     await expect(copies).toHaveAttribute("aria-hidden", "true");
     await expect(copies.locator("input").first()).toHaveValue("0");
-    const keyframes = await copies.evaluate((el) =>
-      el.getAnimations({ subtree: true }).map((animation) => (animation.effect as KeyframeEffect).getKeyframes().map((frame) => frame.transform ?? frame.clipPath)),
-    );
-    expect(keyframes).toEqual(expect.arrayContaining([["none", "translateY(-8px)"], ["inset(0px)", "inset(0px 0px 100%)"]]));
-    const after = effects.getByRole("group", { name: "Layer blur", exact: true });
-    expect(await after.evaluate((el) => el.getAnimations().length)).toBe(1);
-    // Halfway: the copies part of the way up and faded part of the way, the effect after still below its place, rising.
-    const halfway = await midway(copies.locator(":scope > .tk-effect"), LAYERS_FOLD_MS / 2);
-    expect(halfway.y).toBeLessThan(0);
-    expect(halfway.y).toBeGreaterThan(-LAYERS_FOLD_RISE_PX);
-    expect(halfway.opacity).toBeGreaterThan(0);
-    expect(halfway.opacity).toBeLessThan(1);
-    expect((await midway(after, LAYERS_FOLD_MS / 2)).y).toBeGreaterThan(0);
+    // Its details' copies going up 8px and fading over the fold's time, the effect after rising from where it was.
+    await expectFolding(copies, copies.locator(":scope > .tk-effect"), effects.getByRole("group", { name: "Layer blur", exact: true }));
     // Then, played on, gone.
     await letGo();
     await expect(copies).toHaveCount(0);
 
+    // Opened, at once: motion held, its fields are there and nothing of it moves (a hover's colour aside); read once, not waited for.
+    const letGoAgain = await holdMotion(page);
     await shadow.getByRole("button", { name: "Shadow 1 details" }).click();
     await expect(shadow.getByRole("textbox", { name: "Shadow 1 X" })).toBeVisible();
-    await expect(copies).toHaveCount(0);
+    expect(await copies.count()).toBe(0);
+    expect(await shadow.evaluate((el) => el.getAnimations({ subtree: true }).filter((a) => !(a instanceof CSSTransition)).length)).toBe(0);
+    await letGoAgain();
   });
 });
 

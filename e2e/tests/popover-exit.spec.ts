@@ -31,30 +31,65 @@ function leavingState(menu: Locator) {
   );
 }
 
+/** Where `watchLeaving` keeps what it saw, on the page's window. */
+const LEAVING_RECORD = "__e2eLeaving";
+
+interface LeavingRecord {
+  /** When the last click before it left began, its capture on the editor's root: before the click closes it, and so before its exit's timer starts. */
+  clickedAt: number;
+  /** What the popovers were, as `leavingState` reads them, on every change to them from the moment one started leaving until they were gone. */
+  states: Awaited<ReturnType<typeof leavingState>>[];
+  /** When they were gone, 0 until then. */
+  goneAt: number;
+}
+
 /**
- * What the popovers matching `selector` are the moment one of them starts leaving, as `leavingState` reads them, read
- * there and then in the page (a mutation observer's, before its exit's timer can run) and polled for by the returned
- * call. Read after the click that closes it, a busy machine can reach the read after the exit is over (ticket 126).
+ * Watches the popovers matching `selector` leave, in the page itself (a mutation observer's, run before any timer
+ * can): their state on every change from the moment one starts leaving until they are gone, and when that is. Read
+ * after the click that closes it instead, a busy machine can reach the read after the exit is over (ticket 126).
+ * The call returned waits until they are gone, then checks that they were `expected` all the way, and gone no
+ * sooner than `POPOVER_EXIT_MS` after the click: timers never run early, however busy the machine.
  */
 async function watchLeaving(page: Page, selector: string) {
-  await design(page).evaluate((panel, selector) => {
-    const root = panel.getRootNode() as ShadowRoot | Document;
-    const seen = window as unknown as { __e2eLeaving?: unknown };
-    delete seen.__e2eLeaving;
-    const observer = new MutationObserver(() => {
-      const all = [...root.querySelectorAll(selector)];
-      if (!all.some((m) => m.classList.contains("is-leaving"))) return;
-      observer.disconnect();
-      seen.__e2eLeaving = all.map((m) => ({
-        leaving: m.classList.contains("is-leaving"),
-        hidden: m.getAttribute("aria-hidden"),
-        inert: (m as HTMLElement).inert,
-        pointerEvents: getComputedStyle(m).pointerEvents,
-      }));
-    });
-    observer.observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
-  }, selector);
-  return () => expect.poll(() => page.evaluate(() => (window as unknown as { __e2eLeaving?: unknown }).__e2eLeaving ?? null));
+  await design(page).evaluate(
+    (panel, { selector, name }) => {
+      const root = panel.getRootNode() as ShadowRoot | Document;
+      const record: LeavingRecord = { clickedAt: 0, states: [], goneAt: 0 };
+      (window as unknown as Record<string, LeavingRecord>)[name] = record;
+      let left = false;
+      root.addEventListener("click", () => !left && (record.clickedAt = performance.now()), true);
+      const observer = new MutationObserver(() => {
+        const all = [...root.querySelectorAll(selector)];
+        if (!left && !all.some((m) => m.classList.contains("is-leaving"))) return;
+        left = true;
+        if (!all.length) {
+          record.goneAt = performance.now();
+          observer.disconnect();
+          return;
+        }
+        record.states.push(
+          all.map((m) => ({
+            leaving: m.classList.contains("is-leaving"),
+            hidden: m.getAttribute("aria-hidden"),
+            inert: (m as HTMLElement).inert,
+            pointerEvents: getComputedStyle(m).pointerEvents,
+          })),
+        );
+      });
+      observer.observe(root, { subtree: true, childList: true, attributes: true });
+    },
+    { selector, name: LEAVING_RECORD },
+  );
+  return async (expected: Awaited<ReturnType<typeof leavingState>>) => {
+    const read = () => page.evaluate((name) => (window as unknown as Record<string, LeavingRecord>)[name], LEAVING_RECORD);
+    await expect.poll(async () => (await read()).goneAt > 0, { message: "gone once its exit is over", timeout: POPOVER_EXIT_MS + 1000 }).toBe(true);
+    const { clickedAt, states, goneAt } = await read();
+    expect(states.length).toBeGreaterThan(0);
+    for (const state of states) expect(state).toEqual(expected);
+    expect(clickedAt).toBeGreaterThan(0);
+    // `performance.now()` is coarsened a little: 1ms.
+    expect(goneAt - clickedAt).toBeGreaterThanOrEqual(POPOVER_EXIT_MS - 1);
+  };
 }
 
 test("a menu closed with the pointer takes no clicks at once and is gone after its exit; with Esc, it is gone at once", async ({ page }) => {
@@ -68,13 +103,13 @@ test("a menu closed with the pointer takes no clicks at once and is gone after i
   await filter.click();
   await expect(listbox).toBeVisible();
   await steadyBox(listbox);
-  const left = await watchLeaving(page, ".tk-menu");
+  const leaves = await watchLeaving(page, ".tk-menu");
   await listbox.getByRole("option", { name: "Tailwind" }).click();
-  await left().toEqual([{ leaving: true, hidden: "true", inert: true, pointerEvents: "none" }]);
   await expect(listbox).toBeHidden();
   await expect(filter).toHaveValue("tailwind");
-  // Gone once its exit is over.
-  await expect(menus).toHaveCount(0, { timeout: POPOVER_EXIT_MS + 1000 });
+  // So from the moment it started leaving until it was gone, its exit's whole time after the click.
+  await leaves([{ leaving: true, hidden: "true", inert: true, pointerEvents: "none" }]);
+  await expect(menus).toHaveCount(0);
 
   // Esc: gone at once, no exit.
   await filter.click();
@@ -133,11 +168,12 @@ test("the color picker leaves when closed with the pointer, and at once with Esc
 
   await swatch.click();
   await expect(picker).toBeVisible();
-  const left = await watchLeaving(page, ".tk-popover");
+  const leaves = await watchLeaving(page, ".tk-popover");
   await picker.getByRole("button", { name: "Close" }).click();
-  await left().toEqual([{ leaving: true, hidden: "true", inert: true, pointerEvents: "none" }]);
   await expect(picker).toBeHidden();
-  await expect(popovers).toHaveCount(0, { timeout: POPOVER_EXIT_MS + 1000 });
+  // Leaving, out of the accessibility tree and taking no clicks, from the moment it started until it was gone, its exit's whole time after the click.
+  await leaves([{ leaving: true, hidden: "true", inert: true, pointerEvents: "none" }]);
+  await expect(popovers).toHaveCount(0);
 
   await swatch.click();
   await expect(picker).toBeVisible();

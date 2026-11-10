@@ -1,5 +1,6 @@
 import { expect, test as base, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { showLayersOnEntry } from "../layers-on-entry.ts";
+import { LAYERS_FOLD_MS, LAYERS_FOLD_RISE_PX } from "../../packages/03kind/src/client/motion";
 
 export { expect } from "@playwright/test";
 export type { CDPSession, Frame, Locator, Page } from "@playwright/test";
@@ -174,12 +175,36 @@ export async function holdMotion(page: Page): Promise<() => Promise<void>> {
  * Where `el`'s animations put it `at` ms in, all of them sought there, read from its computed style: how far it is
  * moved down (px, up < 0) and how opaque it is. For motion held by `holdMotion`.
  */
-export function midway(el: Locator, at: number) {
+export function seekTo(el: Locator, at: number) {
   return el.evaluate((node, at) => {
     for (const animation of node.getAnimations({ subtree: true })) animation.currentTime = at;
     const style = getComputedStyle(node);
     return { y: new DOMMatrixReadOnly(style.transform === "none" ? undefined : style.transform).m42, opacity: Number(style.opacity) };
   }, at);
+}
+
+/**
+ * A fold under way, held by `holdMotion` (designer, 2026-11-08; a level closed in the Layers, an effect folded in the
+ * Design panel): the copies, `fold`, going up `LAYERS_FOLD_RISE_PX` and fading, shown only above what rises after
+ * them, over `LAYERS_FOLD_MS`; `after`, the first of what rises, rising from where it was over the same time. Halfway,
+ * `rows` (the copies' box that moves) part of the way up and faded part of the way, `after` still below its place.
+ */
+export async function expectFolding(fold: Locator, rows: Locator, after: Locator) {
+  const animations = await fold.evaluate((el) =>
+    el.getAnimations({ subtree: true }).map((animation) => ({
+      frames: (animation.effect as KeyframeEffect).getKeyframes().map((frame) => frame.transform ?? frame.clipPath),
+      duration: animation.effect!.getTiming().duration,
+    })),
+  );
+  expect(animations.map((a) => a.frames)).toEqual(expect.arrayContaining([["none", `translateY(-${LAYERS_FOLD_RISE_PX}px)`], ["inset(0px)", "inset(0px 0px 100%)"]]));
+  expect(new Set(animations.map((a) => a.duration))).toEqual(new Set([LAYERS_FOLD_MS]));
+  expect(await after.evaluate((el) => el.getAnimations().map((a) => a.effect!.getTiming().duration))).toEqual([LAYERS_FOLD_MS]);
+  const halfway = await seekTo(rows, LAYERS_FOLD_MS / 2);
+  expect(halfway.y).toBeLessThan(0);
+  expect(halfway.y).toBeGreaterThan(-LAYERS_FOLD_RISE_PX);
+  expect(halfway.opacity).toBeGreaterThan(0);
+  expect(halfway.opacity).toBeLessThan(1);
+  expect((await seekTo(after, LAYERS_FOLD_MS / 2)).y).toBeGreaterThan(0);
 }
 
 type Box = NonNullable<Awaited<ReturnType<Locator["boundingBox"]>>>;
