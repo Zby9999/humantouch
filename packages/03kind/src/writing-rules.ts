@@ -4,7 +4,7 @@
  * of change the round has, each once. An Agent that never loaded the Skill
  * finds them all here; one that did reads only what this round needs.
  */
-import { dissolvesGrid, drawnIn, makesGrid, type Change, type Created, type Place } from "./client/changeset";
+import { dissolvesGrid, drawnIn, makesGrid, type Change, type Composed, type Created, type Dissolved, type Place, type Target } from "./client/changeset";
 import { checkable, forOneUsage, foundByMarker, isEndOffset, makerOf, PLACING, textMovedInPlace, type PlacedAlong } from "./client/checkable";
 import type { Property } from "./client/property-table";
 import { listed } from "./design-values";
@@ -28,6 +28,15 @@ const HOW_TO_WRITE: HowToWrite[] = [
       "Write it the way the project already writes code: with Tailwind, its classes; with CSS files or CSS Modules, the rule that styles the element; no inline style unless the project styles that element inline. " +
       "When a change cannot be applied exactly as asked, apply the closest you can and still run `done` for it, or leave it out and do not; report it either way. " +
       "Never change third-party code (`node_modules`, vendored packages): a change that can only be made there is left out and reported.",
+  },
+  {
+    // Said only for a layer a third-party component draws (ticket 120): an Agent reached into one from its usage, and the notes of every other round stay as they were.
+    name: "Third-party components",
+    calledFor: (change) => layersStyled(change).some(drawnByThirdParty),
+    text:
+      "change a layer a third-party component draws by what the component takes from its usage (a prop, a `className` or `style` it passes on); " +
+      "an element around it may place or size it as a whole, but do not reach into its elements from the usage: no child or descendant selectors on any element around it (`[&>span]:w-[90px]`, `*:…`, `:has()`), no global rule on its class names. " +
+      "Those depend on how the library draws its elements, and stop working, with no error, once it draws them otherwise: a change that cannot be made without them is left out and reported.",
   },
   {
     name: "What sets the value now",
@@ -171,7 +180,12 @@ const HOW_TO_WRITE: HowToWrite[] = [
   {
     name: "Make it a Stack",
     calledFor: (change) => !!change.asStack || !!change.copiedBreakpoints?.some((copy) => copy.asStack),
-    text: "keep its children looking as they did: their margins no longer collapse in a flex container, so the spacing between them may need adjusting.",
+    text: (list) =>
+      "keep its children looking as they did: their margins no longer collapse in a flex container, so the spacing between them may need adjusting." +
+      // Said only where a gap takes over margins (ticket 122): the notes of every other round stay as they were.
+      (list.some((change) => change.asStack && change.marginsDropped?.length)
+        ? " Where its gap changes, the change says which margins to take off (**Drop the margins**): take those off, and its gap is all the room between its children."
+        : ""),
   },
   {
     name: "Dissolving a Stack",
@@ -266,6 +280,21 @@ interface HowChecked {
   text: string;
 }
 
+/** Whether a third-party component draws the layer (ticket 120): the innermost level of its usage chain is a dependency's. */
+const drawnByThirdParty = (target: Target) => !!target.chain[0]?.thirdParty;
+
+/**
+ * The layers a change styles (ticket 120): its own, and those it gives styles
+ * of their own: each layer of a Stack or Grid dissolved (absolute, placed and
+ * sized), and each a new Stack or Grid takes over the margins of.
+ */
+function layersStyled(change: Change): Target[] {
+  if (change.kind === "unstack") return [change.target, ...((change.after as Dissolved | null)?.layers ?? []).map((layer) => layer.target)];
+  if (change.kind === "stack") return [change.target, ...((change.after as Composed | null)?.layers ?? []).filter((layer) => layer.unmargined).map((layer) => layer.target)];
+  // A gap that takes over the margins between its layers (ticket 122): those layers too.
+  return [change.target, ...(change.marginsDropped ?? []).map((layer) => layer.target)];
+}
+
 /** A layer placed absolute, as the page checks it: where it is drawn. */
 const placing = (change: Change) => (change.kind === "style" && PLACING.includes(change.property as Property)) || (change.kind === "move" && !!(change.after as Place).absolute);
 /** A change to the `right` or `bottom` of a layer placed from that edge of its container (ticket 75). */
@@ -298,6 +327,11 @@ const HOW_CHECKED: HowChecked[] = [
     calledFor: (change, list) => checkable(change, list) && !!change.breakpoint,
     text:
       "a change at a breakpoint in each part the project's breakpoints cut its range into (the design intent names them when their values differ): at the page's own width in the part its window is in, else at the part's lower edge, or, for one from no width at all, 1px under its upper edge",
+  },
+  {
+    // Said only where a gap takes over margins (ticket 122).
+    calledFor: (change, list) => checkable(change, list) && !!change.marginsDropped?.length,
+    text: "a gap that takes over its layers' margins (**Drop the margins**) by its gap as the browser computes it and by those margins being gone from the layers named, each side named",
   },
   {
     calledFor: (change, list) => checkable(change, list) && placing(change) && !isEndOffsetChange(change) && !change.centeredOn,

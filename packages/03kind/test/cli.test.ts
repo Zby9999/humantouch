@@ -326,6 +326,52 @@ describe("claim, how to write the changes (ticket 65)", () => {
     expect(rule(output, "Sizes in a Grid")).toContain("Hug fits its content in the cell: `fit-content`, Tailwind's `w-fit` (`h-fit`)");
   });
 
+  describe("a layer a third-party component draws (ticket 120)", () => {
+    /** acme-ui's Badge, as in ticket 88's third-party scenario: a locked layer, its JSX unmarked. */
+    const badge = {
+      ...inApp,
+      loc: null,
+      chain: [{ component: "Badge", usage: "src/App.tsx:21:11", thirdParty: true }, APP],
+      component: "Badge",
+      locked: true,
+      context: { path: ["Page", "App", "Stack", "Badge"], element: '<span class="inline-flex rounded-full bg-amber-100 px-2">' },
+    };
+    const width = (target: object) => style("width", { target, before: { type: "hug" }, after: { type: "fixed", value: 90 }, style: { width: "90px" } });
+    const dissolve = (target: object) => change("unstack", { before: settings, after: { width: 200, height: 100, layers: [{ layer: "5", target, x: 0, y: 0, width: 90, height: 20 }] } });
+    const stack = (target: object, unmargined: boolean) =>
+      change("stack", { before: null, after: { ...settings, place: place(1), layers: [{ layer: "5", target, from: place(1), ...(unmargined && { unmargined: true }) }] } });
+
+    test("its width says not to reach into its elements from the usage, after Every change, which is word for word as for a layer of the project's own", async () => {
+      saveRound({ ...width(inApp), id: 1 });
+      const own = await cli("claim");
+      expect(names(own.output)).not.toContain("Third-party components");
+
+      saveRound({ ...width(badge), id: 1 });
+      const output = (await cli("claim")).output;
+
+      expect(names(output).slice(0, 2)).toEqual(["Every change", "Third-party components"]);
+      expect(rule(output, "Every change")).toBe(rule(own.output, "Every change"));
+      const said = rule(output, "Third-party components");
+      expect(said).toContain("an element around it may place or size it as a whole, but do not reach into its elements from the usage");
+      expect(said).toContain("no child or descendant selectors on any element around it (`[&>span]:w-[90px]`, `*:…`, `:has()`)");
+      expect(said).toContain("a change that cannot be made without them is left out and reported");
+    });
+
+    test.each([
+      ["a move of it", change("move", { target: badge }), true],
+      ["a change to a layer with no usage chain", width({ ...badge, chain: [] }), false],
+      ["a Stack dissolved, it one of the layers placed absolute", dissolve(badge), true],
+      ["a Stack dissolved of the project's own layers", dissolve(inApp), false],
+      ["a Stack made of it, taking over its margins", stack(badge, true), true],
+      ["a Grid made of it, taking over its margins", { ...stack(badge, true), after: { grid: { type: "grid", columns: 2, rowGap: 8, columnGap: 8 }, padding: [0, 0, 0, 0], place: place(1), layers: [{ layer: "5", target: badge, from: place(1), unmargined: true }] } }, true],
+      ["a Stack made of it, its JSX only moved", stack(badge, false), false],
+    ])("%s: the rule said, %s", async (_, round, said) => {
+      saveRound({ ...round, id: 1 });
+
+      expect(names((await cli("claim")).output).includes("Third-party components")).toBe(said);
+    });
+  });
+
   test("a rule is said once, however many changes call for it; none a change of the round does not call for", async () => {
     saveRound({ ...change("move"), id: 1 }, { ...change("move", { before: place(2), after: place(1) }), id: 2 }, { ...change("text", { before: "A", after: "B" }), id: 3 });
 
@@ -914,6 +960,55 @@ describe("claim, layout changes", () => {
 
     expect(notes).toContain("- **Design intent:** Change the gap from 0px to 16px.\n- **Make it a Stack:** the layer lays its children out as plain blocks, top to bottom");
     expect(notes).toContain("- **Reference style:** `display: flex`, `flex-direction: column`, `gap: 16px`\n");
+  });
+
+  /** A Card's gap set to 0, its body 8px below its title by its `mt-2` (ticket 122). */
+  const bodyTarget = { ...cards, loc: "src/components/Card.tsx:4:7", context: { ...cards.context, path: [...cards.context.path, "Body."] } };
+  const marginSource = { kind: "class", className: "mt-2", selector: ".mt-2", file: "src/index.css", layer: "utilities", important: false, declaration: "margin-top: calc(var(--spacing) * 2)" };
+  const gapOver = (more: object = {}) => ({
+    ...redFill,
+    property: "gap",
+    before: 8,
+    after: 0,
+    style: { display: "flex", "flex-direction": "column", gap: "0px" },
+    asStack: true,
+    marginsDropped: [{ layer: "2", target: bodyTarget, margins: { "margin-top": "8px" }, sources: [marginSource] }],
+    ...more,
+  });
+
+  test("a gap that takes over its layers' margins between them says which to drop, what sets them, and how the page checks it (ticket 122)", async () => {
+    saveRound(gapOver());
+
+    const { output } = await cli("claim");
+    const notes = section(output, 1);
+
+    expect(notes).toContain(
+      "- **Drop the margins:** the layers have a margin between them: `margin-top: 8px` on Body (`<article class=\"rounded-xl border bg-white p-5\">`, at `src/components/Card.tsx:4:7`). In the Stack, the room between them is its gap alone: take it off, and keep any margin around the first and the last.\n",
+    );
+    expect(notes).toMatch(/- \*\*Currently set by\*\* \(the margins\): class `mt-2`/);
+    expect(output).toContain(
+      "their margins no longer collapse in a flex container, so the spacing between them may need adjusting. Where its gap changes, the change says which margins to take off (**Drop the margins**): take those off, and its gap is all the room between its children.\n",
+    );
+    expect(output).toContain("a gap that takes over its layers' margins (**Drop the margins**) by its gap as the browser computes it and by those margins being gone from the layers named, each side named");
+  });
+
+  test("a gap from uneven room between the layers says each (ticket 122)", async () => {
+    saveRound(gapOver({ before: [8, 24], after: 16 }));
+    const notes = section((await cli("claim")).output, 1);
+    expect(notes).toContain("- **Design intent:** Change the gap from 8px and 24px between its layers to 16px.\n");
+  });
+
+  test("at a breakpoint, the margins go at its widths only (ticket 122)", async () => {
+    saveRound(gapOver({ breakpoint: { min: null, max: 768 } }));
+    const notes = section((await cli("claim")).output, 1);
+    expect(notes).toContain("In the Stack, the room between them is its gap alone: take it off at these widths only, and keep any margin around the first and the last.");
+  });
+
+  test("a gap with no margins between its layers says nothing of them (ticket 122)", async () => {
+    saveRound({ ...redFill, property: "gap", before: 0, after: 16, style: { display: "flex", "flex-direction": "column", gap: "16px" }, asStack: true });
+    const { output } = await cli("claim");
+    expect(output).not.toContain("Drop the margins");
+    expect(output).not.toContain("(the margins)");
   });
 });
 
@@ -2180,6 +2275,21 @@ describe("done, checked on the page", () => {
         "Something overrides your change: see what sets the value in the notes (Currently set by), fix it, and run `npx 03kind done 1` again.\n",
     );
     expect(again.output).toBe("Change 1 done: 1 of 2 changes applied.\nChecked on the page: it shows the change.\n");
+  });
+
+  test("for a gap whose layers keep their margins between them, names each and says to take them off (ticket 122)", async () => {
+    saveRound({ ...redFill, property: "gap", before: 8, after: 0, style: { gap: "0px" } });
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: { room: { min: 0, max: 8 }, margins: [{ layer: "Body", side: "margin-top", px: 8 }] } }));
+
+    const { output } = await cli("done", "1");
+
+    expect(output).toBe(
+      "Change 1 done: 0 of 1 change applied.\n" +
+        "Checked on the page: it does not show the change. The room between the Stack's layers is 0px–8px, not 0px: Body (`margin-top: 8px`) has a margin between the layers, which adds to its gap. " +
+        "Take it off (Drop the margins), and run `npx 03kind done 1` again.\n",
+    );
+    expect((await cli("finish")).output).toContain("the room between the layers on the page is 0px–8px, not 0px: Body (`margin-top: 8px`) has a margin between the layers still");
   });
 
   test("for a deletion, a reorder and an absolute placement, says what the page shows instead", async () => {

@@ -295,7 +295,45 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
       await desk.edit("components/BillingPicker.tsx", "        </button>\n      </div>\n", "        </button>\n      </div>\n      </div>\n");
     },
   },
+  {
+    // Ticket 122: the body is 8px below the title by its `mt-2`, which the gap takes over.
+    id: "r18-card-gap",
+    example: "vite-react18-tw3",
+    title:
+      "On the React 18 + Tailwind v3 page, the cards of the loop given no gap between their title and body (a plain flow, its body 8px below its title by its margin, made a real Stack whose gap takes that margin over); the fourth card stays as it was.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "Card").click();
+      await setField(page, "Gap", "0");
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "In the three cards of the loop, the body is right below the title, with no room between them; the fourth card's body is 8px below its title still.",
+        checkable: true,
+        variable: ["gap-0"],
+        shows: () => {
+          const room = (card: Element) => card.querySelector("p")!.getBoundingClientRect().top - card.querySelector("h3")!.getBoundingClientRect().bottom;
+          const cards = [...document.querySelectorAll("article")];
+          return cards.length === 4 && cards.slice(0, 3).every((card) => Math.abs(room(card)) < 0.5) && Math.abs(room(cards[3]) - 8) < 0.5;
+        },
+      },
+    ],
+    async apply(desk) {
+      // The loop's usage alone: the Card takes a prop that lays it out as a Stack with no gap, its body's margin off.
+      await desk.edit("src/components/Card.tsx", "export function Card({ title, body }: { title: string; body: string }) {", "export function Card({ title, body, tight = false }: { title: string; body: string; tight?: boolean }) {");
+      await desk.edit(
+        "src/components/Card.tsx",
+        '<article className="rounded-card border border-brand-100 bg-white p-gutter shadow-card">',
+        '<article className={`rounded-card border border-brand-100 bg-white p-gutter shadow-card${tight ? " flex flex-col gap-0" : ""}`}>',
+      );
+      await desk.edit("src/components/Card.tsx", '<p className="mt-2 text-caption text-muted">', '<p className={`${tight ? "" : "mt-2 "}text-caption text-muted`}>');
+      await desk.edit("src/App.tsx", "<Card key={feature.title} title={feature.title} body={feature.body} />", "<Card key={feature.title} title={feature.title} body={feature.body} tight />");
+    },
+  },
 ];
 
-/** Every standard scenario: the React 19 + Tailwind v4 example's, then these: 28, of which `--scripted` applies the 19 with scripted code. */
+/** Every standard scenario: the React 19 + Tailwind v4 example's, then these: 29, of which `--scripted` applies the 20 with scripted code. */
 export const STANDARD_SCENARIOS: Scenario[] = [...SCENARIOS, ...OTHER_EXAMPLE_SCENARIOS];
