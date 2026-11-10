@@ -19,13 +19,13 @@
 
 **Blocked by:** None technically. It is on the Grid line after 127.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] e2e 先复现：打开一个长得要滚动的菜单（字体列表），鼠标停在菜单里，连按 ArrowDown 到底。修改前当前项会被鼠标抢走，修改后当前项一路往下走、菜单跟着滚。下拉选择和普通菜单各一条。
 - [x] `popover-exit.spec.ts` 里「a menu closed with the pointer …」那条，126 在键盘那段之前加了 `page.mouse.move(0, 0)`，绕开的正是这个问题。把它去掉，测试照样过。
 - [x] 鼠标移到选项上它就成为当前项，普通菜单的选项说明照旧弹出：已有测试全过。
 - [x] `--dry` 全过（29 个场景），`--dry --claim-out` 和改前逐字相同；`--scripted` 全过；切换按钮的包逐字节不变。
-- [ ] 整套 e2e 过。
+- [x] 整套 e2e 过。（指挥合并前在同步了 main c0145e60 的分支上跑整套：606 过 1 跳过，一次过；typecheck 过；vitest 1205 过 1 跳过；node 126 过；`--dry` 29/29 和 main 逐字相同；`--scripted` 20/20）
 
 ## 设计师决定（2026-11-10）
 
