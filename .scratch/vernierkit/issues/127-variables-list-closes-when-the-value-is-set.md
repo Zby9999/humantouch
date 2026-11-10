@@ -20,7 +20,7 @@
 - [x] `layout.spec.ts:189` 和 `properties.spec.ts:1894` 改回直接点方向的写法，都能过。
 - [x] 列表弹出和选 Variable 的已有测试全过，行为不变。
 - [x] `--dry` 全过（29 个场景），`--dry --claim-out` 和改前逐字相同；`--scripted` 全过；切换按钮的包逐字节不变。
-- [ ] 整套 e2e 过。
+- [x] 整套 e2e 过。（指挥合并前在同步了 main e636ece9 的分支上跑整套：603 过 1 跳过，一次过；typecheck 过；vitest 1205 过 1 跳过；node 126 过；`--dry` 29/29 和 main 逐字相同；`--scripted` 20/20）
 
 ## 设计师决定（2026-11-10）
 
