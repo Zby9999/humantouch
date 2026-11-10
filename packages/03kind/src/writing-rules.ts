@@ -180,7 +180,12 @@ const HOW_TO_WRITE: HowToWrite[] = [
   {
     name: "Make it a Stack",
     calledFor: (change) => !!change.asStack || !!change.copiedBreakpoints?.some((copy) => copy.asStack),
-    text: "keep its children looking as they did: their margins no longer collapse in a flex container, so the spacing between them may need adjusting.",
+    text: (list) =>
+      "keep its children looking as they did: their margins no longer collapse in a flex container, so the spacing between them may need adjusting." +
+      // Said only where a gap takes over margins (ticket 122): the notes of every other round stay as they were.
+      (list.some((change) => change.asStack && change.marginsDropped?.length)
+        ? " Where its gap changes, the change says which margins to take off (**Drop the margins**): take those off, and its gap is all the room between its children."
+        : ""),
   },
   {
     name: "Dissolving a Stack",
@@ -286,7 +291,8 @@ const drawnByThirdParty = (target: Target) => !!target.chain[0]?.thirdParty;
 function layersStyled(change: Change): Target[] {
   if (change.kind === "unstack") return [change.target, ...((change.after as Dissolved | null)?.layers ?? []).map((layer) => layer.target)];
   if (change.kind === "stack") return [change.target, ...((change.after as Composed | null)?.layers ?? []).filter((layer) => layer.unmargined).map((layer) => layer.target)];
-  return [change.target];
+  // A gap that takes over the margins between its layers (ticket 122): those layers too.
+  return [change.target, ...(change.marginsDropped ?? []).map((layer) => layer.target)];
 }
 
 /** A layer placed absolute, as the page checks it: where it is drawn. */
@@ -321,6 +327,11 @@ const HOW_CHECKED: HowChecked[] = [
     calledFor: (change, list) => checkable(change, list) && !!change.breakpoint,
     text:
       "a change at a breakpoint in each part the project's breakpoints cut its range into (the design intent names them when their values differ): at the page's own width in the part its window is in, else at the part's lower edge, or, for one from no width at all, 1px under its upper edge",
+  },
+  {
+    // Said only where a gap takes over margins (ticket 122).
+    calledFor: (change, list) => checkable(change, list) && !!change.marginsDropped?.length,
+    text: "a gap that takes over its layers' margins (**Drop the margins**) by the room between each two of its layers as drawn: its gap and any margin left between them together",
   },
   {
     calledFor: (change, list) => checkable(change, list) && placing(change) && !isEndOffsetChange(change) && !change.centeredOn,

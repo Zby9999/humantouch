@@ -13,7 +13,7 @@ import { AUTO_MARGINS, AUTO_MARGINS_CLASS, AXIS_SIZE, CENTERING_SIGN, centeringS
 import type { Change, Composed, Created, GridSettings, Margins, Place, SavedChangeSet } from "./client/changeset";
 import type { Axis } from "./client/snap";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
-import { canvasOffset, isOffsetInLayout, movedWords, reportFor } from "./report-form";
+import { canvasOffset, isMarginsLeft, isOffsetInLayout, marginsLeftWords, movedWords, reportFor } from "./report-form";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult, type OtherUsageChanged } from "./service-protocol";
@@ -221,6 +221,8 @@ function beforeOf(change: Change, actual: unknown): unknown {
     const { x, y } = actual as PlacedOnPage;
     return { x, y };
   }
+  // A gap read with margins between its layers (ticket 122): the room between them.
+  if (change.property === "gap" && isMarginsLeft(actual)) return actual.gap;
   return actual;
 }
 
@@ -385,6 +387,14 @@ function notShown(change: Change, actual: unknown, width?: number): string {
     if (change.margins) return offByMargins(absolute, change.margins, actual as PlacedOnPage, again, width);
     const placed = actual as { x: number; y: number };
     return `${at} layer is at X ${placed.x}px and Y ${placed.y}px, not absolute at X ${absolute.x}px and Y ${absolute.y}px: check its \`position\`, \`left\` and \`top\`, and that its container is its positioning reference, then ${again}.`;
+  }
+  // A gap, its layers with margins between them still (ticket 122): which, and to take them off.
+  if (change.property === "gap" && isMarginsLeft(actual)) {
+    const one = actual.margins.length === 1;
+    return (
+      `${sentenceAt(width)} room between the Stack's layers is ${value("gap", actual.gap)}, not ${value("gap", change.after)}: ${marginsLeftWords(actual)}, which ${one ? "adds" : "add"} to its gap. ` +
+      `Take ${one ? "it" : "them"} off (Drop the margins), and ${again}.`
+    );
   }
   if (PLACED_BY[change.property] && isOffsetInLayout(actual)) return offsetNotShown(change.property, change.after as number, actual, again, width);
   if (PLACED_BY[change.property] && actual === null) return notPlacedAbsolute(change.property, change.after as number, again, width);

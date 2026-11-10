@@ -137,7 +137,7 @@
 53. As a 设计师, I want 属性面板只用设计语言（Hug / Fill / Fixed、间距、内边距、对齐）, so that 我不需要懂 CSS。
 54. As a 设计师, I want to 调整自由定位图层相对父容器的 X / Y, so that 我能精确放置它。
 55. As a 设计师, I want to 为宽、高分别选择 Fixed / Hug / Fill 并设置最小、最大尺寸, so that 我能表达元素如何随内容和容器变化。
-56. As a 设计师, I want to 调整 Stack 的方向、间距、四边内边距、九宫格对齐、均匀分布和换行, so that 我能完整控制自动排列。方向是横排、竖排、Grid 三个选项，选 Grid 把 Stack 变成 Grid；Grid 一节顶上同样三个选项，选横排、竖排变回 Stack（ticket 109）。
+56. As a 设计师, I want to 调整 Stack 的方向、间距、四边内边距、九宫格对齐、均匀分布和换行, so that 我能完整控制自动排列。方向是横排、竖排、Grid 三个选项，选 Grid 把 Stack 变成 Grid；Grid 一节顶上同样三个选项，选横排、竖排变回 Stack（ticket 109）。间距是子图层之间画面上实际的距离（ticket 122，照 ⇧A 合成）：子图层之间有外边距时，普通排列按浏览器的外边距合并算、flex 按间距加外边距算，几处不一样时取中位数；没有外边距的 Stack 照旧读写好的间距；`auto` 外边距和第一个、最后一个图层外侧的外边距不算。改间距时子图层之间的外边距清零（在平板、手机视图里只在那个断点），`auto` 外边距和最外侧的外边距不动，⌘Z 一步撤回；改动说明多一行 **Drop the margins**，点名图层和外边距，另有「Currently set by (the margins)」；页面核对时每两个子图层之间的距离都等于选的值才算显示，留着外边距的答没显示，说哪个图层还有多少外边距。
 57. As a 设计师, I want to 设置纯色、线性渐变和径向渐变填充（多个色标、可调角度）, so that 我能做出常见的填充效果。
 58. As a 设计师, I want to 设置描边的颜色、粗细、实线或虚线以及分边描边, so that 我能精细控制边框。
 59. As a 设计师, I want to 设置统一圆角或分角圆角, so that 我能做出任意圆角组合。

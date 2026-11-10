@@ -61,7 +61,7 @@ test("layout changes are told in design language; a plain flow given a gap is to
   await layers.getByRole("treeitem", { name: "Button", exact: true }).click();
   await page.getByRole("complementary", { name: "Design" }).getByRole("combobox", { name: "Width sizing" }).selectOption("fill");
   await layers.getByRole("treeitem", { name: "Card", exact: true }).first().click();
-  await setField(page, "Gap", "8");
+  await setField(page, "Gap", "16");
   await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(2);
 
   const [, width, gap] = (await npx03kind("claim")).split(/^## /m);
@@ -70,11 +70,14 @@ test("layout changes are told in design language; a plain flow given a gap is to
   expect(width).toContain("- **Design intent:** Change the width from Hug to Fill.\n");
   expect(width).toContain("- **Reference style:** `width: auto`, `align-self: stretch`\n");
   expect(width).toContain("class `self-start`");
-  // 8px is exactly Tailwind's spacing step 2: the notes name it.
+  // The body 8px below the title by its `mt-2`: that is the gap now (ticket 122). 16px is exactly Tailwind's spacing step 4: the notes name it.
   expect(gap).toContain(
-    "- **Design intent:** Change the gap from 0px to 8px.\n- **Variables:** the gap is the Variable `2`, from the Tailwind theme: use its class, `gap-2` (in CSS, `calc(var(--spacing) * 2)`).\n- **Make it a Stack:**",
+    "- **Design intent:** Change the gap from 8px to 16px.\n- **Variables:** the gap is the Variable `4`, from the Tailwind theme: use its class, `gap-4` (in CSS, `calc(var(--spacing) * 4)`).\n- **Make it a Stack:**",
   );
-  expect(gap).toContain("- **Reference style:** `display: flex`, `flex-direction: column`, `gap: 8px`\n");
+  // The gap takes the margin over, and the notes say to take it off, and what sets it.
+  expect(gap).toMatch(/- \*\*Drop the margins:\*\* the layers have a margin between them now: `margin-top: 8px` on .+ \(`<p[^`]*>`, at `src\/components\/Card\.tsx:\d+:\d+`\)\. In the Stack, the room between them is its gap alone: take it off, and keep any margin around the first and the last\.\n/);
+  expect(gap).toMatch(/- \*\*Currently set by\*\* \(the margins\): class `mt-2`/);
+  expect(gap).toContain("- **Reference style:** `display: flex`, `flex-direction: column`, `gap: 16px`\n");
 });
 
 test("a reorder and an absolute placement are told apart, with where each goes; done checks the reorder on the page", async ({ page }) => {

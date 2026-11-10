@@ -243,11 +243,8 @@ const PROPERTIES: { [P in Property]: Definition<PropertyValues[P]> } = {
   gap: {
     kinds: ["stack"],
     stack: true,
-    read(el) {
-      const stack = stackOf(el);
-      if (!stack.flex) return 0;
-      return px(getComputedStyle(el).getPropertyValue(stack.direction === "horizontal" ? "column-gap" : "row-gap"));
-    },
+    // The room between its layers as drawn, their margins between them in it (ticket 122); with none, its gap as written.
+    read: (el) => roomBetween(el).gap,
     write: (gap) => ({ gap: `${gap}px` }),
     writes: ["gap"],
     sets: ["row-gap", "column-gap"],
@@ -402,6 +399,60 @@ export function stackOf(el: Element): StackLayout {
   const style = getComputedStyle(el);
   if (/flex$/.test(style.display)) return { direction: style.flexDirection.startsWith("row") ? "horizontal" : "vertical", flex: true };
   return { direction: "vertical", flex: false };
+}
+
+/** A margin of a Stack's layer that makes room between it and the next, or the one before (ticket 122): its side, as CSS names it, and how wide, in px. */
+export interface MarginBetween {
+  el: Element;
+  side: "margin-top" | "margin-right" | "margin-bottom" | "margin-left";
+  px: number;
+}
+
+/**
+ * The room between a Stack's layers along it, as `el` lays them out (ticket
+ * 122). `gap`, what the panel shows: where none of its layers has a margin
+ * between it and the next, its gap as written, as ever; else the median of
+ * the room between each two (`spaces`), gap and margins together, as ⇧A
+ * takes it: a flex container's margins added to its gap, a plain flow's
+ * collapsed as the browser collapses them. `margins`: those margins; `auto`
+ * ones are left out (they place a layer, in what room is left over), as
+ * are those around the first and the last.
+ */
+export function roomBetween(el: Element): { gap: number; spaces: number[] | null; margins: MarginBetween[] } {
+  const style = getComputedStyle(el);
+  const { direction, flex } = stackOf(el);
+  const gap = flex ? px(style.getPropertyValue(direction === "horizontal" ? "column-gap" : "row-gap")) : 0;
+  const layers = [...el.children].filter((child) => {
+    const own = getComputedStyle(child);
+    // In a plain flow, inline layers have no margins above and below.
+    return !/^(absolute|fixed)$/.test(own.position) && !/^(none|contents)$/.test(own.display) && (flex || !own.display.startsWith("inline"));
+  });
+  if (layers.length < 2) return { gap, spaces: null, margins: [] };
+  // The side of each layer facing the one before it in the code, and the side facing the next: reversed, or right to left, the other way round.
+  const [start, end] = direction === "horizontal" ? (["left", "right"] as const) : (["top", "bottom"] as const);
+  const backwards = (flex && style.flexDirection.endsWith("reverse")) !== (direction === "horizontal" && style.direction === "rtl");
+  const [before, after] = backwards ? [end, start] : [start, end];
+  const marginOf = (child: Element, side: "left" | "right" | "top" | "bottom") => {
+    const value = px(getComputedStyle(child).getPropertyValue(`margin-${side}`));
+    return value && String(child.computedStyleMap().get(`margin-${side}`)) !== "auto" ? value : 0;
+  };
+  const margins: MarginBetween[] = [];
+  const spaces = layers.slice(1).map((next, i) => {
+    const [trailing, leading] = [marginOf(layers[i], after), marginOf(next, before)];
+    if (trailing) margins.push({ el: layers[i], side: `margin-${after}`, px: trailing });
+    if (leading) margins.push({ el: next, side: `margin-${before}`, px: leading });
+    // A plain flow collapses two margins that meet into the larger, less a negative one.
+    return flex ? gap + trailing + leading : Math.max(0, trailing, leading) + Math.min(0, trailing, leading);
+  });
+  if (!margins.length) return { gap, spaces: null, margins };
+  return { gap: round(median(spaces)), spaces: spaces.map(round), margins };
+}
+
+/** The middle one of `values`, or halfway between the two in the middle. */
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 /**

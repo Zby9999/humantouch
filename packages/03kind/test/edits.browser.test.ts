@@ -8661,3 +8661,121 @@ describe("free layers in rows and columns made a Grid, and a Grid dissolved (tic
   });
 });
 
+describe("a Stack's gap, its layers with margins between them (ticket 122)", () => {
+  /**
+   * A card laid out as a plain flow, its body 8px below its title by its
+   * margin, the title 4px down by its own (around them, not between them); a
+   * flex column whose layers have margins between them of 6px and 2px past
+   * its 4px gap; a row whose last layer is pushed to the end by its auto margin.
+   */
+  const GAPPED = `<!DOCTYPE html>
+<body style="margin: 0">
+  <article id="card" ${loc("5:5")} style="width: 300px; padding: 10px">
+    <h3 id="title" ${loc("6:7")} style="margin: 4px 0 0; height: 20px">Title</h3>
+    <p id="body" ${loc("7:7")} style="margin: 8px 0 0; height: 20px">Body</p>
+  </article>
+  <div id="list" ${loc("9:5")} style="display: flex; flex-direction: column; gap: 4px; width: 200px">
+    <div id="one" ${loc("10:7")} style="height: 10px; margin-bottom: 6px">One</div>
+    <div id="two" ${loc("11:7")} style="height: 10px; margin-top: 2px">Two</div>
+    <div id="three" ${loc("12:7")} style="height: 10px">Three</div>
+  </div>
+  <div id="row" ${loc("14:5")} style="display: flex; gap: 10px; width: 400px">
+    <div id="left" ${loc("15:7")} style="width: 20px; height: 10px"></div>
+    <div id="right" ${loc("16:7")} style="width: 20px; height: 10px; margin-left: auto"></div>
+  </div>
+</body>`;
+  const open = () => {
+    const canvas = openCanvas(GAPPED);
+    return { ...canvas, at: (id: string) => canvas.layerOf(canvas.doc.getElementById(id)!), el: (id: string) => canvas.doc.getElementById(id)! };
+  };
+  /** How far the body is drawn below the title, in `doc`. */
+  const between = (doc: Document) => doc.getElementById("body")!.getBoundingClientRect().top - doc.getElementById("title")!.getBoundingClientRect().bottom;
+
+  test("reads as the room between its layers: a plain flow's margins, a flex container's margins with its gap, the median where they differ; auto margins and Stacks with no margins as ever", () => {
+    const { editor, at } = open();
+    expect(editor.read(at("card"), "gap")).toBe(8);
+    // 4 + 6 and 4 + 2, between each two: 12 and 4.
+    expect(editor.read(at("list"), "gap")).toBe(8);
+    expect(editor.read(at("row"), "gap")).toBe(10);
+  });
+
+  test("a gap set takes the margins between the layers off, keeps those around them, and one undo puts them back", () => {
+    const { doc, editor, changes, at, el } = open();
+    editor.set(at("card"), "gap", 0);
+
+    expect(between(doc)).toBe(0);
+    expect(style(el("body")).marginTop).toBe("0px");
+    // Around the first layer: kept.
+    expect(style(el("title")).marginTop).toBe("4px");
+    expect(editor.read(at("card"), "gap")).toBe(0);
+    const [change] = changes.list();
+    expect(change).toMatchObject({ property: "gap", before: 8, after: 0, asStack: true });
+    expect(change.marginsDropped).toHaveLength(1);
+    expect(change.marginsDropped![0]).toMatchObject({ layer: el("body").getAttribute("data-tk-layer"), margins: { "margin-top": "8px" } });
+    expect(change.marginsDropped![0].sources.length).toBeGreaterThan(0);
+
+    editor.set(at("card"), "gap", 16, { continues: true });
+    expect(between(doc)).toBe(16);
+    expect(changes.list()).toHaveLength(1);
+
+    editor.undo();
+    expect(between(doc)).toBe(8);
+    expect(style(el("body")).marginTop).toBe("8px");
+    expect(style(el("card")).display).toBe("block");
+    expect(changes.list()).toEqual([]);
+    editor.redo();
+    expect(between(doc)).toBe(16);
+  });
+
+  test("auto margins stay, and the margins on both sides of a layer between two go", () => {
+    const { editor, changes, at, el } = open();
+    editor.set(at("row"), "gap", 20);
+    expect(style(el("right")).marginLeft).not.toBe("0px");
+    expect(changes.list()[0].marginsDropped).toBeUndefined();
+
+    editor.set(at("list"), "gap", 6);
+    expect([style(el("one")).marginBottom, style(el("two")).marginTop]).toEqual(["0px", "0px"]);
+    expect(changes.list()[1].marginsDropped!.map((member) => member.margins)).toEqual([{ "margin-bottom": "6px" }, { "margin-top": "2px" }]);
+  });
+
+  test("in the phone view, the margins go at its breakpoint only", async () => {
+    const { doc, editor, changes, views, at } = open();
+    phoneFrame = document.createElement("iframe");
+    document.body.append(phoneFrame);
+    const phone = await views.add(phoneFrame, 390);
+    editor.at(phone);
+    editor.set(at("card"), "gap", 0);
+    views.sync(phone);
+
+    expect([between(doc), between(phone.document)]).toEqual([8, 0]);
+    expect(changes.list()[0].breakpoint).toEqual({ min: null, max: 800 });
+    editor.at(null);
+    expect(editor.read(at("card"), "gap")).toBe(8);
+  });
+
+  test("the live page shows the gap only once the room between the layers is the gap: with the margin left, it says which layer has it", () => {
+    const { editor, changes, at } = open();
+    editor.set(at("card"), "gap", 0);
+    const [change] = changes.list();
+    live = document.createElement("iframe");
+    document.body.append(live);
+    const page = live.contentDocument!;
+    const write = (html: string) => {
+      page.open();
+      page.write(html);
+      page.close();
+    };
+    const flexCard = (html: string) => html.replace('style="width: 300px; padding: 10px"', 'style="width: 300px; padding: 10px; display: flex; flex-direction: column; gap: 0px"');
+
+    // `gap-0` written, `mt-2` left.
+    write(flexCard(GAPPED));
+    expect(checkChange(page, change, onCanvas([change]))).toEqual({
+      outcome: "not shown",
+      actual: { gap: 8, margins: [{ layer: change.marginsDropped![0].target.context.path.at(-1), side: "margin-top", px: 8 }] },
+    });
+
+    write(flexCard(GAPPED).replace("margin: 8px 0 0", "margin: 0"));
+    expect(checkChange(page, change, onCanvas([change]))).toEqual({ outcome: "shown" });
+  });
+});
+

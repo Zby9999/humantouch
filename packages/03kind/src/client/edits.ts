@@ -10,7 +10,7 @@
  */
 import { createWorkingView, rangeOfEdit } from "./breakpoint-edits";
 import { contains, outside, widestFirst, within, writtenWith, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
-import { AS_STACK_ATTR, asShown, changesOn, declare, elementsOf, keepOriginal, LAYER_ID_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
+import { AS_STACK_ATTR, asShown, changesOn, declare, droppedStyle, elementsOf, keepOriginal, LAYER_ID_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
 import { changeKey, type Bindings, type Change, type ChangeSet, type Picked } from "./changeset";
 import type { Binder, CodeReader, Editor, SetOptions } from "./edit-commands";
 import { targetOf } from "./layer-target";
@@ -18,7 +18,7 @@ import { boxOf, buildLayerTree, isOnlyText, textOnFrame, type Layer, type LayerK
 import { colorReader } from "./paint";
 import { MAX_AXIS, middleOf, PLACED_BY, PLACING, shareCss, SIDES, SIZE_AXIS, type Edge, type Share, type Side } from "./checkable";
 import { arrangedAs } from "./arrangement";
-import { ARRANGED, cssOf, definitionOf, inGrid, isTextProperty, isGrid, ofText, ordersOf, placesItself, readAsShown, round, same, stackOf, type Arrangement, type Definition, type Property, type PropertyValues, type Size } from "./property-table";
+import { ARRANGED, cssOf, definitionOf, inGrid, isTextProperty, isGrid, ofText, ordersOf, placesItself, readAsShown, roomBetween, round, same, stackOf, type Arrangement, type Definition, type Property, type PropertyValues, type Size } from "./property-table";
 import { autoMarginBefore, computedShareOf, extentOf, heldCentered, middleShareOf, pastShare, placedFrom, sideMoves, sideShareOf } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
@@ -126,6 +126,8 @@ export function createEditor(
       const others = changesOn(id, changes.list());
       restoreStyle(instancesOf(id), names, others, change.breakpoint!);
       for (const breakpoint of [change.breakpoint!, ...pieces]) referenceAt(change.within, breakpoint);
+      // The margins its gap takes over (ticket 122): off in the pieces left, as the page has them in the range cut.
+      for (const breakpoint of [change.breakpoint!, ...pieces]) if (change.marginsDropped) showDropped(change.marginsDropped, breakpoint, false);
     };
     const on = () => {
       for (const piece of left ?? []) changes.remove(piece.id);
@@ -134,6 +136,7 @@ export function createEditor(
       const els = instancesOf(id);
       for (const piece of pieces) restoreStyle(els, names, others, piece);
       for (const breakpoint of [...pieces, change.breakpoint!]) referenceAt(change.within, breakpoint);
+      for (const breakpoint of [...pieces, change.breakpoint!]) if (change.marginsDropped) showDropped(change.marginsDropped, breakpoint, false);
     };
     return { off, on };
   };
@@ -295,6 +298,8 @@ export function createEditor(
     // The instances share their edit styles from the first edit on, their id stamped on them after, as it always was.
     // A Grid made a Stack, read before it is one: how it placed its layers stays in the code (ticket 109's follow-up).
     const placement = !earlier && property === "arrangement" && (before as Arrangement).type === "grid" && (value as Arrangement).type === "stack" ? placementBefore(layer, breakpoint) : null;
+    // A gap whose layers have margins between them takes them over, as when first changed (ticket 122): the room between them is the gap alone.
+    const dropped = property === "gap" ? (earlier ? (earlier.marginsDropped ?? null) : marginsBetween(layer, el, breakpoint, instances.length)) : null;
     declare(els, declarations, breakpoint, idFor(layer));
     const id = idOf(layer, instances);
     const keeps = definition.keeps?.(el, colors);
@@ -323,6 +328,7 @@ export function createEditor(
       style: definition.reference?.(declarations, started ? (started.before as PropertyValues[P]) : before, value) ?? declarations,
       sources,
       ...(asStack && { asStack: true }),
+      ...(dropped && { marginsDropped: dropped }),
       // A size of a Grid's cell: its Fill and Hug are of its cell (ticket 109), as when first changed.
       ...(!earlier && (property === "width" || property === "height") && asShown(el, () => inGrid(el)) && { cell: true }),
       // A Grid that placed its layers itself, in a view, made a Stack: how they are placed stays in the code, as when first changed (ticket 109's follow-up).
@@ -351,12 +357,49 @@ export function createEditor(
       const others = changesOn(id, changes.list());
       restoreStyle(els, cssOf(property), others, breakpoint);
     }
+    // Its layers' margins between them off while the change is there, as the page's again once it is not.
+    if (dropped) showDropped(dropped, breakpoint, changes.has(id, property, breakpoint));
     referenceAt(within, breakpoint);
     // A Stack now laid out the other way, or made a Grid, a Grid a Stack: the layers are built anew, so a drag into it reads the way it runs now.
     // Made a Grid or a Stack at a breakpoint, the layers stay as the desktop view has them; their kind there is `arrangedKind`'s.
     const kindChanged = property === "arrangement" && !breakpoint && (before as Arrangement).type !== (value as Arrangement).type;
     if (kindChanged || (layer.kind === "stack" && stackOf(layer.el).direction !== layer.direction)) tree = buildLayerTree(doc);
     return id;
+  };
+
+  /**
+   * The layers of the Stack `layer` with margins between them, as `el`, its
+   * element in the view the change is made in, lays them out (`roomBetween`,
+   * ticket 122): each, and those margins as they are there, by side. Null
+   * when none has any. Read as a gap is changed, not before.
+   */
+  const marginsBetween = (layer: Layer, el: Element, breakpoint: Breakpoint | null, count: number): Change["marginsDropped"] | null => {
+    const { margins } = asShown(el, () => roomBetween(el));
+    if (!margins.length) return null;
+    const dropped: NonNullable<Change["marginsDropped"]> = [];
+    for (const child of layer.children) {
+      if (child.text) continue;
+      const shown = working.shownAt(breakpoint, child.el);
+      const own = margins.filter((margin) => margin.el === shown);
+      if (!own.length) continue;
+      const sides = own.map((margin) => margin.side);
+      dropped.push({
+        layer: idOf(child, tree.acrossInstances(child)),
+        target: targetOf(child, count),
+        margins: Object.fromEntries(own.map(({ side, px }) => [side, `${round(px)}px`])),
+        sources: child.made ? [] : sourcesFor(shown, sides),
+      });
+    }
+    return dropped.length ? dropped : null;
+  };
+
+  /** The margins a gap takes over (`marginsDropped`), at `breakpoint`: off on its layers while `on`, else as the page and their other changes have them. */
+  const showDropped = (dropped: NonNullable<Change["marginsDropped"]>, breakpoint: Breakpoint | null, on: boolean) => {
+    for (const { layer, margins } of dropped) {
+      const els = instancesOf(layer);
+      if (on) declare(els, droppedStyle(margins), breakpoint);
+      else restoreStyle(els, Object.keys(margins), changesOn(layer, changes.list()), breakpoint);
+    }
   };
 
   /**
@@ -496,11 +539,13 @@ export function createEditor(
       const others = changesOn(id, changes.list());
       restoreStyle(instancesOf(id), cssOf(property as Property), others, breakpoint!);
       referenceAt(change.within, breakpoint!);
+      if (change.marginsDropped) showDropped(change.marginsDropped, breakpoint!, false);
     };
     const on = () => {
       changes.restore(change);
       declare(instancesOf(id), change.style, breakpoint!);
       referenceAt(change.within, breakpoint!);
+      if (change.marginsDropped) showDropped(change.marginsDropped, breakpoint!, true);
     };
     off();
     push({ layers: [id], key: `${id} ${property} inherit`, undo: on, redo: off, ...textsOf(id, property as Property) }, false);

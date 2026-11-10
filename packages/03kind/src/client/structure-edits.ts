@@ -51,7 +51,7 @@ import { framedText, holdsLayers, isOnlyText, nodeOf, type Layer, type LayerTree
 import { relocate, slotsOf, syncOrders } from "./moves";
 import type { ColorReader } from "./paint";
 import { componentBrief, componentElements, componentKey, inComponent, promotable, promoteIn, showComponent } from "./promote";
-import { absolute, absoluteAt, CONTAINERS, cssOf, definitionOf, ofText, placesItself, readAsShown, round, same, sizeOf, type Property, type PropertyValues } from "./property-table";
+import { absolute, absoluteAt, CONTAINERS, cssOf, definitionOf, ofText, placesItself, readAsShown, round, same, sizeOf, type Arrangement, type Property, type PropertyValues } from "./property-table";
 import { equalTracks } from "./grid-tracks";
 import { borderBox, compose, decompose, dissolve, gridStyle, inferGrid, inferStack, marginsAside, marginsAt, marginsOf, paddingBox, spotIn, stackStyle, undissolve, type Inferred } from "./stacks";
 import { PIN_OFFSET_ATTR, pinOffsetOf, type StyleSource } from "./style-source";
@@ -1085,7 +1085,8 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
           ? { grid: arrangement, padding: readAsShown(layer.el, "padding", colors), ...(!equalTracks(own.gridTemplateColumns) && { unequal: true as const }) }
           : {
               direction: readAsShown(layer.el, "direction", colors),
-              gap: readAsShown(layer.el, "gap", colors),
+              // Its gap as the code writes it, as the Stack's code has it: its layers keep their margins (ticket 122).
+              gap: (readAsShown(layer.el, "arrangement", colors) as Arrangement & { type: "stack" }).gap,
               padding: readAsShown(layer.el, "padding", colors),
               align: readAsShown(layer.el, "align", colors),
             };

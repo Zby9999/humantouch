@@ -7,7 +7,7 @@
  * the Skill gives its form, and its rules in the very words `finish` does.
  */
 import type { Change } from "./client/changeset";
-import type { OffsetInLayout } from "./client/check";
+import type { MarginsLeft, OffsetInLayout } from "./client/check";
 import { movedBy, PLACED_BY, SIDES, type InLayout } from "./client/checkable";
 import type { Axis } from "./client/snap";
 import type { CheckResult } from "./service-protocol";
@@ -73,7 +73,19 @@ function pageShows(change: Change, check: CheckResult): string {
   // Not placed absolute, the layer has no X, Y, right or bottom on the page to tell (ticket 80).
   if (PLACED_BY[change.property] && check.actual === null) return `${at}the layer is not placed absolute on the page`;
   if (check.actual !== null && typeof check.actual === "object" && change.margins) return `${at}the page does not draw it where the canvas does`;
+  // A gap, its layers with margins between them still (ticket 122): the room between them, those margins in it.
+  if (change.property === "gap" && isMarginsLeft(check.actual)) return `${at}the room between the layers on the page is ${value("gap", check.actual.gap)}, not ${value("gap", change.after)}: ${marginsLeftWords(check.actual)} still`;
   return `${at}the page shows the ${propertyName(change.property)} ${value(change.property, check.actual)}, not ${value(change.property, change.after)}`;
+}
+
+/** Whether a gap's check answered with margins left between its layers (`MarginsLeft`, ticket 122). */
+export const isMarginsLeft = (actual: unknown): actual is MarginsLeft => actual !== null && typeof actual === "object" && "margins" in actual && "gap" in actual;
+
+/** The margins left between a Stack's layers, in words: "Body has a margin between the layers (`margin-top: 8px`)". */
+export function marginsLeftWords({ margins }: MarginsLeft): string {
+  const layers = [...new Set(margins.map((margin) => margin.layer))];
+  const items = layers.map((layer) => `${layer} (${margins.filter((margin) => margin.layer === layer).map(({ side, px }) => `\`${side}: ${px}px\``).join(", ")})`);
+  return `${listed(items)} ${layers.length === 1 ? "has" : "have"} ${margins.length === 1 ? "a margin" : "margins"} between the layers`;
 }
 
 /** Whether the page's check answered how it has a layer in its container's layout, where the canvas moves it there (`OffsetInLayout`, ticket 84). */

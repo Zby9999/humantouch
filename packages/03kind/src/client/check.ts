@@ -17,7 +17,7 @@ import { canvasOf, type RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
 import { autoMarginTakesRoom, edgeGoneBy, middleShareOf, offsetPlacing, placedFrom, roomAlong, shareOf, sideShareOf, sizeAlong } from "./placed-from";
 import { checkable, foundByMarker, isEndOffset, textMovedInPlace, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, centeringSides, whereMade, type Edge, type InLayout, type Position, type Share, type Unfound } from "./checkable";
-import { absolute, ARRANGED, ordersOf, placementOf, readValue, round as rounded, sourcesFor, type Arrangement, type Property, type Stroke } from "./property-table";
+import { absolute, ARRANGED, ordersOf, placementOf, readValue, roomBetween, round as rounded, sourcesFor, type Arrangement, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, mayBeOf, savedCanvas as savedCanvasOf, usageKeyOf, type SavedCanvas } from "./page-elements";
 import { MADE_ATTR } from "./canvas-style";
@@ -548,7 +548,9 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
             ...(change.placedFrom?.margins && { byMargins: change.style }),
             uncentered: !!change.uncenteredAt?.some((range) => within(range, at.width)),
           })
-        : lookStyle(els, property, change.after, at);
+        : property === "gap"
+          ? lookGap(els, change)
+          : lookStyle(els, property, change.after, at);
   // What sets the value shown instead, read on the element that shows it.
   return sources && result.outcome === "not shown" && wrong ? { ...result, sources: sourcesFor(wrong, property) } : result;
 }
@@ -615,6 +617,37 @@ function lookStyle(els: Element[], property: Property, after: unknown, at: PageW
   const shows = comparison ? (el: Element) => comparison.shows(el, after, drawn) : (el: Element) => sameValue(readValue(el, property), after);
   const wrong = els.find((el) => !shows(el));
   return wrong === undefined ? [{ outcome: "shown" }, null] : [{ outcome: "not shown", actual: readValue(wrong, property) }, wrong];
+}
+
+/**
+ * A Stack's gap (ticket 122): shown where the room between each two of its
+ * layers is the gap given, on every one of `els`, their margins between
+ * them in it (`roomBetween`); with none, by its gap as written, as ever. Not
+ * shown: with the room it reads, and, where its layers have margins between
+ * them still, which and how wide (`MarginsLeft`).
+ */
+function lookGap(els: Element[], change: Change): [CheckResult, Element | null] {
+  const after = change.after as number;
+  for (const el of els) {
+    const { gap, spaces, margins } = roomBetween(el);
+    if (spaces ? spaces.every((space) => Math.abs(space - after) <= 0.5) : sameValue(gap, after)) continue;
+    if (!margins.length) return [{ outcome: "not shown", actual: gap }, el];
+    const named = (layer: Element) => change.marginsDropped?.find(({ target }) => target.loc && layer.getAttribute(LOC_ATTR) === target.loc)?.target.context.path.at(-1) ?? described(layer);
+    const actual: MarginsLeft = { gap, margins: margins.map((margin) => ({ layer: named(margin.el), side: margin.side, px: rounded(margin.px) })) };
+    return [{ outcome: "not shown", actual }, el];
+  }
+  return [{ outcome: "shown" }, null];
+}
+
+/**
+ * What the page shows of a gap it does not show, its layers with margins
+ * between them (ticket 122): the room between them as the panel reads it,
+ * and each of those margins, its layer as the notes name it (else as the
+ * Agent finds it), its side, and how wide, in px.
+ */
+export interface MarginsLeft {
+  gap: number;
+  margins: { layer: string; side: string; px: number }[];
 }
 
 /**
