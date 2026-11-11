@@ -107,6 +107,24 @@
   color-scheme: dark;
 }
 
+/*
+ * No bounce past the page's top or foot (designer, 2026-11-12): pulled down at the top, the notch over the tab shown
+ * came away from the window's edge it hangs from.
+ */
+html,
+body {
+  overscroll-behavior-y: none;
+}
+
+/* The hero's picture: hidden for its first second, then shown at once (HeroEditor.tsx). */
+@keyframes hero-picture-in {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
+  }
+}
 html {
   background: var(--page);
 }

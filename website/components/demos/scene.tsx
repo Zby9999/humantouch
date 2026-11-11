@@ -151,13 +151,13 @@ const Variables = memo(VariablesPanel);
  * new for each `layer`, the panel back at its top). The Variables are built once and kept: built again each loop, they
  * held the main thread for some 80ms.
  */
-export function Panel({ layer, content, className = "" }: { layer: string | null; content: ReactNode; className?: string }) {
+export function Panel({ layer, content, className = "", style }: { layer: string | null; content: ReactNode; className?: string; style?: React.CSSProperties }) {
   const el = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
     el.current!.scrollTop = 0;
   }, [layer]);
   return (
-    <aside ref={el} className={`ht-panel is-design ${className}`} aria-label="Design">
+    <aside ref={el} className={`ht-panel is-design ${className}`} aria-label="Design" style={style}>
       <div className="ht-panel-header">
         <h2 className="ht-panel-title">{layer ? "Design" : "Variables"}</h2>
         <button type="button" className="ht-icon-button" aria-label="Back to preview mode">
