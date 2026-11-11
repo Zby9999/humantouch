@@ -95,6 +95,8 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
    * canvas up. Null when not known: a round carried over, the Agent's code in since; the page as it is next taken.
    */
   const reflected = useRef<PagePrint | null>(saved?.page ?? null);
+  /** The round was dropped, and the print kept with it went too: kept again if a round is made on the canvas still up. */
+  const pageDropped = useRef(false);
   const load = () =>
     store?.load().then(
       (round) => {
@@ -269,13 +271,15 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   const save = (next: SavedRound | null) => {
     // The service keeps a claimed round as the Agent got it; a last edit, too late, goes with the canvas.
     if (lastStatus.current?.status === "claimed") return;
-    const made = !roundNow.current && next;
     roundNow.current = next;
     setRound(next);
     store?.save(next).catch((error: unknown) => console.warn(error));
-    // The page a round's canvas reflects goes with the round (ticket 141): dropped with it, kept again as a round is made on a canvas.
-    if (!next) reflected.current = null;
-    else if (made && reflected.current) store?.savePage(reflected.current).catch((error: unknown) => console.warn(error));
+    // The page a round's canvas reflects goes with the round (ticket 141): dropped with it, kept again as a round is made on the same canvas.
+    if (!next) pageDropped.current = true;
+    else if (pageDropped.current && reflected.current) {
+      pageDropped.current = false;
+      store?.savePage(reflected.current).catch((error: unknown) => console.warn(error));
+    }
   };
 
   // What the page shows in each part of the range of a change saved with that yet to be read (ticket 65): read
@@ -505,6 +509,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   const keepPage = (page: PageEntry | { keep: PagePrint }) => {
     if (page.keep) {
       reflected.current = page.keep;
+      pageDropped.current = false;
       store?.savePage(page.keep).catch((error: unknown) => console.warn(error));
     }
     if (!("since" in page)) return;
