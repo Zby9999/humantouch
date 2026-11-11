@@ -53,7 +53,7 @@ export function ThemeSwitch() {
   }
 
   return (
-    <div role="radiogroup" aria-label="Theme" className="flex gap-1 rounded-[18px] bg-raised p-0.5">
+    <div role="radiogroup" aria-label="Theme" className="flex gap-1 rounded-[18px] bg-neutral-50 p-0.5 dark:bg-raised">
       {CHOICES.map((choice) => (
         <button
           key={choice.theme}

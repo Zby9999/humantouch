@@ -15,7 +15,7 @@ export default function Home() {
     <main className="flex flex-col items-center gap-20 px-4 pt-[120px] pb-[184px] md:pt-[160px]">
       <section className="flex w-full max-w-[800px] flex-col gap-6">
         <div className="flex flex-col gap-3 px-1.5">
-          <h1 className="label text-ink-strong normal-case tracking-[0px]">Human Touch</h1>
+          <h1 className="label font-sans font-medium text-ink normal-case tracking-[-0.005em]">Human Touch</h1>
           <div className="text-[16px] leading-[1.4] font-[440] tracking-[-0.04px] text-label">
             <p className="text-balance">An Agent native design layer inside your project&apos;s local dev server.</p>
             <p className="text-balance">Edit the page itself, visually, on a canvas, then have your Agent write the changes into the code.</p>
@@ -85,8 +85,14 @@ export default function Home() {
         </ul>
       </section>
 
-      <section className="flex flex-col items-center gap-3 text-center">
-        <h2 className="label leading-normal">Try Human Touch now with your Agents</h2>
+      <section className="flex flex-col items-center gap-6 text-center">
+        <div className="flex flex-col items-center gap-3">
+          <h2 className="label font-sans font-medium text-ink leading-normal normal-case tracking-[-0.005em]">Try Human Touch now with your Agents</h2>
+          <div className="flex flex-col items-center gap-0">
+            <p className="text-balance">Design, apply and check, all in one place.</p>
+            <p className="text-balance">Install and apply changes in seconds</p>
+          </div>
+        </div>
         <CopyButton text={prompt} label="Copy prompt to install" size="h-8 px-3.5" />
       </section>
 
