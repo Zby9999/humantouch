@@ -184,3 +184,5 @@ closed shadow root：页面的脚本读不到它（`el.shadowRoot` 是 null）�
   - `page-copy.ts`（`done` 核对用的页面副本）还不认 shadow root。
 - 138 要处理的：`look.ts` 的 `freezeLook`（把宿主挪出画布时冻结样式）还不认 shadow root。挪出画布时 shadow 里的内容和样式会跟着带过去，但 shadow 里的元素没有冻结计算样式。
 - 第一次 review 修改后那轮整套 e2e，出过一条和本票无关的 unhandled error：`Cannot read properties of null (reading 'matchMedia')`。是在 react 18 示例里读样式时 defaultView 为 null，像是测试结束时 iframe 被拿掉了。没有测试因此挂。
+
+**2026-11-11，规划会话：** 135 已合进 main（f285df5a）。设计师确认代定 2、3（画布上不运行页面自己的自定义元素，只显示冻结时的样子；`:defined` 在画布上总是匹配）。代定 7 是内部约定，规划会话看过，照做。代定 1、4、5、6 照代定。headless perf 那格由规划会话补跑。
