@@ -10,8 +10,10 @@ import { createViews } from "../src/client/views";
 /**
  * Letter spacing of 0 (ticket 142): Chrome computes it as `normal`, which the
  * page reads as 0%, whatever unit the page writes it in. A change to 0, in
- * any unit, is shown where the page shows 0; any other length is compared by
- * its unit, as ever.
+ * any unit, is shown where the page shows 0. Since ADR 0016 the page's
+ * value, where it does not compare, is looked at by what it draws: so these
+ * are shown by what the title's text draws, and any other length that draws
+ * the same is shown too.
  */
 
 /** The title, its letter spacing written as `spacing`. */
@@ -80,9 +82,10 @@ describe("letter spacing set to 0 (ticket 142)", () => {
     }
   });
 
-  test("any other length is compared by its unit, as ever: 2px is not shown where the page writes 0.0625em, 2px at the title's 32px", () => {
+  test("another length that draws the same is shown (ADR 0016): 2px where the page writes 0.0625em, 2px at the title's 32px; 3px is not", () => {
     const round = spaced(px(2));
     expect(checkChange(frameWith(titlePage("2px")), round[0], round)).toEqual({ outcome: "shown" });
-    expect(checkChange(frameWith(titlePage("0.0625em")), round[0], round)).toEqual({ outcome: "not shown", actual: percent(6.25) });
+    expect(checkChange(frameWith(titlePage("0.0625em")), round[0], round)).toEqual({ outcome: "shown" });
+    expect(checkChange(frameWith(titlePage("3px")), round[0], round)).toEqual({ outcome: "not shown", actual: px(3) });
   });
 });
