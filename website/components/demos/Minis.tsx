@@ -8,7 +8,7 @@ const SURFACE = "ht-ed absolute font-editor text-[11px] leading-4 text-[var(--ed
 /** A layer on the canvas, its Brief on a card beside it, a dashed line between them. */
 export function BriefMini() {
   return (
-    <div className={`${SURFACE} inset-0 bg-[var(--ed-canvas)]`}>
+    <div className={`${SURFACE} inset-0 bg-[#B7B8B9]`}>
       <div className="absolute top-[22%] left-[10%] w-[44%] bg-neutral-50 p-3 shadow-[0_0_0_0.5px_rgb(0_0_0/0.12)]">
         <div className="mb-2 h-2 w-2/3 rounded-[1px] bg-neutral-800" />
         <div className="mb-3 h-1.5 w-full rounded-[1px] bg-neutral-300" />
@@ -30,7 +30,7 @@ export function BriefMini() {
 /** A view, and a layer moved off it, waiting beside it. */
 export function OffCanvasMini() {
   return (
-    <div className={`${SURFACE} inset-0 bg-[var(--ed-canvas)]`}>
+    <div className={`${SURFACE} inset-0 bg-[#A4AAAF]`}>
       <p className="absolute top-[10%] left-[8%] text-[var(--ed-muted)]">Desktop</p>
       <div className="absolute top-[17%] bottom-[12%] left-[8%] w-[48%] bg-neutral-50 p-3 shadow-[0_0_0_0.5px_rgb(0_0_0/0.12)]">
         <div className="mb-2 h-2 w-2/3 rounded-[1px] bg-neutral-800" />
@@ -54,7 +54,7 @@ export function OffCanvasMini() {
 /** The Design panel with nothing selected: the project's Variables. */
 export function VariablesMini() {
   return (
-    <div className={`${SURFACE} inset-0 bg-[var(--ed-canvas)]`}>
+    <div className={`${SURFACE} inset-0 bg-[#B4AEAA]`}>
       <div className="absolute inset-x-[14%] top-[10%] bottom-0 rounded-t-[10px] bg-[var(--ed-panel)] shadow-[0_0_0_0.5px_rgb(0_0_0/0.12),0_6px_20px_-6px_rgb(0_0_0/0.3)]">
         <div className="flex h-8 items-center gap-1.5 border-b border-[var(--ed-border)] px-3 font-medium">
           <Icon name="variable" size={12} /> Variables

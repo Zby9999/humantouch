@@ -58,7 +58,7 @@ export default function Home() {
         <Mini visual="top" label="Brief" title="Say what the panel can’t" body="Pick the Brief tool, click a layer, and write on its card what your Agent should achieve there.">
           <BriefMini />
         </Mini>
-        <Mini visual="bottom" label="Off canvas" title="Set layers aside" body="Drag a layer off the canvas to keep it beside the views, across rounds, until you put it back.">
+        <Mini visual="bottom" fill="bg-[#23292D]" label="Off canvas" title="Set layers aside" body="Drag a layer off the canvas to keep it beside the views, across rounds, until you put it back.">
           <OffCanvasMini />
         </Mini>
         <Mini visual="top" label="Variables" title="Your project’s values" body="Colors, spacing and type sizes from your CSS variables or Tailwind theme, offered in the Design panel.">
@@ -116,11 +116,11 @@ function Feature({ side, backdrop, label, title, body, children }: { side: "left
   );
 }
 
-/** One of the three small cards: a 300px visual at its top or bottom, the words in the rest. One column below 1280px wide: three would each be too narrow. */
-function Mini({ visual, label, title, body, children }: { visual: "top" | "bottom"; label: string; title: string; body: string; children: React.ReactNode }) {
+/** One of the three small cards: a 300px visual at its top or bottom (`fill`, its color behind the demo), the words in the rest. One column below 1280px wide: three would each be too narrow. */
+function Mini({ visual, fill = "bg-sunk", label, title, body, children }: { visual: "top" | "bottom"; fill?: string; label: string; title: string; body: string; children: React.ReactNode }) {
   return (
     <div className={`flex flex-col gap-3 rounded-[4px] bg-surface p-3 xl:h-[500px] ${visual === "bottom" ? "xl:flex-col-reverse xl:justify-between" : ""}`}>
-      <div className="relative h-[300px] shrink-0 overflow-hidden rounded-[4px] bg-sunk">{children}</div>
+      <div className={`relative h-[300px] shrink-0 overflow-hidden rounded-[4px] ${fill}`}>{children}</div>
       <div className="flex flex-col gap-2 p-3">
         <p className="label text-[16px] leading-[18px]">{label}</p>
         <h3 className="text-[18px] leading-[1.3] font-[500] tracking-[-0.2px] text-ink">{title}</h3>
