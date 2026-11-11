@@ -250,6 +250,14 @@ const HOW_TO_WRITE: HowToWrite[] = [
     text: "change the words in the JSX, and keep the bold, links and other pieces around them where they still fit. When the words come from a prop or a variable, change them where they are given.",
   },
   {
+    // Said only for words with a line break, before or after (ticket 144): the notes of every other round stay as they were.
+    name: "Line breaks",
+    calledFor: breaksLines,
+    text:
+      "the notes give the new words line by line, each line break shown as ↵. Break the line there the way the project already breaks lines in text; in JSX with no way of its own, `<br />`. " +
+      "Take out a line break the new words no longer have. No space around a break is part of the words.",
+  },
+  {
     name: "Copies",
     calledFor: (change) => !!change.copiedBreakpoints?.length,
     text:
@@ -370,6 +378,10 @@ const HOW_CHECKED: HowChecked[] = [
     text: "new words by the words in the layer, its bold runs, links and other pieces with it, white space as one space, in every instance",
   },
   {
+    calledFor: (change, list) => checkable(change, list) && breaksLines(change),
+    text: "line breaks in the words by where the page breaks their lines: at a `<br>`, or at a new line the text keeps (`white-space: pre-line`, say), none more and none fewer",
+  },
+  {
     calledFor: (change, list) => checkable(change, list) && change.kind === "text" && forOneUsage(change),
     text: "new words for this usage only by the component's other usages too, which are to read as they did",
   },
@@ -381,6 +393,12 @@ const HOW_CHECKED: HowChecked[] = [
   { calledFor: (change, list) => checkable(change, list) && change.kind === "move" && !placing(change), text: "a reorder by the order of its container's layers" },
   { calledFor: (change, list) => checkable(change, list) && change.kind === "delete", text: "a deletion by the layer being gone, or not displayed, while its container is there" },
 ];
+
+/** Whether the change gives a layer's words a line break, or takes one out (ticket 144). */
+export function breaksLines(change: Change): boolean {
+  if (change.kind === "text") return [change.before, change.after].some((words) => typeof words === "string" && words.includes("\n"));
+  return change.kind === "create" && !!(change.after as Created).text?.includes("\n");
+}
 
 /** A move of a layer the page can find that it still cannot check (`checkable`). */
 const movedUnchecked = (change: Change, list: Change[]) => change.kind === "move" && !change.data && !change.target.made && !!change.target.loc && !textMovedInPlace(change) && !checkable(change, list);

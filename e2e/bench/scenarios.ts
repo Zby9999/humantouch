@@ -576,7 +576,7 @@ export const SCENARIOS: Scenario[] = [
       await layer(page, "Third Kind").click();
       await desktop(page).contentFrame().locator("h1").dblclick();
       await page.keyboard.type("Third Kind Studio");
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("Escape");
       await saved(desk, 3);
     },
     changes: [
@@ -608,6 +608,34 @@ export const SCENARIOS: Scenario[] = [
       await desk.edit("src/App.tsx", freeze, `${freeze}\n  ${freeze}`);
       await desk.edit("src/App.tsx", "{features.map((feature) => (\n          <Card key={feature.title}", "{features.map((feature, i) => (\n          <Card key={i}");
       await desk.edit("src/App.tsx", ">Third Kind</h1>", ">Third Kind Studio</h1>");
+    },
+  },
+  {
+    id: "text-line-break",
+    title: "The title's words broken over two lines, Return typed between them: “Third” on the first line, “Kind” on the second (ticket 144).",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "Third Kind").click();
+      await desktop(page).contentFrame().locator("h1").dblclick();
+      // All the words selected: ← puts the caret before them, then past “Third”.
+      await page.keyboard.press("ArrowLeft");
+      for (let i = 0; i < "Third".length; i++) await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Escape");
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "text",
+        expect: "The title reads “Third” on one line and “Kind” on the line below it.",
+        // Found by its source marker, the title's words are checked, and where its lines break (ticket 144).
+        checkable: true,
+        shows: () => (document.querySelector("h1") as HTMLElement | null)?.innerText === "Third\nKind",
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", ">Third Kind</h1>", ">Third<br />Kind</h1>");
     },
   },
   {
@@ -647,7 +675,7 @@ export const SCENARIOS: Scenario[] = [
       await page.mouse.move(paragraph.x + 721.5 * zoom, paragraph.y + paragraph.height + 36 * zoom, { steps: 6 });
       await page.mouse.up();
       await page.keyboard.type("Works with any Agent.");
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("Escape");
       await page.keyboard.press("Escape");
       await saved(desk, 2);
       await moveOffTheCanvas(page, "A Framer-style editor layer for any page.", canvas.locator(`${HERO} > p`).first());

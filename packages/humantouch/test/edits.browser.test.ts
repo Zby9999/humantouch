@@ -3305,6 +3305,35 @@ describe("editing text", () => {
     expect(text.el.textContent).toBe("Text");
   });
 
+  test("words with a line break are drawn with a <br> there, read back with it, and taken back to the words before (ticket 144)", () => {
+    const { doc, editor, changes, layer } = open(`<!DOCTYPE html><h1 id="t" ${at("3:3")}>Third Kind</h1><p id="u" ${at("4:3")}>One<br>Two</p>`);
+
+    editor.setText(layer("t"), "Third\nKind");
+
+    expect(doc.getElementById("t")!.innerHTML).toBe("Third<br>Kind");
+    expect(changes.list()[0]).toMatchObject({ kind: "text", before: "Third Kind", after: "Third\nKind" });
+    // Read with its break, as typed again: no change.
+    editor.setText(layer("t"), "Third\nKind");
+    expect(changes.list()).toHaveLength(1);
+    editor.undo();
+    expect(doc.getElementById("t")!.innerHTML).toBe("Third Kind");
+
+    // A break the source has is read as one: joined, it is a change, back on one line.
+    editor.setText(layer("u"), "One Two");
+    expect(changes.list().at(-1)).toMatchObject({ before: "One\nTwo", after: "One Two" });
+    expect(doc.getElementById("u")!.innerHTML).toBe("One Two");
+  });
+
+  test("a new text layer's words keep their line breaks (ticket 144)", () => {
+    const { editor, changes, layer } = open();
+    const text = editor.create("text", { parent: layer("list"), index: 0 });
+
+    editor.setText(text, "Hello\nthere");
+
+    expect(changes.list()[0].after).toMatchObject({ type: "text", text: "Hello\nthere" });
+    expect(text.el.innerHTML).toBe("Hello<br>there");
+  });
+
   test("keeps the text's inline pieces as they were once taken back, on the canvas and a saved round", () => {
     const { doc, editor, changes, layer } = open(`<!DOCTYPE html><p id="t" ${at("3:3")}>Some <b>bold</b> words</p><p id="u" ${at("4:3")}>Other</p>`);
     editor.setText(layer("t"), "Plain");

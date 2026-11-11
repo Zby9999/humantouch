@@ -1757,6 +1757,30 @@ describe("claim, new layers, words, deleting and copying", () => {
     expect(section(output, 5)).toContain("- **Brief:** none: taken off, in place of the brief the copy was made with, “A pricing table with three plans”\n");
   });
 
+  test("new words with a line break say where it is, line by line, and how to write it; a break taken out says so (ticket 144)", async () => {
+    saveRound(
+      change(1, "text", { property: "text", before: "Third Kind", after: "Third\nKind" }),
+      change(2, "text", { property: "text", before: "One\nTwo", after: "One Two", target: cards }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain("- **Design intent:** Change the text from “Third Kind” to “Third↵Kind”. The new words are in 2 lines: “Third” and “Kind”, a line break where ↵ is.\n");
+    expect(section(output, 2)).toContain("- **Design intent:** Change the text from “One↵Two” to “One Two”. The new words are on one line: no line break.\n");
+    expect(output).toContain("- **Line breaks:** the notes give the new words line by line, each line break shown as ↵.");
+    expect(output).toContain("`<br />`");
+    expect(output).toContain("line breaks in the words by where the page breaks their lines");
+  });
+
+  test("new words with no line break say nothing of lines", async () => {
+    saveRound(change(1, "text", { property: "text", before: "Get started", after: "Start now" }));
+
+    const output = (await cli("claim")).output;
+
+    expect(output).not.toContain("line break");
+    expect(output).not.toContain("Line breaks");
+  });
+
   test("new words, and in a loop, new words that come from data", async () => {
     saveRound(
       change(1, "text", { property: "text", before: "Get started", after: "Start now" }),

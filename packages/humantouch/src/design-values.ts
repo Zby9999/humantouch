@@ -93,9 +93,15 @@ export function kindTitle(change: Change): string {
   }
 }
 
-/** Words as quoted in the notes and the change list. */
+/** Words as quoted in the notes and the change list, a line break in them as ↵ (ticket 144). */
 export function quoted(text: string): string {
-  return `“${text}”`;
+  return `“${text.replaceAll("\n", "↵")}”`;
+}
+
+/** Words with a line break, line by line: "in 2 lines: “Third” and “Kind”"; with none, "on one line" (ticket 144). */
+export function inLines(text: string): string {
+  const lines = text.split("\n");
+  return lines.length === 1 ? "on one line" : `in ${lines.length} lines: ${listed(lines.map((line) => (line ? quoted(line) : "an empty line")))}`;
 }
 
 /** How a Stack lays its layers out, in a sentence: "horizontal, with a gap of 24px, no padding, aligned top left". */

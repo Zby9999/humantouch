@@ -35,7 +35,7 @@ import type { Axis } from "./client/snap";
 import type { UsageLevel } from "./client/usage-chain";
 import { variablesLine } from "./variable-notes";
 import { writingRules } from "./writing-rules";
-import { changeTitle, kindTitle, layerName, listed, moveKind, ordinal, propertyName, quoted, stackSettings, usagePlace, usedAt, value } from "./design-values";
+import { changeTitle, inLines, kindTitle, layerName, listed, moveKind, ordinal, propertyName, quoted, stackSettings, usagePlace, usedAt, value } from "./design-values";
 import type { WhereToLook } from "./where-to-look";
 
 export interface NotesOptions {
@@ -212,10 +212,15 @@ function intent(change: Change, list: Change[], look?: WhereToLook): string {
       const { type, place, width, height, text } = change.after as Created;
       if (type === "frame") return `Add a Frame, Fixed ${width} × ${height}px, with no fill, ${placement(place, placeOnceApplied(change, list))}.`;
       const wide = width === null ? "" : `, ${width}px wide`;
-      return `Add text that reads ${quoted(text ?? "")}${wide}, ${placement(place, placeOnceApplied(change, list))}. Give it the page's body text style, as the reference style shows, from what the page already uses for body text${bodyText(look)}.`;
+      const lines = text?.includes("\n") ? ` It reads ${inLines(text)}, a line break where ↵ is.` : "";
+      return `Add text that reads ${quoted(text ?? "")}${wide}, ${placement(place, placeOnceApplied(change, list))}.${lines} Give it the page's body text style, as the reference style shows, from what the page already uses for body text${bodyText(look)}.`;
     }
-    case "text":
-      return `Change the text from ${quoted(change.before as string)} to ${quoted(change.after as string)}.`;
+    case "text": {
+      const [before, after] = [change.before as string, change.after as string];
+      // Only words with a line break, before or after, say so (ticket 144): every other round's notes stay as they were.
+      const lines = before.includes("\n") || after.includes("\n") ? ` The new words are ${inLines(after)}${after.includes("\n") ? ", a line break where ↵ is" : ": no line break"}.` : "";
+      return `Change the text from ${quoted(before)} to ${quoted(after)}.${lines}`;
+    }
     case "brief":
       if (!change.after) return "Make this copy without what the brief it was copied with asks for: leave it a Frame as the designer drew it.";
       return (

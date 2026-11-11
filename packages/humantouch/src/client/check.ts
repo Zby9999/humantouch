@@ -21,6 +21,7 @@ import { absolute, ARRANGED, ordersOf, placementOf, readValue, roomBetween, roun
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, mayBeOf, savedCanvas as savedCanvasOf, usageKeyOf, type SavedCanvas } from "./page-elements";
 import { MADE_ATTR } from "./canvas-style";
+import { tidyWords, wordsOf } from "./layer-changes";
 import { LOC_ATTR } from "../markers";
 import type { Axis } from "./snap";
 import { readUsageChain } from "./usage-chain";
@@ -372,7 +373,10 @@ function findMade(doc: Document, id: string, round: RoundOnCanvas): Found {
   if ("unchecked" in outer) return outer;
   if ("missing" in outer || !outer.els.length) return { unchecked: "its container is not on the page now" };
   const written = round.filter((change) => change.kind === "text" && change.layer === id).at(-1)?.after as string | undefined;
-  const words = created.type === "text" ? spaced(written ?? created.text ?? "") : undefined;
+  const typed = written ?? created.text ?? "";
+  // New text in lines is found by its lines, as the page breaks them (ticket 144).
+  const lines = typed.includes("\n");
+  const words = created.type === "text" ? (lines ? tidyWords(typed) : spaced(typed)) : undefined;
   const among = maker.among;
   const range: [number, number] | null = place.absolute ? null : among ? [among.before, among.before + among.maybe] : [place.nth - 1, place.nth - 1];
   const els: Element[] = [];
@@ -382,7 +386,7 @@ function findMade(doc: Document, id: string, round: RoundOnCanvas): Found {
     const counts = new Map<string, number>();
     for (const el of layers) counts.set(signOf(el), (counts.get(signOf(el)) ?? 0) + 1);
     for (const sign of among?.signs ?? []) counts.set(sign, (counts.get(sign) ?? 0) - 1);
-    const matches = (el: Element) => (words === undefined || wordsOn(el) === words) && counts.get(signOf(el))! > 0;
+    const matches = (el: Element) => (words === undefined || wordsOn(el, lines) === words) && counts.get(signOf(el))! > 0;
     const here = range ? layers.slice(range[0], range[1] + 1).filter(matches) : layers.filter((el) => matches(el) && /^(absolute|fixed)$/.test(getComputedStyle(el).position));
     if (!here.length) {
       const there = range ? layers[range[0]] : undefined;
@@ -405,7 +409,9 @@ function spaced(text: string): string {
 }
 
 /** What an element on the page reads, as a reader takes it (`spaced`): its inline pieces' words with its own, a line break (`<br>`) as the space it reads as. New text is found by these, and new words are checked by them (ticket 90). */
-export function wordsOn(el: Element): string {
+export function wordsOn(el: Element, lines = false): string {
+  // Words to read with their line breaks (ticket 144): where the page breaks their lines too, at a `<br>` or a new line the text keeps.
+  if (lines) return wordsOf(el);
   if (!el.querySelector("br")) return spaced(el.textContent ?? "");
   let text = "";
   const walk = (node: Node) => {
@@ -756,9 +762,11 @@ function lookPlaced(doc: Document, change: Change, round: RoundOnCanvas, at: Pag
 function lookWords(doc: Document, change: Change, round: RoundOnCanvas): CheckResult {
   const els = elementsOf(doc, change.target, savedCanvas(round));
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
-  const words = spaced(change.after as string);
-  const wrong = els.find((el) => wordsOn(el) !== words);
-  return wrong ? { outcome: "not shown", actual: wordsOn(wrong) } : { outcome: "shown" };
+  // A line break in the words, before or after: the lines read as the page breaks them (ticket 144).
+  const lines = [change.before, change.after].some((words) => typeof words === "string" && words.includes("\n"));
+  const words = lines ? tidyWords(change.after as string) : spaced(change.after as string);
+  const wrong = els.find((el) => wordsOn(el, lines) !== words);
+  return wrong ? { outcome: "not shown", actual: wordsOn(wrong, lines) } : { outcome: "shown" };
 }
 
 /**
