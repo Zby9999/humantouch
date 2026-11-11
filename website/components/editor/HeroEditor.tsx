@@ -145,8 +145,8 @@ function pick(path: Target[], selected: Selection): Target {
 /** The way the page is going: into the canvas as edit mode starts, out over the window as it ends. */
 type Travel = "in" | "out" | null;
 
-/** A moment on the page as it is, before the toggle is pressed, on the first visit to the hero. */
-const INTRO_DELAY_MS = 1200;
+/** The page as it is, just glimpsed, before the toggle is pressed as the hero opens (designer, 2026-11-11: "一闪而过"). */
+const INTRO_DELAY_MS = 300;
 /** The toggle pressed, as the hero's intro presses it: as long as a click. */
 const PRESS_MS = 120;
 
