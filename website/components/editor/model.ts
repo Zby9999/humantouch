@@ -102,7 +102,7 @@ export const INITIAL: Record<Key, Style> = {
   links: { fontSize: 14, color: "#6E6C66", opacity: 100 },
   hero: { gap: 32, padding: [160, 0, 120, 0], direction: "column", opacity: 100 },
   issue: { fontSize: 12, color: "#6E6C66", opacity: 100 },
-  title: { fontSize: 128, color: "#161614", opacity: 100 },
+  title: { fontSize: 96, color: "#161614", opacity: 100 },
   lede: { fontSize: 20, color: "#6E6C66", opacity: 100 },
   button: { fill: "#161614", radius: 9999, padding: [14, 24, 14, 24], opacity: 100 },
   buttonText: { fontSize: 14, color: "#FAF9F6", opacity: 100 },

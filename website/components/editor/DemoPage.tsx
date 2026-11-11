@@ -92,11 +92,11 @@ export function DemoPage({ view, width, onPick, onHover }: Props) {
               {layer(
                 { key: "title" },
                 [P, HE],
-                { fontFamily: SERIF, fontWeight: 400, fontSize: at(128, 84, 56), lineHeight: 0.98, letterSpacing: "-0.025em", color: color("title"), maxWidth: at(1120, 640, 340) },
+                { fontFamily: SERIF, fontStyle: "italic", fontWeight: 400, fontSize: at(96, 64, 44), lineHeight: 1.12, letterSpacing: "-0.02em", color: color("title"), maxWidth: at(1120, 640, 340) },
                 <>
                   Fewer things,
                   <br />
-                  <em style={{ fontStyle: "italic" }}>made with care.</em>
+                  made with care.
                 </>,
                 "h1",
               )}
