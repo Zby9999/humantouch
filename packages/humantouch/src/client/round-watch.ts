@@ -16,7 +16,10 @@ export interface RoundWatch {
 }
 
 /** A request to the local service; it throws on any answer but a 2xx. */
-export type ServiceRequest = (method: string, options?: { path?: string; body?: string; signal?: AbortSignal; keepalive?: boolean }) => Promise<Response>;
+export type ServiceRequest = (
+  method: string,
+  options?: { path?: string; body?: string | Uint8Array<ArrayBuffer>; signal?: AbortSignal; keepalive?: boolean; gzipped?: boolean },
+) => Promise<Response>;
 
 /**
  * The most a request the browser sends on as the page goes (`keepalive`) may
@@ -31,9 +34,10 @@ export function serviceConfig(): ServiceConfig | undefined {
 }
 
 export function serviceRequest(config: ServiceConfig): ServiceRequest {
-  return async (method, { path = ROUND_PATH, body, signal, keepalive } = {}) => {
+  return async (method, { path = ROUND_PATH, body, signal, keepalive, gzipped } = {}) => {
     const headers: Record<string, string> = { [TOKEN_HEADER]: config.token };
     if (body) headers["Content-Type"] = "application/json";
+    if (gzipped) headers["Content-Encoding"] = "gzip";
     const response = await fetch(`${config.url}${path}`, { method, headers, body, signal, ...(keepalive && { keepalive }) });
     if (!response.ok) throw new Error(`Human Touch: the local service answered ${response.status} to ${method} ${path}`);
     return response;

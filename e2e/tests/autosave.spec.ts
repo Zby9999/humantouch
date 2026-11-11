@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { canvasInPlace, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
@@ -115,13 +115,17 @@ test("after a reload, edit mode brings back the canvas and its changes as they w
     .toEqual([{ id: 1, property: "fill", before: { type: "solid", color: "#FFFFFF", opacity: 1 }, after: { type: "solid", color: "#0000FF", opacity: 1 } }]);
 });
 
-/** The saves the page sends the local service from here on: round and layers off the canvas, put or dropped. */
-function savesSent(page: Page, url: string): string[] {
-  const sent: string[] = [];
-  page.on("request", (request) => {
-    if (request.url().startsWith(url) && ["PUT", "DELETE"].includes(request.method())) sent.push(`${request.method()} ${new URL(request.url()).pathname}`);
+/**
+ * Holds back the save made half a second after an edit (Shell's AUTOSAVE_MS):
+ * the page's own timers of 500ms go unrun. A request sent as the page goes is
+ * not seen by Playwright, so what is saved after this can only have been
+ * saved as the page went.
+ */
+function holdBackTheSaveAfterHalfASecond(page: Page) {
+  return page.evaluate(() => {
+    const set = window.setTimeout;
+    window.setTimeout = ((handler: TimerHandler, ms?: number, ...rest: unknown[]) => (ms === 500 ? 0 : set(handler, ms, ...rest))) as typeof window.setTimeout;
   });
-  return sent;
 }
 
 // Ticket 160: a change in the last half second, before its save, is saved as the page goes, as leaving edit mode does.
@@ -133,7 +137,10 @@ for (const [how, leave] of [
   test(`a change made the moment before the page is ${how} is saved, as one saved after half a second is`, async ({ page }) => {
     await page.goto(DEV_URL);
     await enterEditMode(page);
+    await holdBackTheSaveAfterHalfASecond(page);
     await fillFirstCardRed(page);
+    await page.waitForTimeout(700);
+    expect(savedChanges()).toBeNull();
     await leave(page);
     await expect.poll(savedChanges, { timeout: 3000 }).toMatchObject([{ property: "fill", after: { color: "#FF0000" }, target: { component: "Card", instances: 3 } }]);
     expect(readFileSync(CANVAS, "utf8")).toMatch(/background-color:rgb\(255 0 0 \/ 1\)!important/);
@@ -142,20 +149,20 @@ for (const [how, leave] of [
 
 test("the page going with nothing waiting to be saved sends no save", async ({ page }) => {
   await page.goto(DEV_URL);
-  const sent = savesSent(page, (await service(page)).url);
   await enterEditMode(page);
   await page.reload();
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
-  expect(sent).toEqual([]);
-  // Edited, saved after half a second, then nothing more: the page going sends that save no second time.
+  await page.waitForTimeout(700);
+  expect(existsSync(CHANGESET)).toBe(false);
+  // Edited, saved after half a second, then nothing more: the page going saves it no second time.
   await enterEditMode(page);
   await fillFirstCardRed(page);
   await expect.poll(savedChanges).toHaveLength(1);
-  const saved = sent.length;
+  const saved = statSync(CHANGESET).mtimeMs;
   await page.reload();
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
-  expect(sent.slice(saved)).toEqual([]);
-  expect(saved).toBeGreaterThan(0);
+  await page.waitForTimeout(700);
+  expect(statSync(CHANGESET).mtimeMs).toBe(saved);
 });
 
 async function backToPreviewMode(page: Page) {
