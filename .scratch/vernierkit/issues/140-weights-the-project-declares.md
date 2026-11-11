@@ -19,9 +19,9 @@
 
 用词以 GLOSSARY.md 为准。
 
-**Blocked by:** None
+**Blocked by:** None。发布前做（设计师 2026-11-11 定）。做完告诉官网线，拿掉 493045bf 的绕法。
 
-**Status:** needs-triage（等设计师定：发布前还是发布后）
+**Status:** ready-for-agent
 
 - [ ] e2e：示例里加一个声明了几个字重、页面只用到一个的 web font。字重菜单列出全部声明的字重；选一个没用到的，画布上的文字换成这个字重（按字形宽度或 `document.fonts` 里的状态判断），⌘Z 撤回。
 - [ ] 单元测试：`fontsOf` 列出 unloaded 的 face，不列 error 的；同一字重分成几个 unicode-range 子集的只列一次。
