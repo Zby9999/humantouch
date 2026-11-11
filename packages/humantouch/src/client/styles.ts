@@ -282,7 +282,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   z-index: 2147483646;
   display: grid;
   grid-template-columns: var(--ht-layers-width) minmax(0, 1fr) var(--ht-design-width);
-  /* The canvas's gray under the panels: as they move out with the frame on leaving, and in as it starts, the canvas shows where they were, not the page under the editor (designer, 2026-11-08). */
+  /* The canvas's gray under the panels: as they come in with the frame as edit mode starts, the canvas shows where they will be, not the page under the editor (designer, 2026-11-08). */
   background: var(--ht-canvas);
   font: 400 11px/16px ${EDITOR_FONT};
   color: var(--ht-text);
