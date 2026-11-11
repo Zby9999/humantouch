@@ -26,6 +26,7 @@ import type { Axis } from "./snap";
 import { readUsageChain } from "./usage-chain";
 import { colorReader } from "./paint";
 import { drawnStroke, showsStroke } from "./stroke-weight";
+import type { TextLength } from "./typography";
 
 /**
  * Properties the browser draws otherwise than written: compared as the code
@@ -38,6 +39,14 @@ const AS_WRITTEN: Partial<Record<Property, { draw(doc: Document, value: unknown)
   stroke: {
     draw: (doc, value) => drawnStroke(doc, value as Stroke | null),
     shows: (el, value, drawn) => showsStroke(el, colorReader(el.ownerDocument), value as Stroke | null, drawn as Stroke | null),
+  },
+  // A letter spacing of 0 is 0 in any unit: Chrome computes 0px as normal, which reads as 0% (ticket 142). Any other length is compared by its unit.
+  letterSpacing: {
+    draw: () => null,
+    shows: (el, value) => {
+      const shown = readValue(el, "letterSpacing") as TextLength;
+      return (shown.value === 0 && (value as TextLength).value === 0) || sameValue(shown, value);
+    },
   },
 };
 

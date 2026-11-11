@@ -919,6 +919,29 @@ export const SCENARIOS: Scenario[] = [
       await desk.edit("src/App.tsx", '<p className="mt-4 text-stone-600">', '<p className="mt-4 text-center font-bold leading-6 tracking-[1px] text-stone-600">');
     },
   },
+  // Ticket 142: Chrome computes 0px letter spacing as normal, which the page reads as 0%: the change to 0px is shown all the same.
+  {
+    id: "panel-letter-spacing-zero",
+    title: "The intro paragraph's letter spacing set to 0px.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, INTRO).click();
+      await setField(page, "Letter spacing", "0px");
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The intro paragraph's letter spacing is 0 (the page's body sets 0.02em).",
+        checkable: true,
+        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"] > p')!).letterSpacing === "normal",
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", '<p className="mt-4 text-stone-600">', '<p className="mt-4 tracking-[0px] text-stone-600">');
+    },
+  },
   {
     id: "panel-size",
     title: "The Get started button made Fixed, 200px wide and 40px tall; the intro paragraph's width made Hug (it fills the hero's width now).",
