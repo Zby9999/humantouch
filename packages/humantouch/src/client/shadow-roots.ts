@@ -68,6 +68,99 @@ export function shadowRootsIn(doc: Document): ShadowRoot[] {
   return elementsWithin(doc.documentElement).flatMap((el) => (el.shadowRoot ? [el.shadowRoot] : []));
 }
 
+/**
+ * The element of the layers' tree that `node` sits in (ticket 136): the slot
+ * it is assigned to, its parent, or, at the top of a shadow root, its host. For
+ * a node in a document that holds none, its parent element.
+ */
+export function flatParent(node: Node): Element | null {
+  const slot = (node as Element | Text).assignedSlot;
+  if (slot) return slot;
+  return node.parentElement ?? (node.parentNode as ShadowRoot | null)?.host ?? null;
+}
+
+/** Whether `node` is `el`, or in it: in an open shadow root in it, or one in that, too. */
+export function containsWithin(el: Node, node: Node): boolean {
+  for (let at: Node | null = node; at; at = (at.getRootNode() as ShadowRoot).host ?? null) if (el.contains(at)) return true;
+  return false;
+}
+
+/**
+ * The topmost element at a point of `doc` (its viewport's px), as
+ * `elementFromPoint` finds it, then on into the open shadow roots it hosts: the
+ * deepest one there, which `elementFromPoint` gives as the host (ticket 136).
+ * In a document that holds none, what `elementFromPoint` finds.
+ */
+export function elementAt(doc: Document, x: number, y: number): Element | null {
+  let el = doc.elementFromPoint(x, y);
+  if (!mayHoldShadowRoots(doc)) return el;
+  while (el?.shadowRoot) {
+    const inner = el.shadowRoot.elementFromPoint(x, y);
+    if (!inner || inner === el || inner.getRootNode() !== el.shadowRoot) break;
+    el = inner;
+  }
+  return el;
+}
+
+/**
+ * Every element at a point of `doc`, topmost first, as `elementsFromPoint`
+ * lists them, with those in the open shadow roots among them each just above
+ * its host. In a document that holds none, what `elementsFromPoint` lists.
+ */
+export function elementsAt(doc: Document, x: number, y: number): Element[] {
+  if (!mayHoldShadowRoots(doc)) return doc.elementsFromPoint(x, y);
+  const listed = new Set<Element>();
+  const visit = (root: Document | ShadowRoot) => {
+    for (const el of root.elementsFromPoint(x, y)) {
+      // A shadow root lists the elements around its host too: those are listed where they are.
+      if (listed.has(el) || el.getRootNode() !== root) continue;
+      if (el.shadowRoot) visit(el.shadowRoot);
+      listed.add(el);
+    }
+  };
+  visit(doc);
+  return [...listed];
+}
+
+/**
+ * The child nodes the layers' tree reads in `el` (ticket 136): those of its
+ * open shadow root, which is what it shows; for a slot, the nodes assigned to
+ * it, or what it holds when none is. `shadows`: whether the document may hold
+ * any; when not, its child nodes.
+ */
+export function shownChildren(el: Element, shadows: boolean): Iterable<ChildNode> {
+  if (!shadows) return el.childNodes;
+  if (el.shadowRoot) return el.shadowRoot.childNodes;
+  if (el.localName === "slot") {
+    const assigned = (el as HTMLSlotElement).assignedNodes() as ChildNode[];
+    if (assigned.length) return assigned;
+  }
+  return el.childNodes;
+}
+
+/** The canvas's own stylesheets in shadow roots (`styleShadowRoots`): never the page's, never saved. */
+const canvasSheets = new WeakSet<CSSStyleSheet>();
+
+/** Whether `sheet` is the canvas's own, one `styleShadowRoots` adopted. */
+export function isCanvasSheet(sheet: CSSStyleSheet): boolean {
+  return canvasSheets.has(sheet);
+}
+
+/**
+ * Gives every open shadow root in `doc` that has none yet `css`, the canvas's
+ * own styles, which the document's do not reach (ticket 136): as an adopted
+ * stylesheet, last, so no node is added among the page's, and none is copied
+ * or written out with the canvas. In a document that holds none, nothing.
+ */
+export function styleShadowRoots(doc: Document, css: string) {
+  const shadows = shadowRootsIn(doc).filter((shadow) => !shadow.adoptedStyleSheets.some(isCanvasSheet));
+  if (!shadows.length) return;
+  const sheet = new doc.defaultView!.CSSStyleSheet();
+  sheet.replaceSync(css);
+  canvasSheets.add(sheet);
+  for (const shadow of shadows) shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, sheet];
+}
+
 /** Whether `root`, or an element in it, hosts an open shadow root. */
 export function hostsShadowRoots(root: Element): boolean {
   if (root.shadowRoot) return true;

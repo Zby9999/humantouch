@@ -11,6 +11,7 @@ import { openingTag } from "./layer-target";
 import type { Definition } from "./property-table";
 import { wordsOf } from "./layer-changes";
 import { cssColor, type Color, type ColorReader } from "./paint";
+import { flatParent } from "./shadow-roots";
 import { sourcesOf } from "./style-source";
 
 export type TextAlign = "left" | "center" | "right" | "justify";
@@ -229,7 +230,7 @@ function inheritedFrom(css: string) {
  * (null where a stylesheet that cannot be read may). Undefined: nowhere, the browser's default.
  */
 function declaring(el: Element, css: string): { el: Element; value: string | null } | undefined {
-  for (let e: Element | null = el; e; e = e.parentElement) {
+  for (let e: Element | null = el; e; e = flatParent(e)) {
     const [source] = sourcesOf(e, [css]);
     if (source.kind === "unknown") return { el: e, value: null };
     if (!source.declaration) continue;

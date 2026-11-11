@@ -6,6 +6,7 @@
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import { asPage, DELETED_ATTR, hiddenByEdit, LAYER_ID_ATTR, MADE_ATTR, ORIGINAL_TEXT_ATTR, WRAP_ATTR } from "./canvas-style";
 import { FROZEN } from "./freezer";
+import { containsWithin, elementAt, elementsAt, flatParent, mayHoldShadowRoots, shownChildren } from "./shadow-roots";
 import { CHAIN_ATTR, type UsageLevel } from "./usage-chain";
 
 export type LayerKind = "stack" | "grid" | "frame" | "text" | "image" | "still" | "locked";
@@ -84,6 +85,9 @@ const FLOW = /^(block|flow-root|list-item|inline-block)$/;
 
 export function buildLayerTree(doc: Document): LayerTree {
   const view = doc.defaultView!;
+  // The layers in its open shadow roots are read too, under their hosts (ticket 136); in a document that holds none, as before.
+  const shadows = mayHoldShadowRoots(doc);
+  const up = shadows ? flatParent : (node: Node) => node.parentElement;
   const layers = new Map<Element, Layer>();
   const groups = new Map<string, Layer[]>();
   const origins = new Map<Element, Origin>();
@@ -115,7 +119,8 @@ export function buildLayerTree(doc: Document): LayerTree {
     };
     layers.set(el, layer);
     const set = (patch: Partial<Layer>) => Object.assign(layer, patch);
-    if (parent && isInstanceRoot(chain, el.parentElement ? origin(el.parentElement).chain : [])) {
+    const above = up(el);
+    if (parent && isInstanceRoot(chain, above ? origin(above).chain : [])) {
       set({ isInstance: true, usageLoc: chain[0].usage });
     }
     if (!loc && chain[0]?.thirdParty) {
@@ -130,13 +135,13 @@ export function buildLayerTree(doc: Document): LayerTree {
       set({ kind: "image", name: el.localName === "svg" ? "Vector" : el.getAttribute("alt") || "Image" });
     } else if (LEAVES.has(el.localName)) {
       set({ name: "Frame" });
-    } else if (isText(el, view) && !drawsBoxAsPage(el, style)) {
-      set({ kind: "text", name: textName(el.textContent!) });
+    } else if (isText(el, view, shadows) && !drawsBoxAsPage(el, style)) {
+      set({ kind: "text", name: textName(shadows && showsOtherNodes(el) ? wordsOf(textIn(el, view, shadows)) : el.textContent!) });
     } else {
-      const text = isText(el, view);
+      const text = isText(el, view, shadows);
       // Text that draws a box around it, as a button does, is a Frame (or a Stack, a Grid) of one text layer: all its words, its inline fragments with them.
       if (text || (wrappedTextOf(el) && drawsBoxAsPage(el, style))) set({ framesText: true });
-      const children = text ? [textIn(el, view)] : drawnChildren(el, view);
+      const children = text ? [textIn(el, view, shadows)] : drawnChildren(el, view, shadows);
       for (const child of children) {
         layer.children.push(Array.isArray(child) ? textLayer(child, layer) : make(child, layer));
       }
@@ -182,15 +187,21 @@ export function buildLayerTree(doc: Document): LayerTree {
     root,
     layerAt(x, y, skip) {
       let layer: Layer | undefined;
-      const hit = skip ? doc.elementsFromPoint(x, y).find((e) => !skip.contains(e)) : doc.elementFromPoint(x, y);
-      for (let e = hit ?? null; e && !layer; e = e.parentElement) layer = layers.get(e);
+      const hit = shadows
+        ? skip
+          ? elementsAt(doc, x, y).find((e) => !containsWithin(skip, e))
+          : elementAt(doc, x, y)
+        : skip
+          ? doc.elementsFromPoint(x, y).find((e) => !skip.contains(e))
+          : doc.elementFromPoint(x, y);
+      for (let e = hit ?? null; e && !layer; e = up(e)) layer = layers.get(e);
       return layer ? runAt(layer, x, y, rangeOf) : null;
     },
     layerOf(node) {
       if (node.nodeType === Node.ELEMENT_NODE) return layers.get(node as Element) ?? null;
       // A Frame's only text may run on in its inline fragments: the layer is that of the element it is in.
       let parent: Layer | undefined;
-      for (let e = node.parentElement; e && !parent; e = e.parentElement) parent = layers.get(e);
+      for (let e = up(node); e && !parent; e = up(e)) parent = layers.get(e);
       return parent?.children.find((child) => child.text?.includes(node as Text)) ?? null;
     },
     acrossInstances(layer) {
@@ -387,14 +398,14 @@ function isInstanceRoot(chain: UsageLevel[], parentChain: UsageLevel[]): boolean
 }
 
 /** Children that draw a box, and runs of text between them. `display: contents` passes its children through. */
-function drawnChildren(el: Element, view: Window): (Element | Text[])[] {
+function drawnChildren(el: Element, view: Window, shadows: boolean): (Element | Text[])[] {
   const children: (Element | Text[])[] = [];
   let run: Text[] = [];
   const endRun = () => {
     if (run.some((node) => node.textContent!.trim())) children.push(run);
     run = [];
   };
-  for (const child of el.childNodes) {
+  for (const child of shownChildren(el, shadows)) {
     if (child.nodeType === Node.TEXT_NODE) {
       run.push(child as Text);
       continue;
@@ -405,7 +416,7 @@ function drawnChildren(el: Element, view: Window): (Element | Text[])[] {
     const display = view.getComputedStyle(e).display;
     if (display === "none" && !hiddenByEdit(e)) continue;
     endRun();
-    if (display === "contents") children.push(...drawnChildren(e, view));
+    if (display === "contents") children.push(...drawnChildren(e, view, shadows));
     else children.push(e);
   }
   endRun();
@@ -454,10 +465,10 @@ export function wrappedTextOf(el: Element): Element | null {
 }
 
 /** All the text of an element with only text in it, its inline fragments' included, as one run. */
-function textIn(el: Element, view: Window): Text[] {
+function textIn(el: Element, view: Window, shadows: boolean): Text[] {
   const run: Text[] = [];
   const visit = (node: Element) => {
-    for (const child of node.childNodes) {
+    for (const child of shownChildren(node, shadows)) {
       if (child.nodeType === Node.TEXT_NODE) run.push(child as Text);
       else if (child.nodeType === Node.ELEMENT_NODE) {
         const e = child as Element;
@@ -470,11 +481,21 @@ function textIn(el: Element, view: Window): Text[] {
   return run;
 }
 
+/** Whether `el` shows other nodes than those in it: it hosts an open shadow root, or it holds a slot. */
+function showsOtherNodes(el: Element): boolean {
+  return !!el.shadowRoot || el.getElementsByTagName("slot").length > 0;
+}
+
+/** The words of a run of text. */
+function wordsOf(run: Text[]): string {
+  return run.map((node) => node.data).join("");
+}
+
 /** Only text, with inline pieces (bold, links, …) counted as part of it. */
-function isText(el: Element, view: Window): boolean {
+function isText(el: Element, view: Window, shadows: boolean): boolean {
   let text = false;
   const visit = (node: Element): boolean => {
-    for (const child of node.childNodes) {
+    for (const child of shownChildren(node, shadows)) {
       if (child.nodeType === Node.TEXT_NODE) {
         if (child.textContent!.trim()) text = true;
       } else if (child.nodeType === Node.ELEMENT_NODE) {

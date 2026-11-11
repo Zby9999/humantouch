@@ -16,7 +16,7 @@ import { changesEditStyles, isEditStyles, syncEditStyles } from "./canvas-style"
 import { copyCanvas, drawInto, fitHeight, type Canvas } from "./freezer";
 import { rangeOf, runAt, type Layer, type LayerTree } from "./layers";
 import { createLater } from "./later";
-import { elementsWithin, noteShadowRoots } from "./shadow-roots";
+import { containsWithin, elementAt, elementsAt, elementsWithin, flatParent, mayHoldShadowRoots, noteShadowRoots } from "./shadow-roots";
 
 /**
  * How long the steps of a value pause, ms, before the views beside the one
@@ -393,8 +393,16 @@ function viewOf(document: Document, width: number, { inView, onCanvas, typeIn }:
     layerAt(tree, x, y, skip) {
       let layer: Layer | null = null;
       const skipped = skip && !skip.text ? inView(skip.el) : null;
-      const hit = skipped ? (document.elementsFromPoint(x, y).find((e) => !skipped.contains(e)) ?? null) : document.elementFromPoint(x, y);
-      for (let e = hit; e && !layer; e = e.parentElement) {
+      // Into its open shadow roots too, where it may hold any (ticket 136).
+      const shadows = mayHoldShadowRoots(document);
+      const hit = shadows
+        ? skipped
+          ? (elementsAt(document, x, y).find((e) => !containsWithin(skipped, e)) ?? null)
+          : elementAt(document, x, y)
+        : skipped
+          ? (document.elementsFromPoint(x, y).find((e) => !skipped.contains(e)) ?? null)
+          : document.elementFromPoint(x, y);
+      for (let e = hit; e && !layer; e = shadows ? flatParent(e) : e.parentElement) {
         const node = onCanvas(e);
         layer = node && tree.layerOf(node as Element);
       }

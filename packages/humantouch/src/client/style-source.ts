@@ -5,6 +5,7 @@
  * The browser offers no such lookup to pages, so the cascade is resolved here:
  * importance, the style attribute, CSS layers, specificity, then order.
  */
+import { isCanvasSheet, mayHoldShadowRoots } from "./shadow-roots";
 import { EDIT_STYLES_ATTR } from "./style-marks";
 
 /** What sets some of the CSS properties a change is about. */
@@ -94,6 +95,12 @@ interface Candidate {
   key: string;
   source: Omit<StyleSource, "properties">;
   inline: boolean;
+  /**
+   * The tree its stylesheet styles the element from: 0, the element's own;
+   * 1, the shadow root the element hosts, by `:host` (ticket 136). The page's
+   * declarations beat the shadow root's, but for important ones.
+   */
+  context: number;
   /** Position among CSS layers: one index per level, `Infinity` for declarations directly at that level. */
   layerPath: number[];
   specificity: Specificity;
@@ -155,10 +162,12 @@ function cascade(el: Element, properties: string[]): { winners: Map<string, Cand
   const logical = logicalBorders(el);
   let order = 0;
   let unreadable = false;
+  /** The tree the stylesheets read now style the element from (`Candidate.context`). */
+  let context = 0;
 
   /** The declarations of a style rule, or of a nested block of them, for `selector`. */
   const declare = (style: CSSStyleDeclaration, selector: string, file: string | null, layer: string[]) => {
-    const match = bestMatch(el, selector);
+    const match = context ? hostMatch(el, selector) : bestMatch(el, selector);
     if (!match) return;
     const position = order++;
     for (const property of properties) {
@@ -176,6 +185,7 @@ function cascade(el: Element, properties: string[]): { winners: Map<string, Cand
           declaration: declared.text,
         },
         inline: false,
+        context,
         layerPath: layers.path(layer),
         specificity: match.specificity,
         order: position,
@@ -235,12 +245,24 @@ function cascade(el: Element, properties: string[]): { winners: Map<string, Cand
   /** Media that do not match (print, another width) leave their rules out. */
   const matchesMedia = (media: MediaList) => !media.mediaText || view.matchMedia(media.mediaText).matches;
 
-  for (const sheet of doc.styleSheets) {
-    const owner = sheet.ownerNode as Element | null;
-    if (owner?.hasAttribute(CANVAS_STYLES_ATTR) || owner?.hasAttribute(EDIT_STYLES_ATTR) || sheet.disabled || !matchesMedia(sheet.media)) continue;
-    const rules = readRules(sheet);
-    if (!rules) unreadable = true;
-    else visit(rules, owner?.getAttribute(VITE_ID_ATTR) ?? owner?.getAttribute(SHEET_HREF_ATTR) ?? sheet.href, [], null);
+  const visitSheets = (sheets: Iterable<CSSStyleSheet>) => {
+    for (const sheet of sheets) {
+      const owner = sheet.ownerNode as Element | null;
+      if (owner?.hasAttribute(CANVAS_STYLES_ATTR) || owner?.hasAttribute(EDIT_STYLES_ATTR) || isCanvasSheet(sheet) || sheet.disabled || !matchesMedia(sheet.media)) continue;
+      const rules = readRules(sheet);
+      if (!rules) unreadable = true;
+      else visit(rules, owner?.getAttribute(VITE_ID_ATTR) ?? owner?.getAttribute(SHEET_HREF_ATTR) ?? sheet.href, [], null);
+    }
+  };
+
+  // In an open shadow root, the element is styled by that shadow root's stylesheets alone; a host, by its shadow root's `:host` rules too (ticket 136).
+  const shadows = mayHoldShadowRoots(doc);
+  const tree = shadows ? el.getRootNode() : doc;
+  visitSheets(tree === doc ? doc.styleSheets : sheetsOf(tree as ShadowRoot));
+  if (shadows && el.shadowRoot) {
+    context = 1;
+    visitSheets(sheetsOf(el.shadowRoot));
+    context = 0;
   }
 
   // The style attribute as the page wrote it, before any edit added to it, and without what the freezer pinned.
@@ -257,6 +279,7 @@ function cascade(el: Element, properties: string[]): { winners: Map<string, Cand
         key: "inline",
         source: { kind: "inline", selector: null, file: null, layer: null, important: declared.important, className: null, declaration: declared.text },
         inline: true,
+        context: 0,
         layerPath: [Infinity],
         specificity: [0, 0, 0],
         order: Infinity,
@@ -279,9 +302,11 @@ export function pinnedOf(el: Element): string[] {
   return el.getAttribute(PINNED_ATTR)?.split(" ") ?? [];
 }
 
-/** The cascade, for declarations of one origin: importance, the style attribute, layers, specificity, order. */
+/** The cascade, for declarations of one origin: importance, the tree they style from, the style attribute, layers, specificity, order. */
 function beats(a: Candidate, b: Candidate): boolean {
   if (a.source.important !== b.source.important) return a.source.important;
+  // The page's declarations beat those of the shadow root the element hosts; important ones, the other way round.
+  if (a.context !== b.context) return a.source.important ? a.context > b.context : a.context < b.context;
   if (a.inline !== b.inline) return a.inline;
   const layer = compare(a.layerPath, b.layerPath);
   // Important declarations rank layers the other way round: earlier layers, then those in no layer.
@@ -381,6 +406,33 @@ function bestMatch(el: Element, selectorList: string): { selector: string; speci
     if (!best || compare(s, best.specificity) > 0) best = { selector, specificity: s };
   }
   return best;
+}
+
+/**
+ * Of a selector list in a shadow root's stylesheet, the most specific
+ * selector that matches its host `el`: `:host`, or `:host(…)` of what `el` is
+ * (ticket 136). Its other selectors are for the elements in it.
+ */
+function hostMatch(el: Element, selectorList: string): { selector: string; specificity: Specificity } | null {
+  let best: { selector: string; specificity: Specificity } | null = null;
+  for (const selector of splitList(selectorList)) {
+    const match = /^:host(?:\((.*)\))?$/.exec(selector);
+    if (!match) continue;
+    let matches = !match[1];
+    try {
+      matches ||= el.matches(match[1]);
+    } catch {} // Selectors this browser does not know.
+    if (!matches) continue;
+    const own = match[1] ? specificity(match[1]) : [0, 0, 0];
+    const s: Specificity = [own[0], own[1] + 1, own[2]];
+    if (!best || compare(s, best.specificity) > 0) best = { selector, specificity: s };
+  }
+  return best;
+}
+
+/** A shadow root's stylesheets, in the order of the cascade: its style elements', then those it adopted. */
+function sheetsOf(shadow: ShadowRoot): CSSStyleSheet[] {
+  return [...shadow.styleSheets, ...shadow.adoptedStyleSheets];
 }
 
 /** The selectors of a list, split at its top-level commas. */

@@ -77,16 +77,79 @@ test("an open shadow root shows on the canvas as on the page, its style element'
   expect(await closed.evaluate((el) => el.shadowRoot === null && !el.ownerDocument.documentElement.outerHTML.includes("Closed content"))).toBe(true);
 });
 
-test("a press on what the shadow root shows selects its host, as before (ticket 136 goes in)", async ({ page }) => {
+/** Where a box is drawn over the canvas, rounded. */
+async function boxOn(locator: Locator) {
+  const box = (await locator.boundingBox())!;
+  return [box.x, box.y, box.width, box.height].map(Math.round);
+}
+
+/** Where a layer on the canvas is, rounded, once it is still. */
+async function placeOf(locator: Locator) {
+  const box = await steadyBox(locator);
+  return [box.x, box.y, box.width, box.height].map(Math.round);
+}
+
+test("the layers in an open shadow root are selected, hovered and listed under their host, and the Design panel shows their values (ticket 136)", async ({ page }) => {
   await openPage(page);
   await enterEditMode(page);
-  const title = desktop(page).contentFrame().locator("#shadow-host .title");
-  await title.click();
-  const host = await steadyBox(desktop(page).contentFrame().locator("#shadow-host"));
-  await expect.poll(async () => {
-    const box = (await page.locator('.ht-selection[data-view="Desktop"]').boundingBox())!;
-    return [box.x, box.y, box.width, box.height].map(Math.round);
-  }).toEqual([host.x, host.y, host.width, host.height].map(Math.round));
+  const canvas = desktop(page).contentFrame();
+  const selection = page.locator('.ht-selection[data-view="Desktop"]');
+  const design = page.getByRole("complementary", { name: "Design" });
+  const tree = page.getByRole("tree", { name: "Layers" });
+  const selectedRow = tree.getByRole("treeitem", { selected: true });
+
+  // A plain click selects the outermost layer, the host, as for any other layer at the top of the page.
+  await canvas.locator("#shadow-host .title").click();
+  await expect.poll(() => boxOn(selection)).toEqual(await placeOf(canvas.locator("#shadow-host")));
+  await expect(selectedRow).toHaveAttribute("aria-level", "1");
+
+  // A double click goes a layer deeper, across the shadow boundary: the panel the shadow root shows, its fill and radius in the Design panel.
+  await canvas.locator("#shadow-host .title").dblclick();
+  await expect.poll(() => boxOn(selection)).toEqual(await placeOf(canvas.locator("#shadow-host .panel")));
+  await expect(selectedRow).toHaveAttribute("aria-level", "2");
+  await expect(design.getByRole("textbox", { name: "Fill color", exact: true })).toHaveValue("FFE600");
+  await expect(design.getByRole("textbox", { name: "Corner radius" })).toHaveValue("16");
+
+  // Esc goes back up to the host; ⌘-click goes straight to the deepest layer, the title, under the panel under the host in Layers.
+  await page.keyboard.press("Escape");
+  await expect(selectedRow).toHaveAttribute("aria-level", "1");
+  const title = await placeOf(canvas.locator("#shadow-host .title"));
+  await page.keyboard.down("ControlOrMeta");
+  await page.mouse.click(title[0] + title[2] / 2, title[1] + title[3] / 2);
+  await page.keyboard.up("ControlOrMeta");
+  await expect.poll(() => boxOn(selection)).toEqual(title);
+  await expect(selectedRow).toHaveText("Shadow title");
+  await expect(selectedRow).toHaveAttribute("aria-level", "3");
+  const rows = await tree.getByRole("treeitem").evaluateAll((rows) => rows.slice(0, 5).map((row) => `${row.getAttribute("aria-level")} ${row.textContent!.trim()}`));
+  expect(rows).toEqual(["1 Stack", "2 Stack", "3 Shadow title", "3 Shadow body", "3 Fading"]);
+  // Its text styles, from the shadow root's own style element.
+  await expect(design.getByRole("textbox", { name: "Font size" })).toHaveValue("24");
+
+  // Hovered, a layer beside it in the shadow root has its outline.
+  const body = await placeOf(canvas.locator("#shadow-host .body"));
+  await page.mouse.move(body[0] + body[2] / 2, body[1] + body[3] / 2);
+  await expect.poll(() => boxOn(page.locator('.ht-hover[data-view="Desktop"]'))).toEqual(body);
+  // Clicked, it is selected, at the depth of the title.
+  await page.mouse.click(body[0] + body[2] / 2, body[1] + body[3] / 2);
+  await expect(selectedRow).toHaveText("Shadow body");
+
+  // Esc twice: the panel, then the host; once more, nothing.
+  await page.keyboard.press("Escape");
+  await expect.poll(() => boxOn(selection)).toEqual(await placeOf(canvas.locator("#shadow-host .panel")));
+  await page.keyboard.press("Escape");
+  await expect(selectedRow).toHaveAttribute("aria-level", "1");
+});
+
+test("in the Phone view too, a layer in the shadow root is selected at that view's width (ticket 136)", async ({ page }) => {
+  await openPage(page);
+  await enterEditMode(page);
+  const view = phone(page).contentFrame();
+  const panel = await placeOf(view.locator("#shadow-host .panel"));
+  await page.keyboard.down("ControlOrMeta");
+  await page.mouse.click(panel[0] + 4, panel[1] + 4);
+  await page.keyboard.up("ControlOrMeta");
+  await expect.poll(() => boxOn(page.locator('.ht-selection[data-view="Phone"]'))).toEqual(panel);
+  await expect(page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Corner radius" })).toHaveValue("4");
 });
 
 test("saved with the round and the page loaded again, the shadow root shows as it did, in each view", async ({ page }) => {
