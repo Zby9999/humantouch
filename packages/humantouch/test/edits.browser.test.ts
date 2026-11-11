@@ -4438,7 +4438,12 @@ describe("changes to the structure are checked on the live page", () => {
 </body>`;
   const copies: HTMLIFrameElement[] = [];
   afterEach(() => copies.splice(0).forEach((frame) => frame.remove()));
-  /** `html` shown `width` px wide, as the check shows the page at a view's width. */
+  /**
+   * `html` shown `width` px wide, as the check shows the page at a view's width.
+   * A change made in the desktop view drawn otherwise there is adapted (ADR
+   * 0016, ticket 147): the tests below read what it draws there, the `actual`
+   * of `adapted`, as they read a change not shown there before.
+   */
   const pageAt = (html: string, width: number): PageWidth => {
     const frame = document.createElement("iframe");
     frame.style.width = `${width}px`;
@@ -4464,7 +4469,7 @@ describe("changes to the structure are checked on the live page", () => {
     expect(checkChange(page, right, onCanvas([right]))).toEqual({ outcome: "shown" });
     // At the phone's width, the canvas has it 20px from the right; the page, 390px off it.
     const phone = pageAt(fromTheRight().replace("</style>", `#tag { ${byLeft} }</style>`), 390);
-    expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { value: -390, margin: 0 }, width: 390 });
+    expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: { value: -390, margin: 0 } }] });
   });
 
   test("a layer the canvas places from its left edge in a view, as the page's breakpoints say: its `right` places nothing there, and is not looked at in the view's range, the page's window there or not (ticket 75)", async () => {
@@ -4531,7 +4536,7 @@ describe("changes to the structure are checked on the live page", () => {
     // Right as wide as the window; at the phone's width, not placed absolute at all.
     page.getElementById("tag")!.setAttribute("style", "left: 30px");
     const phone = pageAt(html.replace("</style>", "#tag { left: 30px } @media (max-width: 500px) { #tag { position: static } }</style>"), 390);
-    expect(checkAcross(page, x, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: null, width: 390 });
+    expect(checkAcross(page, x, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: null }] });
   });
 
   test.each(["relative", "sticky"])("a layer the canvas places %s in a view, as the page's breakpoints say: its X and Y move it there too, and are looked at in the view's range; the page giving it its `left` and `top` from `md` up only does not show them (ticket 83, review)", async (position) => {
@@ -4549,8 +4554,8 @@ describe("changes to the structure are checked on the live page", () => {
     page.getElementById("tag")!.setAttribute("style", "left: 30px; top: 20px");
     const phone = pageAt(html.replace("</style>", "@media (min-width: 501px) { #tag { left: 30px; top: 20px } }</style>"), 390);
     expect([x, y].map((change) => checkAcross(page, change, onCanvas(changes.list()), [390], () => phone))).toEqual([
-      { outcome: "not shown", actual: { canvas: position, position, offset: 12 }, width: 390 },
-      { outcome: "not shown", actual: { canvas: position, position, offset: 8 }, width: 390 },
+      { outcome: "shown", adapted: [{ width: 390, actual: { canvas: position, position, offset: 12 } }] },
+      { outcome: "shown", adapted: [{ width: 390, actual: { canvas: position, position, offset: 8 } }] },
     ]);
   });
 
@@ -4575,10 +4580,10 @@ describe("changes to the structure are checked on the live page", () => {
       // Laid out in its container there, or taken out of its layout: their values move it nothing there, or place it otherwise.
       for (const placed of ["static", "absolute"]) {
         const phone = at(`#tag { left: 30px; top: 20px } @media (max-width: 500px) { #tag { position: ${placed} } }`);
-        expect(check(phone)).toEqual([0, 1].map(() => ({ outcome: "not shown", actual: { canvas: position, position: placed, offset: null }, width: 390 })));
+        expect(check(phone)).toEqual([0, 1].map(() => ({ outcome: "shown", adapted: [{ width: 390, actual: { canvas: position, position: placed, offset: null } }] })));
       }
       // Placed as the canvas places it there, its `left` as the canvas has it, its `top` not.
-      expect(check(at("#tag { left: 30px; top: 0px }"))).toEqual([{ outcome: "shown" }, { outcome: "not shown", actual: { canvas: position, position, offset: 0 }, width: 390 }]);
+      expect(check(at("#tag { left: 30px; top: 0px }"))).toEqual([{ outcome: "shown" }, { outcome: "shown", adapted: [{ width: 390, actual: { canvas: position, position, offset: 0 } }] }]);
     },
   );
 
@@ -4592,7 +4597,7 @@ describe("changes to the structure are checked on the live page", () => {
     const [y] = changes.list();
     page.getElementById("tag")!.setAttribute("style", "top: 20px");
     const phone = pageAt(html.replace("</style>", "#tag { top: 20% }</style>"), 390);
-    expect(checkAcross(page, y, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { canvas: "sticky", position: "sticky", offset: null, written: "20%" }, width: 390 });
+    expect(checkAcross(page, y, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: { canvas: "sticky", position: "sticky", offset: null, written: "20%" } }] });
   });
 
   test.each(["relative", "sticky"] as const)(
@@ -4613,7 +4618,7 @@ describe("changes to the structure are checked on the live page", () => {
       const check = (phone: PageWidth) => checkAcross(page, right, onCanvas(changes.list()), [390], () => phone);
       expect(check(at("#tag { right: 32px }"))).toEqual({ outcome: "shown" });
       // From `md` up only: at the phone's width, its `right` as the page had it.
-      expect(check(at("@media (min-width: 501px) { #tag { right: 32px } }"))).toEqual({ outcome: "not shown", actual: { canvas: position, position, offset: 12 }, width: 390 });
+      expect(check(at("@media (min-width: 501px) { #tag { right: 32px } }"))).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: { canvas: position, position, offset: 12 } }] });
     },
   );
 
@@ -4637,7 +4642,7 @@ describe("changes to the structure are checked on the live page", () => {
     const [right] = changes.list();
     page.getElementById("tag")!.setAttribute("style", "right: 32px");
     const phone = pageAt(html.replace("</style>", "#tag { right: 32px } @media (max-width: 500px) { #tag { left: 8px } }</style>"), 390);
-    expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { canvas: "relative", position: "relative", offset: -8 }, width: 390 });
+    expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: { canvas: "relative", position: "relative", offset: -8 } }] });
   });
 
   /** `html` laid out right to left, as an Arabic or Hebrew site is: `dir="rtl"` on its body (ticket 89). */
@@ -4665,13 +4670,13 @@ describe("changes to the structure are checked on the live page", () => {
       // At every width, its `left` kept on phones: its `right` moves it 32px left.
       expect(check(at("#tag { right: 32px }"))).toEqual({ outcome: "shown" });
       // From `md` up only: on phones, its `right` as the page had it moves it 12px left.
-      expect(check(at("@media (min-width: 501px) { #tag { right: 32px } }"))).toEqual({ outcome: "not shown", actual: { canvas: "relative", position: "relative", offset: 12 }, width: 390 });
+      expect(check(at("@media (min-width: 501px) { #tag { right: 32px } }"))).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: { canvas: "relative", position: "relative", offset: 12 } }] });
     },
   );
 
   test.each([
     ["left to right", (html: string) => html, { outcome: "shown" }],
-    ["right to left", rightToLeft, { outcome: "not shown", actual: { canvas: "relative", position: "relative", offset: -5 }, width: 390 }],
+    ["right to left", rightToLeft, { outcome: "shown", adapted: [{ width: 390, actual: { canvas: "relative", position: "relative", offset: -5 } }] }],
   ] as const)(
     "the page placing a layer relative by its `left` and its `right` both, %s: the browser goes by its `left` left to right, so an X of its `left` shows, and by its `right` right to left, so it does not (ticket 89)",
     async (_, laidOut, result) => {
@@ -4710,7 +4715,7 @@ describe("changes to the structure are checked on the live page", () => {
       const at = (css: string) => pageAt(html.replace("</style>", `${css}</style>`), 390);
       const check = (phone: PageWidth) => checkAcross(page, right, onCanvas(changes.list()), [390], () => phone);
       expect(check(at("#tag { right: 32px }"))).toEqual({ outcome: "shown" });
-      expect(check(at("@media (min-width: 501px) { #tag { right: 32px } }"))).toEqual({ outcome: "not shown", actual: { value: 12, margin: 0 }, width: 390 });
+      expect(check(at("@media (min-width: 501px) { #tag { right: 32px } }"))).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: { value: 12, margin: 0 } }] });
     },
   );
 
@@ -4726,7 +4731,7 @@ describe("changes to the structure are checked on the live page", () => {
 
   test.each([
     ["left to right", (html: string) => html, { outcome: "shown" }],
-    ["right to left", rightToLeft, { outcome: "not shown", actual: { value: 335, margin: 0 }, width: 390 }],
+    ["right to left", rightToLeft, { outcome: "shown", adapted: [{ width: 390, actual: { value: 335, margin: 0 } }] }],
   ] as const)(
     "the page placing a layer absolute by its `left` and its `right` both, as wide as it is set, %s: an X of its `left` shows left to right; right to left, the browser places it by its `right`, so it does not, and the check says where its left edge is drawn (ticket 89, review)",
     async (_, laidOut, result) => {
@@ -4756,7 +4761,7 @@ describe("changes to the structure are checked on the live page", () => {
     page.getElementById("tag")!.setAttribute("style", "right: 32px");
     // On phones, a `left` of the page's own too: 390 - 8 - 50 is 332px.
     const phone = pageAt(html.replace("</style>", "#tag { right: 32px } @media (max-width: 500px) { #tag { left: 8px } }</style>"), 390);
-    expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { value: 332, margin: 0 }, width: 390 });
+    expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: { value: 332, margin: 0 } }] });
   });
 
   /** A page with no element placed otherwise than static round its tag, so the window places it: `html`, `body` and `phone` as `fromTheRight` has them (ticket 89, review). */
@@ -4771,8 +4776,8 @@ ${html}${body} style="margin: 0">
 </body></html>`;
 
   test.each([
-    ["absolute, `dir` on the body", "position: absolute; left: 12px", "<html>", '<body dir="rtl"', { outcome: "not shown", actual: { value: 335, margin: 0 }, width: 390 }],
-    ["fixed, `dir` on the body", "position: fixed; left: 12px", "<html>", '<body dir="rtl"', { outcome: "not shown", actual: { value: 335, margin: 0 }, width: 390 }],
+    ["absolute, `dir` on the body", "position: absolute; left: 12px", "<html>", '<body dir="rtl"', { outcome: "shown", adapted: [{ width: 390, actual: { value: 335, margin: 0 } }] }],
+    ["fixed, `dir` on the body", "position: fixed; left: 12px", "<html>", '<body dir="rtl"', { outcome: "shown", adapted: [{ width: 390, actual: { value: 335, margin: 0 } }] }],
     ["absolute, right to left on the root but left to right on the body", "position: absolute; left: 12px", '<html dir="rtl">', '<body dir="ltr"', { outcome: "shown" }],
   ] as const)(
     "a layer the window places, %s: the browser goes by the body's direction for the window, so an X of its `left` with a `right` of the page's own too is drawn by the side that direction has (ticket 89, review)",
@@ -4827,7 +4832,7 @@ ${html}${body} style="margin: 0">
     page.getElementById("tag")!.setAttribute("style", property === "x" ? "left: 30px" : "right: 32px");
     const phoneHtml = html.replace("</style>", `${css}</style>`);
     const phone = pageAt(property === "x" ? phoneHtml.replace(/<span id="tag" ([^>]*)>Tag<\/span>/, '<canvas id="tag" $1 width="50" height="20"></canvas>') : phoneHtml, 390);
-    expect(checkAcross(page, change, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { value, margin: 0 }, width: 390 });
+    expect(checkAcross(page, change, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: { value, margin: 0 } }] });
   });
 
   test.each([
@@ -4851,7 +4856,7 @@ ${html}${body} style="margin: 0">
       // As wide as the box: 118 + 50 + 32 is 200, so drawn where the canvas has it; in the board, 390 - 118 - 50 is 222.
       const phone = pageAt(html.replace("</style>", "@media (max-width: 500px) { #tag { right: 32px; left: 118px } }</style>"), 390);
       expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual(
-        outcome === "shown" ? { outcome } : { outcome, actual: { value: 222, margin: 0 }, width: 390 },
+        outcome === "shown" ? { outcome } : { outcome: "shown", adapted: [{ width: 390, actual: { value: 222, margin: 0 } }] },
       );
     },
   );
@@ -4890,7 +4895,7 @@ ${html}${body} style="margin: 0">
     page.getElementById("tag")!.setAttribute("style", "bottom: 32px");
     // On phones, a `top` of the page's own too: 100 - 8 - 20 is 72px.
     const phone = pageAt(html.replace("</style>", "#tag { bottom: 32px } @media (max-width: 500px) { #tag { top: 8px } }</style>"), 390);
-    expect(checkAcross(page, bottom, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { value: 72, margin: 0 }, width: 390 });
+    expect(checkAcross(page, bottom, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: { value: 72, margin: 0 } }] });
   });
 
   test.each([
@@ -4905,7 +4910,7 @@ ${html}${body} style="margin: 0">
     // 390 less the board's border, 380; less its `left`, its margins, its size: 8, 6 and 4, 50 and, as content, 3 + 3 + 2 + 2 more.
     const css = `#tag { right: 32px } #board { border: 5px solid } @media (max-width: 500px) { #tag { left: 8px; margin: 0 4px 0 6px; padding: 0 3px; border: 2px solid; box-sizing: ${box} } }`;
     const phone = pageAt(html.replace("</style>", `${css}</style>`), 390);
-    expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: { value, margin: 4 }, width: 390 });
+    expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: { value, margin: 4 } }] });
   });
 
   test.each(["transform: scale(0.5)", "rotate: 10deg"])(
@@ -4920,7 +4925,7 @@ ${html}${body} style="margin: 0">
       expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown" });
       // Given its `left` too, as wide as it is set: by its `left` still, 390 - 8 - 50 is 332px in the board as laid out.
       const both = pageAt(html.replace("</style>", `#tag { right: 32px } #board { ${drawn} } @media (max-width: 500px) { #tag { left: 8px } }</style>`), 390);
-      expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => both)).toEqual({ outcome: "not shown", actual: { value: 332, margin: 0 }, width: 390 });
+      expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => both)).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: { value: 332, margin: 0 } }] });
     },
   );
 
@@ -5117,7 +5122,7 @@ ${html}${body} style="margin: 0">
       const css = Object.entries(change.style).map(([name, value]) => `${name}: ${value}`).join("; ");
       page.getElementById("tag")!.setAttribute("style", css);
       const phone = pageAt(html.replace("</style>", `#tag { ${css} }</style>`), 390);
-      expect(checkAcross(page, change, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "not shown", actual: null, width: 390 });
+      expect(checkAcross(page, change, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: null }] });
     },
   );
 
@@ -5949,7 +5954,7 @@ describe("breakpoints", () => {
     channel.port1.close();
   });
 
-  test("a change made in the desktop view is checked as wide as the window and as wide as each view: a width where the code gives another value does not show it; one the round changed at a breakpoint of its own keeps its own", async () => {
+  test("a change made in the desktop view is checked as wide as the window and as wide as each view: a width where the code gives another value is adapted there, with the value it shows (ADR 0016); one the round changed at a breakpoint of its own keeps its own", async () => {
     const { editor, changes, desktop, phone, layer } = await open(MOVES.replace(/ data-ht-chain='[^']*'/g, ""));
     editor.at(desktop);
     editor.set(layer("board"), "fill", RED);
@@ -5959,7 +5964,7 @@ describe("breakpoints", () => {
     const page = livePage(1000, css);
     const { at, widths } = copiesOf(page);
 
-    expect(checkAcross(page, change, onCanvas(changes.list()), [768, 390], at)).toEqual({ outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 }, width: 390 });
+    expect(checkAcross(page, change, onCanvas(changes.list()), [768, 390], at)).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: { type: "solid", color: "#FFFFFF", opacity: 1 } }] });
     expect(widths).toEqual([768, 390]);
 
     // Changed in the phone view too, the board keeps that value below 800px: not looked at there.
@@ -7260,7 +7265,7 @@ describe("a Stack made a Grid, and a Grid a Stack (ticket 109)", () => {
       expect(checkAcross(page, grid, round, [390], at)).toEqual({ outcome: "shown" });
       // Its columns are the Grid's to show there all the same.
       there.getElementById("row")!.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
-      expect(checkAcross(page, grid, round, [390], at)).toMatchObject({ outcome: "not shown", actual: { type: "grid", columns: 2 }, width: 390 });
+      expect(checkAcross(page, grid, round, [390], at)).toMatchObject({ outcome: "shown", adapted: [{ width: 390, actual: { type: "grid", columns: 2 } }] });
       // The narrower view's changes before it: the Grid's to check.
       expect([direction, gap].map((change) => checkAcross(page, change, round, [390], at).outcome)).toEqual(["unchecked", "unchecked"]);
     } finally {

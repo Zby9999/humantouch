@@ -12,7 +12,8 @@ import { movedBy, PLACED_BY, SIDES, type InLayout } from "./client/checkable";
 import type { Axis } from "./client/snap";
 import type { CheckResult } from "./service-protocol";
 import { outsideIn } from "./outside-protocol";
-import { changeTitle, otherUsagesWords, listed, otherUsagesWord, outsideWords, propertyName, quoted, quotedWords, value } from "./design-values";
+import { breaksIn } from "./widths-protocol";
+import { brokenWords, changeTitle, otherUsagesWords, listed, otherUsagesWord, outsideWords, propertyName, quoted, quotedWords, value } from "./design-values";
 
 /** The rules of the report, as `finish` and the Skill give them, word for word. */
 export const REPORT_RULES =
@@ -58,6 +59,9 @@ function pageShows(change: Change, check: CheckResult): string {
   // Shown at its breakpoint, but outside its range too (ticket 104).
   const outside = outsideIn(check);
   if (outside?.length) return `the page shows it outside its range too, ${outsideWords(change.property, outside)}`;
+  // Shown, but its layer breaking the layout at a width (ticket 147).
+  const breaks = breaksIn(check);
+  if (breaks?.length) return `the page shows it, but ${brokenWords(breaks, "the layer", false)}`;
   const at = check.width ? `at ${check.width}px wide, ` : "";
   if (change.kind === "delete") return `${at}the layer is still on the page`;
   if (change.kind === "move") return `${at}the page does not have it where the change puts it`;

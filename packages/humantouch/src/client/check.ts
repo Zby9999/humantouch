@@ -11,7 +11,9 @@
  * read: on an element put in and taken out at once, before anything is painted.
  * A style whose value does not compare is shown all the same where the page
  * draws the same with the canvas's style for it put on, for a moment, before
- * anything is painted (ADR 0016, `draws-alike.ts`).
+ * anything is painted (ADR 0016, `draws-alike.ts`). Strict at the width a
+ * change is made at alone: one made in the desktop view drawn otherwise at
+ * another view's width is adapted there, and shown (ticket 147).
  */
 import { breakpointKey, breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
@@ -33,6 +35,7 @@ import { colorReader } from "./paint";
 import { drawnStroke, showsStroke } from "./stroke-weight";
 import { drawsAlike, movedAlike, movedAsNoted, type Moved, type Restyled } from "./draws-alike";
 import type { TextLength } from "./typography";
+import type { AdaptedAt, ShownAdapted } from "../widths-protocol";
 
 /**
  * Properties the browser draws otherwise than written: compared as the code
@@ -428,10 +431,10 @@ function spaced(text: string): string {
 /**
  * What an element on the page reads, as a reader takes it (`spaced`): its inline pieces' words with its own, a line break (`<br>`) as the space it reads as.
  * New text is found by these, and new words are checked by them (ticket 90). For words with a line break, before or after (`breaksLines`), `lines`:
- * where the page breaks their lines too, at a `<br>` or a new line the text keeps (ticket 144).
+ * where the page breaks their lines too, at a `<br>` or a new line the text keeps (ticket 144), or where a block in it starts or ends, as it draws them (ADR 0016).
  */
 export function wordsOn(el: Element, lines = false): string {
-  return wordsOf(el, lines);
+  return wordsOf(el, lines, true);
 }
 
 /** An element as the Agent finds it: its opening tag, and its words. */
@@ -451,7 +454,10 @@ function within({ min, max }: Breakpoint, width: number): boolean {
  * the changes of its round, where a usage with a change of its own to the
  * property a change to its component makes shows that one instead, and a
  * breakpoint changed on its own keeps its value. `sources`: a style change
- * not shown says what sets the value shown instead too.
+ * not shown says what sets the value shown instead too. Made in the desktop
+ * view and shown as wide as the window, a change drawn otherwise at another
+ * width is shown, adapted there (`ShownAdapted`, ADR 0016); with no window's
+ * width to show at, strict at every other.
  */
 export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas, viewWidths: number[], at: (width: number) => PageWidth | null, sources = false, notes?: EffectNotes): CheckResult {
   const reason = notChecked(change, round);
@@ -464,6 +470,9 @@ export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas,
     return { outcome: "unchecked", reason: `at the widths the page is looked at, the canvas ${howTheCanvasPlacesIt}` };
   }
   const apart = ownValues(change, round);
+  // Made in the desktop view and shown as wide as the window, where it is to show as on the canvas: at other views' widths the Agent may adapt it (ADR 0016).
+  const adapting = !change.breakpoint && own;
+  const adapted: AdaptedAt[] = [];
   let checked = false;
   /** The first width it does not show at. Past it, the page looks on only at the widths it has noted nothing at yet: what the change's style moves there is noted before the change is applied (ADR 0016). */
   let failed: CheckResult | null = null;
@@ -496,14 +505,45 @@ export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas,
     if (failed) continue;
     // Not there at this width at all: nothing to show there.
     if (result.outcome === "unchecked") continue;
-    if (result.outcome === "not shown") {
+    if (result.outcome === "not shown" && adapting) adapted.push(adaptedAt(doc, change, round, apart, copy, result.actual));
+    else if (result.outcome === "not shown") {
       if (!others.some((other) => other !== width && unnoted(other))) return result;
       failed = result;
     }
     checked = true;
   }
   if (failed) return failed;
-  return checked ? { outcome: "shown" } : { outcome: "unchecked", reason: "the layer is not on the page now" };
+  if (!checked) return { outcome: "unchecked", reason: "the layer is not on the page now" };
+  const shown: ShownAdapted = adapted.length ? { outcome: "shown", adapted } : { outcome: "shown" };
+  return shown;
+}
+
+/** The sizes a change sets, whose width or height drawn says what is drawn instead: as on the screen. */
+const DRAWN_SIZES: Partial<Record<string, "width" | "height">> = { width: "width", height: "height", minWidth: "width", maxWidth: "width", minHeight: "height", maxHeight: "height" };
+
+/** What the page draws of a change made in the desktop view at a view's width it is drawn otherwise at (`AdaptedAt`): what its check read there, and of a size, how large its first element is drawn. */
+function adaptedAt(doc: Document, change: Change, round: RoundOnCanvas, apart: string[], at: PageWidth, actual: unknown): AdaptedAt {
+  const axis = change.kind === "style" ? DRAWN_SIZES[change.property] : undefined;
+  const el = axis && !change.target.made ? styledBy(doc, change, apart, at, round)[0] : undefined;
+  return { width: at.width, actual, ...(el && { drawn: rounded(el.getBoundingClientRect()[axis!]) }) };
+}
+
+/**
+ * The widths a change is looked at for breaks of the layout (ADR 0016,
+ * ticket 147): those it is to show at (`widthsOf`), the page's window's
+ * among them where it is. Of a style change to a layer the page finds by
+ * its source marker alone: a layer made this round was not there to break
+ * nothing as the round was claimed, and other changes are to the structure.
+ */
+export function breakWidthsOf(change: Change, round: Change[], pageWidth: number, viewWidths: number[]): number[] {
+  if (change.kind !== "style" || !foundByMarker(change.target) || notChecked(change, round)) return [];
+  const { own, others } = widthsOf(change, round, pageWidth, viewWidths);
+  return [...(own ? [pageWidth] : []), ...others];
+}
+
+/** The elements of a style change's layer a check reads, as `at` shows the page: of a change to a component, in every usage but those the round changes the property of themselves (`ownValues`). */
+export function elementsAt(doc: Document, change: Change, round: RoundOnCanvas, at: PageWidth): Element[] {
+  return styledBy(doc, change, ownValues(change, round), at, round);
 }
 
 /**

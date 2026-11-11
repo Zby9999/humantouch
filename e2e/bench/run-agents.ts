@@ -16,7 +16,8 @@
  *                                     for the changes it applies, `finish`, and fill in the report `finish` lays out. Each change must show by
  *                                     the scenario's own test at its widths (a change with no test fails, a brief aside), and get the page's
  *                                     check of it as shown; one with a Variable must write it (as `usesVariable` counts it); one `notOneToOne`
- *                                     must be in the report under ⚠️ alone, with why and instead (`checkReport`). The scenario's own
+ *                                     must be in the report under ⚠️ alone, with why and instead (`checkReport`); one with a `scripted` check
+ *                                     must get it, and `done` say its words (one written wrong on purpose: not shown, under ⚠️). The scenario's own
  *                                     expectations must hold. With no changes (an undo), only `apply` runs: no claim, no finish, no report.
  *                                     With `--dry` or `--scripted`, BENCH_DEBUG=1 prints a scenario's error whole, not its first line only.
  *   pnpm bench:agents summary <dir>   measure the raw results in <dir> again, and sum them up
@@ -148,7 +149,10 @@ async function main(argv: string[]) {
   // The scripted pass takes the scenarios with scripted code, unless named.
   const scenarios = (
     option("scenarios") ? STANDARD_SCENARIOS.filter((scenario) => option("scenarios")!.split(",").includes(scenario.id)) : STANDARD_SCENARIOS.filter((scenario) => !scripted || scenario.apply)
-  ).filter((scenario) => !(argv.includes("--no-skill") && scenario.prompt));
+  )
+    .filter((scenario) => !(argv.includes("--no-skill") && scenario.prompt))
+    // One whose scripted code writes the round wrong on purpose (ticket 147) is no Agent's to run.
+    .filter((scenario) => scripted || argv.includes("--dry") || !scenario.scriptedOnly);
   const runs = Number(option("runs") ?? 3);
   const firstRun = Number(option("first-run") ?? 1);
   const maxRuns = Number(option("max-runs") ?? Infinity);
@@ -420,9 +424,10 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
       await scenario.apply!(desk);
       const applied = saved.filter((_, i) => !scenario.changes[i].notOneToOne).map((change) => change.id);
       // The dev server brings the code in (Next.js slowly): then `done`, as an Agent runs it once the page has the change.
+      let said = "";
       if (applied.length) {
         await endState(observers, scenario, saved, project.dir, head, false);
-        await project.cli("done", ...applied.map(String));
+        said = await project.cli("done", ...applied.map(String));
       }
       const report = applying ? fillInReport(await project.cli("finish"), scenario, saved) : null;
 
@@ -430,7 +435,7 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
       const { atEnd, expectations, loaded } = await endState(observers, scenario, saved, project.dir, head, true);
       if (!loaded) problems.push(`the page did not load afresh at the end, in ${END_STATE_MS / 1000} s`);
       expectations.forEach((holds, i) => holds || problems.push(`expectation ${i + 1} does not hold: ${scenario.expectations![i].expect}`));
-      const checks: Record<string, { outcome: string }> = rounds().length > roundsBefore ? JSON.parse(readFileSync(join(history, rounds().at(-1)!, "result.json"), "utf8")).checks : {};
+      const checks: Record<string, { outcome: string; adapted?: { width: number }[] }> = rounds().length > roundsBefore ? JSON.parse(readFileSync(join(history, rounds().at(-1)!, "result.json"), "utf8")).checks : {};
       await sh("git", ["add", "-A"], project.dir);
       const diff = await sh("git", ["diff", "--cached", head], project.dir);
       scenario.changes.forEach((change, i) => {
@@ -438,14 +443,19 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
         const id = saved[i].id;
         if (atEnd[i] === false) problems.push(`change ${i + 1} does not show: ${change.expect}`);
         if (atEnd[i] === null && change.kind !== "brief") problems.push(`change ${i + 1} has no test of its own (\`shows\`) to show it by`);
-        if (change.checkable && checks[id]?.outcome !== "shown") problems.push(`change ${i + 1}: the page's check says ${checks[id]?.outcome ?? "nothing"}`);
+        // Written wrong on purpose (ticket 147): the page's check is to say so.
+        const outcome = change.scripted?.notShown ? "not shown" : "shown";
+        if (change.checkable && checks[id]?.outcome !== outcome) problems.push(`change ${i + 1}: the page's check says ${checks[id]?.outcome ?? "nothing"}, not ${outcome}`);
+        if (change.scripted && !said.includes(change.scripted.done)) problems.push(`change ${i + 1}: \`done\` does not say “${change.scripted.done}”, but: ${said.trim()}`);
+        const adapted = (checks[id]?.adapted ?? []).map((one) => one.width).join();
+        if (adapted !== (change.scripted?.adapted ?? []).join()) problems.push(`change ${i + 1}: the page's check has it adapted at ${adapted || "no width"}, not ${change.scripted?.adapted?.join() || "none"}`);
         if (change.variable && !usesVariable(diff, change.variable)) problems.push(`change ${i + 1}: the code does not write ${variableParts(change.variable).map((names) => names.join(" or ")).join(", and ")}`);
         if (change.variableKept && !keepsVariable(diff, change.variableKept)) problems.push(`change ${i + 1}: the code does not keep ${variableParts(change.variableKept).map((names) => names.join(" or ")).join(", and ")}`);
       });
       if (!report) return problems;
       const check = checkReport(report, saved.map((change) => change.id));
       if (!check.compliant) problems.push(`the report: ${check.problems.join("; ")}`);
-      const warned = saved.filter((_, i) => scenario.changes[i].notOneToOne).map((change) => change.id);
+      const warned = saved.filter((_, i) => scenario.changes[i].notOneToOne || scenario.changes[i].scripted?.notShown).map((change) => change.id);
       if (check.notApplied.join() !== warned.join()) problems.push(`the report has ${check.notApplied.join(", ") || "none"} under ⚠️, not ${warned.join(", ") || "none"}`);
       if (reportedAsExpected(check, warned.map((id) => ({ id, shown: atEnd[saved.findIndex((change) => change.id === id)] }))) !== (warned.length ? 1 : null)) problems.push("the report has the changes that cannot be applied 1:1 elsewhere than under ⚠️ alone, with why and instead");
       return problems;

@@ -8,21 +8,37 @@
  * space; with `lines`, a line break as a line break, "\n": a `<br>`, or a new
  * line where the white space keeps new lines (`white-space: pre-line`, say,
  * as text typed in has it), each line's words with no space around them.
- * Without, a `<br>` reads as the space between the words it parts.
+ * Without, a `<br>` reads as the space between the words it parts. With
+ * `blocks` too, as the page draws them (ADR 0016): an element laid out as a
+ * block (`display: block`, `flex`, …) in it starts a line and ends one, as
+ * a line break does, once between two blocks; a `<br>` or new line kept
+ * where one ends and the next starts reads as no more than itself.
  */
-export function wordsOf(el: Element, lines = true): string {
+export function wordsOf(el: Element, lines = true, blocks = false): string {
   let text = "";
+  const view = el.ownerDocument.defaultView;
+  const block = (child: Element) => blocks && lines && !!view && child.isConnected && !/^(inline|contents|none)/.test(view.getComputedStyle(child).display);
   const walk = (node: Node) => {
     for (const child of node.childNodes) {
       if (child.nodeType === Node.TEXT_NODE || child.nodeType === Node.CDATA_SECTION_NODE) text += lines ? spacedOut((child as Text).data, node as Element) : (child as Text).data;
       else if (child.nodeType !== Node.ELEMENT_NODE) continue;
       else if ((child as Element).localName === "br") text += lines ? "\n" : " ";
-      else walk(child);
+      else if (block(child as Element)) {
+        text += BLOCK_EDGE;
+        walk(child);
+        text += BLOCK_EDGE;
+      } else walk(child);
     }
   };
   walk(el);
-  return lines ? tidyWords(text) : text.replace(/\s+/g, " ").trim();
+  if (!lines) return text.replace(/\s+/g, " ").trim();
+  // Each run of blocks' edges and white space between them, one line break, or as many as are kept in it.
+  return tidyWords(text.replace(BLOCK_EDGES, (run) => "\n".repeat(Math.max(1, run.split("\n").length - 1))));
 }
+
+/** Where a block starts or ends, in the words as walked: a character no text has. */
+const BLOCK_EDGE = "\u0000";
+const BLOCK_EDGES = /[\s\u0000]*\u0000[\s\u0000]*/g;
 
 /** A text's white space as one space each run, but for its new lines where `parent` keeps them, as it is drawn. */
 function spacedOut(data: string, parent: Element): string {

@@ -7,7 +7,7 @@
  */
 import { changes as changesWord, container as containerOf, describeChanges, heldWords, shareWords, toApply, type NotesOptions } from "./change-notes";
 import { breakpointName, tailwindOf } from "./client/breakpoints";
-import { otherUsagesWords, listed, ordinal, otherUsagesWord, outsideWords, propertyName, quoted, quotedWords, value } from "./design-values";
+import { adaptedWords, breakFix, brokenWords, otherUsagesWords, listed, ordinal, otherUsagesWord, outsideWords, propertyName, quoted, quotedWords, value } from "./design-values";
 import type { MadeMissing, OffsetInLayout, PlacedOnPage } from "./client/check";
 import { AUTO_MARGINS, AUTO_MARGINS_CLASS, AXIS_SIZE, CENTERING_SIGN, centeringSides, movedBy, PLACED_BY, shareCss, SIDES, type Edge, type Share } from "./client/checkable";
 import type { Change, Composed, Created, GridSettings, Margins, Place, SavedChangeSet } from "./client/changeset";
@@ -18,6 +18,7 @@ import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult, type OtherUsageChanged } from "./service-protocol";
 import { outsideIn, type OutsideChanged } from "./outside-protocol";
+import { adaptedIn, breaksIn, type BreakFound } from "./widths-protocol";
 import { whereToLook } from "./where-to-look";
 import {
   appliedOf,
@@ -182,7 +183,7 @@ function readAgain(change: Change, result: CheckResult | undefined): Change {
   const [first, ...others] = change.parts ?? [];
   if (first && others.every((part) => JSON.stringify(part.before) === JSON.stringify(first.before))) next = { ...next, before: first.before };
   // Shown on the layer, and at other usages too (ticket 77): its value there is its after.
-  if (result?.outcome !== "not shown" || result.otherUsages || outsideIn(result) || !readWhereMade(change, result.width)) return next;
+  if (result?.outcome !== "not shown" || result.otherUsages || outsideIn(result) || breaksIn(result) || !readWhereMade(change, result.width)) return next;
   const before = change.parts ? undefined : beforeOf(change, result.actual);
   // Centered (ticket 79): what its side is written as now goes with it, so the notes say the code as it is twice alike.
   const share = before !== undefined && change.centeredOn ? (result.actual as { share?: Share }).share : undefined;
@@ -299,11 +300,15 @@ async function newAsk(folder: HumanTouchFolder, ids: number[], sources: boolean)
 function checkLine(change: Change, result: CheckResult | undefined): string {
   if (change.kind === "brief") return `Not checked on the page: ${BRIEF_UNCHECKED}. Say in your report how you achieved it: what you changed, and where.`;
   switch (result?.outcome) {
-    case "shown":
-      return "Checked on the page: it shows the change.";
+    case "shown": {
+      // Made in the desktop view, drawn otherwise at a view's width (ticket 147): what is drawn there, for the report.
+      const adapted = adaptedIn(result);
+      return `Checked on the page: it shows the change.${adapted?.length ? ` ${adaptedWords(change, adapted)}.` : ""}`;
+    }
     case "not shown":
       if (result.otherUsages?.length) return shownAtOtherUsages(change, result.otherUsages);
       if (outsideIn(result)?.length) return shownOutside(change, outsideIn(result)!);
+      if (breaksIn(result)?.length) return breaksLayout(change, breaksIn(result)!);
       return `Checked on the page: it does not show the change. ${notShown(change, result.actual, result.width)}`;
     default:
       return `Not checked on the page: ${result?.reason ?? "the page did not answer in time"}. That is no error: go on.`;
@@ -337,6 +342,14 @@ function shownOutside(change: Change, widths: OutsideChanged[]): string {
     `Checked on the page: it shows the change, but outside its range too: ${outsideWords(change.property, widths)} since the round was claimed. ` +
     `The change applies ${breakpointName(change.breakpoint)} only${tailwind ? ` (\`${tailwind}\`)` : ""}: make it there alone, put the other widths back as they were, and run \`npx humantouch done ${change.id}\` again.`
   );
+}
+
+/**
+ * A change whose layer breaks the layout at a width as it did not as the
+ * round was claimed (ticket 147): where, how, and how to fix it.
+ */
+function breaksLayout(change: Change, breaks: BreakFound[]): string {
+  return `Checked on the page: it does not show the change. ${brokenWords(breaks, `change ${change.id}`)}, which it did not as the round was claimed: ${breakFix(change)}, and run \`npx humantouch done ${change.id}\` again.`;
 }
 
 /** How a sentence of what the page shows opens: "At 390px wide, the", `width` px wide when not as wide as its window; else "The". */
@@ -701,12 +714,15 @@ async function finish(folder: HumanTouchFolder, io: Io): Promise<number> {
   const atOtherUsages = notShown.filter((id) => ((check) => check?.outcome === "not shown" && !!check.otherUsages?.length)(result.checks[id]));
   // Shown at its breakpoint, but outside its range too (ticket 104).
   const outside = notShown.filter((id) => !atOtherUsages.includes(id) && !!outsideIn(result.checks[id])?.length);
-  const unshown = notShown.filter((id) => !atOtherUsages.includes(id) && !outside.includes(id));
+  // Shown, but breaking the layout at a width (ticket 147).
+  const broken = notShown.filter((id) => !atOtherUsages.includes(id) && !outside.includes(id) && !!breaksIn(result.checks[id])?.length);
+  const unshown = notShown.filter((id) => !atOtherUsages.includes(id) && !outside.includes(id) && !broken.includes(id));
   let text = `Round finished: ${applied.length} of ${changesWord(ids.length)} applied.`;
   if (missing.length) text += ` Not marked done: ${missing.join(", ")}.`;
   if (unshown.length) text += ` The page does not show: ${unshown.join(", ")}.`;
   if (atOtherUsages.length) text += ` Shown at other usages of its component too: ${atOtherUsages.join(", ")}.`;
   if (outside.length) text += ` Shown outside its breakpoint's range too: ${outside.join(", ")}.`;
+  if (broken.length) text += ` Shown, but breaking the layout at a width: ${broken.join(", ")}.`;
   io.write(`${text}\n\n${reportFor(changeSet.changes, applied, result.checks)}`);
   return 0;
 }
