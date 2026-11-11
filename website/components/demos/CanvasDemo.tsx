@@ -7,6 +7,7 @@ import { Icon } from "@/components/editor/Icon";
 import { DesignSections } from "@/components/editor/DesignSections";
 import type { Layer } from "@/components/editor/model";
 import { VariablesPanel } from "@/components/editor/VariablesPanel";
+import { PointerShape, TIP } from "./parts";
 import { usePhases } from "./usePhases";
 
 /*
@@ -81,7 +82,7 @@ const SCENE_CSS = `
 .ht-pop .ht-pop-value { margin-left: auto; color: var(--ht-text-muted); font-variant-numeric: tabular-nums; }
 .ht-pop .ht-pop-swatch { width: 14px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.2); }
 .demo-marquee { position: absolute; box-sizing: border-box; border: 1px solid var(--ht-accent); background: rgb(0 143 240 / 0.08); }
-.demo-cursor { position: absolute; z-index: 40; width: 18px; height: 18px; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35)); }
+.demo-cursor { position: absolute; z-index: 40; width: 20px; height: 20px; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.3)); }
 `;
 
 export function CanvasDemo() {
@@ -346,10 +347,10 @@ function Cursor({ at, ms, pressed }: { at: { x: number; y: number }; ms: number;
   return (
     <svg
       className="demo-cursor"
-      viewBox="0 0 18 18"
-      style={{ left: at.x - 2, top: at.y - 1.5, transition: `left ${ms}ms ${EASE_IN_OUT}, top ${ms}ms ${EASE_IN_OUT}, scale 120ms`, scale: pressed ? 0.9 : 1 }}
+      viewBox="0 0 20 20"
+      style={{ left: at.x - TIP.x, top: at.y - TIP.y, transformOrigin: `${TIP.x}px ${TIP.y}px`, transition: `left ${ms}ms ${EASE_IN_OUT}, top ${ms}ms ${EASE_IN_OUT}, scale 120ms`, scale: pressed ? 0.9 : 1 }}
     >
-      <path d="M2 1.5 L2 14.5 L5.6 11.2 L8 16.5 L10.4 15.4 L8.1 10.3 L13 10.3 Z" fill="#0a0a09" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round" />
+      <PointerShape />
     </svg>
   );
 }

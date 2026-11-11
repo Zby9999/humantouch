@@ -25,18 +25,32 @@ export function Handles({ color = "var(--color-blue-500)" }: { color?: string })
   );
 }
 
-/** The pointer, as the system draws it. */
+/**
+ * The pointer, as Figma draws one: a triangle leaning to its tip, its inner corner drawn in, every corner rounded; dark,
+ * edged in white. Its tip is at TIP in its 20px box.
+ */
+export const TIP = { x: 3.5, y: 3 };
+const POINTER = "M3.5 3 L17 8.6 L10.6 10.6 L8.6 17 Z";
+export function PointerShape() {
+  return (
+    <>
+      <path d={POINTER} fill="#fff" stroke="#fff" strokeWidth="4" strokeLinejoin="round" />
+      <path d={POINTER} fill="#0a0a09" stroke="#0a0a09" strokeWidth="1.6" strokeLinejoin="round" />
+    </>
+  );
+}
+
 export function Cursor({ x, y, pressed = false, duration = 700 }: { x: number; y: number; pressed?: boolean; duration?: number }) {
   return (
     <svg
-      width="18"
-      height="18"
-      viewBox="0 0 18 18"
+      width="20"
+      height="20"
+      viewBox="0 0 20 20"
       aria-hidden="true"
-      className="pointer-events-none absolute z-20 drop-shadow-[0_1px_2px_rgb(0_0_0/0.35)]"
-      style={{ left: x, top: y, transition: `left ${duration}ms ${EASE}, top ${duration}ms ${EASE}, scale 120ms`, scale: pressed ? 0.9 : 1 }}
+      className="pointer-events-none absolute z-20 drop-shadow-[0_1px_2px_rgb(0_0_0/0.3)]"
+      style={{ left: x - TIP.x, top: y - TIP.y, transformOrigin: `${TIP.x}px ${TIP.y}px`, transition: `left ${duration}ms ${EASE}, top ${duration}ms ${EASE}, scale 120ms`, scale: pressed ? 0.9 : 1 }}
     >
-      <path d="M2 1.5 L2 14.5 L5.6 11.2 L8 16.5 L10.4 15.4 L8.1 10.3 L13 10.3 Z" fill="#0a0a09" stroke="#fff" strokeWidth="1.2" strokeLinejoin="round" />
+      <PointerShape />
     </svg>
   );
 }
