@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DemoPage, layerId, type Selection, type Target } from "./DemoPage";
 import { EDITOR_CSS } from "./editor-css.generated";
+import { followSiteTheme } from "./theme";
 import { Tips } from "./fields";
 import { Icon } from "./Icon";
 import { DesignSections } from "./DesignSections";
@@ -83,6 +84,7 @@ export function HeroEditor() {
   useEffect(() => {
     const el = host.current!;
     setShadow(el.shadowRoot ?? el.attachShadow({ mode: "open" }));
+    return followSiteTheme(el);
   }, []);
 
   return (

@@ -2,6 +2,7 @@
 
 import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/components/editor/Icon";
+import { followSiteTheme } from "@/components/editor/theme";
 import { VariablesPanel } from "@/components/editor/VariablesPanel";
 import { PointerShape, TIP } from "./parts";
 
@@ -30,6 +31,7 @@ export function useShadow() {
   useEffect(() => {
     const el = host.current!;
     setShadow(el.shadowRoot ?? el.attachShadow({ mode: "open" }));
+    return followSiteTheme(el);
   }, []);
   return { host, shadow };
 }
