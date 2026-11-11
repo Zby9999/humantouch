@@ -77,3 +77,34 @@ test("with the Layers panel hidden, the canvas takes its room; shown, the panel 
   // The canvas stays where it was on screen as the panel opens beside it.
   await expect.poll(() => edges(page, canvas)).toEqual(before);
 });
+
+/*
+ * A swipe over a part of the editor where nothing scrolls went on to the page under it: the page scrolled behind the
+ * editor, and on a Mac its rubber band took the whole editor along, the page's own background in a strip at the
+ * window's edge (designer, 2026-11-11). Headless Chromium has no rubber band, so the page's own scrolling stands in
+ * for it, sideways too on a page wider than the window.
+ */
+test("a wheel over the Show layers button or the tools does not reach the page under the editor, down or sideways (designer, 2026-11-11)", async ({ page }) => {
+  // A page wider than the window, as well as taller: it could scroll sideways, as a rubber band takes it.
+  await page.evaluate(() => {
+    const wide = document.createElement("div");
+    wide.style.cssText = "width: 3000px; height: 1px";
+    document.body.append(wide);
+  });
+  await enterEditMode(page);
+  const scrolled = () => page.evaluate(() => ({ x: scrollX, y: scrollY }));
+  expect(await scrolled()).toEqual({ x: 0, y: 0 });
+
+  for (const part of [page.getByRole("button", { name: "Show layers" }), page.getByRole("toolbar", { name: "Tools" })]) {
+    const box = (await part.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 300);
+    await page.mouse.wheel(300, 0);
+    // A wheel scrolls in a frame or two: given the time, the page would have moved.
+    await page.waitForTimeout(200);
+    expect(await scrolled()).toEqual({ x: 0, y: 0 });
+  }
+  // The shell a scroller only to end the wheel: nothing past its edges, so it never scrolls itself.
+  const shell = await page.locator(".ht-shell").evaluate((el) => ({ x: el.scrollWidth - el.clientWidth, y: el.scrollHeight - el.clientHeight, left: el.scrollLeft, top: el.scrollTop }));
+  expect(shell).toEqual({ x: 0, y: 0, left: 0, top: 0 });
+});

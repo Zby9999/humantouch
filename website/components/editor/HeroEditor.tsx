@@ -30,18 +30,13 @@ const FRAME_LEFT = VIEWS.map((_, i) => VIEWS.slice(0, i).reduce((x, v) => x + v.
 const STAGE_WIDTH = FRAME_LEFT.at(-1)! + VIEWS.at(-1)!.width;
 /**
  * The hero's frame, as the product's toggle has one (toggle-styles.ts): a ground round it, a hairline, the editor raised in
- * it. These are its sizes at the hero's full width; narrower, they scale with the editor (designer, 2026-11-11: at a phone's
- * width the corners looked too round), down to a floor, so the frame never goes square.
+ * it. 6px round the editor and its corners 12px at the hero's full width, 1200px; narrower, they scale with it
+ * (designer, 2026-11-11: at a phone's width the corners looked too round), down to 3px and 4px, so the frame never goes
+ * square. In CSS, by the width the page gives the hero (main is its container), so they are right before the script has
+ * come, and the editor's box is as tall as its width says.
  */
-const FRAME_PAD = 6;
-const EDITOR_RADIUS = 12;
-const FULL_SCALE = (1200 - 2 * FRAME_PAD) / W;
-function frame(scale: number) {
-  const k = Math.min(1, scale / FULL_SCALE);
-  const pad = Math.max(3, FRAME_PAD * k);
-  const radius = Math.max(4, EDITOR_RADIUS * k);
-  return { pad, radius, outer: pad + radius };
-}
+const FRAME_STYLE = { "--hero-pad": "clamp(3px, 0.5cqw, 6px)", "--hero-radius": "clamp(4px, 1cqw, 12px)", padding: "var(--hero-pad)", borderRadius: "calc(var(--hero-pad) + var(--hero-radius))" } as React.CSSProperties;
+const FULL_SCALE = (1200 - 12) / W;
 
 /** The product's timings for a level closed in the Layers (motion.ts). */
 const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
@@ -59,6 +54,8 @@ const SITE_CSS = `
 .ht-panel { position: relative; }
 /* Nothing in the hero scrolls of its own: a wheel or a swipe over it scrolls the page on (designer, 2026-11-11). */
 .ht-panel, .ht-tree { overflow: hidden; overscroll-behavior: auto; }
+/* The product's shell keeps a wheel off the page under it (overscroll-behavior: none); in the hero the page is to scroll on. */
+.ht-shell { overscroll-behavior: auto; }
 .ht-viewport { touch-action: auto; }
 /* The panels' headers 16px from the top, as their buttons are from the side (designer, 2026-11-11); the product's are 12px. */
 .ht-panel-header { padding-top: 16px; }
@@ -68,6 +65,12 @@ const SITE_CSS = `
 .ht-pop .ht-pop-value { margin-left: auto; color: var(--ht-text-muted); font-variant-numeric: tabular-nums; }
 .ht-pop .ht-pop-swatch { width: 14px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.2); }
 `;
+
+/**
+ * Acme's cover starts below the hero's window, not in its bottom fifth, where the blur made it a smudge in preview
+ * (designer, 2026-11-12): its top was at 804 of the window's 900, now at 924.
+ */
+const ROOM_BELOW = 120;
 
 type Box = { left: number; top: number; width: number; height: number };
 
@@ -82,7 +85,20 @@ export function HeroEditor() {
   const host = useRef<HTMLDivElement>(null);
   const [shadow, setShadow] = useState<ShadowRoot | null>(null);
   const [scale, setScale] = useState(FULL_SCALE);
-  const { pad, radius, outer } = frame(scale);
+  /** The editor drawn, once the page's fonts are in: till then, on a slow network, a picture of it shows in its place. */
+  const [fontsIn, setFontsIn] = useState(false);
+  const [drawn, setDrawn] = useState(false);
+  /**
+   * Where the editor starts: in preview mode, the intro to play, as on a fast network; or in edit mode, at rest, when the
+   * picture of it has been on screen (designer, 2026-11-12: on a slow network, the editor itself, not Acme's page, for the
+   * wait). Read once, as the editor is about to be drawn.
+   */
+  const start = useRef<"preview" | "edit" | null>(null);
+  if (shadow && fontsIn && !start.current) {
+    const picture = inner.current?.querySelector("[data-hero-picture]");
+    const shown = !!picture && getComputedStyle(picture).visibility === "visible" && (window as { __heroPicture?: boolean }).__heroPicture === true;
+    start.current = shown ? "edit" : "preview";
+  }
 
   useLayoutEffect(() => {
     const el = inner.current!;
@@ -96,30 +112,83 @@ export function HeroEditor() {
   useEffect(() => {
     const el = host.current!;
     setShadow(el.shadowRoot ?? el.attachShadow({ mode: "open" }));
-    return followSiteTheme(el);
+    let on = true;
+    // Drawn before its fonts are in, the editor would show the fallback's letters over the picture's, then swap them.
+    document.fonts.ready.then(() => on && setFontsIn(true));
+    const stop = followSiteTheme(el);
+    return () => {
+      on = false;
+      stop();
+    };
   }, []);
 
+  // The picture under the editor goes once the editor is on screen over it: the same pixels, so nothing shows the change.
+  useEffect(() => {
+    if (!shadow || !fontsIn) return;
+    let frame = requestAnimationFrame(() => (frame = requestAnimationFrame(() => setDrawn(true))));
+    return () => cancelAnimationFrame(frame);
+  }, [shadow, fontsIn]);
+
   return (
-    <section aria-label="Human Touch's editor, to try" className="relative w-full max-w-[1200px] bg-neutral-0 shadow-[0_0_0_0.5px_var(--color-neutral-250)] dark:bg-raised dark:shadow-[0_0_0_0.5px_var(--color-surface)]" style={{ padding: pad, borderRadius: outer }}>
+    <section aria-label="Human Touch's editor, to try" className="relative isolate w-full max-w-[1200px] bg-neutral-0 shadow-[0_0_0_0.5px_var(--color-neutral-250)] dark:bg-raised dark:shadow-[0_0_0_0.5px_var(--color-surface)]" style={FRAME_STYLE}>
       <div
         ref={inner}
         className="relative overflow-hidden bg-neutral-100 shadow-[0_1px_1px_rgb(0_0_0/0.15),0_0_0_0.5px_rgb(0_0_0/0.15)] dark:bg-transparent"
-        style={{ height: H * scale, borderRadius: radius }}
+        style={{ aspectRatio: `${W} / ${H}`, borderRadius: "var(--hero-radius)" }}
       >
+        {/*
+         * Till the editor is drawn, a picture of it in edit mode at rest (public/hero, scripts/hero-picture.mjs), shown
+         * only from 1s after the page is styled (hero-picture-in in globals.css): on a fast network the editor comes
+         * first and opens with its intro, the picture never seen; on a slow one (the script some 9s on 3G) the picture
+         * shows, and the editor then starts as it, in edit mode, so nothing shows the change. Only the theme's one loads;
+         * the layout's script asks for it first and notes when it is in (window.__heroPicture).
+         */}
+        {!drawn && (
+          <div
+            data-hero-picture=""
+            aria-hidden="true"
+            className="absolute inset-0 bg-[url(/hero/edit-light.webp)] bg-size-[100%_100%] [animation:hero-picture-in_0s_1s_both] dark:bg-[url(/hero/edit-dark.webp)]"
+          />
+        )}
         <div className="absolute top-0 left-0 origin-top-left" style={{ width: W, height: H, transform: `scale(${scale})` }}>
           <div ref={host} />
         </div>
       </div>
+      <HeroShadow />
       <ProgressiveBlur />
       {shadow &&
+        fontsIn &&
         createPortal(
           <>
             <style>{EDITOR_CSS + SITE_CSS}</style>
-            <Editor scale={scale} root={shadow} />
+            <Editor scale={scale} root={shadow} start={start.current ?? "preview"} />
           </>,
           shadow as unknown as Element,
         )}
     </section>
+  );
+}
+
+/**
+ * A soft shadow round the hero, for it to stand out on the page (designer, 2026-11-12): layered, from a close, light one
+ * to a wide, faint one, cast down. Behind the frame, and gone by where its foot starts to blur and fade into the page: a
+ * shadow left beside the faded foot showed its edge as a line. The fade is a mask on a box round the frame, wider than
+ * the shadow reaches and ending there, as a mask on the frame itself would cut the shadow off at its edges.
+ */
+const SHADOW_REACH = 120;
+function HeroShadow() {
+  const mask = "linear-gradient(to bottom, #000 30%, transparent 100%)";
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute -z-10"
+      style={{ top: -SHADOW_REACH, left: -SHADOW_REACH, right: -SHADOW_REACH, bottom: "20%", maskImage: mask, WebkitMaskImage: mask }}
+    >
+      <div
+        className="absolute shadow-[0_1px_2px_rgb(0_0_0/0.04),0_10px_28px_-8px_rgb(0_0_0/0.10),0_36px_80px_-24px_rgb(0_0_0/0.14)] dark:shadow-[0_1px_2px_rgb(0_0_0/0.3),0_10px_28px_-8px_rgb(0_0_0/0.45),0_36px_80px_-24px_rgb(0_0_0/0.5)]"
+        style={{ top: SHADOW_REACH, left: SHADOW_REACH, right: SHADOW_REACH, bottom: -SHADOW_REACH, borderRadius: "calc(var(--hero-pad) + var(--hero-radius))" }}
+      />
+    </div>
   );
 }
 
@@ -176,8 +245,8 @@ const PRESS_MS = 120;
  * edges, as the product switches into edit mode. The Design panel's × switches back, the page growing over the window
  * again; the toggle, again into edit mode, as often as anyone likes.
  */
-function Editor({ scale, root }: { scale: number; root: ShadowRoot }) {
-  const [editing, setEditing] = useState(false);
+function Editor({ scale, root, start }: { scale: number; root: ShadowRoot; start: "preview" | "edit" }) {
+  const [editing, setEditing] = useState(start === "edit");
   const [travel, setTravel] = useState<Travel>(null);
   const toggleButton = useRef<HTMLButtonElement>(null);
 
@@ -195,8 +264,9 @@ function Editor({ scale, root }: { scale: number; root: ShadowRoot }) {
     setTravel(null);
   };
 
-  // The intro: the toggle pressed, as by a click, then edit mode.
+  // The intro: the toggle pressed, as by a click, then edit mode. Not when it starts in edit mode.
   useEffect(() => {
+    if (start === "edit") return;
     const press = window.setTimeout(() => {
       toggleButton.current?.animate([{ scale: "1" }, { scale: "0.96" }, { scale: "1" }], { duration: PRESS_MS * 2, easing: "ease-out" });
       window.setTimeout(enter, PRESS_MS);
@@ -218,7 +288,7 @@ function Preview({ toggle, onEnter }: { toggle: React.RefObject<HTMLButtonElemen
   return (
     <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
       <div style={{ pointerEvents: "none" }}>
-        <DemoPage view="Desktop" width={W} onPick={() => {}} onHover={() => {}} />
+        <DemoPage view="Desktop" width={W} onPick={() => {}} onHover={() => {}} roomBelow={ROOM_BELOW} />
       </div>
       {/* At the top right, as the product can dock it: at the bottom it would be under the hero's blur, out of sight (designer, 2026-11-11). */}
       <div className="ht-dock" data-corner="top-right">
@@ -634,7 +704,7 @@ function Viewport({
         {VIEWS.map((v, i) => (
           // Only the Desktop view travels between the window and the canvas.
           <div key={v.name} className={`ht-canvas${i ? " is-beside" : ""}`} data-view={v.name} style={{ left: FRAME_LEFT[i], width: v.width, visibility: travelling && i ? "hidden" : undefined }}>
-            <DemoPage view={v.name} width={v.width} onPick={(path, at) => onSelect(pick(path, selected), at)} onHover={(t) => onHover(t && pick(pathOf(t), selected))} />
+            <DemoPage view={v.name} width={v.width} roomBelow={ROOM_BELOW} onPick={(path, at) => onSelect(pick(path, selected), at)} onHover={(t) => onHover(t && pick(pathOf(t), selected))} />
           </div>
         ))}
       </div>

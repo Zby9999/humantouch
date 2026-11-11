@@ -44,7 +44,8 @@ import {
   type StackSettings,
 } from "./changeset";
 import type { Destination, Editor } from "./edit-commands";
-import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, wordsOf, writeText } from "./layer-changes";
+import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, writeText, writeWords } from "./layer-changes";
+import { wordsOf } from "./words";
 import { BODY_TEXT } from "./look";
 import { instanceOf, targetOf } from "./layer-target";
 import { framedText, holdsLayers, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
@@ -908,7 +909,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
         const { id: _, layer: __, ...record } = maker;
         const to = (words: string) => () => {
           changes.record(id, { ...record, after: { ...created, text: words } });
-          for (const el of elementsOf(doc, id)) el.textContent = words;
+          for (const el of elementsOf(doc, id)) writeWords(el, words);
         };
         structural([id], [id], to(text), to(created.text));
         return;

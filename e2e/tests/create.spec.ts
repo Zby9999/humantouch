@@ -61,7 +61,7 @@ test("T and a drag in a Stack make new text there, in the page's body text style
   await page.keyboard.press("t");
   await drawFrom(page, { x: paragraph.x + 20, y: paragraph.y + paragraph.height - 2 }, { x: paragraph.x + 200, y: paragraph.y + paragraph.height + 10 });
   await page.keyboard.type("Hello there");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
 
   await expect.poll(() => canvas(page).locator(`${HERO} > *`).evaluateAll((els) => els.map((el) => el.localName))).toEqual(["header", "p", "p", "button"]);
   const text = canvas(page).locator(`${HERO} > p`).nth(1);
@@ -95,7 +95,7 @@ test("the toolbar picks the same tools as V, F and T; text typed in is boxed in 
   const narrow = (await boxOf(box)).width;
   await page.keyboard.type("A much longer line of words");
   await expect.poll(async () => (await boxOf(box)).width).toBeGreaterThan(narrow);
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
   await expect(box).toHaveCount(0);
   // Drawn, the tool is put down.
   await expect(tools.getByRole("button", { name: "Select" })).toHaveAttribute("aria-pressed", "true");
@@ -266,7 +266,7 @@ test("while text is drawn with T, ⌘Z, ⇧⌘Z, Delete, Enter and the tool keys
   }
   await page.mouse.up();
   await page.keyboard.type("Hello there");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
   const made = canvas(page).locator(`${HERO} > p`).nth(1);
   await expect(made).toHaveText("Hello there");
   await expect(badge).toHaveAccessibleName("2 changes not applied yet");
@@ -288,7 +288,7 @@ test("a double click on the selected text types in it; the words change as an ed
 
   await canvas(page).locator("h1").dblclick();
   await page.keyboard.type("Third");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
 
   await expect(canvas(page).locator("h1")).toHaveText("Third");
   await expect(layerTree(page).getByRole("treeitem", { name: "Third", exact: true })).toBeVisible();
@@ -339,7 +339,7 @@ test("while text is typed in, a click in it places the caret there, and typing g
   await expect(canvas(page).locator("h1")).toHaveAttribute("contenteditable", "plaintext-only");
   await page.keyboard.type("!");
   await expect(canvas(page).locator("h1")).toHaveText("Third Kind!");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
   await expect(canvas(page).locator("h1")).not.toHaveAttribute("contenteditable");
   await expect(canvas(page).locator("h1")).toHaveText("Third Kind!");
 });

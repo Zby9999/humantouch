@@ -959,6 +959,27 @@ describe("text", () => {
     ]);
   });
 
+  test("the Next dev overlay's own fonts, served from `next dev`'s `/__nextjs_font/` only, are not offered; a family of the project's named alike is; one the text uses first is (ticket 154)", async () => {
+    const { doc } = openCanvas(`<!DOCTYPE html>
+<style>
+  @font-face { font-family: '__nextjs-Geist'; font-weight: 400 600; src: url(/__nextjs_font/geist-latin-ext.woff2) format('woff2'); unicode-range: U+100-24F }
+  @font-face { font-family: '__nextjs-Geist'; font-weight: 400 600; src: url(/__nextjs_font/geist-latin.woff2) format('woff2'); unicode-range: U+0-FF }
+  /* As the Tablet and Phone views have it: from the dev server's address. No dev server here: it loads from local(), to be there for the text. */
+  @font-face { font-family: '__nextjs-Geist Mono'; font-weight: 400 600; src: url("http://localhost:7350/__nextjs_font/geist-mono-latin.woff2") format('woff2'), local("Courier New") }
+  @font-face { font-family: '__nextjs-Brand'; src: url("/fonts/__nextjs_font-brand-154.woff2") format('woff2') }
+  body { margin: 0; font: 16px Georgia, serif }
+</style>
+<body><code style="font-family: '__nextjs-Geist Mono', monospace; font-weight: 500">Uses it first</code></body>`);
+    await doc.fonts.ready;
+
+    expect(fontsOf(doc)).toEqual([
+      // A project's family, its name alike but its file its own: offered, as before.
+      { family: "__nextjs-Brand", weights: [400] },
+      // The text uses it first: offered, in the weight the text uses it in.
+      { family: "__nextjs-Geist Mono", weights: [500] },
+    ]);
+  });
+
   test("a text layer's font is the first of its stack that is there; changed, it takes the stack the page uses that font in", async () => {
     const { doc, editor, changes, layerOf } = openCanvas(FONT_PAGE);
     await doc.fonts.ready;
@@ -3363,6 +3384,49 @@ describe("editing text", () => {
     expect(text.el.textContent).toBe("Hello");
     editor.undo();
     expect(text.el.textContent).toBe("Text");
+  });
+
+  test("words with a line break are drawn with a <br> there, read back with it, and taken back to the words before (ticket 144)", () => {
+    const { doc, editor, changes, layer } = open(`<!DOCTYPE html><h1 id="t" ${at("3:3")}>Third Kind</h1><p id="u" ${at("4:3")}>One<br>Two</p>`);
+
+    editor.setText(layer("t"), "Third\nKind");
+
+    expect(doc.getElementById("t")!.innerHTML).toBe("Third<br>Kind");
+    expect(changes.list()[0]).toMatchObject({ kind: "text", before: "Third Kind", after: "Third\nKind" });
+    // Read with its break, as typed again: no change.
+    editor.setText(layer("t"), "Third\nKind");
+    expect(changes.list()).toHaveLength(1);
+    editor.undo();
+    expect(doc.getElementById("t")!.innerHTML).toBe("Third Kind");
+
+    // A break the source has is read as one: joined, it is a change, back on one line.
+    editor.setText(layer("u"), "One Two");
+    expect(changes.list().at(-1)).toMatchObject({ before: "One\nTwo", after: "One Two" });
+    expect(doc.getElementById("u")!.innerHTML).toBe("One Two");
+  });
+
+  test("words with a line break, the round saved, open with the <br> again; taken back from the saved round, the words before (ticket 144)", () => {
+    const { doc, editor, changes, layer } = open(`<!DOCTYPE html><h1 id="t" ${at("3:3")}>Third Kind</h1><p id="u" ${at("4:3")}>Other</p>`);
+    editor.setText(layer("t"), "Third\nKind");
+    // Another change, so the round is left once the first is taken back.
+    editor.setText(layer("u"), "Changed");
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
+
+    const reopened = new DOMParser().parseFromString(saved.canvas, "text/html");
+    expect(reopened.getElementById("t")!.innerHTML).toBe("Third<br>Kind");
+    expect(saved.changeSet.changes[0]).toMatchObject({ before: "Third Kind", after: "Third\nKind" });
+    const reverted = new DOMParser().parseFromString(revertSaved(saved, saved.changeSet.changes[0].id)!.canvas, "text/html");
+    expect(reverted.getElementById("t")!.innerHTML).toBe("Third Kind");
+  });
+
+  test("a new text layer's words keep their line breaks (ticket 144)", () => {
+    const { editor, changes, layer } = open();
+    const text = editor.create("text", { parent: layer("list"), index: 0 });
+
+    editor.setText(text, "Hello\nthere");
+
+    expect(changes.list()[0].after).toMatchObject({ type: "text", text: "Hello\nthere" });
+    expect(text.el.innerHTML).toBe("Hello<br>there");
   });
 
   test("keeps the text's inline pieces as they were once taken back, on the canvas and a saved round", () => {
