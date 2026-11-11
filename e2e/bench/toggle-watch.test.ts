@@ -1,16 +1,23 @@
 import { chromium, type Browser } from "@playwright/test";
 import assert from "node:assert/strict";
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
-import { createServer, type Server as NetServer, type Socket } from "node:net";
+import { createServer, type AddressInfo, type Server as NetServer, type Socket } from "node:net";
 import { after, before, test } from "node:test";
 import { TOGGLE_LABEL } from "../playwright.config.ts";
 import type { Server } from "./install-servers.ts";
 import { watchForToggle } from "./toggle-watch.ts";
 
-// Ports of ticket 151's own block (7100–7170).
-const START = 7100;
-const SILENT = 7101;
-const SLOW_START = 7102;
+/**
+ * A free port the system picks, so runs in parallel never collide: lines run their tests at once since
+ * 2026-11-12, and fixed ports here failed with EADDRINUSE.
+ */
+async function freePort(): Promise<number> {
+  const probe = createServer();
+  await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
+  const { port } = probe.address() as AddressInfo;
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  return port;
+}
 
 const PAGE = `<!doctype html><title>start</title><button>${TOGGLE_LABEL}</button>`;
 const server = (port: number): Server => ({ pid: process.pid, port, url: `http://127.0.0.1:${port}`, command: "test" });
@@ -59,20 +66,23 @@ async function startServer(port: number, compileMs = 0): Promise<HttpServer> {
 const endsBy = (t0: number) => () => (Date.now() - t0 > 90_000 ? t0 : null);
 
 test("a port that never answers does not hold the watcher: the toggle on the start's port, up a second later, is found in seconds", async () => {
-  await silentPort(SILENT);
-  const listening: Server[] = [server(SILENT)];
+  const silent = await freePort();
+  await silentPort(silent);
+  const start = await freePort();
+  const listening: Server[] = [server(silent)];
   const t0 = Date.now();
-  setTimeout(() => void startServer(START).then(() => listening.push(server(START))), 1000);
-  const found = await watchForToggle(browser, async () => [...listening], START, endsBy(t0), new Map());
-  assert.equal(found?.server.port, START);
+  setTimeout(() => void startServer(start).then(() => listening.push(server(start))), 1000);
+  const found = await watchForToggle(browser, async () => [...listening], start, endsBy(t0), new Map());
+  assert.equal(found?.server.port, start);
   const ms = found!.at - t0;
   assert.ok(ms < 10_000, `found ${(ms / 1000).toFixed(1)}s from the start`);
 });
 
 test("a start whose first compile takes over 20 s still shows its toggle", async () => {
-  await startServer(SLOW_START, 21_000);
+  const slowStart = await freePort();
+  await startServer(slowStart, 21_000);
   const t0 = Date.now();
-  const found = await watchForToggle(browser, async () => [server(SLOW_START)], SLOW_START, endsBy(t0), new Map());
-  assert.equal(found?.server.port, SLOW_START);
+  const found = await watchForToggle(browser, async () => [server(slowStart)], slowStart, endsBy(t0), new Map());
+  assert.equal(found?.server.port, slowStart);
   assert.ok(found!.at - t0 >= 21_000);
 });
