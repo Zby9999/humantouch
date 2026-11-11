@@ -112,7 +112,7 @@ describe("the page's print", () => {
       const host = win.document.createElement("div");
       win.document.body.append(host);
       const root = host.attachShadow({ mode: "open" });
-      const sheet = new win.CSSStyleSheet();
+      const sheet = new (win as Window & typeof globalThis).CSSStyleSheet();
       sheet.replaceSync(rule);
       root.adoptedStyleSheets = [sheet];
       root.append(win.document.createElement("span"));
