@@ -2,6 +2,7 @@
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Breakpoint } from "./breakpoints";
 import { Icon } from "./icons";
+import { PHONE_WIDTH, TABLET_WIDTH } from "../design-values";
 
 /**
  * The views shown beside the desktop view (ADR 0008), by width: tablet and
@@ -9,8 +10,8 @@ import { Icon } from "./icons";
  * they stay as set for the project across reloads.
  */
 const VIEWS_KEY = "humantouch:views";
-const TABLET = 768;
-const PHONE = 390;
+const TABLET = TABLET_WIDTH;
+const PHONE = PHONE_WIDTH;
 const DEFAULT_WIDTHS = [TABLET, PHONE];
 /** The narrowest and widest view that can be added, px. */
 const MIN_WIDTH = 200;
