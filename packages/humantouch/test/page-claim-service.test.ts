@@ -18,7 +18,7 @@ import { ROUND_PATH, STATUS_PATH, TOKEN_HEADER, type OtherUsagesKept, type Saved
 let root: string;
 let service: Service;
 beforeEach(async () => {
-  root = mkdtempSync(join(tmpdir(), "03kind-page-claim-"));
+  root = mkdtempSync(join(tmpdir(), "humantouch-page-claim-"));
   service = await startService({ root, quietMs: 50 });
 });
 afterEach(async () => {

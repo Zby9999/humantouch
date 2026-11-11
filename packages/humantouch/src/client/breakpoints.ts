@@ -235,14 +235,14 @@ const DEPENDENCY = /[\\/]node_modules[\\/]/;
  * Whether a stylesheet's media queries are the project's breakpoints, as far
  * as its source tells: not a dependency's (loaded from `node_modules`, or so
  * named by Vite's dev server), nor one of the editor's own (marked
- * `data-tk-*`). One whose source cannot be told (a bundle, a plain `<style>`) is the project's.
+ * `data-ht-*`). One whose source cannot be told (a bundle, a plain `<style>`) is the project's.
  */
 function isProjects(sheet: CSSStyleSheet): boolean {
   const owner = sheet.ownerNode as Element | null;
   // Told apart by what they have, not by class: the document may be another window's.
   const attributes = owner && "getAttributeNames" in owner ? owner.getAttributeNames() : [];
   const from = [sheet.href, owner && "getAttribute" in owner ? owner.getAttribute("data-vite-dev-id") : null];
-  return !from.some((path) => !!path && DEPENDENCY.test(path)) && !attributes.some((name) => name.startsWith("data-tk-"));
+  return !from.some((path) => !!path && DEPENDENCY.test(path)) && !attributes.some((name) => name.startsWith("data-ht-"));
 }
 
 /** The widths a media query on the width starts or stops holding at, each with the feature it is said by. */

@@ -51,7 +51,7 @@ export interface Slot {
 }
 
 const POPOVER_WIDTH = 240;
-/** The most it is tall, as its styles have it (`.tk-popover`). */
+/** The most it is tall, as its styles have it (`.ht-popover`). */
 const POPOVER_MAX_HEIGHT = 520;
 const GAP = 8;
 
@@ -81,7 +81,7 @@ function Popover({ label, anchor, leaving = false, onClose, children }: { label:
     const away = (event: Event) => {
       const path = event.composedPath();
       // A gradient's handles on the canvas change what it shows: pressed, it stays open.
-      const keeps = path.some((el) => el instanceof Element && el.hasAttribute("data-tk-keeps-popover"));
+      const keeps = path.some((el) => el instanceof Element && el.hasAttribute("data-ht-keeps-popover"));
       if (!leaving && !path.includes(box.current!) && !path.includes(anchor) && !keeps) onClose();
     };
     // On the document: a press on the page or canvas; on the shadow root: one elsewhere in the editor layer.
@@ -99,7 +99,7 @@ function Popover({ label, anchor, leaving = false, onClose, children }: { label:
   return (
     <div
       ref={box}
-      class={leaving ? "tk-popover is-leaving" : "tk-popover"}
+      class={leaving ? "ht-popover is-leaving" : "ht-popover"}
       role="dialog"
       {...leavingProps(leaving)}
       aria-label={label}
@@ -112,9 +112,9 @@ function Popover({ label, anchor, leaving = false, onClose, children }: { label:
         close();
       }}
     >
-      <div class="tk-popover-header">
-        <h3 class="tk-section-title">{label}</h3>
-        <button type="button" class="tk-icon-button" aria-label="Close" onClick={close}>
+      <div class="ht-popover-header">
+        <h3 class="ht-section-title">{label}</h3>
+        <button type="button" class="ht-icon-button" aria-label="Close" onClick={close}>
           <Icon name="close" />
         </button>
       </div>
@@ -134,9 +134,9 @@ function valueText(drawn: Drawn): string {
 export function Preview({ drawn }: { drawn: Drawn }) {
   if (typeof drawn === "number") return null;
   if (Array.isArray(drawn)) {
-    return <span class="tk-variable-preview is-shadow" style={{ boxShadow: writeShadows(drawn as Shadow[])["box-shadow"] }} aria-hidden="true" />;
+    return <span class="ht-variable-preview is-shadow" style={{ boxShadow: writeShadows(drawn as Shadow[])["box-shadow"] }} aria-hidden="true" />;
   }
-  return <span class="tk-variable-preview" style={{ "--tk-swatch": cssColor(drawn as Color) }} aria-hidden="true" />;
+  return <span class="ht-variable-preview" style={{ "--ht-swatch": cssColor(drawn as Color) }} aria-hidden="true" />;
 }
 
 /** Which heading a Variable is listed under: the project's own apart from Tailwind's, and a color with its family (`brand-500` under brand). */
@@ -173,15 +173,15 @@ function Option({ as, id, entry, selected, onChoose, onPick }: {
       })}
       id={id}
       role="option"
-      class="tk-variable-option"
+      class="ht-variable-option"
       aria-selected={selected}
       aria-label={variable.name}
-      data-tk-tip={`${variable.name}: ${variable.value}`}
+      data-ht-tip={`${variable.name}: ${variable.value}`}
       onClick={() => onPick(entry)}
     >
       <Preview drawn={drawn} />
-      <span class="tk-variable-name">{variable.name}</span>
-      <span class="tk-variable-value">{valueText(drawn)}</span>
+      <span class="ht-variable-name">{variable.name}</span>
+      <span class="ht-variable-value">{valueText(drawn)}</span>
     </Tag>
   );
 }
@@ -205,7 +205,7 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
       <input
         ref={search}
         type="search"
-        class="tk-input tk-variable-search"
+        class="ht-input ht-variable-search"
         aria-label="Search variables"
         placeholder="Search"
         spellcheck={false}
@@ -213,28 +213,28 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
         value={query}
         onInput={(event) => setQuery(event.currentTarget.value)}
       />
-      <div class="tk-variable-list" role="listbox" aria-label="Variables">
-        {!found.length && <p class="tk-layer-note">No variables match.</p>}
+      <div class="ht-variable-list" role="listbox" aria-label="Variables">
+        {!found.length && <p class="ht-layer-note">No variables match.</p>}
         {/* Colors not searched for: a palette, the project's own first, as the Variables tab shows them (designer, 2026-11-07). */}
         {group === "color" && !query.trim()
           ? (["Project", "Tailwind"] as const).map((heading) => {
               const part = found.filter(({ variable }) => variable.own === (heading === "Project"));
               return part.length ? (
                 <div key={heading} role="group" aria-label={heading}>
-                  <h4 class="tk-section-title tk-subtitle">{heading}</h4>
-                  <div class="tk-variants-palette">
+                  <h4 class="ht-section-title ht-subtitle">{heading}</h4>
+                  <div class="ht-variants-palette">
                     {pickerRows(part).map(({ cells, columns }, r) => (
-                      <div key={r} class="tk-variants-ramp is-bare" style={{ "--tk-steps": `${columns}` }}>
+                      <div key={r} class="ht-variants-ramp is-bare" style={{ "--ht-steps": `${columns}` }}>
                         {cells.map((entry, i) =>
                           entry ? (
                             <button
                               key={entry.variable.name}
                               type="button"
                               role="option"
-                              class="tk-variants-swatch"
+                              class="ht-variants-swatch"
                               aria-selected={sameVariable(bound, entry.variable)}
                               aria-label={entry.variable.name}
-                              style={{ "--tk-swatch": cssColor(entry.drawn as Color) }}
+                              style={{ "--ht-swatch": cssColor(entry.drawn as Color) }}
                               onPointerEnter={(event) => point(entry, event.currentTarget)}
                               onPointerLeave={() => setPointed(null)}
                               onFocus={(event) => point(entry, event.currentTarget)}
@@ -242,7 +242,7 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
                               onClick={() => onPick(entry)}
                             />
                           ) : (
-                            <span key={`empty ${i}`} class="tk-variants-empty" />
+                            <span key={`empty ${i}`} class="ht-variants-empty" />
                           ),
                         )}
                       </div>
@@ -253,7 +253,7 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
             })
           : headings.map((heading) => (
           <div key={heading} role="group" aria-label={heading}>
-            <h4 class="tk-section-title tk-subtitle">{heading}</h4>
+            <h4 class="ht-section-title ht-subtitle">{heading}</h4>
             {found
               .filter(({ variable }) => headingOf(variable) === heading)
               .map((entry) => {
@@ -326,21 +326,21 @@ export function VariableSlot({ label, slot, property, part, rowReset, children }
   /** The field's own icon, or its letter, kept by the Variable's name, so what the value is for still shows (designer, 2026-11-08). With no field (a shadow's), the Variable's mark. */
   const own = (isValidElement(children) ? children.props : {}) as { icon?: IconName; glyph?: string; small?: boolean };
   return (
-    <div class={offered ? "tk-variable-slot" : "tk-variable-slot is-alone"} {...typedIn.handlers}>
+    <div class={offered ? "ht-variable-slot" : "ht-variable-slot is-alone"} {...typedIn.handlers}>
       {bound ? (
-        <div class={`tk-field tk-variable-chip${changed ? " is-changed" : ""}`} data-tk-mark={changed ? property : undefined}>
-          {own.icon ? <Icon name={own.icon} /> : own.glyph ? <span class={own.small ? "tk-glyph is-small" : "tk-glyph"}>{own.glyph}</span> : <Icon name="variable" />}
+        <div class={`ht-field ht-variable-chip${changed ? " is-changed" : ""}`} data-ht-mark={changed ? property : undefined}>
+          {own.icon ? <Icon name={own.icon} /> : own.glyph ? <span class={own.small ? "ht-glyph is-small" : "ht-glyph"}>{own.glyph}</span> : <Icon name="variable" />}
           <button
             type="button"
-            class="tk-variable-chip-name"
+            class="ht-variable-chip-name"
             aria-label={`${label} variable`}
             aria-haspopup="dialog"
-            data-tk-tip={`${bound.name}: ${bound.value}`}
+            data-ht-tip={`${bound.name}: ${bound.value}`}
             onClick={(event) => setOpen(open ? null : event.currentTarget)}
           >
             {bound.name}
           </button>
-          <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} variable`} data-tk-tip="Detach variable" data-tk-in-code={offered?.inCode ? "" : undefined} onClick={() => pick(null)}>
+          <button type="button" class="ht-icon-button" aria-label={`Detach ${lower} variable`} data-ht-tip="Detach variable" data-ht-in-code={offered?.inCode ? "" : undefined} onClick={() => pick(null)}>
             <Icon name="detach" />
           </button>
           {changed && !rowReset && <ResetButton label={lower} onReset={() => marks.reset([property!], typeof part === "object" ? part : undefined)} />}
@@ -392,15 +392,15 @@ function PickerPopover({ label, anchor, leaving, slot, top, custom, onClose }: C
   return (
     <Popover label={`${label} color`} anchor={anchor} leaving={leaving} onClose={onClose}>
       {tabbed && (
-        <div class="tk-tabs" role="tablist" aria-label="Color">
+        <div class="ht-tabs" role="tablist" aria-label="Color">
           {tabs.map(({ id, label }) => (
-            <button key={id} type="button" role="tab" class="tk-tab" aria-selected={tab === id} onClick={() => setTab(id)}>
+            <button key={id} type="button" role="tab" class="ht-tab" aria-selected={tab === id} onClick={() => setTab(id)}>
               {label}
             </button>
           ))}
         </div>
       )}
-      <div class="tk-tab-panel" role={tabbed ? "tabpanel" : undefined} aria-label={tabbed ? (shown === "custom" ? "Custom" : "Variables") : undefined}>
+      <div class="ht-tab-panel" role={tabbed ? "tabpanel" : undefined} aria-label={tabbed ? (shown === "custom" ? "Custom" : "Variables") : undefined}>
         {shown === "custom" ? (
           <>
             {top}
@@ -555,7 +555,7 @@ export function useTypeahead({ text, value, focused, input, reset }: {
         {near && (
           <button
             type="button"
-            class="tk-variable-hint"
+            class="ht-variable-hint"
             aria-label={`Use variable ${near.variable.name}`}
             // A press keeps the field typed into: what is typed is not applied on the way.
             onPointerDown={(event) => event.preventDefault()}
@@ -585,17 +585,17 @@ function Matches({ id, anchor, options, active, optionId, onChoose, onPick }: {
   const list = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<{ left: number; top: number; width: number } | null>(null);
   useLayoutEffect(() => {
-    const at = (anchor.closest(".tk-field") ?? anchor).getBoundingClientRect();
+    const at = (anchor.closest(".ht-field") ?? anchor).getBoundingClientRect();
     const width = Math.max(at.width, MATCHES_WIDTH);
     const height = list.current!.offsetHeight;
     // Beside the panel the field is in, as the pickers are, from the field's top: over the panel it would cover the controls
     // under the field, and a press meant for them would pick a Variable (ticket 127).
-    const panel = anchor.closest(".tk-panel, .tk-popover")?.getBoundingClientRect();
+    const panel = anchor.closest(".ht-panel, .ht-popover")?.getBoundingClientRect();
     if (panel && panel.left - width - GAP >= GAP) {
       const left = panel.left - width - GAP;
       let top = Math.max(GAP, Math.min(at.top, window.innerHeight - height - GAP));
       // Clear of the tools at the canvas's top right: under them, or, with no room under them, to their left.
-      const tools = (anchor.getRootNode() as Document | ShadowRoot).querySelector(".tk-tools")?.getBoundingClientRect();
+      const tools = (anchor.getRootNode() as Document | ShadowRoot).querySelector(".ht-tools")?.getBoundingClientRect();
       let beside = left;
       if (tools && tools.width && left < tools.right && left + width > tools.left && top < tools.bottom + GAP && top + height > tools.top - GAP) {
         if (tools.bottom + GAP + height + GAP <= window.innerHeight) top = tools.bottom + GAP;
@@ -620,7 +620,7 @@ function Matches({ id, anchor, options, active, optionId, onChoose, onPick }: {
     <div
       ref={list}
       id={id}
-      class="tk-matches"
+      class="ht-matches"
       role="listbox"
       aria-label="Matching variables"
       style={{ width: `${place?.width ?? MATCHES_WIDTH}px`, left: `${place?.left ?? 0}px`, top: `${place?.top ?? 0}px`, visibility: place ? "visible" : "hidden" }}

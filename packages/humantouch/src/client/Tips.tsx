@@ -6,9 +6,9 @@ import { TIP_DELAY_MS, TIP_GRACE_MS } from "./motion";
  * What an element of the editor layer tells in its tip, in place of a `title`, whose tip the browser draws gray and its own way
  * (designer, 2026-11-08): every tip is the editor's dark one, the tools' (`Shell`).
  */
-export const TIP_ATTR = "data-tk-tip";
+export const TIP_ATTR = "data-ht-tip";
 
-const TIP_ID = "tk-tip";
+const TIP_ID = "ht-tip";
 /** Between the tip and what it tells of, and kept in from the window's edges. */
 const TIP_GAP_PX = 6;
 const TIP_EDGE_PX = 8;
@@ -137,7 +137,7 @@ export function Tips() {
     <>
       <span ref={anchor} hidden />
       {shown && (
-        <div ref={tipEl} key={shown.text + shown.at.left + shown.at.top} id={TIP_ID} class={shown.easing ? "tk-variants-tip tk-tip is-easing" : "tk-variants-tip tk-tip"} role="tooltip">
+        <div ref={tipEl} key={shown.text + shown.at.left + shown.at.top} id={TIP_ID} class={shown.easing ? "ht-variants-tip ht-tip is-easing" : "ht-variants-tip ht-tip"} role="tooltip">
           {shown.text}
         </div>
       )}

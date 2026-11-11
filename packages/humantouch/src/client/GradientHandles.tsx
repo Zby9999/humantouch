@@ -155,7 +155,7 @@ export function GradientHandles({ layer, view, name, camera, editor, onBegin, on
   };
 
   const knob = (at: Point, part: Part, label: string, cursor: string, square = false) => (
-    <g class="tk-gradient-knob" style={{ cursor }} onPointerDown={press(part)} aria-label={label}>
+    <g class="ht-gradient-knob" style={{ cursor }} onPointerDown={press(part)} aria-label={label}>
       <circle cx={at.x} cy={at.y} r={HIT} fill="transparent" />
       {square ? <rect x={at.x - KNOB + 1} y={at.y - KNOB + 1} width={(KNOB - 1) * 2} height={(KNOB - 1) * 2} rx={2} /> : <circle cx={at.x} cy={at.y} r={KNOB} />}
     </g>
@@ -163,13 +163,13 @@ export function GradientHandles({ layer, view, name, camera, editor, onBegin, on
   const unit = { x: (to.x - from.x) / (Math.hypot(to.x - from.x, to.y - from.y) || 1), y: (to.y - from.y) / (Math.hypot(to.x - from.x, to.y - from.y) || 1) };
   const radii = gradient.type === "radial" ? radiiOf(gradient, box) : null;
   return (
-    <svg ref={svg} class="tk-gradient-handles" data-view={name} data-tk-keeps-popover="" aria-hidden="true" onPointerMove={onPointerMove} onPointerUp={end} onPointerCancel={end}>
-      {radii && <ellipse class="tk-gradient-shape" cx={from.x} cy={from.y} rx={radii.x * camera.zoom} ry={radii.y * camera.zoom} />}
-      <line class="tk-gradient-line" x1={from.x} y1={from.y} x2={to.x} y2={to.y} />
+    <svg ref={svg} class="ht-gradient-handles" data-view={name} data-ht-keeps-popover="" aria-hidden="true" onPointerMove={onPointerMove} onPointerUp={end} onPointerCancel={end}>
+      {radii && <ellipse class="ht-gradient-shape" cx={from.x} cy={from.y} rx={radii.x * camera.zoom} ry={radii.y * camera.zoom} />}
+      <line class="ht-gradient-line" x1={from.x} y1={from.y} x2={to.x} y2={to.y} />
       {gradient.stops.map((s, i) => {
         const at = along(s);
         return (
-          <g key={i} class="tk-gradient-stop" style={{ cursor: "grab" }} onPointerDown={press({ stop: i })}>
+          <g key={i} class="ht-gradient-stop" style={{ cursor: "grab" }} onPointerDown={press({ stop: i })}>
             <circle cx={at.x} cy={at.y} r={HIT} fill="transparent" />
             <rect x={at.x - 6} y={at.y - 6} width={12} height={12} rx={3} style={{ fill: cssColor(s) }} />
           </g>

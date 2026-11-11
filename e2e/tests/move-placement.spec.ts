@@ -18,7 +18,7 @@ const everyView = (page: Page) => [desktop(page), tablet(page), phone(page)];
 const design = (page: Page) => page.getByRole("complementary", { name: "Design" });
 const field = (page: Page, name: string) => design(page).getByRole("textbox", { name, exact: true });
 const badge = (page: Page) => page.getByRole("button", { name: /not applied yet/ });
-const handle = (page: Page, name: string) => page.locator(`.tk-handles[data-view="Desktop"] .tk-handle[data-handle="${name}"]`);
+const handle = (page: Page, name: string) => page.locator(`.ht-handles[data-view="Desktop"] .ht-handle[data-handle="${name}"]`);
 const mod = process.platform === "darwin" ? "Meta" : "Control";
 
 /**

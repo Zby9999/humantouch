@@ -20,7 +20,7 @@ async function enterEditMode(page: Page) {
 
 /** A view's label says the widths it covers. */
 async function expectRange(page: Page, name: string, widths: string) {
-  await expect(page.getByRole("group", { name: `${name} view` }).locator(".tk-view-range")).toHaveText(widths);
+  await expect(page.getByRole("group", { name: `${name} view` }).locator(".ht-view-range")).toHaveText(widths);
 }
 
 /** Selects, in a view, the deepest layer just inside the top left of what `selector` finds: the view is the one worked in from then on. */
@@ -170,7 +170,7 @@ test("a layer hidden at a breakpoint is hidden in that view only, and stays in t
   await expect.poll(() => shown(page, hero, "display")).toEqual(["flex", "flex", "none"]);
   await expect(layers(page).getByRole("treeitem", { name: "Button", exact: true })).toBeVisible();
   // Marked; checked again to go back, it has no reset of its own (designer, 2026-11-08).
-  await expect(design(page).locator(".tk-check", { hasText: "Visible" })).toHaveClass(/\bis-changed\b/);
+  await expect(design(page).locator(".ht-check", { hasText: "Visible" })).toHaveClass(/\bis-changed\b/);
   await expect(design(page).getByRole("button", { name: "Reset visible" })).toHaveCount(0);
 
   // Selected from the tree, it is still the phone view worked in: shown again there.
@@ -203,7 +203,7 @@ test("the change list says the breakpoint of each change made in a narrower view
   await pick(page, desktop(page), "article");
   await setField(page, "Opacity", "50");
 
-  await page.locator("[data-tk-changes-opener]").click();
+  await page.locator("[data-ht-changes-opener]").click();
   const list = page.getByRole("dialog", { name: "Changes" }).getByRole("listitem");
   await expect(list.nth(0)).toContainText("below 768px");
   await expect(list.nth(1)).toContainText("768px to 1279px");
@@ -309,12 +309,12 @@ test("a change made in the phone view, clicked in the change list, is shown ther
   await expect(row).toHaveText([/^Fill · Card · below 768px$/]);
   // Pointed at, the card is outlined in the phone view, where the change applies; lighter in the others.
   await row.hover();
-  await expect(page.locator(".tk-hover:not([data-away])")).toHaveCount(1);
-  await expect(page.locator('.tk-hover:not([data-away])')).toHaveAttribute("data-view", /^Phone/);
-  await expect(page.locator(".tk-hover[data-away]")).toHaveCount(2);
-  await row.locator("button.tk-change-text").click();
+  await expect(page.locator(".ht-hover:not([data-away])")).toHaveCount(1);
+  await expect(page.locator('.ht-hover:not([data-away])')).toHaveAttribute("data-view", /^Phone/);
+  await expect(page.locator(".ht-hover[data-away]")).toHaveCount(2);
+  await row.locator("button.ht-change-text").click();
 
   await expect(page.getByRole("dialog", { name: "Changes" })).toHaveCount(0);
   await expect(design(page).getByRole("note", { name: "Phone breakpoint" })).toBeVisible();
-  await expect(design(page).locator('[data-tk-mark="fill"]').first()).toHaveClass(/\btk-ping\b/);
+  await expect(design(page).locator('[data-ht-mark="fill"]').first()).toHaveClass(/\btk-ping\b/);
 });

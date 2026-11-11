@@ -16,7 +16,7 @@ async function pageWithEditorLayer(): Promise<Page> {
   await page.route("http://bench.test/", (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>t</title><main></main>" }));
   await page.goto("http://bench.test/");
   await page.evaluate(() => {
-    const host = document.createElement("third-kind");
+    const host = document.createElement("human-touch");
     host.attachShadow({ mode: "open" }).append(document.createElement("div"));
     document.documentElement.append(host);
   });
@@ -29,11 +29,11 @@ const show = (page: Page, text: string) =>
   page.evaluate(({ text, UNCLAIMED_TITLE }) => {
     const notice = document.createElement("div");
     notice.setAttribute("role", "alertdialog");
-    if (text === UNCLAIMED_TITLE) notice.dataset.tkNotice = "unclaimed";
+    if (text === UNCLAIMED_TITLE) notice.dataset.htNotice = "unclaimed";
     notice.innerHTML = `<h2>${text}</h2>`;
-    document.querySelector("third-kind")!.shadowRoot!.firstElementChild!.append(notice);
+    document.querySelector("human-touch")!.shadowRoot!.firstElementChild!.append(notice);
   }, { text, UNCLAIMED_TITLE });
-const takeAway = (page: Page) => page.evaluate(() => document.querySelector("third-kind")!.shadowRoot!.querySelector('[role="alertdialog"]')!.remove());
+const takeAway = (page: Page) => page.evaluate(() => document.querySelector("human-touch")!.shadowRoot!.querySelector('[role="alertdialog"]')!.remove());
 
 test("each time the notice that no Agent claimed the changes shows, once however long it stays, and from a time on; other notices are not it", async () => {
   const page = await pageWithEditorLayer();
@@ -59,10 +59,10 @@ test("each time the notice that no Agent claimed the changes shows, once however
 test("a notice taken away as soon as the task after is counted; the count is kept when the page loads again", async () => {
   const page = await pageWithEditorLayer();
   await page.evaluate(() => {
-    const root = document.querySelector("third-kind")!.shadowRoot!.firstElementChild!;
+    const root = document.querySelector("human-touch")!.shadowRoot!.firstElementChild!;
     const notice = document.createElement("div");
     notice.setAttribute("role", "alertdialog");
-    notice.dataset.tkNotice = "unclaimed";
+    notice.dataset.htNotice = "unclaimed";
     notice.textContent = "The code is changing, but no Agent has claimed your changes";
     root.append(notice);
     // Taken away a task later, as a claim heard at once would.
@@ -84,16 +84,16 @@ test("recorded for a browser context, as the bench does for the designer's page,
       contentType: "text/html",
       body: `<!doctype html><script>
         addEventListener("DOMContentLoaded", () => {
-          const host = document.createElement("third-kind");
+          const host = document.createElement("human-touch");
           const root = host.attachShadow({ mode: "open" });
           document.documentElement.append(host);
-          setTimeout(() => (root.innerHTML = '<div role="alertdialog" data-tk-notice="unclaimed"><h2>The code is changing, but no Agent has claimed your changes</h2></div>'), 20);
+          setTimeout(() => (root.innerHTML = '<div role="alertdialog" data-ht-notice="unclaimed"><h2>The code is changing, but no Agent has claimed your changes</h2></div>'), 20);
         });
-      </script><iframe srcdoc="<div role=alertdialog data-tk-notice=unclaimed>no Agent has claimed</div>"></iframe>`,
+      </script><iframe srcdoc="<div role=alertdialog data-ht-notice=unclaimed>no Agent has claimed</div>"></iframe>`,
     }),
   );
   await page.goto("http://bench.test/");
-  await page.waitForFunction(() => document.querySelector("third-kind")?.shadowRoot?.childElementCount);
+  await page.waitForFunction(() => document.querySelector("human-touch")?.shadowRoot?.childElementCount);
 
   assert.equal((await unclaimedNoticesShown(page)).length, 1);
   await context.close();
@@ -105,11 +105,11 @@ test("each time the notice that the Agent seems to have stopped shows, apart fro
     page.evaluate(() => {
       const notice = document.createElement("div");
       notice.setAttribute("role", "alert");
-      notice.dataset.tkNotice = "stalled";
+      notice.dataset.htNotice = "stalled";
       notice.textContent = "Your Agent seems to have stopped";
-      document.querySelector("third-kind")!.shadowRoot!.firstElementChild!.append(notice);
+      document.querySelector("human-touch")!.shadowRoot!.firstElementChild!.append(notice);
     });
-  const takeStalledAway = () => page.evaluate(() => document.querySelector("third-kind")!.shadowRoot!.querySelector('[data-tk-notice="stalled"]')!.remove());
+  const takeStalledAway = () => page.evaluate(() => document.querySelector("human-touch")!.shadowRoot!.querySelector('[data-ht-notice="stalled"]')!.remove());
 
   await stalled();
   await show(page, UNCLAIMED_TITLE);

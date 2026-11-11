@@ -9,9 +9,9 @@ import { bind, resolveVariables } from "../src/client/variables";
 import { createViews } from "../src/client/views";
 
 const APP = [{ component: "App", usage: null, thirdParty: false }];
-const chain = `data-tk-chain='${JSON.stringify(APP)}'`;
+const chain = `data-ht-chain='${JSON.stringify(APP)}'`;
 let line = 4;
-const at = () => `data-tk-loc="src/App.tsx:${line++}:5" ${chain}`;
+const at = () => `data-ht-loc="src/App.tsx:${line++}:5" ${chain}`;
 
 /** Two colors of one value, `brand-1` listed first; the spacing scale and a spacing of its own of 16px, listed first. */
 const VARIABLES: Variable[] = [

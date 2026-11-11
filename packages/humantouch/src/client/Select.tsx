@@ -179,7 +179,7 @@ function Menu({ id, select, options, active, leaving, onActive, onChoose, onClos
     <div
       ref={box}
       id={id}
-      class={leaving ? "tk-menu is-leaving" : "tk-menu"}
+      class={leaving ? "ht-menu is-leaving" : "ht-menu"}
       role="listbox"
       {...leavingProps(leaving)}
       aria-label={select.getAttribute("aria-label") ?? undefined}
@@ -191,7 +191,7 @@ function Menu({ id, select, options, active, leaving, onActive, onChoose, onClos
         <div
           key={option.value}
           id={`${id}-${i}`}
-          class={`tk-menu-option${i === active ? " is-active" : ""}`}
+          class={`ht-menu-option${i === active ? " is-active" : ""}`}
           role="option"
           aria-selected={i === chosen}
           aria-disabled={option.disabled || undefined}
@@ -203,7 +203,7 @@ function Menu({ id, select, options, active, leaving, onActive, onChoose, onClos
         >
           {i === chosen && <Icon name="check" />}
           {option.font && (
-            <span class="tk-font-sample" aria-hidden="true" style={{ fontFamily: option.font }}>
+            <span class="ht-font-sample" aria-hidden="true" style={{ fontFamily: option.font }}>
               Aa
             </span>
           )}
@@ -252,7 +252,7 @@ export function MenuButton({ label, icon, items, onChoose, class: className }: {
       {/* In a field's label, a click on the button or its menu does not go on to the field's input. */}
       <button
         type="button"
-        class={className ? `tk-icon-button ${className}` : "tk-icon-button"}
+        class={className ? `ht-icon-button ${className}` : "ht-icon-button"}
         aria-label={label}
         aria-haspopup="listbox"
         aria-expanded={!!open}
@@ -381,14 +381,14 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
   const option = (item: MenuItem, i: number) => (
     <Fragment key={item.value}>
       {item.heading && (
-        <div class="tk-menu-heading" role="presentation">
+        <div class="ht-menu-heading" role="presentation">
           {item.heading}
         </div>
       )}
       <div
         id={`${id}-${i}`}
         data-index={i}
-        class={`tk-menu-option${i === active ? " is-active" : ""}`}
+        class={`ht-menu-option${i === active ? " is-active" : ""}`}
         role="option"
         aria-selected={false}
         aria-disabled={item.disabled || undefined}
@@ -398,7 +398,7 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
           if (!item.disabled && i !== active) setActive(i);
           if (!item.details || event.pointerType !== "mouse" || pointed?.index === i) return;
           const el = event.currentTarget;
-          setPointed({ index: i, at: el.getBoundingClientRect(), beside: (el.closest(".tk-menu-column") ?? el).getBoundingClientRect() });
+          setPointed({ index: i, at: el.getBoundingClientRect(), beside: (el.closest(".ht-menu-column") ?? el).getBoundingClientRect() });
         }}
         onPointerLeave={() => setPointed(null)}
         onClick={(event) => {
@@ -414,11 +414,11 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
   return (
     <div
       ref={box}
-      class={`tk-menu is-plain${columns ? " is-split" : ""}${place?.above ? " is-above" : ""}${leaving ? " is-leaving" : ""}`}
+      class={`ht-menu is-plain${columns ? " is-split" : ""}${place?.above ? " is-above" : ""}${leaving ? " is-leaving" : ""}`}
       role="dialog"
       {...leavingProps(leaving)}
       aria-label={label}
-      style={{ left: `${place?.left ?? 0}px`, top: `${place?.top ?? 0}px`, visibility: place ? "visible" : "hidden", ...(place && { "--tk-menu-room": `${place.room}px` }) }}
+      style={{ left: `${place?.left ?? 0}px`, top: `${place?.top ?? 0}px`, visibility: place ? "visible" : "hidden", ...(place && { "--ht-menu-room": `${place.room}px` }) }}
     >
       <div
         ref={list}
@@ -426,12 +426,12 @@ function ButtonMenu({ label, anchor, items, leaving, onChoose, onClose }: {
         aria-label={label}
         tabIndex={-1}
         aria-activedescendant={active >= 0 ? `${id}-${active}` : undefined}
-        class={columns ? "tk-menu-list is-columns" : "tk-menu-list"}
+        class={columns ? "ht-menu-list is-columns" : "ht-menu-list"}
         onKeyDown={onKeyDown}
       >
         {columns
           ? [1, 0].map((column) => (
-              <div key={column} class="tk-menu-column" role="presentation">
+              <div key={column} class="ht-menu-column" role="presentation">
                 {items.map((item, i) => columnOf(i) === column && option(item, i))}
               </div>
             ))

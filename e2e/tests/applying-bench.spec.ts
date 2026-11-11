@@ -23,16 +23,16 @@ test.setTimeout(120_000);
  * The toggle says the Agent seems to have stopped once nothing has moved for
  * `STALL_MS` (ticket 67), about 9 minutes. The playbooks run the page's clock
  * on past most of it (Playwright's clock: nothing in the editor layer is set
- * apart for tests); `TK_BENCH_STALL_REAL=1` has the playbook of an Agent that
+ * apart for tests); `HT_BENCH_STALL_REAL=1` has the playbook of an Agent that
  * stops halfway wait it out in real time instead.
  */
-const STALL_REAL = process.env.TK_BENCH_STALL_REAL === "1";
+const STALL_REAL = process.env.HT_BENCH_STALL_REAL === "1";
 /** How late the notice may show, past the threshold (docs/goals.md, Robust). */
 const NOTICE_LATE_MS = 5000;
 /** How much longer than that a playbook watches for it, so a notice too late is measured rather than missed. */
 const WATCH_PAST_MS = 5000;
 /** How long the editor layer is watched for noticing code changed with no claim. */
-const UNCLAIMED_WATCH_MS = Number(process.env.TK_BENCH_UNCLAIMED_WATCH_MS ?? 5_000);
+const UNCLAIMED_WATCH_MS = Number(process.env.HT_BENCH_UNCLAIMED_WATCH_MS ?? 5_000);
 
 const RESULTS = fileURLToPath(new URL("../../bench-results/playbooks/", import.meta.url));
 const CARD = `${EXAMPLE}src/components/Card.tsx`;
@@ -388,12 +388,12 @@ async function stillEditable(page: Page) {
 }
 
 /** Where the camera has the canvas: the stage's transform. */
-const cameraOf = (page: Page) => page.locator(".tk-stage").evaluate((stage) => (stage as HTMLElement).style.transform);
+const cameraOf = (page: Page) => page.locator(".ht-stage").evaluate((stage) => (stage as HTMLElement).style.transform);
 
 /** Pans the canvas a little, as the designer would, so a camera left where it was is told from one put back where edit mode starts. */
 async function panCanvas(page: Page) {
   const before = await cameraOf(page);
-  const box = (await page.locator(".tk-viewport").boundingBox())!;
+  const box = (await page.locator(".ht-viewport").boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.wheel(40, 120);
   await expect.poll(() => cameraOf(page)).not.toBe(before);
@@ -485,10 +485,10 @@ test("playbook: the Agent lands the designer's changes with no claim, while the 
 test("playbook: the code of a component the page uses changes, and the page draws the same", async ({ page }) => {
   await designTheRound(page);
   const canvasBefore = await canvasCard(page);
-  const locBefore = await page.locator("article").first().getAttribute("data-tk-loc");
+  const locBefore = await page.locator("article").first().getAttribute("data-ht-loc");
   writeFileSync(CARD, typedApart(original));
   // In: the card's JSX two lines down, as its source marker says.
-  await expect.poll(() => page.locator("article").first().getAttribute("data-tk-loc")).not.toBe(locBefore);
+  await expect.poll(() => page.locator("article").first().getAttribute("data-ht-loc")).not.toBe(locBefore);
   // Past the second the code is to rest, and some.
   await page.waitForTimeout(3000);
   const notices = await noticesSoFar(page);
@@ -756,7 +756,7 @@ async function enterAgain(page: Page) {
 const changesNow = (): { id: number; property: string; kind: string; carried?: true; before: unknown }[] => readHumanTouchFile("changeset.json")?.changes ?? [];
 
 /** Whether edit mode froze the page afresh: no element of the canvas carries an edit or a layer id of a round's. */
-const frozenAfresh = (page: Page) => canvas(page).locator("[data-tk-layer], [data-tk-style]").count().then((n) => n === 0);
+const frozenAfresh = (page: Page) => canvas(page).locator("[data-ht-layer], [data-ht-style]").count().then((n) => n === 0);
 
 test("playbook: the Agent stops halfway; the designer ends the round, and edits again on the same canvas, the changes not applied there still (ticket 68)", async ({ page }) => {
   await designTheRoundAcrossViews(page);
@@ -1329,9 +1329,9 @@ test("a page opened only once the round is claimed, in a browser of its own, fin
  */
 test("playbook: a Frame drawn between the intro and the button, not claimed; the Card's code changes and the page draws the same: no claim (ticket 78, after review)", async ({ page }) => {
   await drawAFrameBelowTheIntro(page);
-  const locBefore = await page.locator("article").first().getAttribute("data-tk-loc");
+  const locBefore = await page.locator("article").first().getAttribute("data-ht-loc");
   writeFileSync(CARD, typedApart(original));
-  await expect.poll(() => page.locator("article").first().getAttribute("data-tk-loc")).not.toBe(locBefore);
+  await expect.poll(() => page.locator("article").first().getAttribute("data-ht-loc")).not.toBe(locBefore);
   // Past the second the code is to rest, and some.
   await page.waitForTimeout(3000);
   const claimed = existsSync(`${HUMAN_TOUCH_FOLDER}state.json`) || (await ring(page).count()) > 0;

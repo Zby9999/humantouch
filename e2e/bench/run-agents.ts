@@ -27,7 +27,7 @@
  *
  * Each scenario runs on its own example project (`example`), each set up once
  * for the whole bench. Dev servers take ports from 5620 on, or from
- * `TK_BENCH_PORT` (30 of them), so two checkouts running the bench at once
+ * `HT_BENCH_PORT` (30 of them), so two checkouts running the bench at once
  * keep apart.
  *
  * Runs go one after another, never side by side, so their times compare,
@@ -63,8 +63,8 @@ function answers(port: number): Promise<boolean> {
 }
 
 const RESULTS = fileURLToPath(new URL("../../bench-results/agents/", import.meta.url));
-/** The bench's dev servers take ports from here, one run after another: apart from e2e's and the performance tests'. Another checkout's bench sets `TK_BENCH_PORT` apart. */
-const FIRST_PORT = Number(process.env.TK_BENCH_PORT ?? 5620);
+/** The bench's dev servers take ports from here, one run after another: apart from e2e's and the performance tests'. Another checkout's bench sets `HT_BENCH_PORT` apart. */
+const FIRST_PORT = Number(process.env.HT_BENCH_PORT ?? 5620);
 const PORTS = 30;
 /** Longest an Agent gets for a round. */
 const AGENT_TIMEOUT_MS = 20 * 60_000;

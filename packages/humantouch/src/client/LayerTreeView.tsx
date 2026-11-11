@@ -89,7 +89,7 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
   // Scrolled up or down, the line under the Layers' header runs to the panel's edges, as the Design panel's does.
   useEffect(() => {
     const box = list.current;
-    const panel = box?.closest(".tk-panel");
+    const panel = box?.closest(".ht-panel");
     if (box && panel) return watchScrolled(box, panel);
   }, []);
   useEffect(() => {
@@ -135,7 +135,7 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
    */
   const foldUp = (at: number) => {
     const box = list.current;
-    const shown = box?.querySelector(".tk-tree-rows")?.children;
+    const shown = box?.querySelector(".ht-tree-rows")?.children;
     let hidden = 0;
     while (rows[at + 1 + hidden] && rows[at + 1 + hidden].level > rows[at].level) hidden++;
     if (!box || !shown || !hidden) return;
@@ -144,12 +144,12 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
     const first = els[0];
     const last = els[hidden - 1];
     const copies = document.createElement("div");
-    copies.className = "tk-tree-fold";
+    copies.className = "ht-tree-fold";
     copies.setAttribute("aria-hidden", "true");
     copies.inert = true;
     Object.assign(copies.style, { top: `${first.offsetTop}px`, height: `${last.offsetTop + last.offsetHeight - first.offsetTop}px`, width: `${first.offsetWidth}px` });
     const inner = copies.appendChild(document.createElement("div"));
-    inner.className = "tk-tree-rows";
+    inner.className = "ht-tree-rows";
     for (const el of els) {
       // Copies only: no rows of the tree.
       const copy = el.cloneNode(true) as HTMLElement;
@@ -171,7 +171,7 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
     fold.current = null;
     if (!was || !box || !folding.current) return;
     const bottom = box.getBoundingClientRect().bottom;
-    const shown = [...(box.querySelector(".tk-tree-rows")?.children ?? [])] as HTMLElement[];
+    const shown = [...(box.querySelector(".ht-tree-rows")?.children ?? [])] as HTMLElement[];
     for (let i = was.at + 1; i < shown.length; i++) {
       const top = shown[i].getBoundingClientRect().top;
       if (top > bottom) break;
@@ -182,14 +182,14 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
 
   return (
     // Long names in full, as in Figma: the list scrolls sideways, the tree with the names, its rows as wide as the widest (designer, 2026-11-08).
-    <div ref={list} class="tk-tree" role="tree" aria-label="Layers" aria-multiselectable="true">
-      <div class="tk-tree-rows">
+    <div ref={list} class="ht-tree" role="tree" aria-label="Layers" aria-multiselectable="true">
+      <div class="ht-tree-rows">
       {rows.map(({ layer, level, outside, past, more }, i) => {
         const open = layer.children.length ? !collapsed.has(layer) : undefined;
         return (
           <div
             key={i}
-            class={`tk-tree-row${selected.includes(layer) ? " is-selected" : ""}${role(layer) === "instance" ? " is-instance" : ""}${i === canvasStart && i > 0 ? " is-first-on-canvas" : ""}`}
+            class={`ht-tree-row${selected.includes(layer) ? " is-selected" : ""}${role(layer) === "instance" ? " is-instance" : ""}${i === canvasStart && i > 0 ? " is-first-on-canvas" : ""}`}
             role="treeitem"
             aria-level={level}
             aria-selected={selected.includes(layer)}
@@ -205,13 +205,13 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
           >
             {/* Guides: in to this layer from the one it is in, and on down past it to the later layers of those above it. */}
             {/* In to the row's chevron; a row with none, on across its place to its icon (designer, 2026-11-07). */}
-            {level > 1 && <span class={`tk-tree-guide is-in${open === undefined ? " is-leaf" : ""}`} style={{ left: `${guideX(level - 1)}px` }} />}
-            {level > 1 && more && <span class="tk-tree-guide is-past" style={{ left: `${guideX(level - 1)}px` }} />}
+            {level > 1 && <span class={`ht-tree-guide is-in${open === undefined ? " is-leaf" : ""}`} style={{ left: `${guideX(level - 1)}px` }} />}
+            {level > 1 && more && <span class="ht-tree-guide is-past" style={{ left: `${guideX(level - 1)}px` }} />}
             {past.filter((at) => at < level - 1).map((at) => (
-              <span key={at} class="tk-tree-guide is-past is-through" style={{ left: `${guideX(at)}px` }} />
+              <span key={at} class="ht-tree-guide is-past is-through" style={{ left: `${guideX(at)}px` }} />
             ))}
             <span
-              class="tk-tree-chevron"
+              class="ht-tree-chevron"
               aria-hidden="true"
               data-open={open}
               onPointerDown={(event) => {
@@ -223,10 +223,10 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
               {open !== undefined && <Icon name="chevron-down" />}
             </span>
             <LayerIcon layer={layer} />
-            <span class="tk-tree-name">{layer.name}</span>
+            <span class="ht-tree-name">{layer.name}</span>
             {/* A layer the designer wrote a brief for: what the Agent is to achieve in it, or make in a new Frame. */}
             {!layer.text && layer.el.hasAttribute(BRIEF_ATTR) && (
-              <span class="tk-tree-brief" data-tk-tip={`Brief: ${layer.el.getAttribute(BRIEF_ATTR)}`} aria-hidden="true">
+              <span class="ht-tree-brief" data-ht-tip={`Brief: ${layer.el.getAttribute(BRIEF_ATTR)}`} aria-hidden="true">
                 <Icon name="brief" />
               </span>
             )}

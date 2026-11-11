@@ -38,7 +38,7 @@ const SKILL_FILE = `${SKILL_FOLDERS[0]}/SKILL.md`;
 const AGENTS_LINE = `Human Touch: to apply the designer's design changes, or undo the last round, follow \`${SKILL_FILE}\`.`;
 const IGNORE_LINE = ".humantouch/";
 /** What only the editor layer brings: none of it may be in a production build. */
-const RESIDUE = ["third-kind", "data-tk-", "__THIRD_KIND__"];
+const RESIDUE = ["human-touch", "data-ht-", "__HUMAN_TOUCH__"];
 
 type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
 
@@ -128,7 +128,7 @@ function vite(root: string, packageManager: PackageManager): Framework {
     mountSteps: 'In the entry module that renders the app, render the editor layer beside the app:\n\n  import { HumanTouch } from "humantouch/react";\n  …\n  <HumanTouch />',
     async build() {
       // Not over the project's own build.
-      const dir = await mkdtemp(join(tmpdir(), "03kind-build-"));
+      const dir = await mkdtemp(join(tmpdir(), "humantouch-build-"));
       return { command: command(packageManager, "bin", ["vite", "build", "--outDir", dir, "--emptyOutDir"]), dir, built: ["."], temporary: true, rewrites: [] };
     },
   };
@@ -233,7 +233,7 @@ export async function init(cwd: string, io: InstallIo): Promise<number> {
   if (hasDependency(pkg, "humantouch")) {
     done.push("humantouch is a dependency already");
   } else {
-    const install = command(packageManager, "install", [process.env.TK_INSTALL_FROM ?? "humantouch"]);
+    const install = command(packageManager, "install", [process.env.HT_INSTALL_FROM ?? "humantouch"]);
     const result = await io.exec(...install, { cwd: root });
     if (result.code !== 0) {
       io.error(`${result.output}\nCould not install humantouch (\`${show(install)}\` failed, above). Install it yourself, then run \`npx humantouch init\` again.\n`);

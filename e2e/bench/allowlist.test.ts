@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { SHELL, shellAllowed } from "./allowlist.ts";
 
-const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-allowlist-test-"));
+const scratch = mkdtempSync(join(tmpdir(), "humantouch-bench-allowlist-test-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
 test("a command on the list goes ahead, with its arguments, and so does a cd before it; one that only starts with a listed word does not", () => {

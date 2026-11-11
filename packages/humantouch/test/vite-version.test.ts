@@ -28,7 +28,7 @@ describe("the plugin tells the page whether the Vite serving it handles its upda
 
   /** A project at a root of its own, with a `vite` of `version` in its `node_modules`. */
   const projectWithVite = (version: string) => {
-    const root = mkdtempSync(join(tmpdir(), "03kind-vite-version-"));
+    const root = mkdtempSync(join(tmpdir(), "humantouch-vite-version-"));
     roots.push(root);
     writeFileSync(join(root, "package.json"), JSON.stringify({ name: "project", private: true }));
     mkdirSync(join(root, "node_modules", "vite"), { recursive: true });
@@ -40,7 +40,7 @@ describe("the plugin tells the page whether the Vite serving it handles its upda
   const codeUpdatesAt = async (root: string, context: object = {}) => {
     const plugin = humanTouch();
     await (plugin.configResolved as (this: object, config: ResolvedConfig) => Promise<void>).call(context, { root, base: "/" } as ResolvedConfig);
-    return (plugin.load as (id: string) => string | undefined).call({}, "\0virtual:03kind/code-updates");
+    return (plugin.load as (id: string) => string | undefined).call({}, "\0virtual:humantouch/code-updates");
   };
 
   test("the Vite the project resolves, not humantouch's: 5.4.11 there, not in turn", async () => {

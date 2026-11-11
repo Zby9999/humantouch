@@ -101,7 +101,7 @@ test("a Frame off the canvas dragged whole: its selection's outline goes along w
   const at = await blankSpace(page);
   await page.keyboard.press("f");
   await drawFrom(page, at, { x: at.x + 200, y: at.y + 120 });
-  const outline = page.locator('.tk-selection[data-view="Off canvas"]');
+  const outline = page.locator('.ht-selection[data-view="Off canvas"]');
   const near = async () => {
     const [frame, line] = [(await offCanvas(page).boundingBox())!, (await outline.boundingBox())!];
     return Math.max(Math.abs(frame.x - line.x), Math.abs(frame.y - line.y)) < 2;

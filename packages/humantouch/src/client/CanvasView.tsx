@@ -361,8 +361,8 @@ export function CanvasView(props: Props) {
   const moveChrome = (atRest: Camera, canvasWidth: number, out: boolean, fromOut = false) => {
     const shell = viewport.current!.parentElement!;
     const sideOf = (selector: string) => [...shell.querySelectorAll<HTMLElement>(`:scope > :is(${selector})`)];
-    const layersSide = sideOf(".tk-panel.is-layers, .tk-show-layers, .tk-resizer.is-layers");
-    const designSide = sideOf(".tk-panel.is-design, .tk-tools, .tk-resizer.is-design");
+    const layersSide = sideOf(".ht-panel.is-layers, .ht-show-layers, .ht-resizer.is-layers");
+    const designSide = sideOf(".ht-panel.is-design, .ht-tools, .ht-resizer.is-design");
     const width = shell.clientWidth;
     // Where they are laid out, as offsets have them: their transforms aside, partway through a move too.
     const layersRight = Math.max(0, ...layersSide.map((el) => el.offsetLeft + el.offsetWidth));
@@ -1285,7 +1285,7 @@ export function CanvasView(props: Props) {
     const arrived = () => {
       stop();
       frame = requestAnimationFrame(() => {
-        for (const outline of el.querySelectorAll(`.tk-selection[data-view="${CSS.escape(shown.name)}"]`)) ping(outline);
+        for (const outline of el.querySelectorAll(`.ht-selection[data-view="${CSS.escape(shown.name)}"]`)) ping(outline);
         focus.shown();
       });
     };
@@ -1431,7 +1431,7 @@ export function CanvasView(props: Props) {
   return (
     <div
       ref={viewport}
-      class={`tk-viewport${panning ? " is-panning" : spaceHeld ? " is-pan-ready" : tool === "brief" ? " is-briefing" : tool ? " is-drawing" : ""}${travelling ? " is-travelling" : ""}`}
+      class={`ht-viewport${panning ? " is-panning" : spaceHeld ? " is-pan-ready" : tool === "brief" ? " is-briefing" : tool ? " is-drawing" : ""}${travelling ? " is-travelling" : ""}`}
       style={resize ? { cursor: handleCursor(resize.handle) } : undefined}
       role="region"
       aria-label="Canvas viewport"
@@ -1444,7 +1444,7 @@ export function CanvasView(props: Props) {
     >
       <div
         ref={stage}
-        class="tk-stage"
+        class="ht-stage"
         style={{
           transform: transformOf(camera),
           visibility: canvas ? "visible" : "hidden",
@@ -1455,7 +1455,7 @@ export function CanvasView(props: Props) {
           (`CANVAS_STYLES`). `scrolling="no"` tells the browser so: as a frame that could scroll, a view redrawn
           had the whole editor around it redrawn too, a large page's frame slower by some 5ms (ticket 22).
         */}
-        <iframe ref={iframe} class="tk-canvas" title="Canvas" sandbox="allow-same-origin" scrolling="no" />
+        <iframe ref={iframe} class="ht-canvas" title="Canvas" sandbox="allow-same-origin" scrolling="no" />
         {canvas &&
           placed
             .filter((p) => !p.desktop)
@@ -1466,7 +1466,7 @@ export function CanvasView(props: Props) {
                   if (el) frames.current.set(p.width, el);
                   else frames.current.delete(p.width);
                 }}
-                class="tk-canvas is-beside"
+                class="ht-canvas is-beside"
                 title={`${p.name} ${p.width}`}
                 sandbox="allow-same-origin"
                 scrolling="no"
@@ -1475,7 +1475,7 @@ export function CanvasView(props: Props) {
               />
             ))}
         {/* The layers off the canvas, drawn over the views; each an iframe of its own, put there by `off-canvas.ts`. Only the canvas is played. */}
-        <div ref={workspace} class="tk-off-canvas-layers" style={{ visibility: playing || travelling ? "hidden" : undefined }} />
+        <div ref={workspace} class="ht-off-canvas-layers" style={{ visibility: playing || travelling ? "hidden" : undefined }} />
       </div>
       {/* The briefs, on cards beside the views, under what is drawn over the layers; none, nothing (ticket 121). */}
       {cards && cards.list.length > 0 && (
@@ -1539,7 +1539,7 @@ export function CanvasView(props: Props) {
         })}
       {toolbar && (
         <SelectionToolbar
-          key={toolbar.layer.el.getAttribute("data-tk-layer") ?? undefined}
+          key={toolbar.layer.el.getAttribute("data-ht-layer") ?? undefined}
           layer={toolbar.layer}
           view={toolbar.in.view}
           camera={cameraIn(camera, toolbar.in)}
@@ -1582,7 +1582,7 @@ export function CanvasView(props: Props) {
       {resize?.showsSize && <SizeLabel layer={resize.layer} view={resize.in.view} name={resize.in.name} camera={cameraIn(camera, shownNow(resize.in))} />}
       {resize && resize.marks.length > 0 && <Marks marks={resize.marks} view={resize.in.name} camera={cameraIn(camera, shownNow(resize.in))} />}
       {drag?.drop && <Outline layer={drag.drop.to.parent} view={drag.in.view} name={drag.in.name} camera={cameraIn(camera, drag.in)} hover />}
-      {drag?.drop?.line && <div class="tk-drop-line" aria-hidden="true" style={place(drag.drop.line, cameraIn(camera, drag.in))} />}
+      {drag?.drop?.line && <div class="ht-drop-line" aria-hidden="true" style={place(drag.drop.line, cameraIn(camera, drag.in))} />}
       {drag?.drop && drag.drop.marks.length > 0 && <Marks marks={drag.drop.marks} view={drag.in.name} camera={cameraIn(camera, drag.in)} />}
       {measured && (
         <>
@@ -1590,11 +1590,11 @@ export function CanvasView(props: Props) {
           <Marks marks={measured.marks} view={measured.in.name} camera={cameraIn(camera, measured.in)} />
         </>
       )}
-      {(drag?.layer.text || drag?.out || drag?.away) && <div class="tk-drag-ghost" aria-hidden="true" style={place(drag.box, cameraIn(camera, drag.in))} />}
-      {drawn && <div class="tk-drag-ghost" aria-hidden="true" style={place(drawn.box, drawn.in ? cameraIn(camera, drawn.in) : camera)} />}
+      {(drag?.layer.text || drag?.out || drag?.away) && <div class="ht-drag-ghost" aria-hidden="true" style={place(drag.box, cameraIn(camera, drag.in))} />}
+      {drawn && <div class="ht-drag-ghost" aria-hidden="true" style={place(drawn.box, drawn.in ? cameraIn(camera, drawn.in) : camera)} />}
       {/* No way to try again here: the Agent finds why, the error in the console; the two sentences one over the other (designer, 2026-11-10). */}
       {failed && (
-        <p class="tk-viewport-message" role="alert">
+        <p class="ht-viewport-message" role="alert">
           Couldn't turn this page into a canvas.
           <br />
           Ask your Agent to look into it.

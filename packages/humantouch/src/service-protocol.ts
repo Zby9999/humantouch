@@ -5,11 +5,11 @@ import type { StyleSource } from "./client/style-source";
 import type { UsageLevel } from "./client/usage-chain";
 
 /** Global the dev server sets on the page: where the local service is, and its token. */
-export const SERVICE_GLOBAL = "__THIRD_KIND__";
+export const SERVICE_GLOBAL = "__HUMAN_TOUCH__";
 /** Next.js has no `index.html` for the global: `withHumanTouch()` puts the same, as JSON, in the bundle's `process.env` under this name. */
-export const SERVICE_ENV = "TK_SERVICE";
+export const SERVICE_ENV = "HT_SERVICE";
 /** Header that carries the token. A request without the right one is turned away. */
-export const TOKEN_HEADER = "X-03Kind-Token";
+export const TOKEN_HEADER = "X-Human-Touch-Token";
 /** Where the round is, on the local service. */
 export const ROUND_PATH = "/round";
 /**
@@ -105,8 +105,8 @@ export const CHECK_ARRIVE_MS = 20_000;
  * over before the next begins (Vite 6.3.0 on, ticket 125). A `CODE_EVENT`
  * on the window follows each change.
  */
-export const CODE_GLOBAL = "__THIRD_KIND_CODE__";
-export const CODE_EVENT = "03kind:code";
+export const CODE_GLOBAL = "__HUMAN_TOUCH_CODE__";
+export const CODE_EVENT = "humantouch:code";
 export interface CodeUpdates {
   at: number;
   updating: number;

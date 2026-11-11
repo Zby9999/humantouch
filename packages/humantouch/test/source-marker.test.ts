@@ -13,7 +13,7 @@ describe("source marker", () => {
     const code = `export function App() {\n  return <div className="app">Hi</div>;\n}\n`;
 
     expect(mark(code)?.code).toBe(
-      `export function App() {\n  return <div className="app" data-tk-loc="src/App.tsx:2:10">Hi</div>;\n}\n`,
+      `export function App() {\n  return <div className="app" data-ht-loc="src/App.tsx:2:10">Hi</div>;\n}\n`,
     );
   });
 
@@ -21,7 +21,7 @@ describe("source marker", () => {
     const code = `import { Card } from "./Card";\nexport const App = () => (\n  <main>\n    <Card title="One" />\n  </main>\n);\n`;
 
     expect(mark(code)?.code).toBe(
-      `import { Card } from "./Card";\nexport const App = () => (\n  <main data-tk-loc="src/App.tsx:3:3">\n    <Card title="One" data-tk-usage="src/App.tsx:4:5" />\n  </main>\n);\n`,
+      `import { Card } from "./Card";\nexport const App = () => (\n  <main data-ht-loc="src/App.tsx:3:3">\n    <Card title="One" data-ht-usage="src/App.tsx:4:5" />\n  </main>\n);\n`,
     );
   });
 
@@ -29,14 +29,14 @@ describe("source marker", () => {
     const code = `export const Button = (props) => <Pressable {...props} />;\n`;
 
     expect(mark(code)?.code).toBe(
-      `export const Button = (props) => <Pressable {...props} data-tk-usage="src/App.tsx:1:34" />;\n`,
+      `export const Button = (props) => <Pressable {...props} data-ht-usage="src/App.tsx:1:34" />;\n`,
     );
   });
 
   test("marks a component written with type arguments", () => {
     const code = `export const A = () => <List<string> />;\n`;
 
-    expect(mark(code)?.code).toBe(`export const A = () => <List<string> data-tk-usage="src/App.tsx:1:24" />;\n`);
+    expect(mark(code)?.code).toBe(`export const A = () => <List<string> data-ht-usage="src/App.tsx:1:24" />;\n`);
   });
 
   test("does not mark fragments, which accept no extra props", () => {
@@ -56,7 +56,7 @@ describe("source marker", () => {
     const code = `export const A = () => <p />;\n`;
 
     expect(mark(code, "src/A.jsx?v=1a2b")?.code).toBe(
-      `export const A = () => <p data-tk-loc="src/A.jsx:1:24" />;\n`,
+      `export const A = () => <p data-ht-loc="src/A.jsx:1:24" />;\n`,
     );
   });
 
@@ -68,7 +68,7 @@ describe("source marker", () => {
   test("marks namespaced tags as HTML elements", () => {
     const code = `export const A = () => <svg:rect />;\n`;
 
-    expect(mark(code)?.code).toBe(`export const A = () => <svg:rect data-tk-loc="src/App.tsx:1:24" />;\n`);
+    expect(mark(code)?.code).toBe(`export const A = () => <svg:rect data-ht-loc="src/App.tsx:1:24" />;\n`);
   });
 
   test("leaves a module it cannot parse to the next plugin, which reports the error", () => {
@@ -98,7 +98,7 @@ describe("source marker", () => {
       const markedLines = marked.split("\n");
       expect(markedLines).toHaveLength(code.split("\n").length);
       const stripped = markedLines.map((line) =>
-        line.replace(/ data-tk-(?:loc|usage)="src\/Gallery\.tsx:\d+:\d+"/g, ""),
+        line.replace(/ data-ht-(?:loc|usage)="src\/Gallery\.tsx:\d+:\d+"/g, ""),
       );
       expect(stripped).toEqual(code.split("\n"));
     });
@@ -108,7 +108,7 @@ describe("source marker", () => {
 test("marks JSX in a .js module, as Next.js allows", () => {
   const result = markSource(`export default function Page() {\n  return <main>Hi</main>;\n}\n`, { id: "/project/app/page.js", root: "/project" });
 
-  expect(result?.code).toContain('<main data-tk-loc="app/page.js:2:10">');
+  expect(result?.code).toContain('<main data-ht-loc="app/page.js:2:10">');
 });
 
 test("leaves a .js module with no JSX alone", () => {

@@ -33,7 +33,7 @@ export async function pack(dir: string): Promise<string> {
  * repository of its own: what a project looks like before `init`.
  */
 export async function copyWithoutHumanTouch(example: string, uninstall: (dir: string) => void): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), "03kind-project-"));
+  const dir = mkdtempSync(join(tmpdir(), "humantouch-project-"));
   cpSync(example, dir, { recursive: true, filter: (from) => !/[\\/](node_modules|dist|\.humantouch|\.next)$/.test(from) });
   const pkgFile = join(dir, "package.json");
   const pkg = JSON.parse(readFileSync(pkgFile, "utf8"));

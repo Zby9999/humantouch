@@ -7,7 +7,7 @@ import { run, type Exec } from "../src/cli";
 let project: string;
 
 beforeEach(() => {
-  project = mkdtempSync(join(tmpdir(), "03kind-install-"));
+  project = mkdtempSync(join(tmpdir(), "humantouch-install-"));
 });
 afterEach(() => rmSync(project, { recursive: true, force: true }));
 
@@ -341,7 +341,7 @@ describe("doctor", () => {
 
   test("a production build with editor layer code in it fails", async () => {
     viteProject();
-    const { exec } = fakeExec(builtPage(`customElements.define("third-kind",class{})`));
+    const { exec } = fakeExec(builtPage(`customElements.define("human-touch",class{})`));
     await cli(exec, "init");
 
     const { code, output } = await cli(exec, "doctor");
@@ -659,7 +659,7 @@ describe("doctor, on a Next.js project", () => {
     const { exec } = fakeExec();
     await cli(exec, "init");
     const building: Exec = async (command, args, options) => {
-      if (args.includes("build")) write(".next/static/chunks/app/page.js", `e("main",{"data-tk-loc":"app/page.tsx:2:10"})`);
+      if (args.includes("build")) write(".next/static/chunks/app/page.js", `e("main",{"data-ht-loc":"app/page.tsx:2:10"})`);
       return exec(command, args, options);
     };
 

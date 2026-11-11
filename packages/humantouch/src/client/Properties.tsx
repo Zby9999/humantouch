@@ -240,7 +240,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
       addable.length > 0 && (
         // A minimum or maximum, chosen from a menu, as in Figma; it comes in as a row of its own.
         <MenuButton
-          class="tk-field-action"
+          class="ht-field-action"
           label={`Add min or max ${axis}`}
           icon="plus"
           items={addable.map((property) => ({ value: property, label: LIMIT_LABELS[property] }))}
@@ -276,23 +276,23 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
   const marks = useChangeMarks();
   return (
     <>
-      {locked && <p class="tk-layer-note tk-section">A locked layer comes from a dependency. It can only be moved and resized as a whole.</p>}
+      {locked && <p class="ht-layer-note ht-section">A locked layer comes from a dependency. It can only be moved and resized as a whole.</p>}
       {x !== undefined && y !== undefined && (
-        <section class="tk-section" aria-labelledby="tk-position">
-          <div class="tk-section-header">
-            <h3 id="tk-position" class="tk-section-title">Position</h3>
+        <section class="ht-section" aria-labelledby="ht-position">
+          <div class="ht-section-header">
+            <h3 id="ht-position" class="ht-section-title">Position</h3>
             <SectionReset title="Position" properties={["x", "y"]} />
           </div>
-          <div class="tk-grid-2">
+          <div class="ht-grid-2">
             <NumberField label="X" glyph="X" property="x" value={number(x)} onChange={set("x")} />
             <NumberField label="Y" glyph="Y" property="y" value={number(y)} onChange={set("y")} />
           </div>
         </section>
       )}
       {(width !== undefined || height !== undefined) && (
-        <section class="tk-section" aria-labelledby="tk-size">
-          <div class="tk-section-header">
-            <h3 id="tk-size" class="tk-section-title">Size</h3>
+        <section class="ht-section" aria-labelledby="ht-size">
+          <div class="ht-section-header">
+            <h3 id="ht-size" class="ht-section-title">Size</h3>
             {/* A size row is one operation, its number and sizing together, as its one reset takes them; each minimum or maximum, another. */}
             <SectionReset title="Size" properties={[...(width !== undefined ? ["width" as const] : []), ...(height !== undefined ? ["height" as const] : []), ...limits]} />
           </div>
@@ -317,7 +317,7 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
             // Set in this round where there was none: its field unmarked, its − in the accent (designer, 2026-11-08).
             const addedHere = marks.added(property);
             return (
-              <div key={property} class="tk-row tk-paint-row">
+              <div key={property} class="ht-row ht-paint-row">
                 <ChangeMarksProvider value={addedHere ? NO_MARKS : marks}>
                   <VariableSlot label={label} slot={variable(property)} property={property}>
                     <LimitField label={label} icon={LIMIT_ICONS[property]} property={property} value={shown(property)!} onChange={set(property)} />
@@ -331,9 +331,9 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
       )}
       {direction === undefined && (layers.length > 1 || layers[0].kind === "frame") && editor.canStack(layers) && (
         // Layout, as a Stack's section and a Grid's are titled (designer, 2026-11-10).
-        <section class="tk-section" role="group" aria-label="Layout">
-          <div class="tk-section-header">
-            <h3 class="tk-section-title">Layout</h3>
+        <section class="ht-section" role="group" aria-label="Layout">
+          <div class="ht-section-header">
+            <h3 class="ht-section-title">Layout</h3>
             <MakeLayoutButton editor={editor} layers={layers} onStack={onStack} />
           </div>
         </section>
@@ -354,9 +354,9 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
       )}
       {padding !== undefined && layers.some((layer) => layer.kind === "frame" && layer.framesText) && (
         // A Frame around its text alone, as a button is: the room around the text.
-        <section class="tk-section" aria-labelledby="tk-padding">
-          <div class="tk-section-header">
-            <h3 id="tk-padding" class="tk-section-title">Padding</h3>
+        <section class="ht-section" aria-labelledby="ht-padding">
+          <div class="ht-section-header">
+            <h3 id="ht-padding" class="ht-section-title">Padding</h3>
             <SectionReset title="Padding" properties={["padding"]} operations={PADDING_SIDES} />
           </div>
           <PaddingFields padding={padding} update={update} variable={variable} />
@@ -399,12 +399,12 @@ export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGrad
       )}
       {textColor !== undefined && (
         // Text is filled with its color, as in Figma.
-        <section class="tk-section" role="group" aria-label="Fill">
-          <div class="tk-section-header">
-            <h3 class="tk-section-title">Fill</h3>
+        <section class="ht-section" role="group" aria-label="Fill">
+          <div class="ht-section-header">
+            <h3 class="ht-section-title">Fill</h3>
             <SectionReset title="Fill" properties={["textColor"]} />
           </div>
-          {textColor === MIXED ? <span class="tk-field tk-mixed">Mixed</span> : <ColorField name="Fill" property="textColor" color={textColor} onChange={set("textColor")} variable={variable("textColor")} />}
+          {textColor === MIXED ? <span class="ht-field ht-mixed">Mixed</span> : <ColorField name="Fill" property="textColor" color={textColor} onChange={set("textColor")} variable={variable("textColor")} />}
         </section>
       )}
       {fill !== undefined && (
@@ -492,7 +492,7 @@ function SizeRow({ axis, size, layers, offers, measure, update, variable, after 
   const sizingChanged = marks.changed(axis, SIZING);
   const sizeChanged = sizingChanged ? size !== MIXED && size.type === "fixed" && marks.changed(axis, sizeOf(layers, axis)) : marks.changed(axis);
   return (
-    <div class="tk-row tk-size-row">
+    <div class="ht-row ht-size-row">
       {/* One reset takes the number and its sizing back together: it stands at the row's left, outside them, the two marked with none of their own (designer, 2026-11-08). */}
       {(sizeChanged || sizingChanged) && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([axis])} />}
       <VariableSlot label={label} slot={variable} property={axis} rowReset>
@@ -507,9 +507,9 @@ function SizeRow({ axis, size, layers, offers, measure, update, variable, after 
           onChange={(value, continues) => update(axis, () => ({ type: "fixed", value }), continues)}
         />
       </VariableSlot>
-      <span class={`tk-select-field${sizingChanged ? " is-changed" : ""}`} data-tk-mark={sizingChanged ? axis : undefined}>
+      <span class={`ht-select-field${sizingChanged ? " is-changed" : ""}`} data-ht-mark={sizingChanged ? axis : undefined}>
         <Select
-          class="tk-select"
+          class="ht-select"
           aria-label={`${label} sizing`}
           value={size === MIXED ? "" : size.type}
           onChange={(event) => {
@@ -591,7 +591,7 @@ function MakeLayoutButton({ editor, layers, onStack }: { editor: Editor; layers:
     redraw((n) => n + 1);
   };
   return (
-    <button type="button" class="tk-icon-button" aria-label={label(grid)} data-tk-tip={`${label(grid)} (⇧A)`} onPointerOver={look} onFocus={look} onClick={onStack}>
+    <button type="button" class="ht-icon-button" aria-label={label(grid)} data-ht-tip={`${label(grid)} (⇧A)`} onPointerOver={look} onFocus={look} onClick={onStack}>
       <Icon name="plus" />
     </button>
   );
@@ -627,10 +627,10 @@ function StackSection({ direction, arrange, dissolve, gap, padding, align, wrap,
   const wrapChanged = marks.changed("wrap");
   return (
     <ChangeMarksProvider value={marks}>
-    <section class="tk-section" aria-labelledby="tk-stack">
-      <div class="tk-section-header">
+    <section class="ht-section" aria-labelledby="ht-stack">
+      <div class="ht-section-header">
         {/* Layout, as the Grid's section is titled too: one section, a Stack or a Grid (designer, 2026-11-10). */}
-        <h3 id="tk-stack" class="tk-section-title">Layout</h3>
+        <h3 id="ht-stack" class="ht-section-title">Layout</h3>
         <SectionReset
           title="Layout"
           properties={STACK_PROPERTIES}
@@ -643,8 +643,8 @@ function StackSection({ direction, arrange, dissolve, gap, padding, align, wrap,
         )}
       </div>
       {/* As the designer drew it (2026-11-07): the alignment at the left; the gap, then the direction and wrap, beside it. */}
-      <div class="tk-row tk-align-row">
-        <div class={`tk-align${changed ? " is-changed" : ""}`} data-tk-mark={changed ? "align" : undefined} role="radiogroup" aria-label="Alignment">
+      <div class="ht-row ht-align-row">
+        <div class={`ht-align${changed ? " is-changed" : ""}`} data-ht-mark={changed ? "align" : undefined} role="radiogroup" aria-label="Alignment">
           {ALIGNMENTS.map((y) =>
             ALIGNMENTS.map((x) => {
               const name = y === "center" && x === "center" ? "Center" : `${ROWS[y]} ${COLUMNS[x]}`;
@@ -655,7 +655,7 @@ function StackSection({ direction, arrange, dissolve, gap, padding, align, wrap,
                   key={name}
                   type="button"
                   role="radio"
-                  class={`tk-align-point${before ? " is-before" : ""}`}
+                  class={`ht-align-point${before ? " is-before" : ""}`}
                   aria-checked={checked}
                   aria-label={name}
                   onClick={() => update("align", (current) => ({ ...current, x, y }))}
@@ -664,9 +664,9 @@ function StackSection({ direction, arrange, dissolve, gap, padding, align, wrap,
             }),
           )}
         </div>
-        <div class="tk-align-options">
+        <div class="ht-align-options">
           <GapField gap={gap} align={align} set={set} update={update} variable={variable} />
-          <div class="tk-row">
+          <div class="ht-row">
             {/* Marked as the Text's groups: its track in the accent, its reset at its right end (designer, 2026-11-08). */}
             {/* A Grid beside the two directions, as Figma's auto layout has it (ticket 109); made one here this round, marked by that. */}
             <Segmented<ArrangeAs>
@@ -679,9 +679,9 @@ function StackSection({ direction, arrange, dissolve, gap, padding, align, wrap,
             {/* Wrap: a button that stays on, as Figma's; Mixed shows it off. */}
             <button
               type="button"
-              class={`tk-icon-button${wrapChanged ? " is-changed" : ""}`} data-tk-mark={wrapChanged ? "wrap" : undefined}
+              class={`ht-icon-button${wrapChanged ? " is-changed" : ""}`} data-ht-mark={wrapChanged ? "wrap" : undefined}
               aria-label="Wrap"
-              data-tk-tip="Wrap"
+              data-ht-tip="Wrap"
               aria-pressed={wrap === true}
               onClick={() => set("wrap")(wrap !== true)}
             >
@@ -714,10 +714,10 @@ export function RemoveButton({ label, title, added = false, mark, disabled, onCl
   return (
     <button
       type="button"
-      class={`tk-icon-button${added ? " is-added" : ""}`}
+      class={`ht-icon-button${added ? " is-added" : ""}`}
       aria-label={label}
-      data-tk-tip={title ?? label}
-      data-tk-mark={added && mark ? mark : undefined}
+      data-ht-tip={title ?? label}
+      data-ht-mark={added && mark ? mark : undefined}
       disabled={disabled}
       onClick={onClick}
     >
@@ -736,7 +736,7 @@ function GapField({ gap, align, set, update, variable }: { gap: Shown<number>; a
   const auto = align === MIXED ? MIXED : align.distribute;
   const mode = (
     <Select
-      class="tk-select tk-gap-mode"
+      class="ht-select ht-gap-mode"
       aria-label="Gap sizing"
       value={auto === MIXED ? "" : auto ? "auto" : "fixed"}
       onChange={(event) => update("align", (current) => ({ ...current, distribute: event.currentTarget.value === "auto" }))}
@@ -754,9 +754,9 @@ function GapField({ gap, align, set, update, variable }: { gap: Shown<number>; a
     // Auto, as the alignment keeps it: marked when that part of it changed, the point left as it is.
     const changed = marks.changed("align", DISTRIBUTE);
     return (
-      <div class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip="Gap" data-tk-mark={changed ? "align" : undefined}>
+      <div class={`ht-field${changed ? " is-changed" : ""}`} data-ht-tip="Gap" data-ht-mark={changed ? "align" : undefined}>
         <Icon name="gap" />
-        <span class="tk-input tk-auto">Auto</span>
+        <span class="ht-input ht-auto">Auto</span>
         {mode}
         {changed && <ResetButton label="gap" onReset={() => marks.reset(["align"], DISTRIBUTE)} />}
       </div>
@@ -775,7 +775,7 @@ function PaddingFields({ padding, update, variable }: { padding: Shown<Padding>;
   const setSide = (i: number) => (value: number, continues?: boolean) =>
     update("padding", (current) => current.map((p, j) => (i === j ? value : p)) as Padding, continues);
   return (
-    <div class="tk-grid-2" role="group" aria-label="Padding">
+    <div class="ht-grid-2" role="group" aria-label="Padding">
       {["Top", "Right", "Bottom", "Left"].map((name, i) => (
         <VariableSlot key={name} label={`Padding ${name.toLowerCase()}`} slot={variable("padding", name.toLowerCase())} property="padding" part={i}>
           <NumberField label={`Padding ${name.toLowerCase()}`} icon={`padding-${name.toLowerCase()}` as IconName} property="padding" part={i} value={side(i)} min={0} onChange={setSide(i)} />
@@ -808,7 +808,7 @@ function Check({ label, checked, onChange, property }: { label: string; checked:
   const marks = useChangeMarks();
   const changed = !!property && marks.changed(property);
   return (
-    <label class={`tk-check${changed ? " is-changed" : ""}`} data-tk-mark={changed ? property : undefined}>
+    <label class={`ht-check${changed ? " is-changed" : ""}`} data-ht-mark={changed ? property : undefined}>
       <input
         type="checkbox"
         checked={checked === true}
@@ -832,7 +832,7 @@ function LimitField({ label, icon, value, onChange, property }: {
   const marks = useChangeMarks();
   const changed = !!property && marks.changed(property);
   return (
-    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label} data-tk-mark={changed ? property : undefined}>
+    <label class={`ht-field${changed ? " is-changed" : ""}`} data-ht-tip={label} data-ht-mark={changed ? property : undefined}>
       <Icon name={icon} />
       <TextField
         label={label}
@@ -859,7 +859,7 @@ function PercentField({ label, icon, value, onChange, property }: {
   const changed = !!property && marks.changed(property);
   const scrubbed = { value: value === null ? null : Math.round(value * 100), min: 0, max: 100, onChange: (percent: number, continues: boolean) => onChange(percent / 100, continues) };
   return (
-    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label} data-tk-mark={changed ? property : undefined}>
+    <label class={`ht-field${changed ? " is-changed" : ""}`} data-ht-tip={label} data-ht-mark={changed ? property : undefined}>
       <Scrub icon={icon} {...scrubbed} />
       <TextField
         label={label}
@@ -944,24 +944,24 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
     ...(clip !== undefined ? [{ property: "clip" as const }] : []),
   ];
   return (
-    <section class="tk-section" aria-labelledby="tk-appearance">
-      <div class="tk-section-header">
-        <h3 id="tk-appearance" class="tk-section-title">Appearance</h3>
+    <section class="ht-section" aria-labelledby="ht-appearance">
+      <div class="ht-section-header">
+        <h3 id="ht-appearance" class="ht-section-title">Appearance</h3>
         <SectionReset title="Appearance" properties={operations.map(({ property }) => property)} operations={operations} />
       </div>
       {/* The fields first, then the checks, two to a row: opacity beside the corner radius, Visible beside Clip content; with no radius, opacity beside Visible (designer, 2026-11-08). A check alone at the end takes the whole row. */}
-      <div class="tk-grid-2">
+      <div class="ht-grid-2">
         {opacity !== undefined && <PercentField label="Opacity" icon="opacity" property="opacity" value={opacity === MIXED ? null : opacity} onChange={set("opacity")} />}
         {radii && (
-          <div class="tk-row">
+          <div class="ht-row">
             <VariableSlot label="Corner radius" slot={variable("radius")} property="radius">
               <NumberField label="Corner radius" icon="radius" property="radius" value={uniform} min={0} onChange={set("radius")} />
             </VariableSlot>
             <button
               type="button"
-              class="tk-icon-button"
+              class="ht-icon-button"
               aria-label="Independent corners"
-              data-tk-tip="Independent corners"
+              data-ht-tip="Independent corners"
               aria-pressed={independent}
               onClick={() => toggle(!independent)}
             >
@@ -973,7 +973,7 @@ function AppearanceSection({ selection, opacity, radii, visible, clip, set, upda
         {clip !== undefined && <Check label="Clip content" property="clip" checked={clip} onChange={set("clip")} />}
       </div>
       {radii && independent && (
-        <div class="tk-grid-2" role="group" aria-label="Radius per corner">
+        <div class="ht-grid-2" role="group" aria-label="Radius per corner">
           {CORNER_GRID.map((i) => (
             <VariableSlot key={i} label={`${CORNER_NAMES[i]} radius`} slot={variable("radius", CORNER_NAMES[i].toLowerCase().replace(" ", "-"))} property="radius" part={CORNER_PARTS[i]}>
             <NumberField
@@ -1057,20 +1057,20 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
    */
   const changeFont = (next: string) => set("fontFamily")(next);
   return (
-    <section class="tk-section" role="group" aria-label="Text">
-      <div class="tk-section-header">
-        <h3 class="tk-section-title">Text</h3>
+    <section class="ht-section" role="group" aria-label="Text">
+      <div class="ht-section-header">
+        <h3 class="ht-section-title">Text</h3>
         <SectionReset title="Text" properties={["fontFamily", "fontWeight", "fontSize", "lineHeight", "letterSpacing", "textAlign", "textCase", "textDecoration"]} />
       </div>
       {/* The font, marked when changed, its reset at the right end; at its left, where a field has its icon, "Aa" in it, as in the designer's Figma (designer, 2026-11-08). */}
-      <MarkedSelect label="Font" property="fontFamily" class="tk-font-field">
+      <MarkedSelect label="Font" property="fontFamily" class="ht-font-field">
         {/* Mixed: a plain "Aa", in the editor's font. A font the page never loaded falls back, as the canvas text does. */}
-        <span class="tk-font-sample" aria-hidden="true" style={family === MIXED ? undefined : { fontFamily: cssFamily(family) }}>
+        <span class="ht-font-sample" aria-hidden="true" style={family === MIXED ? undefined : { fontFamily: cssFamily(family) }}>
           Aa
         </span>
         <Choice
           label="Font"
-          class="tk-font"
+          class="ht-font"
           value={family === MIXED ? null : family}
           options={names
             .sort((a, b) => a.localeCompare(b))
@@ -1078,8 +1078,8 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
           onChange={changeFont}
         />
       </MarkedSelect>
-      <div class="tk-grid-2">
-        <MarkedSelect label="Font weight" property="fontWeight" class="tk-wide">
+      <div class="ht-grid-2">
+        <MarkedSelect label="Font weight" property="fontWeight" class="ht-wide">
           <Choice
             label="Font weight"
             value={weight === MIXED ? null : String(weight)}
@@ -1091,7 +1091,7 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
           <NumberField label="Font size" icon="font-size" property="fontSize" value={number(size)} min={1} onChange={set("fontSize")} />
         </VariableSlot>
       </div>
-      <div class="tk-grid-2">
+      <div class="ht-grid-2">
         {/* Auto is about 1.2 times the font size: a drag from it starts there. */}
         <TextLengthField label="Line height" icon="line-height" property="lineHeight" value={lineHeight} min={0} auto={size === MIXED ? 0 : Math.round(size * 1.2)} onChange={set("lineHeight")} />
         <TextLengthField label="Letter spacing" icon="letter-spacing" property="letterSpacing" value={letterSpacing} onChange={(value, continues) => set("letterSpacing")(value as TextLength, continues)} />
@@ -1099,18 +1099,18 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
       {/* On a row of its own, as wide as its buttons (and its reset), not the row's width; at the left (designer, 2026-11-08). */}
       <Segmented
         label="Text alignment"
-        class="tk-hug"
+        class="ht-hug"
         property="textAlign"
         value={align}
         options={TEXT_ALIGNS.map(({ align, label }) => ({ value: align, label, content: <Icon name={`align-${align}`} /> }))}
         onChange={set("textAlign")}
       />
-      <div class="tk-row">
+      <div class="ht-row">
         <Segmented
           label="Case"
           property="textCase"
           value={textCase}
-          options={TEXT_CASES.map(({ textCase, label, glyph }) => ({ value: textCase, label, content: <span class="tk-text-glyph">{glyph}</span> }))}
+          options={TEXT_CASES.map(({ textCase, label, glyph }) => ({ value: textCase, label, content: <span class="ht-text-glyph">{glyph}</span> }))}
           onChange={set("textCase")}
         />
         <Segmented
@@ -1120,7 +1120,7 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
           options={DECORATIONS.map(({ decoration, label, glyph }) => ({
             value: decoration,
             label,
-            content: <span class={`tk-text-glyph tk-${decoration}`}>{glyph}</span>,
+            content: <span class={`ht-text-glyph ht-${decoration}`}>{glyph}</span>,
           }))}
           onChange={set("textDecoration")}
         />
@@ -1139,7 +1139,7 @@ function Choice({ label, class: className, value, options, onChange }: {
   onChange(value: string): void;
 }) {
   return (
-    <Select class={`tk-select${className ? ` ${className}` : ""}`} aria-label={label} value={value ?? ""} onChange={(event) => onChange(event.currentTarget.value)}>
+    <Select class={`ht-select${className ? ` ${className}` : ""}`} aria-label={label} value={value ?? ""} onChange={(event) => onChange(event.currentTarget.value)}>
       {value === null && (
         <option value="" disabled>
           Mixed
@@ -1187,9 +1187,9 @@ export function Segmented<T extends string>({ label, class: className, property,
   }, [changed]);
   return (
     <div
-      class={`tk-segmented-field${className ? ` ${className}` : ""}${changed ? " is-changed" : ""}${goes ? " is-leaving" : ""}`}
+      class={`ht-segmented-field${className ? ` ${className}` : ""}${changed ? " is-changed" : ""}${goes ? " is-leaving" : ""}`}
       role="radiogroup"
-      data-tk-mark={changed ? property : undefined}
+      data-ht-mark={changed ? property : undefined}
       aria-label={label}
       data-keyed={keyed.current || undefined}
       onClickCapture={(event) => {
@@ -1201,10 +1201,10 @@ export function Segmented<T extends string>({ label, class: className, property,
           key={option.value}
           type="button"
           role="radio"
-          class="tk-icon-button"
+          class="ht-icon-button"
           aria-checked={value === option.value}
           aria-label={option.label}
-          data-tk-tip={option.label}
+          data-ht-tip={option.label}
           onClick={() => onChange(option.value)}
         >
           {option.content}
@@ -1239,7 +1239,7 @@ function TextLengthField({ label, icon, property, value, min = -Infinity, auto, 
   /** What a drag starts from: from Auto, what it comes to. */
   const dragged = length?.value ?? (value === "auto" ? auto! : null);
   return (
-    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label} data-tk-mark={changed ? property : undefined}>
+    <label class={`ht-field${changed ? " is-changed" : ""}`} data-ht-tip={label} data-ht-mark={changed ? property : undefined}>
       <Scrub icon={icon} value={dragged} min={min} onChange={change} />
       <TextField
         label={label}
@@ -1289,13 +1289,13 @@ function FillSection({ fill, box, conic, onChange, update, variable, onGradientP
   /** Fills of more than one type: the picker open from Mixed, with only their type in it. */
   const [mixedOpen, setMixedOpen] = useState<HTMLElement | null>(null);
   const types = (type: (typeof FILL_TYPES)[number]["type"] | null) => (
-    <div class="tk-tabs" role="radiogroup" aria-label="Fill type">
+    <div class="ht-tabs" role="radiogroup" aria-label="Fill type">
       {FILL_TYPES.map((option) => (
         <button
           key={option.type}
           type="button"
           role="radio"
-          class="tk-tab"
+          class="ht-tab"
           aria-checked={type === option.type}
           onClick={() => option.type !== type && update("fill", (current) => fillAs(current, option.type))}
         >
@@ -1318,46 +1318,46 @@ function FillSection({ fill, box, conic, onChange, update, variable, onGradientP
   /** At the end of the fill's row, as Figma has it (designer, 2026-11-07). */
   const remove = <RemoveButton label="Remove fill" added={added} mark="fill" onClick={() => onChange(null)} />;
   return (
-    <section class="tk-section" role="group" aria-label="Fill">
-      <div class="tk-section-header">
-        <h3 class="tk-section-title">Fill</h3>
+    <section class="ht-section" role="group" aria-label="Fill">
+      <div class="ht-section-header">
+        <h3 class="ht-section-title">Fill</h3>
         {/* The fill's one row, its gradient's angle and stops in it, is one operation, as its one reset takes it back: no reset of its own here till a fill has more than one row. */}
         <SectionReset title="Fill" properties={["fill"]} />
         {!fill && (
-          <button type="button" class="tk-icon-button" aria-label="Add fill" onClick={() => onChange(NEW_FILL)}>
+          <button type="button" class="ht-icon-button" aria-label="Add fill" onClick={() => onChange(NEW_FILL)}>
             <Icon name="plus" />
           </button>
         )}
       </div>
       <ChangeMarksProvider value={added ? NO_MARKS : marks}>
       {fill === MIXED && conic ? (
-        <span class="tk-field tk-mixed">Mixed</span>
+        <span class="ht-field ht-mixed">Mixed</span>
       ) : fill === MIXED ? (
-        <div class="tk-row tk-paint-row">
-          <div class="tk-field tk-color-field">
+        <div class="ht-row ht-paint-row">
+          <div class="ht-field ht-color-field">
             <button
               type="button"
-              class="tk-swatch tk-swatch-button tk-mixed-swatch"
+              class="ht-swatch ht-swatch-button ht-mixed-swatch"
               aria-label="Fill color picker"
               aria-haspopup="dialog"
               onClick={(event) => setMixedOpen(mixedOpen ? null : event.currentTarget)}
             />
-            <span class="tk-mixed">Mixed</span>
+            <span class="ht-mixed">Mixed</span>
             <ColorPicker label="Fill" anchor={mixedOpen} top={types(null)} onClose={() => setMixedOpen(null)} />
           </div>
           {!conic && remove}
         </div>
       ) : fill?.type === "conic" ? (
         <>
-          <div class="tk-row">
-            <span class="tk-gradient-swatch" style={{ backgroundImage: fill.css }} aria-hidden="true" />
-            <span class="tk-field tk-read-only">Conic gradient</span>
+          <div class="ht-row">
+            <span class="ht-gradient-swatch" style={{ backgroundImage: fill.css }} aria-hidden="true" />
+            <span class="ht-field ht-read-only">Conic gradient</span>
           </div>
-          <p class="tk-layer-note">Conic gradients can't be edited.</p>
+          <p class="ht-layer-note">Conic gradients can't be edited.</p>
         </>
       ) : gradient ? (
         // In the place a solid fill's is, the same row and field: its picker stays open as the type changes.
-        <div class="tk-row tk-paint-row">
+        <div class="ht-row ht-paint-row">
           <ColorField
             name="Fill"
             property="fill"
@@ -1398,7 +1398,7 @@ function FillSection({ fill, box, conic, onChange, update, variable, onGradientP
         </div>
       ) : (
         fill?.type === "solid" && (
-          <div class="tk-row tk-paint-row">
+          <div class="ht-row ht-paint-row">
             <ColorField
               name="Fill"
               property="fill"
@@ -1507,7 +1507,7 @@ function RadialFields({ gradient, box, update }: { gradient: RadialGradient; box
   const change = (next: (current: RadialGradient, value: number, box: PaintArea) => RadialGradient) => (value: number, continues?: boolean) =>
     update("fill", (current, layer) => (current?.type === "radial" && "center" in current ? next(current, value, paintArea(layer.el)) : current), continues);
   return (
-    <div class="tk-grid-2">
+    <div class="ht-grid-2">
       {(["x", "y"] as const).map((axis) => (
         <NumberField
           key={axis}
@@ -1597,10 +1597,10 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
     <>
       <div
         ref={bar}
-        class="tk-gradient-bar"
+        class="ht-gradient-bar"
         role="group"
         aria-label="Gradient stops"
-        style={{ "--tk-gradient": preview }}
+        style={{ "--ht-gradient": preview }}
         onPointerDown={(event) => {
           if (event.button !== 0 || event.target !== event.currentTarget) return;
           add(Math.round(along(event.clientX)));
@@ -1609,7 +1609,7 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
         {stops.map((s, index) => (
           <span
             key={index}
-            class={`tk-stop-handle${index === chosen ? " is-chosen" : ""}`}
+            class={`ht-stop-handle${index === chosen ? " is-chosen" : ""}`}
             role="slider"
             tabIndex={0}
             aria-label={`Stop ${index + 1} position`}
@@ -1617,7 +1617,7 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
             aria-valuemax={s.unit === "%" ? 100 : Math.round(length)}
             aria-valuenow={s.position}
             aria-valuetext={`${s.position}${s.unit}`}
-            style={{ left: `${shownAt(s)}%`, "--tk-stop": cssColor(s) }}
+            style={{ left: `${shownAt(s)}%`, "--ht-stop": cssColor(s) }}
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               event.preventDefault();
@@ -1654,9 +1654,9 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
           />
         ))}
       </div>
-      <div class="tk-section-header">
-        <h4 class="tk-section-title tk-subtitle">Stops</h4>
-        <button type="button" class="tk-icon-button" aria-label="Add stop" onClick={() => add(nextStopPosition(stops, length))}>
+      <div class="ht-section-header">
+        <h4 class="ht-section-title ht-subtitle">Stops</h4>
+        <button type="button" class="ht-icon-button" aria-label="Add stop" onClick={() => add(nextStopPosition(stops, length))}>
           <Icon name="plus" />
         </button>
       </div>
@@ -1668,14 +1668,14 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
         const [movedHere, coloredHere] = added ? [false, false] : [marks.changed("fill", stopPart(index, "position")), marks.changed("fill", stopPart(index, "color"))];
         return (
           <div
-            class={`tk-row tk-stop-row${index === chosen ? " is-chosen" : ""}`}
+            class={`ht-row ht-stop-row${index === chosen ? " is-chosen" : ""}`}
             key={index}
             role="group"
             aria-label={`Stop ${index + 1}`}
             // Pressed anywhere in its row, the stop is the one the picker sets.
             onPointerDown={() => onChoose(index)}
           >
-            <label class={`tk-field tk-stop-position${movedHere ? " is-changed" : ""}`} data-tk-tip="Position" data-tk-mark={movedHere ? "fill" : undefined}>
+            <label class={`ht-field ht-stop-position${movedHere ? " is-changed" : ""}`} data-ht-tip="Position" data-ht-mark={movedHere ? "fill" : undefined}>
               <TextField
                 label={`Stop ${index + 1} at`}
                 value={`${s.position}${s.unit}`}
@@ -1684,8 +1684,8 @@ function GradientStops({ gradient, length, chosen, onChoose, onChange, variable 
                 onChange={({ position, unit }) => place(index, position, unit)}
               />
             </label>
-            <div class={`tk-field tk-color-field${coloredHere ? " is-changed" : ""}`} data-tk-mark={coloredHere ? "fill" : undefined}>
-              <button type="button" class="tk-swatch tk-swatch-button" aria-label={`Choose stop ${index + 1}`} style={{ "--tk-swatch": cssColor(s) }} onClick={() => onChoose(index)} />
+            <div class={`ht-field ht-color-field${coloredHere ? " is-changed" : ""}`} data-ht-mark={coloredHere ? "fill" : undefined}>
+              <button type="button" class="ht-swatch ht-swatch-button" aria-label={`Choose stop ${index + 1}`} style={{ "--ht-swatch": cssColor(s) }} onClick={() => onChoose(index)} />
               <ColorValue
                 name={`Stop ${index + 1}`}
                 color={s}
@@ -1760,13 +1760,13 @@ function weightsOf(weight: Stroke["weight"]): [number, number, number, number] {
 
 /**
  * A choice of a property, or of `part` of one: in the accent when it is changed in this round, with its reset, as a changed field is.
- * `class`: `tk-wide`, as wide as its place (a font's weight); `tk-font-field`, the font's, with "Aa" before its name (designer, 2026-11-08).
+ * `class`: `ht-wide`, as wide as its place (a font's weight); `ht-font-field`, the font's, with "Aa" before its name (designer, 2026-11-08).
  */
 function MarkedSelect({ label, property, part, class: className, children }: { label: string; property: Property; part?: ValuePart; class?: string; children: ComponentChildren }) {
   const marks = useChangeMarks();
   const changed = marks.changed(property, part);
   return (
-    <span class={`tk-select-field${className ? ` ${className}` : ""}${changed ? " is-changed" : ""}`} data-tk-mark={changed ? property : undefined}>
+    <span class={`ht-select-field${className ? ` ${className}` : ""}${changed ? " is-changed" : ""}`} data-ht-mark={changed ? property : undefined}>
       {children}
       {changed && <ResetButton label={label.toLowerCase()} onReset={() => marks.reset([property], part)} />}
     </span>
@@ -1815,21 +1815,21 @@ function StrokeSection({ stroke, onChange, update, variable }: {
         part,
       }));
   return (
-    <section class="tk-section" role="group" aria-label="Stroke">
-      <div class="tk-section-header">
-        <h3 class="tk-section-title">Stroke</h3>
+    <section class="ht-section" role="group" aria-label="Stroke">
+      <div class="ht-section-header">
+        <h3 class="ht-section-title">Stroke</h3>
         <SectionReset title="Stroke" properties={["stroke"]} operations={operations} />
         {!stroke && (
-          <button type="button" class="tk-icon-button" aria-label="Add stroke" onClick={() => onChange(NEW_STROKE)}>
+          <button type="button" class="ht-icon-button" aria-label="Add stroke" onClick={() => onChange(NEW_STROKE)}>
             <Icon name="plus" />
           </button>
         )}
       </div>
       <ChangeMarksProvider value={added ? NO_MARKS : marks}>
       {stroke && (
-        <div class="tk-row tk-paint-row">
+        <div class="ht-row ht-paint-row">
           {stroke === MIXED ? (
-            <span class="tk-field tk-mixed">Mixed</span>
+            <span class="ht-field ht-mixed">Mixed</span>
           ) : (
             <ColorField
               name="Stroke"
@@ -1844,7 +1844,7 @@ function StrokeSection({ stroke, onChange, update, variable }: {
         </div>
       )}
       {stroke && stroke !== MIXED && (
-        <div class="tk-row tk-joined">
+        <div class="ht-row ht-joined">
           {sides !== "custom" && (
             <NumberField
               label="Stroke weight"
@@ -1863,7 +1863,7 @@ function StrokeSection({ stroke, onChange, update, variable }: {
           )}
           <MarkedSelect label="Stroke style" property="stroke" part={STROKE_PARTS.style}>
             <Select
-              class="tk-select"
+              class="ht-select"
               aria-label="Stroke style"
               value={stroke.style}
               onChange={(event) => onChange({ ...stroke, style: event.currentTarget.value as Stroke["style"] })}
@@ -1874,7 +1874,7 @@ function StrokeSection({ stroke, onChange, update, variable }: {
           </MarkedSelect>
           <MarkedSelect label="Stroke sides" property="stroke" part={STROKE_PARTS.sides}>
             <Select
-              class="tk-select"
+              class="ht-select"
               aria-label="Stroke sides"
               value={String(sides)}
               onChange={(event) => {
@@ -1901,7 +1901,7 @@ function StrokeSection({ stroke, onChange, update, variable }: {
         </div>
       )}
       {stroke && stroke !== MIXED && sides === "custom" && (
-        <div class="tk-grid-2" role="group" aria-label="Stroke weight per side">
+        <div class="ht-grid-2" role="group" aria-label="Stroke weight per side">
           {SIDE_NAMES.map((name, i) => {
             const weights = typeof stroke.weight === "number" ? [stroke.weight, stroke.weight, stroke.weight, stroke.weight] : stroke.weight;
             return (
@@ -2033,7 +2033,7 @@ const EFFECT_TYPES: { type: EffectType; label: string }[] = [
  */
 function FoldButton({ label, open, onToggle }: { label: string; open: boolean; onToggle(): void }) {
   return (
-    <button type="button" class="tk-fold" aria-label={label} aria-expanded={open} onClick={onToggle}>
+    <button type="button" class="ht-fold" aria-label={label} aria-expanded={open} onClick={onToggle}>
       <Icon name="chevron-down" />
     </button>
   );
@@ -2078,18 +2078,18 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
    */
   const foldAway = (name: string) => {
     const section = sectionEl.current;
-    const group = [...(section?.children ?? [])].find((el): el is HTMLElement => el.classList.contains("tk-effect") && el.getAttribute("aria-label") === name);
+    const group = [...(section?.children ?? [])].find((el): el is HTMLElement => el.classList.contains("ht-effect") && el.getAttribute("aria-label") === name);
     const details = group ? ([...group.children].slice(1) as HTMLElement[]) : [];
     if (!section || !group || !details.length) return;
     const first = details[0];
     const last = details[details.length - 1];
     const copies = document.createElement("div");
-    copies.className = "tk-effect-fold";
+    copies.className = "ht-effect-fold";
     copies.setAttribute("aria-hidden", "true");
     copies.inert = true;
     Object.assign(copies.style, { top: `${first.offsetTop}px`, height: `${last.offsetTop + last.offsetHeight - first.offsetTop}px`, width: `${group.offsetWidth}px` });
     const inner = copies.appendChild(document.createElement("div"));
-    inner.className = "tk-effect";
+    inner.className = "ht-effect";
     for (const el of details) {
       const copy = el.cloneNode(true) as HTMLElement;
       // A field's value is its property, not its attribute: the copy shows what the field did.
@@ -2230,7 +2230,7 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
     }
   };
   const typeSelect = (label: string, from: EffectType, onChange: (type: EffectType) => void) => (
-    <Select class="tk-select tk-effect-type" aria-label={label} value={from} onChange={(event) => onChange(event.currentTarget.value as EffectType)}>
+    <Select class="ht-select ht-effect-type" aria-label={label} value={from} onChange={(event) => onChange(event.currentTarget.value as EffectType)}>
       {/* Text draws drop shadows only. */}
       {EFFECT_TYPES.filter(({ type }) => !withText || type === "drop" || type === from).map(({ type, label }) => (
         <option key={type} value={type} disabled={!canBecome(type, from)}>
@@ -2272,8 +2272,8 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
     const addedHere = marks.added(property);
     const details = fold(label);
     return (
-      <div class="tk-effect" key={property} role="group" aria-label={label}>
-        <div class="tk-row tk-paint-row">
+      <div class="ht-effect" key={property} role="group" aria-label={label}>
+        <div class="ht-row ht-paint-row">
           {details.button}
           {typeSelect(`${label} type`, property, (type) => retypeBlur(property, type))}
           <RemoveButton
@@ -2291,9 +2291,9 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
     );
   };
   return (
-    <section ref={sectionEl} class="tk-section" role="group" aria-label="Effects">
-      <div class="tk-section-header">
-        <h3 class="tk-section-title">Effects</h3>
+    <section ref={sectionEl} class="ht-section" role="group" aria-label="Effects">
+      <div class="ht-section-header">
+        <h3 class="ht-section-title">Effects</h3>
         <SectionReset title="Effects" properties={["shadows", "layerBlur", "backgroundBlur"]} operations={operations} />
         <MenuButton label="Add effect" icon="plus" items={addable} onChoose={add} />
       </div>
@@ -2301,9 +2301,9 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
         // A shadow Variable stands for the shadows, as an effect style does in Figma.
         <VariableSlot label="Shadow" slot={variable} property="shadows">{null}</VariableSlot>
       ) : shadows === MIXED ? (
-        <div class="tk-row">
-          <span class="tk-field tk-mixed">Mixed shadows</span>
-          <button type="button" class="tk-icon-button" aria-label="Remove shadows" onClick={() => set("shadows")([])}>
+        <div class="ht-row">
+          <span class="ht-field ht-mixed">Mixed shadows</span>
+          <button type="button" class="ht-icon-button" aria-label="Remove shadows" onClick={() => set("shadows")([])}>
             <Icon name="minus" />
           </button>
         </div>
@@ -2326,11 +2326,11 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
           return [
             ...placedAt(i).map(blurEffect),
             // Rows made again when a shadow comes or goes: a drag that took a shadow off ends there, and does not go on in the next one.
-            <div class="tk-effect" key={`${shadows.length}:${i}`} role="group" aria-label={name}>
+            <div class="ht-effect" key={`${shadows.length}:${i}`} role="group" aria-label={name}>
               <ChangeMarksProvider value={added[i] ? NO_MARKS : marks}>
-              <div class="tk-row tk-paint-row">
+              <div class="ht-row ht-paint-row">
                 {details.button}
-                <MarkedSelect label={`${name} type`} property="shadows" part={shadowPart(i, "type")} class="tk-effect-type-field">
+                <MarkedSelect label={`${name} type`} property="shadows" part={shadowPart(i, "type")} class="ht-effect-type-field">
                   {typeSelect(`${name} type`, s.type, (type) => retypeShadow(i, type))}
                 </MarkedSelect>
                 <RemoveButton
@@ -2345,7 +2345,7 @@ function EffectsSection({ shadows, layerBlur, backgroundBlur, withText, variable
               </div>
               {details.open && (
                 <>
-                  <div class="tk-grid-2">
+                  <div class="ht-grid-2">
                     {/* Words, not icons: X, Y, Blur and Spread read more plainly so, as a place's X and Y do (designer, 2026-11-07). */}
                     {lengthField("x", "X", "X")}
                     {lengthField("y", "Y", "Y")}
@@ -2400,23 +2400,23 @@ function ColorField({ name, color, onChange, variable, top, shown, onPicker, pro
   /** Typed as hex: its opacity in a field of its own, joined to it, as the designer drew it (2026-11-07). */
   const typed = !shown && !offered?.bound;
   return (
-    <div class={`tk-color-row${changed ? " is-changed" : ""}`} data-tk-mark={changed ? property : undefined} {...typedIn.handlers}>
+    <div class={`ht-color-row${changed ? " is-changed" : ""}`} data-ht-mark={changed ? property : undefined} {...typedIn.handlers}>
       {/* One reset takes the color and its opacity back together (a gradient, all of it): at the row's left, outside the fields, both marked with none of their own (designer, 2026-11-08). */}
       {changed && <ResetButton label={name.toLowerCase()} onReset={() => marks.reset([property!], part)} />}
-      <div class={`tk-field tk-color-field${typed ? " is-joined" : ""}${changed ? " is-changed" : ""}`}>
+      <div class={`ht-field ht-color-field${typed ? " is-joined" : ""}${changed ? " is-changed" : ""}`}>
         <button
           type="button"
-          class="tk-swatch tk-swatch-button"
+          class="ht-swatch ht-swatch-button"
           aria-label={`${name} color picker`}
           aria-haspopup="dialog"
-          style={{ "--tk-swatch": shown?.swatch ?? cssColor(color) }}
+          style={{ "--ht-swatch": shown?.swatch ?? cssColor(color) }}
           onClick={toggle}
         />
-        {shown ? <span class="tk-read-only">{shown.text}</span> : <ColorValue name={name} color={color} onChange={onChange} offered={offered} onOpen={toggle} />}
+        {shown ? <span class="ht-read-only">{shown.text}</span> : <ColorValue name={name} color={color} onChange={onChange} offered={offered} onOpen={toggle} />}
         <ColorPicker label={name} anchor={open} slot={offered} top={top} custom={<ColorPanel color={color} onChange={onChange} />} onClose={() => setOpen(null)} />
       </div>
       {typed && (
-        <label class={`tk-field tk-color-opacity${changed ? " is-changed" : ""}`}>
+        <label class={`ht-field ht-color-opacity${changed ? " is-changed" : ""}`}>
           <TextField
             label={`${name} opacity`}
             value={`${Math.round(color.opacity * 100)}%`}
@@ -2450,10 +2450,10 @@ function ColorValue({ name, color, onChange, offered, onOpen }: {
   if (offered?.bound) {
     return (
       <>
-        <button type="button" class="tk-variable-chip-name" aria-label={`${name} color variable`} aria-haspopup="dialog" data-tk-tip={`${offered.bound.name}: ${offered.bound.value}`} onClick={onOpen}>
+        <button type="button" class="ht-variable-chip-name" aria-label={`${name} color variable`} aria-haspopup="dialog" data-ht-tip={`${offered.bound.name}: ${offered.bound.value}`} onClick={onOpen}>
           {offered.bound.name}
         </button>
-        <button type="button" class="tk-icon-button" aria-label={`Detach ${lower} color variable`} data-tk-tip="Detach variable" data-tk-in-code={offered.inCode ? "" : undefined} onClick={() => offered.onPick(null)}>
+        <button type="button" class="ht-icon-button" aria-label={`Detach ${lower} color variable`} data-ht-tip="Detach variable" data-ht-in-code={offered.inCode ? "" : undefined} onClick={() => offered.onPick(null)}>
           <Icon name="detach" />
         </button>
       </>
@@ -2528,7 +2528,7 @@ export function NumberField({ label, icon, glyph, small, value, unit = "", min =
   const marks = useChangeMarks();
   const changed = !!property && marks.changed(property, part);
   return (
-    <label class={`tk-field${changed ? " is-changed" : ""}`} data-tk-tip={label} data-tk-mark={changed ? property : undefined}>
+    <label class={`ht-field${changed ? " is-changed" : ""}`} data-ht-tip={label} data-ht-mark={changed ? property : undefined}>
       <Scrub icon={icon} glyph={glyph} small={small} value={value} min={min} onChange={onChange} />
       <TextField
         label={label}
@@ -2656,11 +2656,11 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
     Promise.resolve(handle.requestPointerLock()).catch(() => {}); // Without the lock, the drag still works.
     // Until it is let go, no key edits: the next move would set again a value undone (ADR 0012).
     holdPointer(event.pointerId);
-    const field = handle.closest(".tk-field");
+    const field = handle.closest(".ht-field");
     // Held, the field is the one chosen: its darker ground and accent edge, till let go (designer, 2026-11-08).
     field?.setAttribute("data-scrubbing", "");
     // Its grip sways as it is dragged, by either end; with reduced motion, it stays still.
-    const g = prefersReducedMotion() ? null : (field?.querySelector<HTMLElement>(".tk-grip") ?? null);
+    const g = prefersReducedMotion() ? null : (field?.querySelector<HTMLElement>(".ht-grip") ?? null);
     if (g) g.style.transition = "";
     drag.current = { pointerId: event.pointerId, value: value ?? 0, rest: 0, moved: false, field, grip: g };
     cancelAnimationFrame(sway.current.frame);
@@ -2695,7 +2695,7 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
 
   return (
     <span
-      class={grip ? "tk-scrub-grip" : "tk-scrub"}
+      class={grip ? "ht-scrub-grip" : "ht-scrub"}
       aria-hidden="true"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -2705,7 +2705,7 @@ function Scrub({ icon, glyph, small, grip, value, min, max = Infinity, onChange 
       // A click on the icon is not a click on the field's label: it does not start typing.
       onClick={(event) => event.preventDefault()}
     >
-      {grip ? <span class="tk-grip" /> : icon ? <Icon name={icon} /> : <span class={small ? "tk-glyph is-small" : "tk-glyph"}>{glyph}</span>}
+      {grip ? <span class="ht-grip" /> : icon ? <Icon name={icon} /> : <span class={small ? "ht-glyph is-small" : "ht-glyph"}>{glyph}</span>}
     </span>
   );
 }
@@ -2780,11 +2780,11 @@ export function TextField<T>({ label, class: className, value, placeholder, pars
     <input
       ref={input}
       type="text"
-      class={`tk-input${className ? ` ${className}` : ""}${rolls ? " tk-number" : ""}${roll.shown ? " is-rolled" : ""}`}
+      class={`ht-input${className ? ` ${className}` : ""}${rolls ? " ht-number" : ""}${roll.shown ? " is-rolled" : ""}`}
       aria-label={label}
       {...typeahead.input}
       // Something typed, not yet applied: ⌘Z is the field's own until then.
-      data-tk-typing={draft !== null && draft !== value ? "" : undefined}
+      data-ht-typing={draft !== null && draft !== value ? "" : undefined}
       placeholder={placeholder}
       spellcheck={false}
       autocomplete="off"
@@ -2840,7 +2840,7 @@ function useRoll(rolls: boolean, value: string, input: { current: HTMLInputEleme
     was.current = value;
     if (!rolls || before === value) return;
     const el = input.current;
-    const field = el?.closest(".tk-field");
+    const field = el?.closest(".ht-field");
     const scrubbedOrReset = !!field?.hasAttribute("data-scrubbing") || resetJustClicked();
     const [older, newer] = [rolledNumber(before), rolledNumber(value)];
     if (!el || !scrubbedOrReset || draft.current !== null || el.matches(":focus") || older === null || newer === null || older === newer) return void stop();
@@ -2848,7 +2848,7 @@ function useRoll(rolls: boolean, value: string, input: { current: HTMLInputEleme
     clearTimeout(settle.current);
     // Gone once the last digit has settled (40ms past its roll, a frame or two to spare), but not while the field is still held, so the
     // overlay is not taken down and put up again between steps: the next step rolls on from where it is (the agent's, to confirm).
-    const rolling = () => !!field?.querySelector(":scope > .tk-roll")?.getAnimations({ subtree: true }).some((anim) => anim.playState === "running");
+    const rolling = () => !!field?.querySelector(":scope > .ht-roll")?.getAnimations({ subtree: true }).some((anim) => anim.playState === "running");
     const later = () => {
       settle.current = setTimeout(() => (field?.hasAttribute("data-scrubbing") || rolling() ? later() : setShown(null)), DIGIT_ROLL_MS + 40);
     };
@@ -2892,7 +2892,7 @@ function DigitRoll({ input, from, to, up }: { input: HTMLInputElement; from: str
   /** A new place, at the text's start. */
   const place = (): Cell => {
     const cell: Cell = { el: document.createElement("span"), char: "", glyph: null };
-    cell.el.className = "tk-roll-cell";
+    cell.el.className = "ht-roll-cell";
     root.current!.prepend(cell.el);
     cells.current.push(cell);
     return cell;
@@ -2939,13 +2939,13 @@ function DigitRoll({ input, from, to, up }: { input: HTMLInputElement; from: str
     }
   }, [to]);
 
-  return <span ref={root} class="tk-roll" aria-hidden="true" />;
+  return <span ref={root} class="ht-roll" aria-hidden="true" />;
 }
 
 /** A digit's own element, in its place. */
 function glyphIn(cell: Cell, char: string): HTMLSpanElement {
   const el = document.createElement("span");
-  el.className = "tk-roll-glyph";
+  el.className = "ht-roll-glyph";
   el.textContent = char;
   cell.el.append(el);
   return el;

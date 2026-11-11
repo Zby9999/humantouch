@@ -46,7 +46,7 @@ export function parseWidth(text: string | null): number | null {
   return n > 0 ? n : null;
 }
 
-const KEYS: Record<Panel, string> = { layers: "03kind:layers-width", design: "03kind:design-width" };
+const KEYS: Record<Panel, string> = { layers: "humantouch:layers-width", design: "humantouch:design-width" };
 
 /** The widths this viewer set last, or the defaults. */
 export function readWidths(): Widths {

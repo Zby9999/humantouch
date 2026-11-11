@@ -490,8 +490,8 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
                 {listed.length > 0 && (
                   <button
                     type="button"
-                    class="tk-count"
-                    data-tk-changes-opener=""
+                    class="ht-count"
+                    data-ht-changes-opener=""
                     aria-label={`${listed.length} ${listed.length === 1 ? "change" : "changes"} not applied yet`}
                     aria-haspopup="dialog"
                     aria-expanded={listOpen}
@@ -502,9 +502,9 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
                 )}
                 <button
                   type="button"
-                  class="tk-icon-button"
+                  class="ht-icon-button"
                   aria-label="Human Touch: back to preview mode"
-                  data-tk-tip="Back to preview mode"
+                  data-ht-tip="Back to preview mode"
                   onClick={(event) => switchMode(event.detail > 0)}
                 >
                   <Icon name="close" />

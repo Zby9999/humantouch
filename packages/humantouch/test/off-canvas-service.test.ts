@@ -18,7 +18,7 @@ const APP = `export function App() {
 let root: string;
 let service: Service;
 beforeEach(async () => {
-  root = mkdtempSync(join(tmpdir(), "03kind-off-canvas-"));
+  root = mkdtempSync(join(tmpdir(), "humantouch-off-canvas-"));
   mkdirSync(join(root, "src"));
   writeFileSync(join(root, "src/App.tsx"), APP);
   service = await startService({ root });

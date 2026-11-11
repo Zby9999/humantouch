@@ -11,7 +11,7 @@ import { REPORT_RULES } from "../src/report-form";
 let project: string;
 
 beforeEach(() => {
-  project = mkdtempSync(join(tmpdir(), "03kind-cli-"));
+  project = mkdtempSync(join(tmpdir(), "humantouch-cli-"));
 });
 afterEach(() => rmSync(project, { recursive: true, force: true }));
 
@@ -1895,10 +1895,10 @@ describe("claim, layers off the canvas put back", () => {
   const title = { ...list, loc: "src/App.tsx:21:9", context: { path: ["Page", "App", "Stack", "Title"], element: '<h1 class="text-4xl font-bold">' } };
   const snippet = { loc: "src/App.tsx:21:9", code: '<h1 className="text-4xl font-bold">\n  Human Touch\n</h1>' };
   const look =
-    '<!DOCTYPE html><html><head><style data-tk-edit-styles="order">@layer third-kind-edits;</style><style data-tk-look-styles="base">html,body{margin:0}</style>' +
-    '<style data-tk-look-styles="">@import url("http://localhost:5173/src/index.css") layer(page);@font-face{font-family:"Inter";src:url("data:font/woff2;base64,AAAA")}' +
-    '@font-face { font-family: "Space Grotesk"; src: url("http://localhost:5173/space-grotesk.woff2") format("woff2"); }[data-tk-look="0"]{font-size:36px;font-weight:700}</style></head>' +
-    '<body><h1 data-tk-loc="src/App.tsx:21:9" data-tk-class="text-4xl font-bold" data-tk-look="0">Human Touch</h1></body></html>';
+    '<!DOCTYPE html><html><head><style data-ht-edit-styles="order">@layer human-touch-edits;</style><style data-ht-look-styles="base">html,body{margin:0}</style>' +
+    '<style data-ht-look-styles="">@import url("http://localhost:5173/src/index.css") layer(page);@font-face{font-family:"Inter";src:url("data:font/woff2;base64,AAAA")}' +
+    '@font-face { font-family: "Space Grotesk"; src: url("http://localhost:5173/space-grotesk.woff2") format("woff2"); }[data-ht-look="0"]{font-size:36px;font-weight:700}</style></head>' +
+    '<body><h1 data-ht-loc="src/App.tsx:21:9" data-ht-class="text-4xl font-bold" data-ht-look="0">Human Touch</h1></body></html>';
   const opacity = { ...redFill, id: 1, layer: "1", target: { ...title, context: { path: ["Title"], element: '<h1 class="text-4xl font-bold">' } }, property: "opacity", before: 1, after: 0.5, style: { opacity: "0.5" } };
   const kept = (more: object = {}) => ({
     id: "a1",
@@ -1923,9 +1923,9 @@ describe("claim, layers off the canvas put back", () => {
     );
     expect(output).toContain("- **Source**, as written at `src/App.tsx:21:9` when it was moved off the canvas:\n\n  ```tsx\n  <h1 className=\"text-4xl font-bold\">\n    Human Touch\n  </h1>\n  ```\n");
     expect(output).toContain("- **Look**, as it was off the canvas, every style it had written onto it");
-    expect(output).toContain('[data-tk-look="0"]{font-size:36px;font-weight:700}');
+    expect(output).toContain('[data-ht-look="0"]{font-size:36px;font-weight:700}');
     // Not the page's stylesheets and fonts, which it only loaded from.
-    expect(output).not.toMatch(/@import|@font-face|base64|third-kind-edits;|margin:0/);
+    expect(output).not.toMatch(/@import|@font-face|base64|human-touch-edits;|margin:0/);
     expect(output).toContain("- **Reference style:** none: it is to look as its look shows\n");
     expect(output).toContain("- **Edited off the canvas:** give it these too, as the designer made them there:\n  - Opacity of Title (`<h1 class=\"text-4xl font-bold\">`): Change the opacity from 100% to 50%.\n");
   });
@@ -3276,7 +3276,7 @@ async function describeClaimOf(changeSet: { changes: object[] }) {
 /** What `claim` gives for a round of these changes alone, in another project. */
 async function describeOnly(...changes: object[]) {
   const other = project;
-  project = mkdtempSync(join(tmpdir(), "03kind-cli-"));
+  project = mkdtempSync(join(tmpdir(), "humantouch-cli-"));
   try {
     saveRound(...changes);
     return await cli("claim");
@@ -3435,7 +3435,7 @@ describe("claim, a round saved before the instances of a layer shared their edit
 
     expect(code).toBe(0);
     // Written once, by the code of then: never over the one kept.
-    if (process.env.TK_WRITE_FIXTURE && !existsSync(join(FIXTURE, "claim.md"))) writeFileSync(join(FIXTURE, "claim.md"), output);
+    if (process.env.HT_WRITE_FIXTURE && !existsSync(join(FIXTURE, "claim.md"))) writeFileSync(join(FIXTURE, "claim.md"), output);
     // What goes around the changes, the way through the round and how to write them, is of the notes of now (ticket 65).
     expect(changeSections(output)).toBe(changeSections(readFileSync(join(FIXTURE, "claim.md"), "utf8")));
   });

@@ -43,19 +43,19 @@ html { scrollbar-width: none !important; }
 `;
 
 /** Marks what the canvas shows in place of content it cannot copy: `video`, `iframe`. */
-export const FROZEN = "data-tk-frozen";
+export const FROZEN = "data-ht-frozen";
 /** On the canvas's own style element: added to every canvas, never saved with it. */
-const CANVAS_STYLES_ATTR = "data-tk-canvas-styles";
+const CANVAS_STYLES_ATTR = "data-ht-canvas-styles";
 /** An element scrolled when the page was frozen: `left top`. */
-const SCROLL_ATTR = "data-tk-scroll";
+const SCROLL_ATTR = "data-ht-scroll";
 /** An element in the top layer when the page was frozen: `modal` or `popover`. */
-const TOP_LAYER_ATTR = "data-tk-top-layer";
+const TOP_LAYER_ATTR = "data-ht-top-layer";
 /** On a saved canvas: its pixels, as a data URL. */
-const PIXELS_ATTR = "data-tk-pixels";
+const PIXELS_ATTR = "data-ht-pixels";
 /** On a saved canvas's root: its size and scroll, as JSON. */
-const LAYOUT_ATTR = "data-tk-layout";
+const LAYOUT_ATTR = "data-ht-layout";
 /** On the canvas's root: the address of the page it was frozen from, its path and query. */
-export const PAGE_ATTR = "data-tk-page";
+export const PAGE_ATTR = "data-ht-page";
 
 /** How long to wait at most for the copy's fonts and cross-origin stylesheets. */
 const SETTLE_TIMEOUT_MS = 500;

@@ -35,7 +35,7 @@ describe("the JSX at a location", () => {
 describe("the snippet at a location in the project", () => {
   let root: string;
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "03kind-snippet-"));
+    root = mkdtempSync(join(tmpdir(), "humantouch-snippet-"));
     mkdirSync(join(root, "src"));
     writeFileSync(join(root, "src/App.tsx"), APP);
   });

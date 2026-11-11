@@ -30,7 +30,7 @@ const onCanvas = (round: Change[]) => placedOnCanvas(round, "");
 /** Usage chains as the freezer writes them onto the canvas. */
 const APP = [{ component: "App", usage: null, thirdParty: false }];
 const cardAt = (usage: string) => [{ component: "Card", usage, thirdParty: false }, ...APP];
-const chain = (levels: object[]) => `data-tk-chain='${JSON.stringify(levels)}'`;
+const chain = (levels: object[]) => `data-ht-chain='${JSON.stringify(levels)}'`;
 
 /**
  * A fixed canvas: three cards from one usage (a loop), one card from phoneFrame
@@ -39,18 +39,18 @@ const chain = (levels: object[]) => `data-tk-chain='${JSON.stringify(levels)}'`;
 const BADGE = [{ component: "Badge", usage: "src/App.tsx:10:5", thirdParty: true }, ...APP];
 const PAGE = `<!DOCTYPE html>
 <body style="margin: 0">
-  <main data-tk-loc="src/App.tsx:4:5" ${chain(APP)} style="display: grid; grid-template-columns: repeat(4, 100px); gap: 8px">
+  <main data-ht-loc="src/App.tsx:4:5" ${chain(APP)} style="display: grid; grid-template-columns: repeat(4, 100px); gap: 8px">
     ${[1, 2, 3]
       .map(
-        (n) => `<article data-tk-loc="src/Card.tsx:3:5" ${chain(cardAt("src/App.tsx:6:9"))}
+        (n) => `<article data-ht-loc="src/Card.tsx:3:5" ${chain(cardAt("src/App.tsx:6:9"))}
           style="height: 80px; background-color: rgb(255, 255, 255); border-radius: 12px">
-          <h3 data-tk-loc="src/Card.tsx:4:7" ${chain(cardAt("src/App.tsx:6:9"))}>Card ${n}</h3>
+          <h3 data-ht-loc="src/Card.tsx:4:7" ${chain(cardAt("src/App.tsx:6:9"))}>Card ${n}</h3>
         </article>`,
       )
       .join("")}
-    <article data-tk-loc="src/Card.tsx:3:5" ${chain(cardAt("src/App.tsx:8:7"))}
+    <article data-ht-loc="src/Card.tsx:3:5" ${chain(cardAt("src/App.tsx:8:7"))}
       style="height: 80px; background-color: rgb(255, 255, 255); border-radius: 12px">
-      <h3 data-tk-loc="src/Card.tsx:4:7" ${chain(cardAt("src/App.tsx:8:7"))}>Your turn</h3>
+      <h3 data-ht-loc="src/Card.tsx:4:7" ${chain(cardAt("src/App.tsx:8:7"))}>Your turn</h3>
     </article>
     <span ${chain(BADGE)} style="display: block; background-color: rgb(0, 128, 0); border-radius: 4px"><b ${chain(BADGE)}>Beta</b></span>
   </main>
@@ -819,7 +819,7 @@ describe("text", () => {
       expect(editor.read(text(id), property)).toEqual(value);
       const css = property === "lineHeight" ? "line-height" : "letter-spacing";
       // The reference style is what the canvas shows.
-      const change = changes.list().find((c) => c.layer === text(id).el.getAttribute("data-tk-layer") && c.property === property)!;
+      const change = changes.list().find((c) => c.layer === text(id).el.getAttribute("data-ht-layer") && c.property === property)!;
       expect(change.style).toEqual({ [css]: declaredByEdit(doc.getElementById(id)!, css) });
       return change.style[css];
     };
@@ -1450,7 +1450,7 @@ describe("taking a change back from a saved round, with no canvas open", () => {
     const twice = revertSaved(once, fill.id)!;
     const back = [...parse(twice.canvas).querySelectorAll("article")].slice(0, 3);
     expect(back.map((card) => card.getAttribute("style"))).toEqual(before.slice(0, 3));
-    expect(back.map((card) => card.hasAttribute("data-tk-style"))).toEqual([false, false, false]);
+    expect(back.map((card) => card.hasAttribute("data-ht-style"))).toEqual([false, false, false]);
     expect(twice.changeSet.lastId).toBe(3);
   });
 
@@ -1564,12 +1564,12 @@ const STYLED_PAGE = `<!DOCTYPE html>
 </style>
 <style media="print">button { background: black; }</style>
 <body style="margin: 0">
-  <main data-tk-loc="src/App.tsx:4:5" ${chain(APP)} style="display: flex; flex-direction: column; gap: 8px">
-    <article data-tk-loc="src/Card.tsx:3:5" class="card bg-white rounded-xl" style="height: 40px"></article>
-    <button data-tk-loc="src/App.tsx:9:7" class="bg-white rounded-xl" style="display: flex; height: 40px"></button>
-    <section data-tk-loc="src/App.tsx:12:7" class="rounded-sm wide" style="height: 40px; border-radius: 8px"></section>
-    <div data-tk-loc="src/App.tsx:14:7" style="display: flex; height: 40px"></div>
-    <aside data-tk-loc="src/App.tsx:16:7" class="nested-state" style="display: flex; height: 40px"></aside>
+  <main data-ht-loc="src/App.tsx:4:5" ${chain(APP)} style="display: flex; flex-direction: column; gap: 8px">
+    <article data-ht-loc="src/Card.tsx:3:5" class="card bg-white rounded-xl" style="height: 40px"></article>
+    <button data-ht-loc="src/App.tsx:9:7" class="bg-white rounded-xl" style="display: flex; height: 40px"></button>
+    <section data-ht-loc="src/App.tsx:12:7" class="rounded-sm wide" style="height: 40px; border-radius: 8px"></section>
+    <div data-ht-loc="src/App.tsx:14:7" style="display: flex; height: 40px"></div>
+    <aside data-ht-loc="src/App.tsx:16:7" class="nested-state" style="display: flex; height: 40px"></aside>
   </main>
 </body>`;
 
@@ -1696,7 +1696,7 @@ const LAYOUT = `<!DOCTYPE html>
   <div id="frame" style="position: relative; width: 300px; height: 200px">
     <div id="badge" style="position: absolute; left: 12px; top: 8px; width: 30px; height: 20px"></div>
   </div>
-  <div id="pinned" data-tk-pinned="top left bottom right width height" data-tk-pin-offset="0 250"
+  <div id="pinned" data-ht-pinned="top left bottom right width height" data-ht-pin-offset="0 250"
     style="position: fixed; top: 300px !important; left: 20px !important; bottom: auto !important; right: auto !important; width: 50px !important; height: 10px !important"></div>
 </body>`;
 
@@ -2004,7 +2004,7 @@ describe("several layers at once", () => {
  * Moves: a vertical Stack of three, a horizontal Stack of one, an empty
  * Frame, and a paragraph with loose text beside an element.
  */
-const at = (loc: string) => `data-tk-loc="src/App.tsx:${loc}" ${chain(APP)}`;
+const at = (loc: string) => `data-ht-loc="src/App.tsx:${loc}" ${chain(APP)}`;
 const MOVES = `<!DOCTYPE html>
 <body style="margin: 0">
   <div id="list" ${at("5:5")} style="display: flex; flex-direction: column; gap: 10px; width: 200px">
@@ -2131,7 +2131,7 @@ describe("moving layers", () => {
   });
 
   test("an instance a loop renders, moved among its siblings, is a change to the data the loop goes through", () => {
-    const item = `data-tk-loc="src/Item.tsx:2:3" ${chain([{ component: "Item", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP])}`;
+    const item = `data-ht-loc="src/Item.tsx:2:3" ${chain([{ component: "Item", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP])}`;
     const { doc, editor, changes, layer } = open(`<!DOCTYPE html>
       <ul id="list" ${at("5:5")} style="display: flex; flex-direction: column">
         <li ${item}>One</li><li ${item}>Two</li><li ${item}>Three</li>
@@ -2186,7 +2186,7 @@ describe("moves, taken back in any order", () => {
   });
 
   test("two instances a loop renders, moved one after the other, are two changes", () => {
-    const item = `data-tk-loc="src/Item.tsx:2:3" ${chain([{ component: "Item", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP])}`;
+    const item = `data-ht-loc="src/Item.tsx:2:3" ${chain([{ component: "Item", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP])}`;
     const { doc, editor, changes, layer } = open(`<!DOCTYPE html>
       <ul id="list" ${at("5:5")} style="display: flex; flex-direction: column">
         <li ${item}>One</li><li ${item}>Two</li><li ${item}>Three</li>
@@ -2224,7 +2224,7 @@ describe("moves, taken back in any order", () => {
   });
 
   test("a layer the freezer pinned to the window stays in its container", () => {
-    const { doc, editor, layer } = open(MOVES.replace("<p id", `<div id="pinned" data-tk-pin-offset="0 250" style="position: fixed; top: 300px; left: 0; width: 20px; height: 20px"></div><p id`));
+    const { doc, editor, layer } = open(MOVES.replace("<p id", `<div id="pinned" data-ht-pin-offset="0 250" style="position: fixed; top: 300px; left: 0; width: 20px; height: 20px"></div><p id`));
 
     expect(editor.canDrop(layer("pinned"), layer("board"))).toBe(false);
     expect(editor.canDrop(layer("pinned"), find(editor.tree().root, (l) => l.el === doc.body)!)).toBe(true);
@@ -2596,7 +2596,7 @@ describe("making a Stack", () => {
     const [change] = changes.list();
     expect(change).toMatchObject({
       kind: "stack",
-      layer: stack.el.getAttribute("data-tk-layer"),
+      layer: stack.el.getAttribute("data-ht-layer"),
       property: "stack",
       target: { loc: "src/App.tsx:20:5" },
       before: null,
@@ -2793,7 +2793,7 @@ describe("making a Stack", () => {
     const { doc, editor, changes, layer } = opened;
     const stack = editor.stack([layer("a"), layer("b")]);
     editor.set(stack, "gap", 4);
-    const id = stack.el.getAttribute("data-tk-layer");
+    const id = stack.el.getAttribute("data-ht-layer");
     expect(changes.list()[1]).toMatchObject({ property: "gap", target: { loc: null, made: id, unlocated: false, context: { path: ["Page", "App", "Stack"] } } });
     const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
 
@@ -2898,7 +2898,7 @@ describe("dissolving a Stack", () => {
 
   test("only a Stack, with no text of its own beside its layers, nor instances a loop renders", () => {
     const { editor, layer } = open();
-    const item = `data-tk-loc="src/Item.tsx:2:3" ${chain([{ component: "Item", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP])}`;
+    const item = `data-ht-loc="src/Item.tsx:2:3" ${chain([{ component: "Item", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP])}`;
     const loop = openCanvas(`<!DOCTYPE html><ul id="list" ${at("5:5")} style="display: flex"><li ${item}>One</li><li ${item}>Two</li></ul>`);
     const text = openCanvas(`<!DOCTYPE html><button id="go" ${at("5:5")} style="display: flex">Go <span ${at("5:20")}>→</span></button>`);
 
@@ -2931,7 +2931,7 @@ describe("new text and Frames", () => {
     expect(changes.list()[0]).toMatchObject({
       kind: "create",
       property: "new",
-      layer: el.getAttribute("data-tk-layer"),
+      layer: el.getAttribute("data-ht-layer"),
       target: { loc: "src/App.tsx:5:5" },
       before: null,
       after: { type: "text", text: "Text", width: null, height: null, place: { container: { target: { loc: "src/App.tsx:5:5" } }, nth: 2, absolute: null } },
@@ -3011,7 +3011,7 @@ describe("new text and Frames", () => {
     expect(text.el.parentElement).toBe(doc.getElementById("list"));
     expect(editor.tree().layerOf(frame.el)).toBeNull();
     // The text is made where it is now: no move, and nothing of the Frame.
-    const list = doc.getElementById("list")!.getAttribute("data-tk-layer");
+    const list = doc.getElementById("list")!.getAttribute("data-ht-layer");
     expect(changes.list().map((c) => c.kind)).toEqual(["create"]);
     expect(changes.list()[0].after).toMatchObject({ type: "text", place: { container: { layer: list }, absolute: null } });
     expect(changes.list()[0].style.position).toBeUndefined();
@@ -3019,7 +3019,7 @@ describe("new text and Frames", () => {
     editor.undo();
     expect(text.el.parentElement).toBe(frame.el);
     expect(changes.list().map((c) => c.kind)).toEqual(["create", "create", "stack"]);
-    expect(changes.list().find((c) => c.layer === text.el.getAttribute("data-tk-layer"))!.after).toMatchObject({ place: { container: { layer: frame.el.getAttribute("data-tk-layer") } } });
+    expect(changes.list().find((c) => c.layer === text.el.getAttribute("data-ht-layer"))!.after).toMatchObject({ place: { container: { layer: frame.el.getAttribute("data-ht-layer") } } });
 
     editor.redo();
     expect(text.el.parentElement).toBe(doc.getElementById("list"));
@@ -3050,14 +3050,14 @@ describe("new text and Frames", () => {
 
     expect(editor.brief(editor.tree().layerOf(frame.el)!)).toBe("A pricing table with three plans");
     expect(editor.isNewFrame(editor.tree().layerOf(frame.el)!)).toBe(true);
-    expect(frame.el.getAttribute("data-tk-brief")).toBe("A pricing table with three plans");
+    expect(frame.el.getAttribute("data-ht-brief")).toBe("A pricing table with three plans");
     expect(changes.list()[0].after).toMatchObject({ type: "frame", brief: "A pricing table with three plans" });
-    expect(changes.list()[1]).toMatchObject({ kind: "create", target: { loc: null, made: frame.el.getAttribute("data-tk-layer") }, after: { type: "text", place: { absolute: { x: 10, y: 12 } } } });
+    expect(changes.list()[1]).toMatchObject({ kind: "create", target: { loc: null, made: frame.el.getAttribute("data-ht-layer") }, after: { type: "text", place: { absolute: { x: 10, y: 12 } } } });
     expect(text.el.parentElement).toBe(frame.el);
     const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
 
     editor.revert(changes.list()[0].id);
-    expect(doc.querySelectorAll("[data-tk-made]")).toHaveLength(0);
+    expect(doc.querySelectorAll("[data-ht-made]")).toHaveLength(0);
     expect(changes.list()).toEqual([]);
     editor.undo();
     expect(changes.list()).toHaveLength(2);
@@ -3075,7 +3075,7 @@ describe("new text and Frames", () => {
 
     const copy = editor.duplicate(editor.tree().layerOf(frame.el)!);
 
-    expect(copy.el.getAttribute("data-tk-brief")).toBe("A pricing table with three plans");
+    expect(copy.el.getAttribute("data-ht-brief")).toBe("A pricing table with three plans");
     expect(editor.brief(copy)).toBe("A pricing table with three plans");
     expect(changes.list().map((c) => c.kind)).toEqual(["create", "duplicate"]);
     expect(changes.list()[1].brief).toBe("A pricing table with three plans");
@@ -3083,9 +3083,9 @@ describe("new text and Frames", () => {
     editor.setBrief(copy, "A pricing table with two plans");
     const brief = changes.list()[2];
     expect(brief).toMatchObject({ kind: "brief", before: "A pricing table with three plans", after: "A pricing table with two plans" });
-    expect(copy.el.getAttribute("data-tk-brief")).toBe("A pricing table with two plans");
+    expect(copy.el.getAttribute("data-ht-brief")).toBe("A pricing table with two plans");
     // The Frame it copies keeps its own.
-    expect(frame.el.getAttribute("data-tk-brief")).toBe("A pricing table with three plans");
+    expect(frame.el.getAttribute("data-ht-brief")).toBe("A pricing table with three plans");
     const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
 
     editor.undo();
@@ -3093,15 +3093,15 @@ describe("new text and Frames", () => {
     expect(changes.list().map((c) => c.kind)).toEqual(["create", "duplicate"]);
     editor.redo();
     editor.revert(changes.list()[2].id);
-    expect(copy.el.getAttribute("data-tk-brief")).toBe("A pricing table with three plans");
+    expect(copy.el.getAttribute("data-ht-brief")).toBe("A pricing table with three plans");
     expect(changes.list().map((c) => c.kind)).toEqual(["create", "duplicate"]);
 
     const reverted = new DOMParser().parseFromString(revertSaved(saved, brief.id)!.canvas, "text/html");
-    expect(reverted.querySelector(`[data-tk-layer="${copy.el.getAttribute("data-tk-layer")}"]`)!.getAttribute("data-tk-brief")).toBe("A pricing table with three plans");
+    expect(reverted.querySelector(`[data-ht-layer="${copy.el.getAttribute("data-ht-layer")}"]`)!.getAttribute("data-ht-brief")).toBe("A pricing table with three plans");
 
     // Taken off the copy, it is a change still: the copy is not to be made by it.
     editor.setBrief(copy, "");
-    expect(copy.el.hasAttribute("data-tk-brief")).toBe(false);
+    expect(copy.el.hasAttribute("data-ht-brief")).toBe(false);
     expect(changes.list()[2]).toMatchObject({ kind: "brief", before: "A pricing table with three plans", after: "" });
   });
 
@@ -3122,7 +3122,7 @@ describe("a brief on any layer", () => {
     editor.setBrief(layerOf(cards[1]), "Bounce back harder when pressed");
 
     expect(editor.brief(layerOf(cards[0]))).toBe("Bounce back harder when pressed");
-    expect(cards.map((card) => card.getAttribute("data-tk-brief"))).toEqual([
+    expect(cards.map((card) => card.getAttribute("data-ht-brief"))).toEqual([
       "Bounce back harder when pressed",
       "Bounce back harder when pressed",
       "Bounce back harder when pressed",
@@ -3166,16 +3166,16 @@ describe("a brief on any layer", () => {
 
     editor.setBrief(card, "");
     expect(changes.list()).toEqual([]);
-    expect(cards.some((c) => c.hasAttribute("data-tk-brief"))).toBe(false);
+    expect(cards.some((c) => c.hasAttribute("data-ht-brief"))).toBe(false);
 
     expect(editor.undo().map((layer) => layer.el)).toEqual([cards[0]]);
     expect(editor.brief(card)).toBe("Bounce back harder when pressed");
-    expect(cards[2].getAttribute("data-tk-brief")).toBe("Bounce back harder when pressed");
+    expect(cards[2].getAttribute("data-ht-brief")).toBe("Bounce back harder when pressed");
     editor.undo();
     expect(editor.brief(card)).toBe("Bounce back harder");
     editor.undo();
     expect(changes.list()).toEqual([]);
-    expect(cards[1].hasAttribute("data-tk-brief")).toBe(false);
+    expect(cards[1].hasAttribute("data-ht-brief")).toBe(false);
     editor.redo();
     expect(editor.brief(card)).toBe("Bounce back harder");
 
@@ -3195,29 +3195,29 @@ describe("a brief on any layer", () => {
 
     expect(editor.revert(brief.id)!.el).toBe(cards[0]);
     expect(changes.list().map((change) => change.kind)).toEqual(["style"]);
-    expect(cards.some((c) => c.hasAttribute("data-tk-brief"))).toBe(false);
+    expect(cards.some((c) => c.hasAttribute("data-ht-brief"))).toBe(false);
     editor.undo();
     expect(editor.brief(layerOf(cards[0]))).toBe("Truncate the title past two lines");
 
     const reverted = revertSaved(saved, brief.id)!;
     expect(reverted.changeSet.changes.map((change) => change.kind)).toEqual(["style"]);
-    expect(new DOMParser().parseFromString(reverted.canvas, "text/html").querySelectorAll("[data-tk-brief]")).toHaveLength(0);
+    expect(new DOMParser().parseFromString(reverted.canvas, "text/html").querySelectorAll("[data-ht-brief]")).toHaveLength(0);
   });
 
   test("on a layer made this round, it goes with the change that made it; a copy of a layer that is there, with a brief, has none", () => {
     const { doc, editor, changes, cards, layerOf } = openCanvas();
     const copy = editor.duplicate(layerOf(cards[3]));
     editor.setBrief(copy, "A card for the newest plan");
-    expect(changes.list()[1]).toMatchObject({ kind: "brief", target: { made: copy.el.getAttribute("data-tk-layer") } });
+    expect(changes.list()[1]).toMatchObject({ kind: "brief", target: { made: copy.el.getAttribute("data-ht-layer") } });
 
     editor.setBrief(layerOf(cards[3]), "Bounce back harder");
     const again = editor.duplicate(editor.tree().layerOf(cards[3])!);
-    expect(again.el.hasAttribute("data-tk-brief")).toBe(false);
+    expect(again.el.hasAttribute("data-ht-brief")).toBe(false);
     expect(editor.brief(again)).toBe("");
 
     editor.revert(changes.list()[0].id);
     expect(changes.list().map((change) => change.kind)).toEqual(["brief", "duplicate"]);
-    expect(doc.querySelectorAll("[data-tk-brief]")).toHaveLength(1);
+    expect(doc.querySelectorAll("[data-ht-brief]")).toHaveLength(1);
   });
 
   test("the live page cannot check a brief: no value shows it", async () => {
@@ -3232,13 +3232,13 @@ describe("a brief on any layer", () => {
 
   test("loose text gets an element of its own to take a brief", () => {
     const { doc, editor, changes } = openCanvas(
-      `<!DOCTYPE html><body><p data-tk-loc="src/App.tsx:4:5" ${chain(APP)}>Hello <span data-tk-loc="src/App.tsx:4:14" ${chain(APP)} style="display: inline-block">pill</span> world</p></body>`,
+      `<!DOCTYPE html><body><p data-ht-loc="src/App.tsx:4:5" ${chain(APP)}>Hello <span data-ht-loc="src/App.tsx:4:14" ${chain(APP)} style="display: inline-block">pill</span> world</p></body>`,
     );
     const run = find(editor.tree().root, (l) => l.name === "Hello")!;
 
     const own = editor.setBrief(run, "Keep it on one line");
 
-    const span = doc.querySelector("[data-tk-brief]")!;
+    const span = doc.querySelector("[data-ht-brief]")!;
     expect(own.el).toBe(span);
     expect(span.localName).toBe("span");
     expect(span.textContent!.trim()).toBe("Hello");
@@ -3459,7 +3459,7 @@ describe("copy, cut and paste", () => {
     clipboard.paste([layer("row")]);
     expect(order("row")).toEqual(["D", "B"]);
     expect(order("list")).toEqual(["A", "C"]);
-    expect(changes.list().map((c) => [c.kind, c.layer === doc.getElementById("b")!.getAttribute("data-tk-layer")])).toEqual([["move", true]]);
+    expect(changes.list().map((c) => [c.kind, c.layer === doc.getElementById("b")!.getAttribute("data-ht-layer")])).toEqual([["move", true]]);
 
     clipboard.paste([layer("list")]);
     expect(order("list")).toEqual(["A", "C", "B"]);
@@ -3597,7 +3597,7 @@ describe("duplicating layers", () => {
     expect(changes.list()[1]).toMatchObject({
       kind: "duplicate",
       property: "copy",
-      layer: copy.el.getAttribute("data-tk-layer"),
+      layer: copy.el.getAttribute("data-ht-layer"),
       target: { loc: "src/Card.tsx:4:7" },
       before: { nth: 1 },
       after: { nth: 2, absolute: null },
@@ -3606,7 +3606,7 @@ describe("duplicating layers", () => {
     // Its own layer: changed apart from the original.
     editor.set(copy, "opacity", 1);
     expect(style(cards[3].children[0]).opacity).toBe("0.5");
-    expect(changes.list()[2].target).toMatchObject({ loc: "src/Card.tsx:4:7", made: copy.el.getAttribute("data-tk-layer") });
+    expect(changes.list()[2].target).toMatchObject({ loc: "src/Card.tsx:4:7", made: copy.el.getAttribute("data-ht-layer") });
 
     editor.undo();
     editor.undo();
@@ -3650,7 +3650,7 @@ describe("duplicating layers", () => {
  * A page with source markers only (no React, so no usage chains on the live
  * page either): a Stack, a plain flow, and a Frame with layers in its flow.
  */
-const loc = (at: string) => `data-tk-loc="src/App.tsx:${at}"`;
+const loc = (at: string) => `data-ht-loc="src/App.tsx:${at}"`;
 const STRUCTURE = `<!DOCTYPE html>
 <body style="margin: 0">
   <div id="list" ${loc("5:5")} style="display: flex; flex-direction: column; gap: 10px; width: 200px">
@@ -4164,7 +4164,7 @@ describe("changes to the structure are checked on the live page", () => {
     editor.move(layer("a"), { parent: layer("list"), index: 2 });
     const [first, second] = changes.list();
     const list = page.getElementById("list")!;
-    const lines = () => [...list.children].map((el, i) => el.setAttribute("data-tk-loc", `src/App.tsx:${6 + i}:7`));
+    const lines = () => [...list.children].map((el, i) => el.setAttribute("data-ht-loc", `src/App.tsx:${6 + i}:7`));
     const check = async (change: (typeof changes.list extends () => (infer C)[] ? C : never)) => {
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       try {
@@ -4177,7 +4177,7 @@ describe("changes to the structure are checked on the live page", () => {
     };
 
     // Not applied, but a line added above moves every marker down: still not shown.
-    for (const el of list.children) el.setAttribute("data-tk-loc", el.getAttribute("data-tk-loc")!.replace(/:(\d+):/, (_, n) => `:${Number(n) + 1}:`));
+    for (const el of list.children) el.setAttribute("data-ht-loc", el.getAttribute("data-ht-loc")!.replace(/:(\d+):/, (_, n) => `:${Number(n) + 1}:`));
     expect((await check(first)).outcome).toBe("not shown");
     // The first reorder applied alone, its JSX moved with its markers: shown, though the second is not applied yet.
     list.prepend(page.getElementById("c")!);
@@ -5004,7 +5004,7 @@ ${html}${body} style="margin: 0">
 
     // The Agent deletes it: the next paragraph moves up to its line.
     page.getElementById("one")!.remove();
-    page.getElementById("two")!.setAttribute("data-tk-loc", "src/App.tsx:11:7");
+    page.getElementById("two")!.setAttribute("data-ht-loc", "src/App.tsx:11:7");
     expect(await checkChange(page, deleted, onCanvas([deleted]))).toEqual({ outcome: "shown" });
 
     page.getElementById("flow")!.remove();
@@ -5196,13 +5196,13 @@ describe("Variables", () => {
   const ALL = [GUTTER, FOUR, RED, BRAND, CARD, RAISED, LEAD, variable("nowhere", "color", "not-a-color")];
   const PAGE_OF_STACKS = `<!DOCTYPE html>
 <body style="margin: 0">
-  <div id="row" data-tk-loc="src/App.tsx:4:5" style="display: flex; gap: 10px; padding: 4px 8px">
-    <article data-tk-loc="src/Card.tsx:3:5" style="height: 80px; width: 120px; background-color: rgb(255, 255, 255); border-radius: 12px"></article>
-    <h3 data-tk-loc="src/Card.tsx:4:7" style="font-size: 16px; color: rgb(0, 0, 0)">Card</h3>
+  <div id="row" data-ht-loc="src/App.tsx:4:5" style="display: flex; gap: 10px; padding: 4px 8px">
+    <article data-ht-loc="src/Card.tsx:3:5" style="height: 80px; width: 120px; background-color: rgb(255, 255, 255); border-radius: 12px"></article>
+    <h3 data-ht-loc="src/Card.tsx:4:7" style="font-size: 16px; color: rgb(0, 0, 0)">Card</h3>
   </div>
-  <div id="grid" data-tk-loc="src/App.tsx:8:5" style="display: grid; grid-template-columns: 1fr 1fr; row-gap: 8px; column-gap: 8px">
-    <p data-tk-loc="src/App.tsx:9:7" style="height: 20px; margin: 0"></p>
-    <p data-tk-loc="src/App.tsx:10:7" style="height: 20px; margin: 0"></p>
+  <div id="grid" data-ht-loc="src/App.tsx:8:5" style="display: grid; grid-template-columns: 1fr 1fr; row-gap: 8px; column-gap: 8px">
+    <p data-ht-loc="src/App.tsx:9:7" style="height: 20px; margin: 0"></p>
+    <p data-ht-loc="src/App.tsx:10:7" style="height: 20px; margin: 0"></p>
   </div>
 </body>`;
 
@@ -5277,7 +5277,7 @@ describe("Variables", () => {
 
 
   test("a button's text takes a Variable for its font size, and the button one for its padding, each its own", () => {
-    const canvas = openCanvas(`<!DOCTYPE html><body style="margin: 0"><button id="go" data-tk-loc="src/App.tsx:4:5" style="padding: 4px 8px">Go</button></body>`);
+    const canvas = openCanvas(`<!DOCTYPE html><body style="margin: 0"><button id="go" data-ht-loc="src/App.tsx:4:5" style="padding: 4px 8px">Go</button></body>`);
     const catalog = resolveVariables(ALL, canvas.doc);
     const editor = createEditor(canvas.views, canvas.changes, null, { bind: (property, value, picked, previous) => bind(catalog, property, value, picked, previous) });
     const button = find(editor.tree().root, (l) => l.el === canvas.doc.getElementById("go") && !l.text)!;
@@ -5715,7 +5715,7 @@ describe("breakpoints", () => {
     extraFrames.push(frame);
     const page = frame.contentDocument!;
     page.open();
-    page.write(MOVES.replace(/ data-tk-chain='[^']*'/g, "").replace("<body", `<style>${css}</style>\n<body`));
+    page.write(MOVES.replace(/ data-ht-chain='[^']*'/g, "").replace("<body", `<style>${css}</style>\n<body`));
     page.close();
     return page;
   };
@@ -5738,7 +5738,7 @@ describe("breakpoints", () => {
   });
 
   test("a change at a breakpoint is checked on a copy of the page at a width in its range, wherever the window is: shown, not shown, or not checked when it cannot be shown there", async () => {
-    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-tk-chain='[^']*'/g, ""));
+    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-ht-chain='[^']*'/g, ""));
     editor.at(phone);
     editor.set(layer("board"), "fill", RED);
     const [change] = changes.list();
@@ -5759,7 +5759,7 @@ describe("breakpoints", () => {
   });
 
   test("a change at a range the project's breakpoints cut into parts is checked at a width in each part, and one not shown says which width (ticket 65)", async () => {
-    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-tk-chain='[^']*'/g, ""), TAILWIND);
+    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-ht-chain='[^']*'/g, ""), TAILWIND);
     editor.at(phone);
     editor.set(layer("board"), "fill", RED);
     const [made] = changes.list();
@@ -5781,7 +5781,7 @@ describe("breakpoints", () => {
   });
 
   test("what the live page shows in each part of a change's range is read there, the code as it is, before the change is applied (ticket 65)", async () => {
-    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-tk-chain='[^']*'/g, ""), TAILWIND);
+    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-ht-chain='[^']*'/g, ""), TAILWIND);
     editor.at(phone);
     editor.set(layer("board"), "fill", RED);
     const [change] = changes.list();
@@ -5794,11 +5794,11 @@ describe("breakpoints", () => {
     // A range no breakpoint of the project's cuts, or a change at every width: nothing to read.
     expect(await measureParts(page, change, null, document.body)).toBeNull();
     expect(await measureParts(page, { ...change, breakpoint: undefined }, TAILWIND, document.body)).toBeNull();
-    expect(document.querySelectorAll("iframe[data-tk-check]").length).toBe(0);
+    expect(document.querySelectorAll("iframe[data-ht-check]").length).toBe(0);
   });
 
   test("reading each part of a change's range is done a step at a time, each in a task of its own, so a large page is never held up for long (ticket 65)", async () => {
-    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-tk-chain='[^']*'/g, ""), TAILWIND);
+    const { editor, changes, phone, layer } = await open(MOVES.replace(/ data-ht-chain='[^']*'/g, ""), TAILWIND);
     editor.at(phone);
     editor.set(layer("board"), "fill", RED);
     const [change] = changes.list();
@@ -5826,7 +5826,7 @@ describe("breakpoints", () => {
   });
 
   test("a change made in the desktop view is checked as wide as the window and as wide as each view: a width where the code gives another value does not show it; one the round changed at a breakpoint of its own keeps its own", async () => {
-    const { editor, changes, desktop, phone, layer } = await open(MOVES.replace(/ data-tk-chain='[^']*'/g, ""));
+    const { editor, changes, desktop, phone, layer } = await open(MOVES.replace(/ data-ht-chain='[^']*'/g, ""));
     editor.at(desktop);
     editor.set(layer("board"), "fill", RED);
     const [change] = changes.list();
@@ -5871,7 +5871,7 @@ describe("breakpoints", () => {
     const { doc } = openCanvas(`<!DOCTYPE html>
       <style data-vite-dev-id="/app/node_modules/.pnpm/lib@1.0.0/node_modules/lib/dist/lib.css">@media (min-width: 500px) { p { color: red } }</style>
       <style data-vite-dev-id="/app/src/index.css">@media (min-width: 768px) { p { color: blue } }</style>
-      <style data-tk-canvas-styles>@media (min-width: 300px) { p { color: green } }</style>
+      <style data-ht-canvas-styles>@media (min-width: 300px) { p { color: green } }</style>
       <style>@media (max-width: 1023px) { p { margin: 0 } }</style>
       <body><p>Hi</p></body>`);
     expect(readMediaBreakpoints(doc)?.list.map((breakpoint) => breakpoint.width)).toEqual([768, 1024]);
@@ -6160,9 +6160,9 @@ describe("breakpoints", () => {
     editor.set(layer("c"), "visible", true);
     expect(displays("c")).toEqual(["none", "block"]);
     expect(changes.list().map((change) => [change.layer, change.after, change.breakpoint ?? "every width"])).toEqual([
-      [layer("b").el.getAttribute("data-tk-layer"), false, { min: null, max: 800 }],
-      [layer("c").el.getAttribute("data-tk-layer"), false, "every width"],
-      [layer("c").el.getAttribute("data-tk-layer"), true, { min: null, max: 800 }],
+      [layer("b").el.getAttribute("data-ht-layer"), false, { min: null, max: 800 }],
+      [layer("c").el.getAttribute("data-ht-layer"), false, "every width"],
+      [layer("c").el.getAttribute("data-ht-layer"), true, { min: null, max: 800 }],
     ]);
     // Shown again at every width, it is shown at the breakpoint as well, which says so on its own still.
     editor.at(desktop);
@@ -6436,7 +6436,7 @@ describe("breakpoints", () => {
     const copyIn = (d: Document) => style(d.body.children[2]).backgroundColor;
     expect([copyIn(doc), copyIn(phone.document)]).toEqual(["rgba(0, 0, 0, 0)", "rgb(255, 0, 0)"]);
     expect(editor.read(copy, "fill")).toEqual(RED);
-    expect(changes.list().filter((change) => change.layer === copy.el.getAttribute("data-tk-layer")).map((change) => change.kind)).toEqual(["duplicate"]);
+    expect(changes.list().filter((change) => change.layer === copy.el.getAttribute("data-ht-layer")).map((change) => change.kind)).toEqual(["duplicate"]);
   });
 
   test("a copy's change says what the layer, and each layer in it, has at breakpoints of its own when copied, as the copy keeps it", async () => {
@@ -6452,7 +6452,7 @@ describe("breakpoints", () => {
     editor.set(layer("row"), "fill", BLUE);
     const copyOfCopy = editor.duplicate(copy);
 
-    const copied = (layer: typeof copy) => changes.list().find((change) => change.layer === layer.el.getAttribute("data-tk-layer"))!.copiedBreakpoints;
+    const copied = (layer: typeof copy) => changes.list().find((change) => change.layer === layer.el.getAttribute("data-ht-layer"))!.copiedBreakpoints;
     expect(copied(copy)).toEqual([
       { change: fill.id, inside: null, breakpoint: PHONE, property: "fill", value: RED },
       { change: hidden.id, inside: { name: hidden.target.context.path.at(-1), element: hidden.target.context.element }, breakpoint: PHONE, property: "visible", value: false },
@@ -6470,7 +6470,7 @@ describe("breakpoints", () => {
     const inCopy = () => find(editor.tree().root, (l) => l.el === copy.el.firstElementChild && !l.text)!;
     editor.set(inCopy(), "visible", true);
     const shown = changes.list().at(-1)!;
-    const copied = (layer: typeof copy) => changes.list().find((change) => change.layer === layer.el.getAttribute("data-tk-layer"))!.copiedBreakpoints;
+    const copied = (layer: typeof copy) => changes.list().find((change) => change.layer === layer.el.getAttribute("data-ht-layer"))!.copiedBreakpoints;
 
     expect(copied(editor.duplicate(copy))).toEqual([{ change: shown.id, inside: { name: layerName(shown), element: shown.target.context.element }, breakpoint: PHONE, property: "visible", value: true }]);
     editor.remove(inCopy());
@@ -6505,7 +6505,7 @@ describe("breakpoints", () => {
   test("a canvas saved with its edits in the style attribute, as before, is put back with them in its edit styles, and they come off as they did", () => {
     const old = `<!DOCTYPE html>
 <body style="margin: 0">
-  <div id="board" data-tk-layer="1" data-tk-original-style="width: 300px; height: 200px"
+  <div id="board" data-ht-layer="1" data-ht-original-style="width: 300px; height: 200px"
     style="width: 300px; height: 200px; background-color: rgb(255 0 0 / 1) !important"></div>
 </body>`;
     const { doc, views } = openCanvas(old);
@@ -6816,14 +6816,14 @@ describe("a Stack made a Grid, and a Grid a Stack (ticket 109)", () => {
     expect(editor.read(layer("wrapped"), "arrangement")).toEqual({ type: "stack", direction: "horizontal", wrap: true, gap: 20, crossGap: 10 });
     expect(editor.read(layer("grid"), "arrangement")).toEqual({ type: "grid", columns: 2, rowGap: 16, columnGap: 8 });
     expect(editor.can(layer("r1"), "arrangement")).toBe(false);
-    const placed = openCanvas(ARRANGEMENTS.replace('id="g2" data-tk-loc', 'style="grid-column: 2; grid-row: 2" id="g2" data-tk-loc'));
+    const placed = openCanvas(ARRANGEMENTS.replace('id="g2" data-ht-loc', 'style="grid-column: 2; grid-row: 2" id="g2" data-ht-loc'));
     const grid = find(placed.editor.tree().root, (l) => l.el === placed.doc.getElementById("grid"))!;
     expect(placed.editor.can(grid, "arrangement")).toBe(true);
   });
 
   /** The Grid with its layers placed in areas of their own, the other way round from the order they are written: G4, G3 in its first row, G2, G1 in its second. */
   const AREAS = ARRANGEMENTS.replace("grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap", `grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: 'd c' 'b a'; row-gap`).replace(
-    /id="g(\d)" (data-tk-loc="[^"]*") style="height: 30px"/g,
+    /id="g(\d)" (data-ht-loc="[^"]*") style="height: 30px"/g,
     (_, n: string, at: string) => `id="g${n}" ${at} style="height: 30px; grid-area: ${"abcd"[Number(n) - 1]}"`,
   );
   /** The Grid's layers, top to bottom, then left to right, as drawn. */
@@ -7037,7 +7037,7 @@ describe("a Stack made a Grid, and a Grid a Stack (ticket 109)", () => {
     ]);
     // Back as it was: no change.
     editor.set(layer("row"), "arrangement", { type: "stack", direction: "horizontal", wrap: false, gap: 24 });
-    expect(changes.list().map((change) => change.layer)).toEqual([layer("grid").el.getAttribute("data-tk-layer")]);
+    expect(changes.list().map((change) => change.layer)).toEqual([layer("grid").el.getAttribute("data-ht-layer")]);
   });
 
   test("in a narrower view it is made a Grid at its breakpoint only, the panel offering a Grid's properties there; inherit takes it back", async () => {
@@ -7253,7 +7253,7 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
     const now = layerOf(button);
     expect([now.kind, now.children[0].kind, editor.read(now, "fill")]).toEqual(["frame", "text", { type: "solid", color: "#000000", opacity: 1 }]);
     const [size] = changes.list();
-    expect(size).toMatchObject({ layer: button.getAttribute("data-tk-layer"), property: "fontSize", after: 20, target: { loc: "src/App.tsx:4:5", context: { path: ["Page", "Frame", "Button", "Close"], element: '<button id="close">', text: "Close" } } });
+    expect(size).toMatchObject({ layer: button.getAttribute("data-ht-layer"), property: "fontSize", after: 20, target: { loc: "src/App.tsx:4:5", context: { path: ["Page", "Frame", "Button", "Close"], element: '<button id="close">', text: "Close" } } });
     expect([size.target.run, size.target.onlyText]).toEqual([undefined, true]);
 
     live = document.createElement("iframe");
@@ -7295,7 +7295,7 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
     editor.setText(layerOf(button).children[0], "Done");
 
     expect([button.textContent, button.childElementCount]).toEqual(["Done", 0]);
-    expect(changes.list()[0]).toMatchObject({ kind: "text", layer: button.getAttribute("data-tk-layer"), before: "Close", after: "Done", target: { context: { path: ["Page", "Frame", "Button", "Close"], element: '<button id="close">' } } });
+    expect(changes.list()[0]).toMatchObject({ kind: "text", layer: button.getAttribute("data-ht-layer"), before: "Close", after: "Done", target: { context: { path: ["Page", "Frame", "Button", "Close"], element: '<button id="close">' } } });
     expect(changes.list()[0].target.run).toBeUndefined();
     const now = find(editor.tree().root, (layer) => layer.el === button && !layer.text)!;
     expect([now.kind, now.children.map((child) => [child.kind, child.name])]).toEqual(["frame", [["text", "Done"]]]);
@@ -7364,13 +7364,13 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
     editor.setText(box().children[0], "Read on");
     const text = editor.setBrief(box().children[0], "Make it bold");
     editor.set(text, "fontSize", 20);
-    const span = button.querySelector("[data-tk-wrap]")!;
-    const id = span.getAttribute("data-tk-layer");
+    const span = button.querySelector("[data-ht-wrap]")!;
+    const id = span.getAttribute("data-ht-layer");
 
     const words = changes.list().find((change) => change.kind === "text")!;
     editor.revert(words.id);
 
-    expect(button.querySelector("[data-tk-wrap]")).toBe(span);
+    expect(button.querySelector("[data-ht-wrap]")).toBe(span);
     expect([button.childElementCount, span.textContent, span.querySelector("b")?.textContent, style(span).fontSize]).toEqual([1, "Read more", "more", "20px"]);
     expect(changes.list().map((change) => [change.property, change.layer])).toEqual([
       ["brief", id],
@@ -7381,7 +7381,7 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
 
     // Undone, the change to the words is made again, in the element the text has now.
     editor.undo();
-    expect([button.querySelector("[data-tk-wrap]"), span.textContent, style(span).fontSize]).toEqual([span, "Read on", "20px"]);
+    expect([button.querySelector("[data-ht-wrap]"), span.textContent, style(span).fontSize]).toEqual([span, "Read on", "20px"]);
   });
 
   test("undone back to before its words changed, the text keeps the element it got after: redone, its words, brief and text styles are in it again", () => {
@@ -7392,32 +7392,32 @@ describe("text that draws a box is a Frame with a text layer in it", () => {
     editor.setText(box().children[0], "Done");
     const text = editor.setBrief(box().children[0], "Make it bold");
     editor.set(text, "fontSize", 20);
-    const span = button.querySelector("[data-tk-wrap]")!;
+    const span = button.querySelector("[data-ht-wrap]")!;
 
     editor.undo();
     editor.undo();
     editor.undo();
     expect(changes.list()).toEqual([]);
-    expect([button.querySelector("[data-tk-wrap]"), button.childElementCount, span.textContent, style(span).fontSize]).toEqual([span, 1, "Close", "15px"]);
+    expect([button.querySelector("[data-ht-wrap]"), button.childElementCount, span.textContent, style(span).fontSize]).toEqual([span, 1, "Close", "15px"]);
     expect(editor.brief(editor.tree().layerOf(span)!)).toBe("");
 
     editor.redo();
-    expect([button.querySelector("[data-tk-wrap]"), span.textContent]).toEqual([span, "Done"]);
+    expect([button.querySelector("[data-ht-wrap]"), span.textContent]).toEqual([span, "Done"]);
     editor.redo();
     editor.redo();
     const now = editor.tree().layerOf(span)!;
     expect([now.kind, now.name, editor.brief(now), style(span).fontSize]).toEqual(["text", "Done", "Make it bold", "20px"]);
     expect(changes.list().map((change) => [change.property, change.layer])).toEqual([
-      ["text", button.getAttribute("data-tk-layer")],
-      ["brief", span.getAttribute("data-tk-layer")],
-      ["fontSize", span.getAttribute("data-tk-layer")],
+      ["text", button.getAttribute("data-ht-layer")],
+      ["brief", span.getAttribute("data-ht-layer")],
+      ["fontSize", span.getAttribute("data-ht-layer")],
     ]);
 
     // Undone once more, the words it had come back in it as they were, with no element of its own put in it.
     editor.undo();
     editor.undo();
     editor.undo();
-    expect([button.querySelector("[data-tk-wrap]"), button.childElementCount, span.childElementCount, span.textContent]).toEqual([span, 1, 0, "Close"]);
+    expect([button.querySelector("[data-ht-wrap]"), button.childElementCount, span.childElementCount, span.textContent]).toEqual([span, 1, 0, "Close"]);
   });
 
   test("whether a layer of text draws a box is read from the page's own styles: a Frame with its background taken off is a Frame still, built anew, and takes a fill again", () => {
@@ -7781,7 +7781,7 @@ describe("resizing a layer placed from its container's right or bottom edge, or 
 describe("moving a layer placed from its container's right or bottom edge, or centered (ticket 79)", () => {
   const [CENTERED, CENTERED_FROM_RIGHT] = [{ edge: "start", centered: true }, { edge: "end", centered: true }];
   /** As the live page has its markers, and so the canvas: with no React, no usage chains. */
-  const UNCHAINED = ANCHORED.replace(/ data-tk-chain='[^']*'/g, "");
+  const UNCHAINED = ANCHORED.replace(/ data-ht-chain='[^']*'/g, "");
   const open = (html = ANCHORED) => {
     const canvas = openCanvas(html);
     const layer = (id: string) => find(canvas.editor.tree().root, (l) => l.el === canvas.doc.getElementById(id) && !l.text)!;
@@ -7969,7 +7969,7 @@ describe("moving a layer placed from its container's right or bottom edge, or ce
   });
 
   test("moved into another Frame and back into its own at another place, placed from the right still: the page shows it by its `right`, however wide its container is", () => {
-    const html = WITH_OTHER.replace(/ data-tk-chain='[^']*'/g, "");
+    const html = WITH_OTHER.replace(/ data-ht-chain='[^']*'/g, "");
     const { editor, layer, changes } = open(html);
     editor.move(layer("right"), { parent: layer("other"), x: 100, y: 10 });
     editor.move(layer("right"), { parent: layer("board"), x: 230, y: 8 });
@@ -7984,7 +7984,7 @@ describe("moving a layer placed from its container's right or bottom edge, or ce
   });
 
   test("centered, moved into another Frame and back into its own at another place: the page shows it by its side, and not with its translate gone (line review)", () => {
-    const html = WITH_OTHER.replace(/ data-tk-chain='[^']*'/g, "");
+    const html = WITH_OTHER.replace(/ data-ht-chain='[^']*'/g, "");
     const { editor, layer, changes } = open(html);
     editor.move(layer("v4"), { parent: layer("other"), x: 100, y: 10 });
     editor.move(layer("v4"), { parent: layer("board"), x: 150, y: 40 });
@@ -8031,7 +8031,7 @@ describe("moving a layer placed from its container's right or bottom edge, or ce
     // As wide as the canvas's board: the canvas draws it at 150, the page at 170.
     expect(checkChange(pageWith(300, "#v4 { left: 80px !important; right: 0 !important; margin-inline: auto !important; translate: none !important }"), x, onCanvas([x])).outcome).toBe("not shown");
     iframe?.remove();
-    const moving = open(WITH_OTHER.replace(/ data-tk-chain='[^']*'/g, ""));
+    const moving = open(WITH_OTHER.replace(/ data-ht-chain='[^']*'/g, ""));
     moving.editor.move(moving.layer("v4"), { parent: moving.layer("other"), x: 100, y: 10 });
     moving.editor.move(moving.layer("v4"), { parent: moving.layer("board"), x: 150, y: 40 });
     const [moved] = moving.changes.list();
@@ -8576,7 +8576,7 @@ describe("new words, as the page checks them (ticket 90)", () => {
 describe("why the page cannot check a change to the structure (ticket 95)", () => {
   const STRUCTURE = "of the changes to the structure, only reorders, absolute placements in the same container and deletions are checked on the page";
   const LOOP = "the change is to the data the loop goes through, and the page cannot tell the loop's instances apart";
-  const item = `data-tk-loc="src/Item.tsx:2:3" ${chain([{ component: "Item", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP])}`;
+  const item = `data-ht-loc="src/Item.tsx:2:3" ${chain([{ component: "Item", usage: "src/App.tsx:6:9", thirdParty: false }, ...APP])}`;
   const LIST = `<!DOCTYPE html>
     <ul id="list" ${at("5:5")} style="display: flex; flex-direction: column; position: relative; width: 200px; height: 200px">
       <li ${item}>One</li><li ${item}>Two</li><li ${item}>Three</li>
@@ -8627,7 +8627,7 @@ describe("why the page cannot check a change to the structure (ticket 95)", () =
     const stack = layer("a").parent!;
     stacked.editor.move(layer("b"), { parent: stack, index: 0 });
     const move = stacked.changes.list().at(-1)!;
-    expect(move).toMatchObject({ kind: "move", before: { container: { layer: stack.el.getAttribute("data-tk-layer") } } });
+    expect(move).toMatchObject({ kind: "move", before: { container: { layer: stack.el.getAttribute("data-ht-layer") } } });
     expect(reasonOf(stacked.changes)).toBe("its container is new this round (a copy, a layer put back or a new Stack), so the page has no marker to find it by");
 
     // A container with no source marker.
@@ -8839,7 +8839,7 @@ describe("free layers in rows and columns made a Grid, and a Grid dissolved (tic
 
   test("the page checks a new Grid: its layers in one new element, laid out as a Grid of their columns and gaps", () => {
     // As the live page has them, and the canvas frozen from it: the usage chain read from the page, not written on each element.
-    const NO_CHAIN = / data-tk-chain='[^']*'/g;
+    const NO_CHAIN = / data-ht-chain='[^']*'/g;
     const { doc, editor, changes, layer } = open(board(TILES).replaceAll(NO_CHAIN, ""));
     editor.stack(IDS.map(layer));
     const round = placedOnCanvas(changes.list(), doc.documentElement.outerHTML);
@@ -8864,7 +8864,7 @@ describe("free layers in rows and columns made a Grid, and a Grid dissolved (tic
     expect(checkChange(wrapped("display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px"), made, round)).toEqual({ outcome: "shown" });
     // As an Agent writes it: a `<div>` round the `<div>`s, on a line of its own where the first was, every line after it one down.
     const shifted = tiles.map((tile, i) => tile.replace(`App.tsx:2${i + 1}:7`, `App.tsx:2${i + 2}:9`));
-    const ownLine = pageOf(`<div data-tk-loc="src/App.tsx:21:7" style="position: absolute; left: 20px; top: 30px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px">${shifted.join("")}</div>`);
+    const ownLine = pageOf(`<div data-ht-loc="src/App.tsx:21:7" style="position: absolute; left: 20px; top: 30px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px">${shifted.join("")}</div>`);
     expect(checkChange(ownLine, made, round)).toEqual({ outcome: "shown" });
     expect(checkChange(wrapped("display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px 24px"), made, round)).toEqual({
       outcome: "not shown",
@@ -8952,7 +8952,7 @@ describe("a Stack's gap, its layers with margins between them (ticket 122)", () 
     const [change] = changes.list();
     expect(change).toMatchObject({ property: "gap", before: 8, after: 0, asStack: true });
     expect(change.marginsDropped).toHaveLength(1);
-    expect(change.marginsDropped![0]).toMatchObject({ layer: el("body").getAttribute("data-tk-layer"), margins: { "margin-top": "8px" } });
+    expect(change.marginsDropped![0]).toMatchObject({ layer: el("body").getAttribute("data-ht-layer"), margins: { "margin-top": "8px" } });
     expect(change.marginsDropped![0].sources.length).toBeGreaterThan(0);
 
     editor.set(at("card"), "gap", 16, { continues: true });

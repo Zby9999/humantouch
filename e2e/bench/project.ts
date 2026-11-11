@@ -86,9 +86,9 @@ export function withoutSkill(dir: string) {
  * of the project's history either.
  */
 export async function prepareBase({ skill = true, example = "vite-react19-tw4" }: { skill?: boolean; example?: Example } = {}): Promise<{ base: string; remove(): void }> {
-  const packed = await pack(mkdtempSync(join(tmpdir(), "03kind-bench-pack-")));
+  const packed = await pack(mkdtempSync(join(tmpdir(), "humantouch-bench-pack-")));
   const base = await copyWithoutHumanTouch(exampleFolder(example), HAND_WIRED[example]);
-  await sh(process.execPath, [CLI, "init"], base, { TK_INSTALL_FROM: packed });
+  await sh(process.execPath, [CLI, "init"], base, { HT_INSTALL_FROM: packed });
   if (!skill) withoutSkill(base);
   await sh("git", ["add", "-A"], base);
   await sh("git", [...COMMIT, "With Human Touch"], base);
@@ -122,7 +122,7 @@ export interface RunProject {
  * permissions in `.cursor/`) is kept out of git.
  */
 export async function cloneBase(base: string): Promise<RunProject> {
-  const dir = mkdtempSync(join(tmpdir(), "03kind-bench-run-"));
+  const dir = mkdtempSync(join(tmpdir(), "humantouch-bench-run-"));
   await sh("git", ["clone", "-q", base, dir], tmpdir());
   writeFileSync(join(dir, ".git/info/exclude"), BENCH_FILES.map((path) => `/${path}\n`).join(""));
   await sh("pnpm", ["install", "--offline", "--frozen-lockfile"], dir);

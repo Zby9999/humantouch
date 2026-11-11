@@ -13,7 +13,7 @@ const design = (page: Page) => page.getByRole("complementary", { name: "Design" 
 const layers = (page: Page) => page.getByRole("tree", { name: "Layers" });
 const chip = (page: Page, name: string) => design(page).getByRole("button", { name: `${name} variable`, exact: true });
 /** The count of changes beside the toggle: there only once there are changes. */
-const changesOpener = (page: Page) => page.locator("[data-tk-changes-opener]");
+const changesOpener = (page: Page) => page.locator("[data-ht-changes-opener]");
 
 async function enterEditMode(page: Page, url = REACT18_URL) {
   await page.goto(url);
@@ -44,7 +44,7 @@ test("a card shows the Variables its classes write its values with, by name, and
   for (const side of ["top", "right", "bottom", "left"]) await expect(chip(page, `Padding ${side}`)).toHaveText("gutter");
   await expect(chip(page, "Stroke color")).toHaveText("brand-100");
   // Shown as a Variable picked, but not marked changed, and no change is recorded.
-  await expect(design(page).locator(".tk-variable-chip.is-changed")).toHaveCount(0);
+  await expect(design(page).locator(".ht-variable-chip.is-changed")).toHaveCount(0);
   await expect(changesOpener(page)).toHaveCount(0);
 
   // Its title: `text-lead text-ink`.
@@ -98,7 +98,7 @@ test("⌥⌘C carries the Variables the code writes, ⌥⌘V sets them: pasted, 
   await page.keyboard.press("Alt+ControlOrMeta+KeyV");
   await expect.poll(() => desktop(page).contentFrame().locator("article").first().evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(61, 99, 245)");
   await expect(chip(page, "Fill color")).toHaveText("brand-500");
-  await expect(chip(page, "Fill color")).toHaveAttribute("data-tk-tip", "brand-500: #3d63f5");
+  await expect(chip(page, "Fill color")).toHaveAttribute("data-ht-tip", "brand-500: #3d63f5");
 });
 
 test("on a Tailwind v4 project, a class writes its theme's Variable through `var()`: the header's `gap-3`, the button's `px-4`", async ({ page }) => {

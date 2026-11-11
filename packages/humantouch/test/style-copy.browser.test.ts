@@ -10,7 +10,7 @@ import { createViews } from "../src/client/views";
 /** Usage chains as the freezer writes them onto the canvas. */
 const APP = [{ component: "App", usage: null, thirdParty: false }];
 const cardAt = (usage: string) => [{ component: "Card", usage, thirdParty: false }, ...APP];
-const chain = (levels: object[]) => `data-tk-chain='${JSON.stringify(levels)}'`;
+const chain = (levels: object[]) => `data-ht-chain='${JSON.stringify(levels)}'`;
 const BADGE = [{ component: "Badge", usage: "src/App.tsx:10:5", thirdParty: true }, ...APP];
 
 /**
@@ -19,24 +19,24 @@ const BADGE = [{ component: "Badge", usage: "src/App.tsx:10:5", thirdParty: true
  */
 const PAGE = `<!DOCTYPE html>
 <body style="margin: 0">
-  <main data-tk-loc="src/App.tsx:4:5" ${chain(APP)} style="display: flex; flex-wrap: wrap; gap: 8px; padding: 4px">
-    <section id="styled" data-tk-loc="src/App.tsx:5:5" ${chain(APP)}
+  <main data-ht-loc="src/App.tsx:4:5" ${chain(APP)} style="display: flex; flex-wrap: wrap; gap: 8px; padding: 4px">
+    <section id="styled" data-ht-loc="src/App.tsx:5:5" ${chain(APP)}
       style="width: 200px; height: 90px; position: relative; left: 3px; background-color: rgb(255, 0, 0); border: 2px dashed rgb(0, 0, 255);
         border-radius: 10px; opacity: 0.5; overflow: hidden; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.25); filter: blur(2px)"></section>
     ${[1, 2, 3]
       .map(
-        (n) => `<article data-tk-loc="src/Card.tsx:3:5" ${chain(cardAt("src/App.tsx:6:9"))}
+        (n) => `<article data-ht-loc="src/Card.tsx:3:5" ${chain(cardAt("src/App.tsx:6:9"))}
           style="width: 100px; height: 80px; background-color: rgb(255, 255, 255); border-radius: 12px">
-          <h3 data-tk-loc="src/Card.tsx:4:7" ${chain(cardAt("src/App.tsx:6:9"))} style="margin: 0; font-size: 16px; color: rgb(0, 0, 0)">Card ${n}</h3>
+          <h3 data-ht-loc="src/Card.tsx:4:7" ${chain(cardAt("src/App.tsx:6:9"))} style="margin: 0; font-size: 16px; color: rgb(0, 0, 0)">Card ${n}</h3>
         </article>`,
       )
       .join("")}
-    <h1 id="title" data-tk-loc="src/App.tsx:7:5" ${chain(APP)}
+    <h1 id="title" data-ht-loc="src/App.tsx:7:5" ${chain(APP)}
       style="margin: 0; font-family: monospace; font-size: 30px; font-weight: 700; line-height: 40px; letter-spacing: 2px; text-align: center;
         text-transform: uppercase; text-decoration: underline; color: rgb(0, 128, 0); text-shadow: 1px 2px 3px rgb(0, 0, 0)">Hello</h1>
-    <button id="go" data-tk-loc="src/App.tsx:8:5" ${chain(APP)} style="padding: 4px 8px; background-color: rgb(238, 238, 238)">Go</button>
-    <div id="row" data-tk-loc="src/App.tsx:9:5" ${chain(APP)} style="display: flex; gap: 6px; padding: 2px; background-color: rgb(1, 2, 3)">
-      <i data-tk-loc="src/App.tsx:9:9" ${chain(APP)} style="display: block; width: 10px; height: 10px"></i>
+    <button id="go" data-ht-loc="src/App.tsx:8:5" ${chain(APP)} style="padding: 4px 8px; background-color: rgb(238, 238, 238)">Go</button>
+    <div id="row" data-ht-loc="src/App.tsx:9:5" ${chain(APP)} style="display: flex; gap: 6px; padding: 2px; background-color: rgb(1, 2, 3)">
+      <i data-ht-loc="src/App.tsx:9:9" ${chain(APP)} style="display: block; width: 10px; height: 10px"></i>
     </div>
     <span ${chain(BADGE)} style="display: block; background-color: rgb(0, 128, 0); border-radius: 4px"><b ${chain(BADGE)}>Beta</b></span>
   </main>

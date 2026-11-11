@@ -21,7 +21,7 @@ export function HumanTouch(): null {
  */
 function serviceFromBundle(): string | undefined {
   try {
-    return process.env.TK_SERVICE;
+    return process.env.HT_SERVICE;
   } catch {
     return undefined;
   }

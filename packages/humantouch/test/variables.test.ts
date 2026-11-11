@@ -11,7 +11,7 @@ const EXAMPLES = fileURLToPath(new URL("../../../examples/", import.meta.url));
 
 let project: string;
 beforeEach(() => {
-  project = mkdtempSync(join(tmpdir(), "03kind-variables-"));
+  project = mkdtempSync(join(tmpdir(), "humantouch-variables-"));
 });
 afterEach(() => rmSync(project, { recursive: true, force: true }));
 

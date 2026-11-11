@@ -22,7 +22,7 @@ async function enterEditMode(page: Page) {
 async function changeNames(page: Page): Promise<string[]> {
   if (!(await badge(page).count())) return [];
   await badge(page).click();
-  const names = await page.getByRole("dialog", { name: "Changes" }).locator(".tk-change-name").allTextContents();
+  const names = await page.getByRole("dialog", { name: "Changes" }).locator(".ht-change-name").allTextContents();
   await page.keyboard.press("Escape");
   return names;
 }
@@ -100,7 +100,7 @@ test("a layer of the canvas dragged into a Frame off it is in it, deleted on the
 
   await pressAndMove(page, desktop(page).contentFrame().locator("h1"), await middleOf(frame));
   // Where it would go is shown in the Frame: its outline, and the layer's ghost.
-  await expect(page.locator(".tk-drag-ghost")).toBeVisible();
+  await expect(page.locator(".ht-drag-ghost")).toBeVisible();
   await page.keyboard.press(`${mod}+z`);
   await page.keyboard.press("Delete");
   await page.mouse.up();
@@ -167,7 +167,7 @@ test("the Frame put back onto a view is made there, the layer dragged into it mo
   await expect(offCanvas(page)).toHaveCount(0);
   const title = desktop(page).contentFrame().locator("h1");
   await expect(title).toBeVisible();
-  await expect(title.locator("xpath=..")).toHaveAttribute("data-tk-new", "frame");
+  await expect(title.locator("xpath=..")).toHaveAttribute("data-ht-new", "frame");
   const names = await changeNames(page);
   expect(names.some((name) => /Delete|Put back/.test(name))).toBe(false);
   expect(names.filter((name) => name.endsWith("· Third Kind"))).toHaveLength(1);
@@ -176,7 +176,7 @@ test("the Frame put back onto a view is made there, the layer dragged into it mo
   await expect.poll(() => saved(page)).toEqual({ changes: names.length, offCanvas: [] });
   await page.reload();
   await enterEditMode(page);
-  await expect(desktop(page).contentFrame().locator("h1").locator("xpath=..")).toHaveAttribute("data-tk-new", "frame");
+  await expect(desktop(page).contentFrame().locator("h1").locator("xpath=..")).toHaveAttribute("data-ht-new", "frame");
   expect(await changeNames(page)).toEqual(names);
 });
 

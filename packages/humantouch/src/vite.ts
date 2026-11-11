@@ -11,7 +11,7 @@ import { updatesInTurn, viteVersionFor } from "./vite-version";
  * the Vite serving it handles its updates one at a time, goes with them,
  * read from its version here on the server (ticket 125).
  */
-const CODE_MODULE = "virtual:03kind/code-updates";
+const CODE_MODULE = "virtual:humantouch/code-updates";
 const RESOLVED_CODE_MODULE = `\0${CODE_MODULE}`;
 const codeUpdates = (inTurn: boolean) => `const code = (window.${CODE_GLOBAL} = { at: Date.now(), updating: 0, inTurn: ${inTurn} });
 const changed = () => dispatchEvent(new Event(${JSON.stringify(CODE_EVENT)}));

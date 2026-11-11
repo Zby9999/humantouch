@@ -51,7 +51,7 @@ const UPDATE_LOST_MS = 5000;
 /** The longest the page tells in one go before it lets the page have a turn. */
 const SLICE_MS = 10;
 /** What the page's telling is measured as, a slice at a time (`performance.measure`). */
-export const PAGE_CHANGED_MEASURE = "03kind:page-changed";
+export const PAGE_CHANGED_MEASURE = "humantouch:page-changed";
 
 /**
  * Tells of each `CODE_EVENT` on `win` whether it brings code in: an update
@@ -112,7 +112,7 @@ export function designerBusy(): boolean {
     if (!inner || inner === el) break;
     el = inner;
   }
-  return el instanceof HTMLElement && (el.isContentEditable || el.localName === "textarea" || el.hasAttribute("data-tk-typing"));
+  return el instanceof HTMLElement && (el.isContentEditable || el.localName === "textarea" || el.hasAttribute("data-ht-typing"));
 }
 
 /**

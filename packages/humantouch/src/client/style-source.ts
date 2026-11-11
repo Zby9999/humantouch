@@ -30,21 +30,21 @@ export interface StyleSource {
 }
 
 /** Before any edit, the element's own style attribute, as the page wrote it: edits may take the important declarations off it. */
-export const ORIGINAL_STYLE_ATTR = "data-tk-original-style";
+export const ORIGINAL_STYLE_ATTR = "data-ht-original-style";
 /**
  * On an element the freezer pinned where the designer saw it (placed against
  * the viewport, which the canvas has none of): the CSS properties it wrote into
  * the style attribute. They are the freezer's, not the page's.
  */
-export const PINNED_ATTR = "data-tk-pinned";
+export const PINNED_ATTR = "data-ht-pinned";
 /** On a pinned element, how far (`x y`, px) it was shifted with the page's scroll: the canvas has it there, the page does not. */
-export const PIN_OFFSET_ATTR = "data-tk-pin-offset";
+export const PIN_OFFSET_ATTR = "data-ht-pin-offset";
 /** On a stylesheet the freezer inlined from a `<link>`: where it was loaded from. */
-export const SHEET_HREF_ATTR = "data-tk-href";
+export const SHEET_HREF_ATTR = "data-ht-href";
 /** Where Vite's dev server says a stylesheet comes from. */
 const VITE_ID_ATTR = "data-vite-dev-id";
 /** Styles of the canvas itself, not the page's. */
-const CANVAS_STYLES_ATTR = "data-tk-canvas-styles";
+const CANVAS_STYLES_ATTR = "data-ht-canvas-styles";
 
 const SIDES = ["top", "right", "bottom", "left"];
 const BORDER_PARTS = ["width", "style", "color"];

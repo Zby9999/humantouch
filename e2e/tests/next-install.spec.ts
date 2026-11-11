@@ -18,7 +18,7 @@ let project: string;
 
 test.beforeAll(async () => {
   test.setTimeout(180_000);
-  packed = await pack(mkdtempSync(join(tmpdir(), "03kind-pack-")));
+  packed = await pack(mkdtempSync(join(tmpdir(), "humantouch-pack-")));
   project = await copyWithoutHumanTouch(EXAMPLE, (dir) => {
     replaceIn(dir, "next.config.ts", 'import { withHumanTouch } from "humantouch/next";\n');
     replaceIn(dir, "next.config.ts", "withHumanTouch(nextConfig)", "nextConfig");
@@ -38,7 +38,7 @@ test("init installs Human Touch into a Next.js project: with webpack, the toggle
   // Room for the waits on Next.js below: 150 s for its cold start and 60 s for edit mode's first compile, and
   // 60 s left for `init` (an install from the packed package), the checks between and stopping the server.
   test.setTimeout(150_000 + 60_000 + 60_000);
-  const output = await sh(process.execPath, [CLI, "init"], project, { TK_INSTALL_FROM: packed });
+  const output = await sh(process.execPath, [CLI, "init"], project, { HT_INSTALL_FROM: packed });
   expect(output).toContain("Human Touch (Next.js, pnpm)");
   expect(output).toContain("Installed.");
 
@@ -51,7 +51,7 @@ test("init installs Human Touch into a Next.js project: with webpack, the toggle
     }).toPass({ timeout: 150_000 });
     const toggle = page.getByRole("button", { name: TOGGLE_LABEL });
     await expect(toggle).toBeVisible();
-    await expect(page.locator("article").first()).toHaveAttribute("data-tk-loc", /^components\/Card\.tsx:\d+:\d+$/);
+    await expect(page.locator("article").first()).toHaveAttribute("data-ht-loc", /^components\/Card\.tsx:\d+:\d+$/);
 
     await settle(page);
     expect(await loaded.has(EXIT_LABEL)).toBe(false);

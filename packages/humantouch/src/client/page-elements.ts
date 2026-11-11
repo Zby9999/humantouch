@@ -15,7 +15,7 @@ import { readUsageChain, type UsageLevel } from "./usage-chain";
  * asks, its markers before it is parsed.
  */
 export interface SavedCanvas {
-  /** The locations of the markers written on it in `file` (`data-tk-loc`, `data-tk-usage`), read off it unparsed. */
+  /** The locations of the markers written on it in `file` (`data-ht-loc`, `data-ht-usage`), read off it unparsed. */
   markers(file: string): ReadonlySet<string>;
   /** The usage locations of `component` in `file` on the usage chains written on it, read off it unparsed. */
   usages(component: string, file: string): ReadonlySet<string>;

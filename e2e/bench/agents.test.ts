@@ -6,7 +6,7 @@ import { after, test } from "node:test";
 import { AGENTS, commandLine, headedBrowsers, headlessShell, NO_SKILL_PROMPT, piConfigFingerprints, piFffVersion, PROMPT, runAgent } from "./agents.ts";
 import { withoutSkill } from "./project.ts";
 
-const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-agents-test-"));
+const scratch = mkdtempSync(join(tmpdir(), "humantouch-bench-agents-test-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
 /** A file that stands in for a browser binary. */
@@ -17,20 +17,20 @@ function fakeBinary(path: string): string {
 }
 
 /**
- * The browser plugins Cursor's run is given, with TK_BENCH_HEADLESS_SHELL set
+ * The browser plugins Cursor's run is given, with HT_BENCH_HEADLESS_SHELL set
  * to `shell`: each `--plugin-dir` of its command line, by the plugin's name,
  * with the MCP servers it declares.
  */
 function cursorPlugins(shell: string): Record<string, unknown> {
   const dir = mkdtempSync(join(scratch, "project-"));
   const folder = mkdtempSync(join(scratch, "run-"));
-  const saved = process.env.TK_BENCH_HEADLESS_SHELL;
-  process.env.TK_BENCH_HEADLESS_SHELL = shell;
+  const saved = process.env.HT_BENCH_HEADLESS_SHELL;
+  process.env.HT_BENCH_HEADLESS_SHELL = shell;
   try {
     AGENTS.cursor.prepare!(dir, folder);
   } finally {
-    if (saved === undefined) delete process.env.TK_BENCH_HEADLESS_SHELL;
-    else process.env.TK_BENCH_HEADLESS_SHELL = saved;
+    if (saved === undefined) delete process.env.HT_BENCH_HEADLESS_SHELL;
+    else process.env.HT_BENCH_HEADLESS_SHELL = saved;
   }
   const args = AGENTS.cursor.args(folder);
   const plugins = args.flatMap((arg, i) => (arg === "--plugin-dir" ? [args[i + 1]] : []));
@@ -104,10 +104,10 @@ test("with no Skill, each Agent is asked only to run claim and apply as it says,
   }
 });
 
-test("pi runs on Command Code's DeepSeek v4.1 flash at thinking high, pinned, unless TK_BENCH_PI names another binary; with the project's Skill only, and none of the designer's extensions but pi-fff, nor MCP, prompt templates or themes", () => {
-  const saved = process.env.TK_BENCH_PI;
+test("pi runs on Command Code's DeepSeek v4.1 flash at thinking high, pinned, unless HT_BENCH_PI names another binary; with the project's Skill only, and none of the designer's extensions but pi-fff, nor MCP, prompt templates or themes", () => {
+  const saved = process.env.HT_BENCH_PI;
   try {
-    process.env.TK_BENCH_PI = "/opt/pi";
+    process.env.HT_BENCH_PI = "/opt/pi";
     const line = commandLine("pi");
     assert.match(line, /^\/opt\/pi -p '落地我的设计改动' --mode json --provider command-code --model deepseek\/deepseek-v4\.1-flash --thinking high --no-session --offline /);
     assert.match(line, / --no-extensions -e '?\S+\/pi-commandcode-provider'? -e '?\S+\/@ff-labs\/pi-fff'? --fff-mode override --fff-frecency-db '<run folder>\/fff\/frecency' --fff-history-db '<run folder>\/fff\/history' --fff-follow-symlinks -e '<run folder>\/pi-extension\/pi-extension\.ts' --no-mcp --no-skills --skill \.agents\/skills\/humantouch --no-prompt-templates --no-themes --approve /);
@@ -115,8 +115,8 @@ test("pi runs on Command Code's DeepSeek v4.1 flash at thinking high, pinned, un
     assert.match(line, / --tools read,bash,edit,write,ls,grep,find$/);
     assert.equal(AGENTS.pi.model, "command-code/deepseek/deepseek-v4.1-flash");
   } finally {
-    if (saved === undefined) delete process.env.TK_BENCH_PI;
-    else process.env.TK_BENCH_PI = saved;
+    if (saved === undefined) delete process.env.HT_BENCH_PI;
+    else process.env.HT_BENCH_PI = saved;
   }
 });
 
@@ -195,17 +195,17 @@ test("the effort pi ran at is the thinking level its answers name in the transcr
   assert.equal(AGENTS.cursor.effortSeen, undefined);
 });
 
-test("Cursor runs on grok-4.7-high unless TK_BENCH_CURSOR_MODEL names another id, and its command line says which (ticket 63)", () => {
-  const saved = process.env.TK_BENCH_CURSOR_MODEL;
+test("Cursor runs on grok-4.7-high unless HT_BENCH_CURSOR_MODEL names another id, and its command line says which (ticket 63)", () => {
+  const saved = process.env.HT_BENCH_CURSOR_MODEL;
   try {
-    delete process.env.TK_BENCH_CURSOR_MODEL;
+    delete process.env.HT_BENCH_CURSOR_MODEL;
     assert.match(commandLine("cursor"), / --model grok-4\.7-high /);
-    process.env.TK_BENCH_CURSOR_MODEL = "grok-4.7[context=256k,reasoning_effort=high,fast=false]";
+    process.env.HT_BENCH_CURSOR_MODEL = "grok-4.7[context=256k,reasoning_effort=high,fast=false]";
     assert.match(commandLine("cursor"), / --model 'grok-4\.7\[context=256k,reasoning_effort=high,fast=false\]' /);
     assert.doesNotMatch(commandLine("cursor"), /grok-4\.7-high/);
   } finally {
-    if (saved === undefined) delete process.env.TK_BENCH_CURSOR_MODEL;
-    else process.env.TK_BENCH_CURSOR_MODEL = saved;
+    if (saved === undefined) delete process.env.HT_BENCH_CURSOR_MODEL;
+    else process.env.HT_BENCH_CURSOR_MODEL = saved;
   }
 });
 

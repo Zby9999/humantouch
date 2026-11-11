@@ -137,7 +137,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   const dragWidth = (panel: Panel) => (width: number | null) => {
     if (width === null) return void delete dragged.current[panel];
     dragged.current[panel] = width;
-    shell.current?.style.setProperty(`--tk-${panel}-width`, `${width}px`);
+    shell.current?.style.setProperty(`--ht-${panel}-width`, `${width}px`);
   };
   const keepWidth = (panel: Panel) => (width: number) => {
     delete dragged.current[panel];
@@ -147,8 +147,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   // After every render, the widths as fitted, or as held: a drag wrote them on the style itself, which the style prop,
   // unchanged since, would not undo (a drag let go where it began, or the window resized meanwhile).
   useLayoutEffect(() => {
-    shell.current?.style.setProperty("--tk-layers-width", `${dragged.current.layers ?? widths.layers}px`);
-    shell.current?.style.setProperty("--tk-design-width", `${dragged.current.design ?? widths.design}px`);
+    shell.current?.style.setProperty("--ht-layers-width", `${dragged.current.layers ?? widths.layers}px`);
+    shell.current?.style.setProperty("--ht-design-width", `${dragged.current.design ?? widths.design}px`);
   });
 
   /** The toast at the bottom of the canvas: a new one takes the old one's place. */
@@ -432,7 +432,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       key: (was?.key ?? 0) + 1,
       shown() {
         if (!property) return;
-        const fields = [...shell.current!.querySelectorAll(`[data-tk-mark="${CSS.escape(property)}"]`)];
+        const fields = [...shell.current!.querySelectorAll(`[data-ht-mark="${CSS.escape(property)}"]`)];
         fields[0]?.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
         for (const field of fields) ping(field);
       },
@@ -777,8 +777,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   return (
     <div
       ref={shell}
-      class={`tk-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`}
-      style={{ "--tk-layers-width": `${widths.layers}px`, "--tk-design-width": `${widths.design}px` }}
+      class={`ht-shell${layersShown ? "" : " is-layers-hidden"}${playing ? " is-playing" : ""}`}
+      style={{ "--ht-layers-width": `${widths.layers}px`, "--ht-design-width": `${widths.design}px` }}
     >
       {/*
         Keyed, the panels and the button keep their own elements: unkeyed, the Layers panel shown again took the Design
@@ -786,12 +786,12 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         (designer, 2026-11-08). The Design panel was built anew besides.
       */}
       {layersShown ? (
-        <aside key="layers" class="tk-panel is-layers" aria-label="Layers">
-          <div class="tk-panel-header">
-            <button ref={layersToggle} type="button" class="tk-icon-button" aria-label="Hide layers" aria-expanded="true" onClick={() => showLayers(false)}>
+        <aside key="layers" class="ht-panel is-layers" aria-label="Layers">
+          <div class="ht-panel-header">
+            <button ref={layersToggle} type="button" class="ht-icon-button" aria-label="Hide layers" aria-expanded="true" onClick={() => showLayers(false)}>
               <Icon name="sidebar" />
             </button>
-            <h2 class="tk-panel-title">Layers</h2>
+            <h2 class="ht-panel-title">Layers</h2>
           </div>
           {tree && (
             <LayerTreeView
@@ -806,7 +806,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           )}
         </aside>
       ) : (
-        <button key="show-layers" ref={layersToggle} type="button" class="tk-show-layers" aria-label="Show layers" aria-expanded="false" onClick={() => showLayers(true)}>
+        <button key="show-layers" ref={layersToggle} type="button" class="ht-show-layers" aria-label="Show layers" aria-expanded="false" onClick={() => showLayers(true)}>
           <Icon name="sidebar" />
         </button>
       )}
@@ -1006,11 +1006,11 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           onCommit={keepWidth("design")}
         />
       )}
-      <aside key="design" class={`tk-panel is-design${settling ? " is-settling" : ""}`} aria-label="Design">
-        <div ref={watchPanelScrolled} class="tk-panel-header">
+      <aside key="design" class={`ht-panel is-design${settling ? " is-settling" : ""}`} aria-label="Design">
+        <div ref={watchPanelScrolled} class="ht-panel-header">
           {/* No tabs (designer, 2026-11-08): with nothing selected, the project's Variables, as Figma's panel shows the page's; with layers selected, their design. */}
           {/* In the Layers' title's type: one header style for both panels (designer, 2026-11-08). */}
-          <h2 class="tk-panel-title">{designing ? "Design" : "Variables"}</h2>
+          <h2 class="ht-panel-title">{designing ? "Design" : "Variables"}</h2>
           {controls}
         </div>
         {!designing ? (
@@ -1042,7 +1042,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         )}
       </aside>
       {playing && (
-        <button type="button" class="tk-stop-playing" aria-label="Stop playing" data-tk-tip="Back to editing (Esc)" onClick={stopPlaying}>
+        <button type="button" class="ht-stop-playing" aria-label="Stop playing" data-ht-tip="Back to editing (Esc)" onClick={stopPlaying}>
           <Icon name="close" />
         </button>
       )}
@@ -1107,7 +1107,7 @@ function Tools({ tool, onTool }: ToolsProps) {
   });
   return (
     <div
-      class="tk-tools"
+      class="ht-tools"
       role="toolbar"
       aria-label="Tools"
       // Back on the toolbar, a gap or its edge too, within the grace: still warm.
@@ -1121,12 +1121,12 @@ function Tools({ tool, onTool }: ToolsProps) {
         cooling.current = window.setTimeout(() => (warm.current = false), TIP_GRACE_MS);
       }}
     >
-      <div class={sliding.current ? "tk-tools-backing is-sliding" : "tk-tools-backing"} style={{ "--tk-tool-index": index }} aria-hidden="true" />
+      <div class={sliding.current ? "ht-tools-backing is-sliding" : "ht-tools-backing"} style={{ "--ht-tool-index": index }} aria-hidden="true" />
       {TOOLS.map((t) => (
         <button
           key={t.label}
           type="button"
-          class="tk-icon-button"
+          class="ht-icon-button"
           aria-label={t.label}
           aria-pressed={tool === t.tool}
           aria-keyshortcuts={t.key}
@@ -1165,7 +1165,7 @@ function Tools({ tool, onTool }: ToolsProps) {
         </button>
       ))}
       {tip && (
-        <div class={tip.easing ? "tk-variants-tip tk-tools-tip is-easing" : "tk-variants-tip tk-tools-tip"} role="tooltip" style={{ top: `${tip.middle}px` }}>
+        <div class={tip.easing ? "ht-variants-tip ht-tools-tip is-easing" : "ht-variants-tip ht-tools-tip"} role="tooltip" style={{ top: `${tip.middle}px` }}>
           {tip.text}
         </div>
       )}

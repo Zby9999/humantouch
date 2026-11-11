@@ -8,7 +8,7 @@ import { DENIED, SHELL } from "./allowlist.ts";
 import { claudeDenied, INSTALL_DENIED_SHELL, INSTALL_SERVERS, INSTALL_SHELL, installClaudeArgs, installSpec, prepareInstallPi } from "./install-allowlist.ts";
 import benchExtension, { INSTALL_LIST } from "./pi-extension.ts";
 
-const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-install-allowlist-test-"));
+const scratch = mkdtempSync(join(tmpdir(), "humantouch-bench-install-allowlist-test-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
 const project = join(scratch, "project");

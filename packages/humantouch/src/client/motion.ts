@@ -121,14 +121,14 @@ export const APPLIED_RISE_MS = 240;
 export const CHANGE_GLIDE_MS = 300;
 export const CHANGE_PING_MS = 1200;
 
-/** Blinks `el` lighter (`.tk-ping`), started afresh if it is blinking still. */
+/** Blinks `el` lighter (`.ht-ping`), started afresh if it is blinking still. */
 export function ping(el: Element): void {
-  el.classList.remove("tk-ping");
+  el.classList.remove("ht-ping");
   void (el as HTMLElement).offsetWidth;
-  el.classList.add("tk-ping");
+  el.classList.add("ht-ping");
   const end = (event: Event) => {
     if (event.target !== el) return;
-    el.classList.remove("tk-ping");
+    el.classList.remove("ht-ping");
     el.removeEventListener("animationend", end);
   };
   el.addEventListener("animationend", end);

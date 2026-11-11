@@ -91,7 +91,7 @@ test("on React 18, the usage chain is read as on React 19: App's own elements, t
   await page.goto(REACT18_URL);
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
-  const chainOf = async (selector: string) => JSON.parse((await canvas(page).locator(selector).first().getAttribute("data-tk-chain"))!);
+  const chainOf = async (selector: string) => JSON.parse((await canvas(page).locator(selector).first().getAttribute("data-ht-chain"))!);
   const app = { component: "App", usage: locate("src/main.tsx", "<App"), thirdParty: false };
 
   await expect.poll(() => chainOf("h1")).toEqual([app]);
@@ -185,7 +185,7 @@ test("a change made in the tablet view is at the range of the project's own Tail
   await expect(tablet.contentFrame().locator("h1")).toBeVisible();
   // 768px is between the project's sm (560px) and md (820px); the desktop view, 1280px wide, is from lg (1120px) up.
   // The label shows the widths the view covers.
-  const range = page.getByRole("group", { name: "Tablet view" }).locator(".tk-view-range");
+  const range = page.getByRole("group", { name: "Tablet view" }).locator(".ht-view-range");
   await expect(range).toHaveText("560–1119");
   const box = (await tablet.contentFrame().locator("article").first().boundingBox())!;
   await page.keyboard.down("Meta");
@@ -228,7 +228,7 @@ test("a layer centered by Tailwind v3's `-translate-x-1/2`, through `transform`,
     await page.keyboard.up("Meta");
     const before = await middle();
 
-    const edge = (await page.locator('.tk-handles[data-view="Desktop"] .tk-handle[data-handle="e"]').boundingBox())!;
+    const edge = (await page.locator('.ht-handles[data-view="Desktop"] .ht-handle[data-handle="e"]').boundingBox())!;
     await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
     await page.mouse.down();
     await page.mouse.move(edge.x + edge.width / 2 + 30 * zoom, edge.y + edge.height / 2, { steps: 6 });

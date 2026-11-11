@@ -125,13 +125,13 @@ test("a menu closed with the pointer takes no clicks at once and is gone after i
   // Nothing selected: the Design panel lists the Variables, filtered by a select.
   const filter = design(page).getByRole("combobox", { name: "Variables shown" });
   const listbox = page.getByRole("listbox", { name: "Variables shown" });
-  const menus = page.locator(".tk-menu");
+  const menus = page.locator(".ht-menu");
 
   // A choice clicked: the menu leaves, out of the accessibility tree and taking no clicks meanwhile.
   await filter.click();
   await expect(listbox).toBeVisible();
   await steadyBox(listbox);
-  const leaves = await watchLeaving(page, ".tk-menu");
+  const leaves = await watchLeaving(page, ".ht-menu");
   await listbox.getByRole("option", { name: "Tailwind" }).click();
   await expect(listbox).toBeHidden();
   await expect(filter).toHaveValue("tailwind");
@@ -161,7 +161,7 @@ test("a menu opened again while it leaves is back at once, whole and taking clic
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
   const add = design(page).getByRole("group", { name: "Effects" }).getByRole("button", { name: "Add effect" });
   const menu = page.getByRole("dialog", { name: "Add effect" });
-  const menus = page.locator(".tk-menu");
+  const menus = page.locator(".ht-menu");
 
   await add.click();
   await expect(menu).toBeVisible();
@@ -171,7 +171,7 @@ test("a menu opened again while it leaves is back at once, whole and taking clic
   let watch: Awaited<ReturnType<typeof watchLeaving>>;
   let record: Awaited<ReturnType<typeof watch.read>>;
   for (let tries = 1; ; tries++) {
-    watch = await watchLeaving(page, ".tk-menu");
+    watch = await watchLeaving(page, ".ht-menu");
     await add.click();
     await add.click();
     record = await watch.shownAgain();
@@ -198,7 +198,7 @@ test("a menu opened again while it leaves is back at once, whole and taking clic
   // A press outside closes it with the exit as well.
   await add.click();
   await expect(menu).toBeVisible();
-  const leaves = await watchLeaving(page, ".tk-menu");
+  const leaves = await watchLeaving(page, ".ht-menu");
   await page.mouse.click(10, 10);
   await leaves.leaves();
   await expect(menus).toHaveCount(0);
@@ -209,11 +209,11 @@ test("the color picker leaves when closed with the pointer, and at once with Esc
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
   const swatch = design(page).getByRole("button", { name: "Fill color picker" });
   const picker = page.getByRole("dialog", { name: "Fill color" });
-  const popovers = page.locator(".tk-popover");
+  const popovers = page.locator(".ht-popover");
 
   await swatch.click();
   await expect(picker).toBeVisible();
-  const leaves = await watchLeaving(page, ".tk-popover");
+  const leaves = await watchLeaving(page, ".ht-popover");
   await picker.getByRole("button", { name: "Close" }).click();
   await expect(picker).toBeHidden();
   // Leaving, out of the accessibility tree and taking no clicks, from the moment it started until it was gone, its exit's whole time after the click.
@@ -259,7 +259,7 @@ test("a tool rested on tells its name and key in the dark tip, at the toolbar's 
 
 /** The tool's tip as it is now, read at once: what it tells, its middle, and whether it eases in; null with none. */
 async function tipNow(page: Page) {
-  const tips = await page.locator(".tk-tools-tip").evaluateAll((all) =>
+  const tips = await page.locator(".ht-tools-tip").evaluateAll((all) =>
     all.map((tip) => {
       const box = tip.getBoundingClientRect();
       return { text: tip.textContent, middle: box.top + box.height / 2, easing: tip.classList.contains("is-easing") };

@@ -18,7 +18,7 @@ let project: string;
 
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  packed = await pack(mkdtempSync(join(tmpdir(), "03kind-pack-")));
+  packed = await pack(mkdtempSync(join(tmpdir(), "humantouch-pack-")));
   project = await copyWithoutHumanTouch(EXAMPLE, (dir) => {
     replaceIn(dir, "vite.config.ts", 'import humanTouch from "humantouch/vite";\n');
     replaceIn(dir, "vite.config.ts", "humanTouch(), ");
@@ -37,7 +37,7 @@ const installed = (...args: string[]) => sh(process.execPath, [join(project, "no
 
 test("init installs Human Touch: once the dev server starts, the toggle is on the page, within 60 seconds", async ({ page }) => {
   const start = Date.now();
-  const output = await sh(process.execPath, [CLI, "init"], project, { TK_INSTALL_FROM: packed });
+  const output = await sh(process.execPath, [CLI, "init"], project, { HT_INSTALL_FROM: packed });
   expect(output).toContain("Installed.");
 
   const server = startServer(process.execPath, ["node_modules/vite/bin/vite.js", "--port", String(INSTALL_PORT), "--strictPort"], project);

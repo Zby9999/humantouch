@@ -262,7 +262,7 @@ export async function readLastRound(folder: HumanTouchFolder): Promise<{ changeS
  * what is staged stays as it is.
  */
 export async function snapshotCode(root: string): Promise<CodeSnapshot | null> {
-  const index = join(tmpdir(), `03kind-index-${process.pid}-${Date.now()}`);
+  const index = join(tmpdir(), `humantouch-index-${process.pid}-${Date.now()}`);
   const git = (args: string[], env?: NodeJS.ProcessEnv) => promisify(execFile)("git", args, { cwd: root, env: { ...process.env, ...env } });
   try {
     const { stdout: top } = await git(["rev-parse", "--show-toplevel"]);

@@ -10,7 +10,7 @@ import { createOffCanvas, remake, type OffCanvasLayer } from "../src/client/off-
 import { revertSaved } from "../src/client/saved-round";
 import { createViews } from "../src/client/views";
 
-const CHAIN = `data-tk-chain='[{"component":"Card","usage":"src/App.tsx:6:9","thirdParty":false}]'`;
+const CHAIN = `data-ht-chain='[{"component":"Card","usage":"src/App.tsx:6:9","thirdParty":false}]'`;
 
 /** A card styled by classes, its words by what they inherit, its title by a web font, its badge by a `::before`. */
 const PAGE = `<!DOCTYPE html>
@@ -27,11 +27,11 @@ const PAGE = `<!DOCTYPE html>
 </style>
 <body>
   <main class="grid">
-    <article class="card" data-tk-loc="src/Card.tsx:3:5" ${CHAIN} data-tk-layer="4" data-tk-style="2" style="opacity: 0.9">
-      <h3 data-tk-loc="src/Card.tsx:4:7" ${CHAIN}>Freeze it</h3>
-      <p class="badge" data-tk-loc="src/Card.tsx:5:7" ${CHAIN}>Words that run on and on, so they wrap within the card as it is laid out on the page</p>
-      <div class="wide" data-tk-loc="src/Card.tsx:6:7" ${CHAIN}></div>
-      <div data-tk-deleted="delete" style="display: none">Gone</div>
+    <article class="card" data-ht-loc="src/Card.tsx:3:5" ${CHAIN} data-ht-layer="4" data-ht-style="2" style="opacity: 0.9">
+      <h3 data-ht-loc="src/Card.tsx:4:7" ${CHAIN}>Freeze it</h3>
+      <p class="badge" data-ht-loc="src/Card.tsx:5:7" ${CHAIN}>Words that run on and on, so they wrap within the card as it is laid out on the page</p>
+      <div class="wide" data-ht-loc="src/Card.tsx:6:7" ${CHAIN}></div>
+      <div data-ht-deleted="delete" style="display: none">Gone</div>
     </article>
     <div></div>
   </main>
@@ -79,7 +79,7 @@ describe("a layer's look, frozen", () => {
       [card, frozen],
       [card.querySelector("h3")!, frozen.querySelector("h3")!],
       [card.querySelector("p")!, frozen.querySelector("p")!],
-      [card.querySelector(".wide")!, frozen.querySelector('[data-tk-class="wide"]')!],
+      [card.querySelector(".wide")!, frozen.querySelector('[data-ht-class="wide"]')!],
     ];
     for (const [from, to] of pairs) {
       expect(css(to, ...LOOK)).toEqual(css(from, ...LOOK));
@@ -99,16 +99,16 @@ describe("a layer's look, frozen", () => {
     freezeLook(doc.querySelector("article")!, into);
 
     const frozen = into.contentDocument!.querySelector("article")!;
-    expect(frozen.getAttribute("data-tk-loc")).toBe("src/Card.tsx:3:5");
-    expect(JSON.parse(frozen.getAttribute("data-tk-chain")!)[0].component).toBe("Card");
-    expect(frozen.hasAttribute("data-tk-layer")).toBe(false);
+    expect(frozen.getAttribute("data-ht-loc")).toBe("src/Card.tsx:3:5");
+    expect(JSON.parse(frozen.getAttribute("data-ht-chain")!)[0].component).toBe("Card");
+    expect(frozen.hasAttribute("data-ht-layer")).toBe(false);
     expect(frozen.hasAttribute("style")).toBe(false);
     // Its classes are kept to tell it by, where no rule can match them.
     expect(frozen.hasAttribute("class")).toBe(false);
-    expect(frozen.getAttribute("data-tk-class")).toBe("card");
+    expect(frozen.getAttribute("data-ht-class")).toBe("card");
     expect(frozen.textContent).not.toContain("Gone");
     // Its container's usage chain is the document's, so it is an instance as it was on the page, or not.
-    expect(into.contentDocument!.body.hasAttribute("data-tk-chain")).toBe(false);
+    expect(into.contentDocument!.body.hasAttribute("data-ht-chain")).toBe(false);
   });
 
   test("its size is as the layer's own; what follows its content still does", () => {
@@ -122,7 +122,7 @@ describe("a layer's look, frozen", () => {
 
     expect(look.querySelector("article")!.getBoundingClientRect().width).toBe(300);
     expect(title.getBoundingClientRect().height).toBeGreaterThan(40);
-    expect(look.querySelector('[data-tk-class="wide"]')!.getBoundingClientRect().width).toBe(120);
+    expect(look.querySelector('[data-ht-class="wide"]')!.getBoundingClientRect().width).toBe(120);
   });
 
   test("saved and written back, looks the same", () => {
@@ -136,7 +136,7 @@ describe("a layer's look, frozen", () => {
     again.close();
 
     expect(css(again.querySelector("h3")!, ...LOOK)).toEqual(css(doc.querySelector("h3")!, ...LOOK));
-    expect(again.querySelectorAll("style[data-tk-canvas-styles]")).toHaveLength(0);
+    expect(again.querySelectorAll("style[data-ht-canvas-styles]")).toHaveLength(0);
   });
 });
 
@@ -379,7 +379,7 @@ describe("putting a layer off the canvas back", () => {
       { kind: "delete", offCanvas: outside.id },
       {
         kind: "putBack",
-        layer: back.el.getAttribute("data-tk-layer"),
+        layer: back.el.getAttribute("data-ht-layer"),
         target: { loc: "src/Card.tsx:3:5" },
         after: {
           place: { container: { layer: "4" }, nth: 1, absolute: null },
@@ -392,7 +392,7 @@ describe("putting a layer off the canvas back", () => {
     expect(back.el).not.toBe(title);
     expect(back.el.parentElement).toBe(card);
     expect(back.el.nextElementSibling).toBe(card.querySelector("p"));
-    expect(back.made).toBe(back.el.getAttribute("data-tk-layer"));
+    expect(back.made).toBe(back.el.getAttribute("data-ht-layer"));
     expect(getComputedStyle(title).display).toBe("none");
     expect(css(back.el, ...LOOK)).toEqual(shown);
     expect(offCanvas.list()).toEqual([]);
@@ -427,9 +427,9 @@ describe("putting a layer off the canvas back", () => {
 
     // Taken off again, what showed its `::before` goes once the canvas is saved.
     editor.undo();
-    expect(doc.querySelectorAll("style[data-tk-put-back]")).toHaveLength(1);
+    expect(doc.querySelectorAll("style[data-ht-put-back]")).toHaveLength(1);
     dropUnusedRules(doc.documentElement);
-    expect(doc.querySelectorAll("style[data-tk-put-back]")).toHaveLength(0);
+    expect(doc.querySelectorAll("style[data-ht-put-back]")).toHaveLength(0);
   });
 
   test("an insertion goes with the deletion it put back: taking back the deletion takes it too, on the canvas and on a saved one; taken back alone, the deletion stays", () => {
@@ -476,7 +476,7 @@ describe("a layer made in the blank space off the canvas (ticket 106)", () => {
   body { margin: 0; color: rgb(68, 64, 60); font-family: Georgia, serif; font-size: 18px; line-height: 1.8 }
   main { position: relative; width: 600px; height: 400px }
 </style>
-<body><main data-tk-loc="src/App.tsx:3:5"><p data-tk-loc="src/App.tsx:4:7">Words</p></main></body>`;
+<body><main data-ht-loc="src/App.tsx:3:5"><p data-ht-loc="src/App.tsx:4:7">Words</p></main></body>`;
   const RED = { type: "solid", color: "#FF0000", opacity: 1 } as const;
   /** As the Fill field adds one. */
   const WHITE = { type: "solid", color: "#FFFFFF", opacity: 1 } as const;
@@ -528,7 +528,7 @@ describe("a layer made in the blank space off the canvas (ticket 106)", () => {
       change.kind === "create" ? { ...change, after: { ...(change.after as Created), place: { ...(change.after as Created).place, nth: 0, slot: 0 } } } : change;
     const read = (list: Change[]) => (inOrder ? asRead(list) : asRead(list).map(unplaced).sort((a, b) => `${a.layer} ${a.property}`.localeCompare(`${b.layer} ${b.property}`)));
     expect(read(off.changes.list())).toEqual(read(drawn.changes.list()));
-    expect(off.doc.querySelector("main > [data-tk-new]")!.outerHTML).toBe(drawn.doc.querySelector("main > [data-tk-new]")!.outerHTML);
+    expect(off.doc.querySelector("main > [data-ht-new]")!.outerHTML).toBe(drawn.doc.querySelector("main > [data-ht-new]")!.outerHTML);
     return { off, drawn, outside };
   }
   /** A Frame drawn on the canvas and its fill set white in the Design panel, as one made in the blank space is (designer, 2026-11-09). */
@@ -616,19 +616,19 @@ describe("a layer made in the blank space off the canvas (ticket 106)", () => {
     expect(off.changes.list()[0].madeOffCanvas).toMatchObject({ id: outside.id, edits: { changes: edits } });
     expect(off.changes.list().slice(1).every((change) => !change.madeOffCanvas)).toBe(true);
     expect(back.el.parentElement).toBe(off.doc.querySelector("main"));
-    expect(back.el.outerHTML).toBe(drawn.doc.querySelector("main > [data-tk-new]")!.outerHTML);
+    expect(back.el.outerHTML).toBe(drawn.doc.querySelector("main > [data-ht-new]")!.outerHTML);
     expect(off.offCanvas.list()).toEqual([]);
 
     off.editor.undo();
     expect(off.changes.list()).toEqual([]);
-    expect(off.doc.querySelector("[data-tk-new]")).toBeNull();
+    expect(off.doc.querySelector("[data-ht-new]")).toBeNull();
     expect(off.offCanvas.list()).toEqual([outside]);
     expect(outside.changes.list()).toEqual(edits);
     // Redone, made again, numbered afresh as any change made again is.
     off.editor.redo();
     const unnumbered = (list: Change[]) => asRead(list).map(({ id: _, ...change }) => change);
     expect(unnumbered(off.changes.list())).toEqual(unnumbered(drawn.changes.list()));
-    expect(off.doc.querySelector("main > [data-tk-new]")!.outerHTML).toBe(drawn.doc.querySelector("main > [data-tk-new]")!.outerHTML);
+    expect(off.doc.querySelector("main > [data-ht-new]")!.outerHTML).toBe(drawn.doc.querySelector("main > [data-ht-new]")!.outerHTML);
     expect(off.offCanvas.list()).toEqual([]);
 
     // Taken back from the change list, or the round discarded, it is off the canvas again too, as moved-out layers put back are.
@@ -673,7 +673,7 @@ describe("a layer made in the blank space off the canvas (ticket 106)", () => {
       const inner = editor.create("frame", { parent: frame, x: 10, y: 10 }, { width: 80, height: 60 });
       editor.duplicate(editor.tree().layerOf(inner.el)!);
     });
-    expect(off.doc.querySelectorAll("main > [data-tk-new] > div")).toHaveLength(2);
+    expect(off.doc.querySelectorAll("main > [data-ht-new] > div")).toHaveLength(2);
   });
 
   test("a layer moved into a Frame drawn after it first moved is moved there on the canvas too, numbered as made there", () => {
@@ -686,7 +686,7 @@ describe("a layer made in the blank space off the canvas (ticket 106)", () => {
       editor.move(editor.tree().layerOf(text.el)!, { parent: editor.tree().layerOf(b.el)!, x: 6, y: 6 });
     }, false);
     expect(off.changes.list().map((change) => change.kind)).toContain("move");
-    expect(off.doc.querySelector("main > [data-tk-new] > div:nth-of-type(2)")!.textContent).toBe("Moved");
+    expect(off.doc.querySelector("main > [data-ht-new] > div:nth-of-type(2)")!.textContent).toBe("Moved");
   });
 
   test("the round discarded, or the putting back taken back after a reload, it is off the canvas again as it was kept, edits and all", () => {
@@ -728,7 +728,7 @@ describe("a layer made in the blank space off the canvas (ticket 106)", () => {
 describe("resizing a layer off the canvas (ticket 107)", () => {
   const ROOM = `<!DOCTYPE html>
 <style>body { margin: 0; font-family: Georgia, serif; font-size: 18px }</style>
-<body><main data-tk-loc="src/App.tsx:3:5"><h3 data-tk-loc="src/App.tsx:4:7">Freeze it</h3></main></body>`;
+<body><main data-ht-loc="src/App.tsx:3:5"><h3 data-ht-loc="src/App.tsx:4:7">Freeze it</h3></main></body>`;
   const hosts: HTMLElement[] = [];
   afterEach(() => {
     for (const host of hosts.splice(0)) host.remove();

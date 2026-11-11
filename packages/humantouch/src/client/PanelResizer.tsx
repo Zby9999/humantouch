@@ -63,7 +63,7 @@ export function PanelResizer({ panel, width, max, onDrag, onCommit }: Props) {
   return (
     <div
       ref={zone}
-      class={`tk-resizer is-${panel}${shown || pressed ? " is-shown" : ""}${pressed ? " is-pressed" : ""}`}
+      class={`ht-resizer is-${panel}${shown || pressed ? " is-shown" : ""}${pressed ? " is-pressed" : ""}`}
       role="separator"
       aria-orientation="vertical"
       aria-label={LABELS[panel]}
@@ -115,7 +115,7 @@ export function PanelResizer({ panel, width, max, onDrag, onCommit }: Props) {
         if (next !== latest.current.width) onCommit(next);
       }}
     >
-      <span ref={grip} class="tk-resizer-grip" aria-hidden="true" />
+      <span ref={grip} class="ht-resizer-grip" aria-hidden="true" />
     </div>
   );
 }

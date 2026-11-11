@@ -8,7 +8,7 @@ import { Icon } from "./icons";
  * phone unless the designer has changed them. Kept in the page's storage, so
  * they stay as set for the project across reloads.
  */
-const VIEWS_KEY = "03kind:views";
+const VIEWS_KEY = "humantouch:views";
 const TABLET = 768;
 const PHONE = 390;
 const DEFAULT_WIDTHS = [TABLET, PHONE];
@@ -76,7 +76,7 @@ export function rangeText(breakpoint: Breakpoint | null, width: number): string 
 
 /** What a view's label shows, but for its name: each can be left out where there is too little room. */
 type Part = "name" | "range" | "play" | "delete";
-/** Its buttons' width, and the gap between any two of its parts, px (styles: `.tk-view-label`). */
+/** Its buttons' width, and the gap between any two of its parts, px (styles: `.ht-view-label`). */
 const LABEL_BUTTON_PX = 20;
 const LABEL_GAP_PX = 6;
 /**
@@ -145,28 +145,28 @@ export function ViewLabel(props: {
   const classOf = (base: string, ...of: Part[]) => [base, gone(...of)].filter(Boolean).join(" ");
   return (
     <div
-      class="tk-view-label"
+      class="ht-view-label"
       role="group"
       aria-label={`${name} view`}
       style={{ left: `${left}px`, top: `${top}px`, width: `${size}px` }}
       onPointerDown={(event) => event.stopPropagation()}
     >
-      <button type="button" class={classOf("tk-view-title", "name", "range")} aria-label={`Select ${name} view`} onClick={onSelect} onPointerEnter={() => onPoint?.(true)} onPointerLeave={() => onPoint?.(false)}>
-        <span ref={nameEl} class={classOf("tk-view-name", "name")}>{name}</span>
-        <span ref={rangeEl} class={classOf("tk-view-range", "range")}>{range}</span>
+      <button type="button" class={classOf("ht-view-title", "name", "range")} aria-label={`Select ${name} view`} onClick={onSelect} onPointerEnter={() => onPoint?.(true)} onPointerLeave={() => onPoint?.(false)}>
+        <span ref={nameEl} class={classOf("ht-view-name", "name")}>{name}</span>
+        <span ref={rangeEl} class={classOf("ht-view-range", "range")}>{range}</span>
       </button>
       {/* Full screen before ×, which stays at the very end: the button pressed to play keeps its place on every view. */}
       <button
         type="button"
-        class={classOf("tk-icon-button tk-view-play", "play")}
+        class={classOf("ht-icon-button ht-view-play", "play")}
         aria-label={`Full screen ${name} view`}
-        data-tk-tip="Full screen"
+        data-ht-tip="Full screen"
         onClick={(event) => onPlay(event.currentTarget)}
       >
         <Icon name="fullscreen" />
       </button>
       {onDelete && (
-        <button type="button" class={classOf("tk-icon-button tk-view-delete", "delete")} aria-label={`Delete ${name} view`} data-tk-tip="Delete view" onClick={onDelete}>
+        <button type="button" class={classOf("ht-icon-button ht-view-delete", "delete")} aria-label={`Delete ${name} view`} data-ht-tip="Delete view" onClick={onDelete}>
           <Icon name="close" />
         </button>
       )}
@@ -185,13 +185,13 @@ export function AddView(props: { left: number; top: number; onAdd(width: number)
   };
   return (
     <div
-      class="tk-add-view"
+      class="ht-add-view"
       style={{ left: `${left}px`, top: `${top}px` }}
       onPointerDown={(event) => event.stopPropagation()}
     >
       {open ? (
         <input
-          class="tk-add-view-width"
+          class="ht-add-view-width"
           type="number"
           inputMode="numeric"
           min={MIN_WIDTH}
@@ -215,7 +215,7 @@ export function AddView(props: { left: number; top: number; onAdd(width: number)
           }}
         />
       ) : (
-        <button type="button" class="tk-icon-button" aria-label="Add view" data-tk-tip="Add view" onClick={() => setOpen(true)}>
+        <button type="button" class="ht-icon-button" aria-label="Add view" data-ht-tip="Add view" onClick={() => setOpen(true)}>
           <Icon name="plus" />
         </button>
       )}

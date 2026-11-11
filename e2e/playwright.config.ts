@@ -8,10 +8,10 @@ const react18Example = fileURLToPath(new URL("../examples/vite-react18-tw3", imp
 /**
  * The dev server on this port, the production preview on the next, and the
  * ports after for the projects the tests start themselves. Two
- * checkouts running e2e at once set `TK_E2E_PORT` apart: locally an existing
+ * checkouts running e2e at once set `HT_E2E_PORT` apart: locally an existing
  * server is reused, so on the same ports one would test the other's code.
  */
-const PORT = Number(process.env.TK_E2E_PORT ?? 5310);
+const PORT = Number(process.env.HT_E2E_PORT ?? 5310);
 export const DEV_URL = `http://localhost:${PORT}`;
 export const PREVIEW_URL = `http://localhost:${PORT + 1}`;
 /** Where `install.spec.ts` serves the copy of the example it installs Human Touch into. */

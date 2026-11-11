@@ -18,9 +18,9 @@ const PAGE = `<!DOCTYPE html>
   .card h3 { margin: 0; font: 700 24px sans-serif; color: rgb(10, 10, 10) }
   h2 { margin: 0; font-size: 30px; color: rgb(200, 0, 0) }
 </style>
-<body><main data-tk-loc="src/App.tsx:3:5">
-  <h2 data-tk-loc="src/App.tsx:4:7">Heading</h2>
-  <article class="card" data-tk-loc="src/Card.tsx:3:5"><h3 data-tk-loc="src/Card.tsx:4:7">Title</h3><p data-tk-loc="src/Card.tsx:5:7">Words</p></article>
+<body><main data-ht-loc="src/App.tsx:3:5">
+  <h2 data-ht-loc="src/App.tsx:4:7">Heading</h2>
+  <article class="card" data-ht-loc="src/Card.tsx:3:5"><h3 data-ht-loc="src/Card.tsx:4:7">Title</h3><p data-ht-loc="src/Card.tsx:5:7">Words</p></article>
 </main></body>`;
 
 const made: HTMLElement[] = [];
@@ -132,7 +132,7 @@ describe("a layer of the canvas dragged into a layer off it (ticket 108)", () =>
     expect(missed).toEqual([]);
     expect(kinds(changes.list())).toEqual(["create", "style", "move"]);
     const move = changes.list()[2];
-    expect(move).toMatchObject({ layer: heading.getAttribute("data-tk-layer"), after: { container: { layer: back!.el.getAttribute("data-tk-layer") }, absolute: { x: 10, y: 20 } } });
+    expect(move).toMatchObject({ layer: heading.getAttribute("data-ht-layer"), after: { container: { layer: back!.el.getAttribute("data-ht-layer") }, absolute: { x: 10, y: 20 } } });
     expect(heading.parentElement).toBe(back!.el);
     expect(getComputedStyle(heading).display).toBe("block");
     expect(offCanvas.list()).toEqual([]);
@@ -157,7 +157,7 @@ describe("a layer of the canvas dragged into a layer off it (ticket 108)", () =>
 
     expect(kinds(changes.list())).toEqual(["create", "style", "move"]);
     // Third, after the title and the words, as if drawn there with the title in its place; then the title moves out of the Stack, into it.
-    expect(changes.list()[0].after).toMatchObject({ place: { container: { layer: card.getAttribute("data-tk-layer") }, nth: 3 } });
+    expect(changes.list()[0].after).toMatchObject({ place: { container: { layer: card.getAttribute("data-ht-layer") }, nth: 3 } });
     expect(changes.list()[2].before).toMatchObject({ nth: 1 });
     expect([...card.children].map((el) => el.localName)).toEqual(["p", "div"]);
     expect(title.parentElement).toBe(back!.el);
@@ -276,7 +276,7 @@ describe("a layer in a layer off the canvas dragged out of it (ticket 108)", () 
 
     carry(desk, outside, outside.layer()!, { parent: main(), x: 0, y: 0 }, null);
     expect(kinds(changes.list())).toEqual(["create", "style", "move"]);
-    expect(doc.querySelector("h2")!.parentElement!.hasAttribute("data-tk-new")).toBe(true);
+    expect(doc.querySelector("h2")!.parentElement!.hasAttribute("data-ht-new")).toBe(true);
   });
 
   test("a Frame made in the blank space, dragged whole into another, is made anew there; put back, all of it is made on the canvas", () => {

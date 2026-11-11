@@ -16,7 +16,7 @@ export interface PageToastMessage {
 /** How long the toast that the page changed stays: it has a button, and is about something the designer did not do. */
 export const PAGE_CHANGED_TOAST_MS = 8000;
 
-/** What the bench and the tests find each toast by (`data-tk-notice`), whatever its words. */
+/** What the bench and the tests find each toast by (`data-ht-notice`), whatever its words. */
 export const PAGE_TOAST_NOTICES = { updated: "canvas-updated", changed: "page-changed" } as const;
 
 interface Props {
@@ -60,11 +60,11 @@ export function PageToast({ message, changes, onUpdate }: Props) {
   };
   const plural = changes === 1 ? "change" : "changes";
   return (
-    <div class="tk-page-toasts" role="status">
+    <div class="ht-page-toasts" role="status">
       {shown && (
         <div
-          class={`tk-toast is-page${fading ? " is-fading" : ""}`}
-          data-tk-notice={PAGE_TOAST_NOTICES[shown.kind]}
+          class={`ht-toast is-page${fading ? " is-fading" : ""}`}
+          data-ht-notice={PAGE_TOAST_NOTICES[shown.kind]}
           onPointerEnter={() => setHovered(true)}
           onPointerLeave={() => setHovered(false)}
           onFocusIn={() => setFocused(true)}
@@ -77,17 +77,17 @@ export function PageToast({ message, changes, onUpdate }: Props) {
               <span>
                 Discard your {changes} {plural} and update?
               </span>
-              <button ref={cancel} type="button" class="tk-button" onClick={() => ask(false)}>
+              <button ref={cancel} type="button" class="ht-button" onClick={() => ask(false)}>
                 Cancel
               </button>
-              <button type="button" class="tk-button is-danger" onClick={onUpdate}>
+              <button type="button" class="ht-button is-danger" onClick={onUpdate}>
                 Discard and update
               </button>
             </>
           ) : (
             <>
               <span key={shown.key}>The page has changed since this canvas was frozen</span>
-              <button ref={update} type="button" class="tk-button" onClick={() => ask(true)}>
+              <button ref={update} type="button" class="ht-button" onClick={() => ask(true)}>
                 Update canvas
               </button>
             </>

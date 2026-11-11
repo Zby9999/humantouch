@@ -24,14 +24,14 @@ const chain = (levels: UsageLevel[]) => `${CHAIN_ATTR}='${JSON.stringify(levels)
 /** One Stat (`components/Stat.tsx`), used at `usage` in the page, its elements' lines `at` (the div's; the spans' the next two). */
 const stat = (usage: string, value: string, label: string, at = 6) => {
   const of = chain([level("Stat", usage), ...HOME]);
-  return `<div data-tk-loc="components/Stat.tsx:${at}:5" ${of} style="background-color: rgb(255, 255, 255)"><span data-tk-loc="components/Stat.tsx:${at + 1}:7" ${of} style="display: block">${value}</span><span data-tk-loc="components/Stat.tsx:${at + 2}:7" ${of} style="display: block">${label}</span></div>`;
+  return `<div data-ht-loc="components/Stat.tsx:${at}:5" ${of} style="background-color: rgb(255, 255, 255)"><span data-ht-loc="components/Stat.tsx:${at + 1}:7" ${of} style="display: block">${value}</span><span data-ht-loc="components/Stat.tsx:${at + 2}:7" ${of} style="display: block">${label}</span></div>`;
 };
 
 /** The Next.js page's stats: three Stats, at lines 32–34 of the page (`down` lines further, and the Stats `usagesDown` more); the Stat's div at line `at`. */
 const stats = (at = 6, labels = ["views side by side", "layers at 60fps", "bytes in production"], down = 0, usagesDown = 0) => `<!DOCTYPE html>
 <body style="margin: 0">
-  <main data-tk-loc="app/page.tsx:${20 + down}:5" ${chain(HOME)}>
-    <section data-tk-loc="app/page.tsx:${31 + down}:7" ${chain(HOME)} data-testid="stats">
+  <main data-ht-loc="app/page.tsx:${20 + down}:5" ${chain(HOME)}>
+    <section data-ht-loc="app/page.tsx:${31 + down}:7" ${chain(HOME)} data-testid="stats">
       ${[0, 1, 2].map((n) => stat(`app/page.tsx:${32 + n + down + usagesDown}:9`, ["3", "5,000", "0"][n], labels[n], at)).join("")}
     </section>
   </main>
@@ -43,16 +43,16 @@ const surfacePage = ({ above = "", shift = 0 } = {}) => {
   const surface = [level("Surface", `src/App.tsx:${at(38)}:7`, true), ...APP];
   return `<!DOCTYPE html>
 <body style="margin: 0">
-  <main data-tk-loc="src/App.tsx:17:5" ${chain(APP)}>
-    <section data-tk-loc="src/App.tsx:19:7" ${chain(APP)}>
-      <header data-tk-loc="src/App.tsx:20:9" ${chain(APP)}>
-        <h1 data-tk-loc="src/App.tsx:21:11" ${chain(APP)}>Third Kind</h1>
+  <main data-ht-loc="src/App.tsx:17:5" ${chain(APP)}>
+    <section data-ht-loc="src/App.tsx:19:7" ${chain(APP)}>
+      <header data-ht-loc="src/App.tsx:20:9" ${chain(APP)}>
+        <h1 data-ht-loc="src/App.tsx:21:11" ${chain(APP)}>Third Kind</h1>
         ${above || `<span ${chain([level("Badge", "src/App.tsx:22:11", true), ...APP])}>Beta</span>`}
       </header>
-      <p data-tk-loc="src/App.tsx:${at(24)}:9" ${chain(APP)}>A Framer-style editor layer for <strong data-tk-loc="src/App.tsx:${at(25)}:51" ${chain(APP)}>any</strong> page.</p>
+      <p data-ht-loc="src/App.tsx:${at(24)}:9" ${chain(APP)}>A Framer-style editor layer for <strong data-ht-loc="src/App.tsx:${at(25)}:51" ${chain(APP)}>any</strong> page.</p>
     </section>
-    <div data-tk-usage="src/App.tsx:${at(38)}:7" ${chain(surface)} style="display: grid; gap: 4px">
-      ${[0, 1, 2].map((n) => `<article data-tk-loc="src/Card.tsx:3:5" ${chain([level("Card", `src/App.tsx:${at(40)}:11`), ...APP])}>Card ${n}</article>`).join("")}
+    <div data-ht-usage="src/App.tsx:${at(38)}:7" ${chain(surface)} style="display: grid; gap: 4px">
+      ${[0, 1, 2].map((n) => `<article data-ht-loc="src/Card.tsx:3:5" ${chain([level("Card", `src/App.tsx:${at(40)}:11`), ...APP])}>Card ${n}</article>`).join("")}
     </div>
   </main>
 </body>`;
@@ -109,7 +109,7 @@ function livePage(html: string): Document {
     let owner: object | null = null;
     for (const { component, usage } of [...levels].reverse()) {
       const type = Object.assign(function () {}, { displayName: component });
-      owner = { type, memoizedProps: usage ? { "data-tk-usage": usage } : {}, _debugOwner: owner };
+      owner = { type, memoizedProps: usage ? { "data-ht-usage": usage } : {}, _debugOwner: owner };
     }
     Object.assign(el, { __reactFiber$moved: { _debugOwner: owner } });
   }
@@ -151,7 +151,7 @@ describe("the third Stat's label given new words (next-server-usage-text)", () =
     const round = newWords();
     const page = livePage(stats(6, written));
     for (const value of page.querySelectorAll('[data-testid="stats"] > div > span:first-child')) value.remove();
-    for (const label of page.querySelectorAll('[data-testid="stats"] > div > span')) label.setAttribute("data-tk-loc", "components/Stat.tsx:7:7");
+    for (const label of page.querySelectorAll('[data-testid="stats"] > div > span')) label.setAttribute("data-ht-loc", "components/Stat.tsx:7:7");
     expect(checkChange(page, round[0], round)).toEqual(NOT_ON_PAGE);
   });
 
@@ -168,10 +168,10 @@ describe("the third Stat's label given new words (next-server-usage-text)", () =
     const round = newWords();
     const page = livePage(stats(6, written));
     for (const label of page.querySelectorAll('[data-testid="stats"] > div > span:last-child')) {
-      label.setAttribute("data-tk-loc", "components/Stat.tsx:10:7");
+      label.setAttribute("data-ht-loc", "components/Stat.tsx:10:7");
       const added = label.cloneNode() as Element;
       Object.assign(added, { __reactFiber$moved: (label as unknown as Record<string, unknown>).__reactFiber$moved });
-      added.setAttribute("data-tk-loc", "components/Stat.tsx:9:7");
+      added.setAttribute("data-ht-loc", "components/Stat.tsx:9:7");
       added.textContent = "bytes shipped to production";
       label.before(added);
       label.textContent = "new";
@@ -183,15 +183,15 @@ describe("the third Stat's label given new words (next-server-usage-text)", () =
 describe("the cards' grid, acme-ui's Surface, filled (third-party)", () => {
   function filled() {
     const { doc, editor, layerOf, round } = openCanvas(surfacePage());
-    editor.set(layerOf(doc.querySelector("[data-tk-usage]")!), "fill", STONE);
+    editor.set(layerOf(doc.querySelector("[data-ht-usage]")!), "fill", STONE);
     return round();
   }
-  const fill = (page: Document) => ((page.querySelector("[data-tk-usage]") as HTMLElement).style.backgroundColor = STONE_RGB);
+  const fill = (page: Document) => ((page.querySelector("[data-ht-usage]") as HTMLElement).style.backgroundColor = STONE_RGB);
 
   for (const tag of ["span", "div"]) {
     test(`a <${tag}> written around the Badge above it, the Surface 2 lines down: the Surface's own div is read`, () => {
       const round = filled();
-      const wrapper = `<${tag} data-tk-loc="src/App.tsx:22:11" ${chain(APP)} style="display: contents"><span ${chain([level("Badge", "src/App.tsx:23:13", true), ...APP])}>Beta</span></${tag}>`;
+      const wrapper = `<${tag} data-ht-loc="src/App.tsx:22:11" ${chain(APP)} style="display: contents"><span ${chain([level("Badge", "src/App.tsx:23:13", true), ...APP])}>Beta</span></${tag}>`;
       const page = livePage(surfacePage({ above: wrapper, shift: 2 }));
       expect(checkChange(page, round[0], round)).toMatchObject({ outcome: "not shown" });
       fill(page);
@@ -210,7 +210,7 @@ describe("the cards' grid, acme-ui's Surface, filled (third-party)", () => {
 describe("two siblings alike", () => {
   const ITEMS = (lines: number[], words = ["One", "Two"]) => `<!DOCTYPE html>
 <body style="margin: 0">
-  <ul data-tk-loc="src/App.tsx:4:5" ${chain(APP)}>${lines.map((line, i) => `<li data-tk-loc="src/App.tsx:${line}:7" ${chain(APP)}>${words[i]}</li>`).join("")}</ul>
+  <ul data-ht-loc="src/App.tsx:4:5" ${chain(APP)}>${lines.map((line, i) => `<li data-ht-loc="src/App.tsx:${line}:7" ${chain(APP)}>${words[i]}</li>`).join("")}</ul>
 </body>`;
   function secondRenamed() {
     const { doc, editor, layerOf, round } = openCanvas(ITEMS([5, 6]));
@@ -268,7 +268,7 @@ describe("the Stat's fill, a change to the Stat itself (review)", () => {
 describe("a layer deleted, two siblings alike (review)", () => {
   const ITEMS = (lines: number[], words: string[]) => `<!DOCTYPE html>
 <body style="margin: 0">
-  <ul data-tk-loc="src/App.tsx:4:5" ${chain(APP)}>${lines.map((line, i) => `<li data-tk-loc="src/App.tsx:${line}:7" ${chain(APP)}>${words[i]}</li>`).join("")}</ul>
+  <ul data-ht-loc="src/App.tsx:4:5" ${chain(APP)}>${lines.map((line, i) => `<li data-ht-loc="src/App.tsx:${line}:7" ${chain(APP)}>${words[i]}</li>`).join("")}</ul>
 </body>`;
   function secondDeleted() {
     const { doc, editor, layerOf, round } = openCanvas(ITEMS([5, 6], ["One", "Two"]));
@@ -295,8 +295,8 @@ describe("a layer deleted, two siblings alike (review)", () => {
   test("deleted, one alike in another list further down the file: shown, the other not taken for it", () => {
     const LISTS = (first: [number, string][], down: number) => `<!DOCTYPE html>
 <body style="margin: 0">
-  <ul data-tk-loc="src/App.tsx:4:5" ${chain(APP)}>${first.map(([line, words]) => `<li data-tk-loc="src/App.tsx:${line}:7" ${chain(APP)}>${words}</li>`).join("")}</ul>
-  <ol data-tk-loc="src/App.tsx:${8 - down}:5" ${chain(APP)}><li data-tk-loc="src/App.tsx:${9 - down}:7" ${chain(APP)}>Two</li></ol>
+  <ul data-ht-loc="src/App.tsx:4:5" ${chain(APP)}>${first.map(([line, words]) => `<li data-ht-loc="src/App.tsx:${line}:7" ${chain(APP)}>${words}</li>`).join("")}</ul>
+  <ol data-ht-loc="src/App.tsx:${8 - down}:5" ${chain(APP)}><li data-ht-loc="src/App.tsx:${9 - down}:7" ${chain(APP)}>Two</li></ol>
 </body>`;
     const { doc, editor, layerOf, round } = openCanvas(LISTS([[5, "One"], [6, "Two"]], 0));
     editor.remove(layerOf(doc.querySelectorAll("ul > li")[1]));
@@ -314,7 +314,7 @@ describe("what the page reads off itself, kept (review)", () => {
   test("a layer looked for with no canvas first, then by the round's canvas: found where it went", () => {
     const ITEMS = (lines: number[]) => `<!DOCTYPE html>
 <body style="margin: 0">
-  <ul data-tk-loc="src/App.tsx:4:5" ${chain(APP)}>${lines.map((line, i) => `<li data-tk-loc="src/App.tsx:${line}:7" ${chain(APP)}>${["One", "Two"][i]}</li>`).join("")}</ul>
+  <ul data-ht-loc="src/App.tsx:4:5" ${chain(APP)}>${lines.map((line, i) => `<li data-ht-loc="src/App.tsx:${line}:7" ${chain(APP)}>${["One", "Two"][i]}</li>`).join("")}</ul>
 </body>`;
     const { doc, editor, layerOf, round } = openCanvas(ITEMS([5, 6]));
     editor.setText(layerOf(doc.querySelectorAll("li")[1]), "Second");
@@ -329,7 +329,7 @@ describe("a layer moved into one off the canvas that is put back (ticket 108 rev
   /** A section with its title (line 5), and a note after it (line 8); `inside`: the note written in the section instead, at line 7. */
   const PAGE = ({ inside = false } = {}) => `<!DOCTYPE html>
 <body style="margin: 0">
-  <main data-tk-loc="src/App.tsx:4:5" ${chain(APP)}><section data-tk-loc="src/App.tsx:5:7" ${chain(APP)}><h2 data-tk-loc="src/App.tsx:6:9" ${chain(APP)}>Title</h2>${inside ? `<p data-tk-loc="src/App.tsx:7:9" ${chain(APP)}>Note</p>` : ""}</section>${inside ? "" : `<p data-tk-loc="src/App.tsx:8:7" ${chain(APP)}>Note</p>`}</main>
+  <main data-ht-loc="src/App.tsx:4:5" ${chain(APP)}><section data-ht-loc="src/App.tsx:5:7" ${chain(APP)}><h2 data-ht-loc="src/App.tsx:6:9" ${chain(APP)}>Title</h2>${inside ? `<p data-ht-loc="src/App.tsx:7:9" ${chain(APP)}>Note</p>` : ""}</section>${inside ? "" : `<p data-ht-loc="src/App.tsx:8:7" ${chain(APP)}>Note</p>`}</main>
 </body>`;
   /** The section moved off the canvas, the note moved into it there, and the section put back, edited: an insertion; both deletions stay. */
   function movedIn() {

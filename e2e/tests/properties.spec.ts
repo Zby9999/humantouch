@@ -17,7 +17,7 @@ async function enterEditMode(page: Page) {
 
 /** The toast at the bottom middle of the canvas, read out as it changes: not the one at its bottom left, which tells of the code changing (ticket 78). */
 function toast(page: Page) {
-  return page.getByRole("status").and(page.locator(".tk-toasts"));
+  return page.getByRole("status").and(page.locator(".ht-toasts"));
 }
 
 async function selectRow(page: Page, name: string, nth = 0) {
@@ -479,7 +479,7 @@ test("a stroke at weight 0, typed or dragged, stays a stroke with its color and 
   await expect.poll(async () => (await cardStyles(page, "borderWidth"))[0]).toBe("2px");
 
   // Dragged on its icon, down past 0 and held there, then back up in another drag.
-  const icon = page.locator('.tk-field:has([aria-label="Stroke weight"]) .tk-scrub');
+  const icon = page.locator('.ht-field:has([aria-label="Stroke weight"]) .ht-scrub');
   const { x, y } = await steadyBox(icon);
   const drag = async (dx: number) => {
     await page.mouse.move(x + 4, y + 4);
@@ -615,7 +615,7 @@ test("a toast rises at the bottom middle of the canvas and fades after about 3 s
 test("a shadow made a blur stays in its place among the effects, and made a shadow again, comes back there (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, "Card");
   const effects = design(page).getByRole("group", { name: "Effects" });
-  const listed = () => effects.locator(".tk-effect").evaluateAll((all) => all.map((el) => el.getAttribute("aria-label")));
+  const listed = () => effects.locator(".ht-effect").evaluateAll((all) => all.map((el) => el.getAttribute("aria-label")));
   const shadow = async () => (await cardStyles(page, "boxShadow"))[0];
   // shadow-sm: two drop shadows, the first 1px down and 3px blurred.
   await expect.poll(listed).toEqual(["Shadow 1", "Shadow 2"]);
@@ -701,7 +701,7 @@ test("a shadow dragged until it draws nothing is taken off, and the rest of the 
   const y = effects.getByRole("textbox", { name: "Shadow 1 Y", exact: true });
   await y.fill("0");
   await y.press("Enter"); // shadow-sm's first shadow, now 0 0 3px 0
-  const icon = page.locator('.tk-field:has([aria-label="Shadow 1 blur"]) .tk-scrub');
+  const icon = page.locator('.ht-field:has([aria-label="Shadow 1 blur"]) .ht-scrub');
   await icon.scrollIntoViewIfNeeded();
   const box = (await icon.boundingBox())!;
   const at = { x: box.x + 4, y: box.y + 4 };
@@ -958,7 +958,7 @@ test("text and other layers selected together take drop shadows each its own way
 
 test("the selection box steps aside while a value changes, so the change can be seen, and comes back after", async ({ page }) => {
   await selectRow(page, "Card");
-  const box = page.locator('.tk-selection[data-view="Desktop"]');
+  const box = page.locator('.ht-selection[data-view="Desktop"]');
   await expect(box).toBeVisible();
   // It is gone only briefly, so watch for it rather than poll.
   await box.evaluate((el: HTMLElement & { stepsAside?: boolean }) => {
@@ -978,7 +978,7 @@ test("dragging left and right on a number's icon changes it, 1 per 2px and 10 wi
   test.setTimeout(90_000);
   await selectRow(page, "Card");
   const radius = design(page).getByRole("textbox", { name: "Corner radius" });
-  const icon = page.locator('.tk-field:has([aria-label="Corner radius"]) .tk-scrub');
+  const icon = page.locator('.ht-field:has([aria-label="Corner radius"]) .ht-scrub');
   const { x, y } = await steadyBox(icon);
   const drag = async (dx: number) => {
     await page.mouse.move(x + 4, y + 4);
@@ -1003,9 +1003,9 @@ test("dragging left and right on a number's icon changes it, 1 per 2px and 10 wi
 test("a number dragged is marked changed once let go, not while held; typed, at once (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, "Card");
   const radius = design(page).getByRole("textbox", { name: "Corner radius" });
-  const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
+  const field = page.locator('.ht-field:has([aria-label="Corner radius"])');
   const reset = design(page).getByRole("button", { name: "Reset corner radius" });
-  const { x, y } = await steadyBox(field.locator(".tk-scrub"));
+  const { x, y } = await steadyBox(field.locator(".ht-scrub"));
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
   for (let i = 1; i <= 5; i++) await page.mouse.move(x + 4 + i * 2, y + 4);
@@ -1050,13 +1050,13 @@ function fieldLook(field: Locator) {
 
 test("a field focused, and a number held mid-drag, have the 1px blue 600 edge; let go, the drag's edge is gone (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, "Card");
-  const accent = await panelColor(page, "--tk-accent-strong");
-  const darker = await panelColor(page, "--tk-input-hover");
+  const accent = await panelColor(page, "--ht-accent-strong");
+  const darker = await panelColor(page, "--ht-input-hover");
   const EDGE = `${accent} 0px 0px 0px 1px inset`;
 
   // Focused: the 1px blue 600 edge, drawn inward (Figma: 03 Kind, 109:1169).
   const width = design(page).getByRole("textbox", { name: "Width" });
-  const widthField = page.locator('.tk-field:has([aria-label="Width"])');
+  const widthField = page.locator('.ht-field:has([aria-label="Width"])');
   await width.focus();
   await expect.poll(async () => (await fieldLook(widthField)).edge).toBe(EDGE);
   await width.blur();
@@ -1064,8 +1064,8 @@ test("a field focused, and a number held mid-drag, have the 1px blue 600 edge; l
 
   // Held mid-drag on its icon: the same edge, on the hover's ground.
   const radius = design(page).getByRole("textbox", { name: "Corner radius" });
-  const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
-  const { x, y } = await steadyBox(field.locator(".tk-scrub"));
+  const field = page.locator('.ht-field:has([aria-label="Corner radius"])');
+  const { x, y } = await steadyBox(field.locator(".ht-scrub"));
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
   for (let i = 1; i <= 3; i++) await page.mouse.move(x + 4 + i * 2, y + 4);
@@ -1088,16 +1088,16 @@ test("dragging left and right on the bar at the end of a color's opacity changes
   await fill.press("Enter");
   const opacity = design(page).getByRole("textbox", { name: "Fill opacity" });
   await expect(opacity).toHaveValue("100%");
-  const grip = page.locator('.tk-color-opacity:has([aria-label="Fill opacity"]) .tk-scrub-grip');
+  const grip = page.locator('.ht-color-opacity:has([aria-label="Fill opacity"]) .ht-scrub-grip');
   const { x, y } = await steadyBox(grip);
   await page.mouse.move(x + 6, y + 4);
   await page.mouse.down();
   for (let i = 1; i <= 10; i++) await page.mouse.move(x + 6 - i * 2, y + 4);
   // Held, its field has the 1px edge, as a number's does (designer, 2026-11-08): changed already by the fill typed, on the accent, the stronger accent, as it has focused.
-  const field = page.locator('.tk-field:has([aria-label="Fill opacity"])');
+  const field = page.locator('.ht-field:has([aria-label="Fill opacity"])');
   await expect(field).toHaveClass(/\bis-changed\b/);
   await expect(field).toHaveAttribute("data-scrubbing", "");
-  await expect.poll(async () => (await fieldLook(field)).edge).toBe(`${await panelColor(page, "--tk-accent-strong")} 0px 0px 0px 1px inset`);
+  await expect.poll(async () => (await fieldLook(field)).edge).toBe(`${await panelColor(page, "--ht-accent-strong")} 0px 0px 0px 1px inset`);
   await page.mouse.up();
   await expect(field).not.toHaveAttribute("data-scrubbing");
   await expect(opacity).toHaveValue("90%");
@@ -1110,7 +1110,7 @@ function gripShift(grip: Locator) {
 
 /** Pressed on a field's grip and moved right `steps` times, 2px at a time; left held. */
 async function holdGrip(page: Page, field: Locator, steps: number) {
-  const { x, y, width, height } = await steadyBox(field.locator(".tk-scrub-grip"));
+  const { x, y, width, height } = await steadyBox(field.locator(".ht-scrub-grip"));
   const at = { x: x + width / 2, y: y + height / 2 };
   await page.mouse.move(at.x, at.y);
   await page.mouse.down();
@@ -1121,8 +1121,8 @@ async function holdGrip(page: Page, field: Locator, steps: number) {
 test("a field pointed at tells its name in the editor's dark tip, above it, after a rest; nothing has the browser's gray one (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, "Card");
   // No title but the views' frames', which name them and show no tip.
-  expect(await page.locator("third-kind").evaluate((host) => [...host.shadowRoot!.querySelectorAll("[title]")].filter((el) => el.localName !== "iframe").length)).toBe(0);
-  const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
+  expect(await page.locator("human-touch").evaluate((host) => [...host.shadowRoot!.querySelectorAll("[title]")].filter((el) => el.localName !== "iframe").length)).toBe(0);
+  const field = page.locator('.ht-field:has([aria-label="Corner radius"])');
   const tip = page.getByRole("tooltip");
   await field.hover();
   await expect(tip).toHaveText("Corner radius");
@@ -1131,9 +1131,9 @@ test("a field pointed at tells its name in the editor's dark tip, above it, afte
   expect(tipBox.y + tipBox.height).toBeLessThanOrEqual(fieldBox.y);
   expect(Math.abs(tipBox.x + tipBox.width / 2 - (fieldBox.x + fieldBox.width / 2))).toBeLessThanOrEqual(1);
   expect(await tip.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(23, 23, 22)");
-  await expect(field).toHaveAttribute("aria-describedby", "tk-tip");
+  await expect(field).toHaveAttribute("aria-describedby", "ht-tip");
   // Warm, another shows at once.
-  await page.locator('.tk-field:has([aria-label="Opacity"])').first().hover();
+  await page.locator('.ht-field:has([aria-label="Opacity"])').first().hover();
   await expect(tip).toHaveText("Opacity");
   await expect(field).not.toHaveAttribute("aria-describedby");
   // A press hides it, till the pointer leaves.
@@ -1147,20 +1147,20 @@ test("a field pointed at tells its name in the editor's dark tip, above it, afte
 test("every number that can be dragged has a grip at its right end, after its value, left of its reset once changed (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, "Card");
   for (const label of ["Width", "Height", "Gap", "Corner radius", "Opacity"]) {
-    const field = page.locator(`.tk-field:has([aria-label="${label}"])`);
-    await expect(field.locator(".tk-scrub-grip > .tk-grip"), label).toBeVisible();
+    const field = page.locator(`.ht-field:has([aria-label="${label}"])`);
+    await expect(field.locator(".ht-scrub-grip > .ht-grip"), label).toBeVisible();
     const input = await steadyBox(field.getByRole("textbox", { name: label, exact: true }));
-    const grip = await steadyBox(field.locator(".tk-scrub-grip"));
+    const grip = await steadyBox(field.locator(".ht-scrub-grip"));
     expect(grip.x, label).toBeGreaterThanOrEqual(input.x + input.width - 1);
   }
 
   const radius = design(page).getByRole("textbox", { name: "Corner radius" });
   await radius.fill("20");
   await radius.press("Enter");
-  const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
+  const field = page.locator('.ht-field:has([aria-label="Corner radius"])');
   const reset = design(page).getByRole("button", { name: "Reset corner radius" });
   await expect(reset).toBeVisible();
-  const grip = await steadyBox(field.locator(".tk-scrub-grip"));
+  const grip = await steadyBox(field.locator(".ht-scrub-grip"));
   const resetBox = await steadyBox(reset);
   expect(grip.x + grip.width).toBeLessThanOrEqual(resetBox.x);
   // The value keeps its room: what it shows is not cut off.
@@ -1171,7 +1171,7 @@ test("dragged on its grip, a number changes 1 per 2px: 20px, 10 (designer, 2026-
   await selectRow(page, "Card");
   const radius = design(page).getByRole("textbox", { name: "Corner radius" });
   await expect(radius).toHaveValue("12");
-  await holdGrip(page, page.locator('.tk-field:has([aria-label="Corner radius"])'), 10);
+  await holdGrip(page, page.locator('.ht-field:has([aria-label="Corner radius"])'), 10);
   await page.mouse.up();
   await expect(radius).toHaveValue("22");
   await expect.poll(() => cardStyles(page, "borderRadius")).toEqual(["22px", "22px", "22px", "12px"]);
@@ -1179,12 +1179,12 @@ test("dragged on its grip, a number changes 1 per 2px: 20px, 10 (designer, 2026-
 
 test("held, a number has no scale under its grip, and its grip stays where it is: only its sway moves it (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, "Card");
-  const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
-  const grip = field.locator(".tk-grip");
+  const field = page.locator('.ht-field:has([aria-label="Corner radius"])');
+  const grip = field.locator(".ht-grip");
   const before = await steadyBox(grip);
   await holdGrip(page, field, 3);
   await expect(field).toHaveAttribute("data-scrubbing");
-  await expect(field.locator(".tk-ruler")).toHaveCount(0);
+  await expect(field.locator(".ht-ruler")).toHaveCount(0);
   expect((await steadyBox(grip)).y).toBe(before.y);
   await page.mouse.up();
 });
@@ -1194,8 +1194,8 @@ test.describe("with motion", () => {
 
   test("dragged, a number's whole grip sways across with the drag, 3px at most, upright, and settles back once let go (designer, 2026-11-08)", async ({ page }) => {
     await selectRow(page, "Card");
-    const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
-    const grip = field.locator(".tk-grip");
+    const field = page.locator('.ht-field:has([aria-label="Corner radius"])');
+    const grip = field.locator(".ht-grip");
     // The sway eases away as soon as the pointer stops: watch for it rather than poll.
     await grip.evaluate((el: HTMLElement & { most?: number; least?: number; leaned?: boolean }) => {
       el.most = 0;
@@ -1227,7 +1227,7 @@ test.describe("with motion", () => {
     const effects = design(page).getByRole("group", { name: "Effects" });
     await addEffect(effects, "Layer blur");
     const shadow = effects.getByRole("group", { name: "Shadow 1", exact: true });
-    const copies = shadow.locator(".tk-effect-fold");
+    const copies = shadow.locator(".ht-effect-fold");
     // Its motion held where it starts, so that it is read midway however busy the machine (ticket 126).
     const letGo = await holdMotion(page);
     await shadow.getByRole("button", { name: "Shadow 1 details" }).click();
@@ -1236,7 +1236,7 @@ test.describe("with motion", () => {
     await expect(copies).toHaveAttribute("aria-hidden", "true");
     await expect(copies.locator("input").first()).toHaveValue("0");
     // Its details' copies going up 8px and fading over the fold's time, the effect after rising from where it was.
-    await expectFolding(copies, copies.locator(":scope > .tk-effect"), effects.getByRole("group", { name: "Layer blur", exact: true }));
+    await expectFolding(copies, copies.locator(":scope > .ht-effect"), effects.getByRole("group", { name: "Layer blur", exact: true }));
     // Then, played on, gone.
     await letGo();
     await expect(copies).toHaveCount(0);
@@ -1253,8 +1253,8 @@ test.describe("with motion", () => {
 
 test("with reduced motion, a number's grip does not sway as it is dragged", async ({ page }) => {
   await selectRow(page, "Card");
-  const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
-  const grip = field.locator(".tk-grip");
+  const field = page.locator('.ht-field:has([aria-label="Corner radius"])');
+  const grip = field.locator(".ht-grip");
   await grip.evaluate((el: HTMLElement & { tilted?: boolean }) => {
     new MutationObserver(() => {
       if (el.style.transform) el.tilted = true;
@@ -1270,22 +1270,22 @@ test("with reduced motion, a number's grip does not sway as it is dragged", asyn
 /** A number's rolling digits, as shown: the text of those not rolling out, and whether each runs an animation now. */
 function rolled(field: Locator) {
   return field.evaluate((el) => {
-    const roll = el.querySelector(":scope > .tk-roll");
+    const roll = el.querySelector(":scope > .ht-roll");
     if (!roll) return null;
-    const glyphs = [...roll.querySelectorAll<HTMLElement>(".tk-roll-glyph:not(.is-leaving)")];
+    const glyphs = [...roll.querySelectorAll<HTMLElement>(".ht-roll-glyph:not(.is-leaving)")];
     return {
       hidden: roll.getAttribute("aria-hidden"),
       text: glyphs.map((glyph) => glyph.textContent).join(""),
       running: glyphs.map((glyph) => glyph.getAnimations().some((anim) => anim.playState === "running")),
       // Of every digit, in or out: what its animations move.
-      moves: [...new Set([...roll.querySelectorAll(".tk-roll-glyph")].flatMap((glyph) => glyph.getAnimations().flatMap((anim) => (anim.effect as KeyframeEffect).getKeyframes().flatMap((frame) => Object.keys(frame)))))].filter((key) => !["offset", "easing", "composite", "computedOffset"].includes(key)).sort(),
+      moves: [...new Set([...roll.querySelectorAll(".ht-roll-glyph")].flatMap((glyph) => glyph.getAnimations().flatMap((anim) => (anim.effect as KeyframeEffect).getKeyframes().flatMap((frame) => Object.keys(frame)))))].filter((key) => !["offset", "easing", "composite", "computedOffset"].includes(key)).sort(),
     };
   });
 }
 
 /** Whether the field's input shows its own text: clear while its digits roll over it. */
 function inputClear(field: Locator) {
-  return field.locator(".tk-input").evaluate((el) => getComputedStyle(el).webkitTextFillColor === "rgba(0, 0, 0, 0)");
+  return field.locator(".ht-input").evaluate((el) => getComputedStyle(el).webkitTextFillColor === "rgba(0, 0, 0, 0)");
 }
 
 /** From now on, notes whether the field ever shows rolling digits. */
@@ -1293,7 +1293,7 @@ async function watchRolls(field: Locator) {
   await field.evaluate((el: HTMLElement & { rolled?: boolean }) => {
     el.rolled = false;
     new MutationObserver(() => {
-      if (el.querySelector(".tk-roll, .tk-roll-glyph")) el.rolled = true;
+      if (el.querySelector(".ht-roll, .ht-roll-glyph")) el.rolled = true;
     }).observe(el, { childList: true, subtree: true });
   });
 }
@@ -1308,7 +1308,7 @@ test.describe("a number's digits rolling (designer, 2026-11-08)", () => {
     await cdp.send("Animation.enable");
     await cdp.send("Animation.setPlaybackRate", { playbackRate: 0.1 });
     const width = design(page).getByRole("textbox", { name: "Width" });
-    const field = page.locator('.tk-field:has([aria-label="Width"])');
+    const field = page.locator('.ht-field:has([aria-label="Width"])');
     const start = Number(await width.inputValue());
     expect(await rolled(field)).toBeNull();
     const at = await holdGrip(page, field, 1);
@@ -1342,7 +1342,7 @@ test.describe("a number's digits rolling (designer, 2026-11-08)", () => {
   test("typed, or stepped with the arrow keys, a number changes at once: no digits roll", async ({ page }) => {
     await selectRow(page, "Card");
     const width = design(page).getByRole("textbox", { name: "Width" });
-    const field = page.locator('.tk-field:has([aria-label="Width"])');
+    const field = page.locator('.ht-field:has([aria-label="Width"])');
     await watchRolls(field);
     await width.fill("250");
     await width.press("Enter");
@@ -1364,7 +1364,7 @@ test.describe("a number's digits rolling (designer, 2026-11-08)", () => {
     await cdp.send("Animation.enable");
     await cdp.send("Animation.setPlaybackRate", { playbackRate: 0.05 });
     const width = design(page).getByRole("textbox", { name: "Width" });
-    const field = page.locator('.tk-field:has([aria-label="Width"])');
+    const field = page.locator('.ht-field:has([aria-label="Width"])');
     await holdGrip(page, field, 3);
     await page.mouse.up();
     await expect.poll(() => rolled(field)).not.toBeNull();
@@ -1377,7 +1377,7 @@ test.describe("a number's digits rolling (designer, 2026-11-08)", () => {
 test("with reduced motion, a number's digits only fade as it is scrubbed: no move, no blur", async ({ page }) => {
   await selectRow(page, "Card");
   const width = design(page).getByRole("textbox", { name: "Width" });
-  const field = page.locator('.tk-field:has([aria-label="Width"])');
+  const field = page.locator('.ht-field:has([aria-label="Width"])');
   await holdGrip(page, field, 4);
   await expect.poll(async () => (await rolled(field))?.text).toBe(await width.inputValue());
   expect((await rolled(field))!.moves).toEqual(["opacity"]);
@@ -1388,7 +1388,7 @@ test("with reduced motion, a number's digits only fade as it is scrubbed: no mov
 test("reset, then dragged twice, a number stays gray while held and takes the accent once let go; dragged again back past where it started, it stays marked till let go (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, "Card");
   const radius = design(page).getByRole("textbox", { name: "Corner radius" });
-  const field = page.locator('.tk-field:has([aria-label="Corner radius"])');
+  const field = page.locator('.ht-field:has([aria-label="Corner radius"])');
   const reset = design(page).getByRole("button", { name: "Reset corner radius" });
   const start = Number(await radius.inputValue());
   await holdGrip(page, field, 4);
@@ -1410,7 +1410,7 @@ test("reset, then dragged twice, a number stays gray while held and takes the ac
   await field.evaluate((el: HTMLElement & { held?: string[] }) => {
     el.held = [];
     const look = () => {
-      if (el.hasAttribute("data-scrubbing")) el.held!.push(`${el.classList.contains("is-changed")} ${!!el.querySelector(".tk-reset")}`);
+      if (el.hasAttribute("data-scrubbing")) el.held!.push(`${el.classList.contains("is-changed")} ${!!el.querySelector(".ht-reset")}`);
       if (el.isConnected) requestAnimationFrame(look);
     };
     look();
@@ -1462,7 +1462,7 @@ test("a text layer's font, weight and size, line height and letter spacing, alig
   await expect.poll(() => introStyle(page, "fontWeight")).toBe("400");
   await expect(weight).toHaveValue("400");
   await expect(weight.getByRole("option")).toHaveText(["Regular", "Bold"]);
-  await expect(text.locator(".tk-select-field:has([aria-label='Font weight'])")).not.toHaveClass(/\bis-changed\b/);
+  await expect(text.locator(".ht-select-field:has([aria-label='Font weight'])")).not.toHaveClass(/\bis-changed\b/);
   // One undo takes the font back.
   await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(() => introStyle(page, "fontFamily")).toContain("Georgia");
@@ -1562,7 +1562,7 @@ test("a font and its weight have a field's corners, as the font size beside them
   const radius = (locator: Locator) => locator.evaluate((el) => getComputedStyle(el).borderRadius);
   const font = text.getByRole("combobox", { name: "Font", exact: true });
   const weight = text.getByRole("combobox", { name: "Font weight" });
-  const size = text.locator(".tk-field:has([aria-label='Font size'])");
+  const size = text.locator(".ht-field:has([aria-label='Font size'])");
   const sizeRadius = await radius(size);
   expect(sizeRadius).toBe("6px");
   expect(await radius(font)).toBe(sizeRadius);
@@ -1570,8 +1570,8 @@ test("a font and its weight have a field's corners, as the font size beside them
 
   await font.selectOption("Space Grotesk");
   await weight.selectOption("700");
-  await expect(text.locator(".tk-select-field.tk-font-field")).toHaveClass(/\bis-changed\b/);
-  await expect(text.locator(".tk-select-field:has([aria-label='Font weight'])")).toHaveClass(/\bis-changed\b/);
+  await expect(text.locator(".ht-select-field.ht-font-field")).toHaveClass(/\bis-changed\b/);
+  await expect(text.locator(".ht-select-field:has([aria-label='Font weight'])")).toHaveClass(/\bis-changed\b/);
   expect(await radius(font)).toBe(sizeRadius);
   expect(await radius(weight)).toBe(sizeRadius);
 });
@@ -1580,10 +1580,10 @@ test("a text's font, weight, line height and letter spacing changed show their r
   await selectRow(page, INTRO);
   const text = design(page).getByRole("group", { name: "Text" });
   const font = text.getByRole("combobox", { name: "Font", exact: true });
-  const fontField = text.locator(".tk-select-field.tk-font-field");
+  const fontField = text.locator(".ht-select-field.ht-font-field");
 
   await expect(fontField).not.toHaveClass(/\bis-changed\b/);
-  const weightField = text.locator(".tk-select-field:has([aria-label='Font weight'])");
+  const weightField = text.locator(".ht-select-field:has([aria-label='Font weight'])");
   await font.selectOption("Space Grotesk");
   await expect(fontField).toHaveClass(/\bis-changed\b/);
   // The font alone changes: the weight stays as it was, unmarked (designer, 2026-11-08); changed itself, it is marked.
@@ -1601,21 +1601,21 @@ test("a text's font, weight, line height and letter spacing changed show their r
     const was = await field.inputValue();
     await field.fill(value);
     await field.press("Enter");
-    await expect(text.locator(`.tk-field:has([aria-label="${name}"])`)).toHaveClass(/\bis-changed\b/);
+    await expect(text.locator(`.ht-field:has([aria-label="${name}"])`)).toHaveClass(/\bis-changed\b/);
     await text.getByRole("button", { name: `Reset ${name.toLowerCase()}` }).click();
     await expect(field).toHaveValue(was);
-    await expect(text.locator(`.tk-field:has([aria-label="${name}"])`)).not.toHaveClass(/\bis-changed\b/);
+    await expect(text.locator(`.ht-field:has([aria-label="${name}"])`)).not.toHaveClass(/\bis-changed\b/);
   }
 });
 
 test("a text's alignment is as wide as its buttons, at the row's left; the font shows Aa in its own family (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, INTRO);
   const text = design(page).getByRole("group", { name: "Text" });
-  const [align, row] = await Promise.all([steadyBox(text.getByRole("radiogroup", { name: "Text alignment" })), steadyBox(text.locator(".tk-select-field.tk-font-field"))]);
+  const [align, row] = await Promise.all([steadyBox(text.getByRole("radiogroup", { name: "Text alignment" })), steadyBox(text.locator(".ht-select-field.ht-font-field"))]);
   expect(align.width).toBeLessThan(row.width / 2);
   expect(align.x).toBe(row.x);
 
-  const sample = text.locator(".tk-font-field > .tk-font-sample");
+  const sample = text.locator(".ht-font-field > .ht-font-sample");
   await expect(sample).toHaveText("Aa");
   await expect.poll(() => sample.evaluate((el) => getComputedStyle(el).fontFamily)).toContain("Georgia");
   await text.getByRole("combobox", { name: "Font", exact: true }).selectOption("Space Grotesk");
@@ -1646,7 +1646,7 @@ test("in a font menu long enough to scroll, ↓ goes down to its end, the menu s
 
   // The pointer moved into the menu, near its top: the option under it is the one the keys are on. Then left there.
   await page.mouse.move(box.x + box.width / 2, box.y + 48);
-  const active = listbox.locator(".tk-menu-option.is-active");
+  const active = listbox.locator(".ht-menu-option.is-active");
   await expect(active).toHaveCount(1);
   const ids = await options.evaluateAll((all) => all.map((o) => o.id));
   const from = ids.indexOf((await active.getAttribute("id"))!);
@@ -1681,9 +1681,9 @@ test("a reset taking several fields back stands at its row's left, outside them,
   await selectRow(page, "Button");
   const panel = design(page);
   const width = panel.getByRole("textbox", { name: "Width", exact: true });
-  const widthField = panel.locator(`.tk-field:has([aria-label="Width"])`);
+  const widthField = panel.locator(`.ht-field:has([aria-label="Width"])`);
   const sizing = panel.getByRole("combobox", { name: "Width sizing" });
-  const sizingField = panel.locator(`.tk-select-field:has([aria-label="Width sizing"])`);
+  const sizingField = panel.locator(`.ht-select-field:has([aria-label="Width sizing"])`);
   const resetWidth = panel.getByRole("button", { name: /^Reset width/ });
   const wasWidth = await width.inputValue();
   await expect(sizing).toHaveValue("hug");
@@ -1717,8 +1717,8 @@ test("a reset taking several fields back stands at its row's left, outside them,
   await selectRow(page, "Card");
   const fill = panel.getByRole("group", { name: "Fill" });
   const hex = fill.getByRole("textbox", { name: "Fill color", exact: true });
-  const hexField = fill.locator(".tk-color-field");
-  const opacityField = fill.locator(".tk-color-opacity");
+  const hexField = fill.locator(".ht-color-field");
+  const opacityField = fill.locator(".ht-color-opacity");
   const resetFill = fill.getByRole("button", { name: "Reset fill" });
   const wasHex = await hex.inputValue();
   await hex.fill("FF0000");
@@ -1740,7 +1740,7 @@ test("a reset taking several fields back stands at its row's left, outside them,
 
   // A number alone: its reset inside it, at its right end.
   const radius = panel.getByRole("textbox", { name: "Corner radius" });
-  const radiusField = panel.locator(`.tk-field:has([aria-label="Corner radius"])`);
+  const radiusField = panel.locator(`.ht-field:has([aria-label="Corner radius"])`);
   await radius.fill("20");
   await radius.press("Enter");
   const resetRadius = radiusField.getByRole("button", { name: "Reset corner radius" });
@@ -1768,8 +1768,8 @@ test("the row's reset looks as a button that stays on (Wrap, on): its size, its 
   await width.press("Enter");
   // Applied with Enter, its Variables close.
   await expect(panel.getByRole("listbox", { name: "Matching variables" })).toHaveCount(0);
-  const rowReset = panel.locator(".tk-size-row > .tk-reset");
-  const fieldReset = panel.locator(".tk-field").getByRole("button", { name: "Reset corner radius" });
+  const rowReset = panel.locator(".ht-size-row > .ht-reset");
+  const fieldReset = panel.locator(".ht-field").getByRole("button", { name: "Reset corner radius" });
   await expect(rowReset).toHaveCount(1);
   await expect(fieldReset).toBeVisible();
   const look = (button: Locator) =>
@@ -1792,7 +1792,7 @@ test("the row's reset looks as a button that stays on (Wrap, on): its size, its 
 test("a section's reset shows for two of its changes, not for one, in every section: Appearance's opacity and radius (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, "Card");
   const panel = design(page);
-  const appearance = panel.locator("section", { has: page.locator("#tk-appearance") });
+  const appearance = panel.locator("section", { has: page.locator("#ht-appearance") });
   const reset = appearance.getByRole("button", { name: "Reset Appearance" });
   const opacity = panel.getByRole("textbox", { name: "Opacity", exact: true });
   const radius = panel.getByRole("textbox", { name: "Corner radius" });
@@ -1800,7 +1800,7 @@ test("a section's reset shows for two of its changes, not for one, in every sect
 
   await opacity.fill("50");
   await opacity.press("Enter");
-  await expect(panel.locator(".tk-field:has([aria-label='Opacity'])")).toHaveClass(/\bis-changed\b/);
+  await expect(panel.locator(".ht-field:has([aria-label='Opacity'])")).toHaveClass(/\bis-changed\b/);
   await expect(reset).toHaveCount(0);
   await radius.fill("20");
   await radius.press("Enter");
@@ -1812,7 +1812,7 @@ test("a section's reset shows for two of its changes, not for one, in every sect
   await expect(reset).toHaveCount(0);
 
   // A check is clicked again to go back: marked, no reset of its own; it counts toward the section's.
-  const visible = panel.locator(".tk-check", { hasText: "Visible" });
+  const visible = panel.locator(".ht-check", { hasText: "Visible" });
   await panel.getByRole("checkbox", { name: "Visible" }).uncheck();
   await expect(visible).toHaveClass(/\bis-changed\b/);
   await expect(visible.getByRole("button")).toHaveCount(0);
@@ -1826,10 +1826,10 @@ test("a shadow's color changed is marked, with its row's reset, which takes it b
   await selectRow(page, "Card");
   const effects = design(page).getByRole("group", { name: "Effects" });
   const hex = effects.getByRole("textbox", { name: "Shadow 1 color", exact: true });
-  const hexField = effects.locator(".tk-color-field", { has: page.getByRole("textbox", { name: "Shadow 1 color", exact: true }) });
-  const opacityField = effects.locator(".tk-color-opacity", { has: page.getByRole("textbox", { name: "Shadow 1 opacity" }) });
+  const hexField = effects.locator(".ht-color-field", { has: page.getByRole("textbox", { name: "Shadow 1 color", exact: true }) });
+  const opacityField = effects.locator(".ht-color-opacity", { has: page.getByRole("textbox", { name: "Shadow 1 opacity" }) });
   const reset = effects.getByRole("button", { name: "Reset shadow 1", exact: true });
-  const yField = effects.locator(".tk-field:has([aria-label='Shadow 1 Y'])");
+  const yField = effects.locator(".ht-field:has([aria-label='Shadow 1 Y'])");
   const sectionReset = effects.getByRole("button", { name: "Reset Effects" });
   const was = await hex.inputValue();
   await expect(hexField).not.toHaveClass(/\bis-changed\b/);
@@ -1840,7 +1840,7 @@ test("a shadow's color changed is marked, with its row's reset, which takes it b
   await expect(opacityField).toHaveClass(/\bis-changed\b/);
   await expect(reset).toHaveCount(1);
   // The other shadow's color, and this one's numbers, unchanged: not marked; one operation, no section reset yet.
-  await expect(effects.locator(".tk-color-field", { has: page.getByRole("textbox", { name: "Shadow 2 color", exact: true }) })).not.toHaveClass(/\bis-changed\b/);
+  await expect(effects.locator(".ht-color-field", { has: page.getByRole("textbox", { name: "Shadow 2 color", exact: true }) })).not.toHaveClass(/\bis-changed\b/);
   await expect(yField).not.toHaveClass(/\bis-changed\b/);
   await expect(sectionReset).toHaveCount(0);
 
@@ -1868,9 +1868,9 @@ test("a gradient's angle changed in the picker is marked, with no reset inside t
   const gradient = async () => (await cardStyles(page, "backgroundImage"))[0];
   await openFill(fill);
   const angle = fill.getByRole("textbox", { name: "Angle", exact: true });
-  const angleField = fill.locator("label.tk-field[data-tk-tip='Angle']");
+  const angleField = fill.locator("label.ht-field[data-ht-tip='Angle']");
   await expect(angle).toHaveValue("45");
-  const stopField = fill.locator(".tk-stop-position").first();
+  const stopField = fill.locator(".ht-stop-position").first();
   const width = (await steadyBox(stopField)).width;
 
   await angle.fill("90");
@@ -1928,7 +1928,7 @@ test("a shadow added in this round: its fields unmarked, with no resets, its −
 test("an existing shadow's Y changed is marked with its reset; one taken off above it leaves it unmarked (designer, 2026-11-08)", async ({ page }) => {
   await selectRow(page, "Card");
   const effects = design(page).getByRole("group", { name: "Effects" });
-  const yField = effects.locator(".tk-field:has([aria-label='Shadow 1 Y'])");
+  const yField = effects.locator(".ht-field:has([aria-label='Shadow 1 Y'])");
 
   // Shadow 1 taken off: shadow 2, now the first, is as it was, and unmarked.
   await effects.getByRole("button", { name: "Remove shadow 1" }).click();
@@ -1944,7 +1944,7 @@ test("an existing shadow's Y changed is marked with its reset; one taken off abo
   await y.fill("9");
   await y.press("Enter");
   await expect(yField).toHaveClass(/\bis-changed\b/);
-  await expect(effects.locator(".tk-field:has([aria-label='Shadow 1 blur'])")).not.toHaveClass(/\bis-changed\b/);
+  await expect(effects.locator(".ht-field:has([aria-label='Shadow 1 blur'])")).not.toHaveClass(/\bis-changed\b/);
   await yField.getByRole("button", { name: "Reset shadow 1 y" }).click();
   await expect(y).toHaveValue(wasY);
   await expect(shadow1.locator(".is-changed")).toHaveCount(0);
@@ -1981,7 +1981,7 @@ test("a Stack made in this round: its fields unmarked, only its − in the accen
   await layers.getByRole("treeitem", { name: "A Framer-style editor layer for any page.", exact: true }).click();
   await layers.getByRole("treeitem", { name: "Button", exact: true }).click({ modifiers: ["Shift"] });
   await design(page).getByRole("button", { name: "Make Stack" }).click();
-  const stack = design(page).locator("section[aria-labelledby='tk-stack']");
+  const stack = design(page).locator("section[aria-labelledby='ht-stack']");
   const dissolve = stack.getByRole("button", { name: "Dissolve Stack" });
   await expect(dissolve).toBeVisible();
   await expect(dissolve).toHaveClass(/\bis-added\b/);
@@ -2004,14 +2004,14 @@ test("an effect's fold at its row's left, its type filling the row from 5px afte
   const effects = design(page).getByRole("group", { name: "Effects" });
   await addEffect(effects, "Layer blur");
   await effects.getByRole("combobox", { name: "Shadow 1 type" }).selectOption("Inner shadow");
-  await expect(effects.getByRole("group", { name: "Shadow 1" }).locator(".tk-select-field.is-changed")).toBeVisible();
+  await expect(effects.getByRole("group", { name: "Shadow 1" }).locator(".ht-select-field.is-changed")).toBeVisible();
 
   for (const [name, remove] of [
     ["Shadow 1", "Remove shadow 1"],
     ["Shadow 2", "Remove shadow 2"],
     ["Layer blur", "Remove layer blur"],
   ]) {
-    const row = effects.getByRole("group", { name, exact: true }).locator(".tk-paint-row");
+    const row = effects.getByRole("group", { name, exact: true }).locator(".ht-paint-row");
     const [rowBox, fold, type, minus] = await Promise.all([
       steadyBox(row),
       steadyBox(row.getByRole("button", { name: `${name} details` })),
@@ -2041,7 +2041,7 @@ test("an effect's fold, as a layer's chevron in the Layers panel but 28px as the
     const style = getComputedStyle(node);
     return { radius: style.borderRadius, background: style.backgroundColor, shadow: style.boxShadow, color: style.color };
   });
-  expect(await look(fold)).toEqual(await look(page.locator('.tk-tree-chevron[data-open="true"]').first()));
+  expect(await look(fold)).toEqual(await look(page.locator('.ht-tree-chevron[data-open="true"]').first()));
   const box = await steadyBox(fold);
   expect([box.width, box.height]).toEqual([28, 28]);
 

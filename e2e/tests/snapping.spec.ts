@@ -6,7 +6,7 @@ const tablet = (page: Page) => page.locator('iframe[title="Tablet 768"]');
 const phone = (page: Page) => page.locator('iframe[title="Phone 390"]');
 const layerTree = (page: Page) => page.getByRole("tree", { name: "Layers" });
 const design = (page: Page) => page.getByRole("complementary", { name: "Design" });
-const marks = (page: Page, type: string) => page.locator(`.tk-mark[data-type="${type}"]`);
+const marks = (page: Page, type: string) => page.locator(`.ht-mark[data-type="${type}"]`);
 const mod = process.platform === "darwin" ? "Meta" : "Control";
 const HERO = '[data-testid="hero"]';
 
@@ -121,7 +121,7 @@ test("dragged to as far from two layers in a row as they are from each other, it
   await dragInBoard(page, desktop(page), `${HERO} > button`, { x: 620, y: 100 }, { nudge: { x: 3, y: 2 }, drop: false });
   const gaps = marks(page, "gap");
   await expect(gaps).toHaveCount(2);
-  await expect(gaps.locator(".tk-mark-label")).toHaveText(["20", "20"]);
+  await expect(gaps.locator(".ht-mark-label")).toHaveText(["20", "20"]);
   await expect(gaps.first()).toHaveCSS("border-top-color", "rgb(232, 28, 196)");
   await page.mouse.up();
 
@@ -134,8 +134,8 @@ test("dragged in the tablet view, it snaps to what is there as the tablet view l
   await pick(page, tablet(page), "#mark");
   // The board is 720 px wide in the tablet view: the mark's middle 3 screen px off the board's.
   await dragInBoard(page, tablet(page), "#mark", { x: 330, y: 120 }, { nudge: { x: 3, y: 0 }, drop: false });
-  await expect(page.locator('.tk-marks[data-view="Tablet"] .tk-mark[data-type="line"]').first()).toBeVisible();
-  await expect(page.locator('.tk-marks:not([data-view="Tablet"])')).toHaveCount(0);
+  await expect(page.locator('.ht-marks[data-view="Tablet"] .ht-mark[data-type="line"]').first()).toBeVisible();
+  await expect(page.locator('.ht-marks:not([data-view="Tablet"])')).toHaveCount(0);
   await page.mouse.up();
 
   await expect.poll(async () => (await placeIn(tablet(page), "#mark")).x).toBeCloseTo(330, 1);
@@ -184,9 +184,9 @@ test("with ⌥ held, the distances from the layer selected to the one pointed at
   await page.mouse.move(paragraph.x + paragraph.width / 2, paragraph.y + paragraph.height / 2);
   // The button sits 24 px (mt-6) below the paragraph.
   await expect(marks(page, "distance")).toHaveCount(1);
-  await expect(marks(page, "distance").locator(".tk-mark-label")).toHaveText("24");
+  await expect(marks(page, "distance").locator(".ht-mark-label")).toHaveText("24");
   // A label is one size at any zoom.
-  await expect(marks(page, "distance").locator(".tk-mark-label")).toHaveCSS("font-size", "11px");
+  await expect(marks(page, "distance").locator(".ht-mark-label")).toHaveCSS("font-size", "11px");
 
   await page.mouse.move(button.x + button.width / 2, button.y + button.height / 2);
   // To the hero section around it: above, below and to its right; its left edge is the section's.
@@ -204,7 +204,7 @@ test("with ⌥ held and several layers selected, the distances are from all of t
   await page.keyboard.down("Alt");
   await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2);
   // From the paragraph's top, the higher of the two, to the header 16 px (mt-4) above it.
-  await expect(marks(page, "distance").locator(".tk-mark-label")).toHaveText(["16"]);
+  await expect(marks(page, "distance").locator(".ht-mark-label")).toHaveText(["16"]);
   await page.keyboard.up("Alt");
 });
 
@@ -241,7 +241,7 @@ test("in a Stack, the arrow keys along it swap the layer with the next one that 
   await expect.poll(order).toEqual(["button", "header", "p"]);
   await expect(layerTree(page).getByRole("treeitem", { name: "Button", exact: true })).toHaveAttribute("aria-selected", "true");
 
-  await page.locator("[data-tk-changes-opener]").click();
+  await page.locator("[data-ht-changes-opener]").click();
   await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toReadAs([/Reorder.*Button.*3rd → 1st/]);
   await page.keyboard.press("Escape");
   await page.keyboard.press(`${mod}+z`);
@@ -261,7 +261,7 @@ test("nudged in the phone view, a free layer moves there only, at the phone's br
   await expect.poll(() => placeIn(desktop(page), "#mark")).toEqual({ x: 100, y: 120 });
   // Marked changed on its field, at the phone's breakpoint.
   await expect(design(page).getByRole("button", { name: "Reset x" })).toBeVisible();
-  await page.locator("[data-tk-changes-opener]").click();
+  await page.locator("[data-ht-changes-opener]").click();
   await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toContainText(["below 768px"]);
 });
 
@@ -286,12 +286,12 @@ test("nudged in the phone view, a layer in a Frame's flow is placed freely there
   await expect.poll(() => position(phone(page))).toBe("absolute");
   await expect.poll(() => position(desktop(page))).toBe("static");
   await expect.poll(() => placeIn(desktop(page), "#chip")).toEqual(was);
-  await page.locator("[data-tk-changes-opener]").click();
+  await page.locator("[data-ht-changes-opener]").click();
   await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toReadAs([/Absolute.*below 768px.*in the layout → X 8px, Y 18px/]);
 
   // Its X and Y there are what places it: undone from the change list (the breakpoint lists none, designer, 2026-11-07), it is in the flow again.
   await page.getByRole("dialog", { name: "Changes" }).getByRole("button", { name: /^Undo the absolute/ }).click();
   await expect.poll(() => position(phone(page))).toBe("static");
   await expect.poll(() => placeIn(phone(page), "#chip")).toEqual(was);
-  await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
+  await expect(page.locator("[data-ht-changes-opener]")).toHaveCount(0);
 });

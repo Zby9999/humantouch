@@ -286,7 +286,7 @@ describe("freezing what the designer had scrolled", () => {
       const el = canvas.document.getElementById(id)!;
       expect([el.scrollLeft, el.scrollTop], id).toEqual(shown[id]);
     }
-    expect(canvas.document.querySelectorAll("[data-tk-scroll]")).toHaveLength(Object.keys(scroll).length);
+    expect(canvas.document.querySelectorAll("[data-ht-scroll]")).toHaveLength(Object.keys(scroll).length);
   });
 });
 
@@ -347,7 +347,7 @@ describe("layers fixed to the window", () => {
 </body>`);
     doc.close();
     const canvas = await freeze(live.contentWindow!, iframe());
-    const pinned = (id: string) => canvas.document.getElementById(id)!.hasAttribute("data-tk-pinned");
+    const pinned = (id: string) => canvas.document.getElementById(id)!.hasAttribute("data-ht-pinned");
     expect([pinned("window"), pinned("queried"), pinned("filtered")]).toEqual([true, true, false]);
   });
 
@@ -365,6 +365,6 @@ describe("layers fixed to the window", () => {
     doc.write(`<!DOCTYPE html><html${open ? "" : ' style="filter: blur(0)"'}><body style="margin: 0">${open}<div id="bar" style="position: fixed; top: 0; height: 10px"></div>${open ? "</div>" : ""}</body></html>`);
     doc.close();
     const canvas = await freeze(live.contentWindow!, iframe());
-    expect(canvas.document.getElementById("bar")!.hasAttribute("data-tk-pinned")).toBe(held);
+    expect(canvas.document.getElementById("bar")!.hasAttribute("data-ht-pinned")).toBe(held);
   });
 });

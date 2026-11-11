@@ -18,7 +18,7 @@ import { ms, report, summarize, type Summary } from "./stats";
  * says whether the target is met. How each is measured is said at each test;
  * ticket 22's Comments has it in full.
  *
- * In the headless shell (`TK_PERF_HEADLESS=1`) the numbers are for comparing
+ * In the headless shell (`HT_PERF_HEADLESS=1`) the numbers are for comparing
  * before and after a change only: the targets are reported, never checked.
  */
 
@@ -78,7 +78,7 @@ function print(text: string) {
 }
 
 function host(page: Page) {
-  return page.locator("third-kind");
+  return page.locator("human-touch");
 }
 
 function canvas(page: Page) {
@@ -133,18 +133,18 @@ interface Entered {
  * view still hidden), as is the time the desktop view's frame begins.
  */
 function armEnter(views: string[]) {
-  const w = window as unknown as { tkEnter: Promise<Entered> };
-  w.tkEnter = new Promise((resolve) => {
-    const shadow = () => document.querySelector("third-kind")?.shadowRoot ?? null;
+  const w = window as unknown as { htEnter: Promise<Entered> };
+  w.htEnter = new Promise((resolve) => {
+    const shadow = () => document.querySelector("human-touch")?.shadowRoot ?? null;
     const frameOf = (root: ShadowRoot, title: string) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`);
     const shows = (root: ShadowRoot, title: string) => !!frameOf(root, title)?.contentDocument?.querySelector("[data-testid=big-hero]");
     const desktopUp = (root: ShadowRoot | null): root is ShadowRoot => {
-      const stage = root?.querySelector<HTMLElement>(".tk-stage");
-      const shell = root?.querySelector<HTMLElement>(".tk-viewport")?.parentElement;
+      const stage = root?.querySelector<HTMLElement>(".ht-stage");
+      const shell = root?.querySelector<HTMLElement>(".ht-viewport")?.parentElement;
       return !!root && stage?.style.visibility === "visible" && shell?.style.opacity !== "0" && shows(root, views[0]);
     };
     const allUp = (root: ShadowRoot) => !!root.querySelector('[role="tree"] [role="treeitem"]') && views.every((title) => shows(root, title));
-    const travelling = (root: ShadowRoot) => !!root.querySelector(".tk-viewport.is-travelling");
+    const travelling = (root: ShadowRoot) => !!root.querySelector(".ht-viewport.is-travelling");
     /** Shown on screen: in a view not hidden while the canvas travels. */
     const allShown = (root: ShadowRoot) => allUp(root) && views.every((title) => getComputedStyle(frameOf(root, title)!).visibility === "visible");
     /**
@@ -197,7 +197,7 @@ function armEnter(views: string[]) {
 async function enterAndMeasure(page: Page, label: string) {
   await page.evaluate(armEnter, VIEWS);
   await page.getByRole("button", { name: label }).click();
-  const { click, desktop, desktopDrawn, allUp, allUpAtEnd } = await page.evaluate(() => (window as unknown as { tkEnter: Promise<Entered> }).tkEnter);
+  const { click, desktop, desktopDrawn, allUp, allUpAtEnd } = await page.evaluate(() => (window as unknown as { htEnter: Promise<Entered> }).htEnter);
   expect(allUpAtEnd, "once the page has shrunk into the canvas, every view shows it and the Layers panel lists it").toBe(true);
   return { desktopUp: desktopDrawn - click, desktopBegins: desktop - click, allUp: allUp - click };
 }
@@ -221,9 +221,9 @@ const card = (n: number) => `[data-testid=big-products] [data-testid=product]:nt
 function coveringAt(page: Page, at: { x: number; y: number }) {
   return page.evaluate(({ x, y }) => {
     if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return `out of the ${innerWidth}×${innerHeight} window`;
-    const hit = document.querySelector("third-kind")!.shadowRoot!.elementFromPoint(x, y);
+    const hit = document.querySelector("human-touch")!.shadowRoot!.elementFromPoint(x, y);
     // Over the canvas, the editor's own controls: the selection toolbar, a brief card, a view's label.
-    const over = hit?.closest(".tk-viewport") ? hit.closest("button, input, textarea, select, a, [role=toolbar], .tk-brief-card, .tk-view-title") : hit;
+    const over = hit?.closest(".ht-viewport") ? hit.closest("button, input, textarea, select, a, [role=toolbar], .ht-brief-card, .ht-view-title") : hit;
     return over ? `${over.tagName.toLowerCase()}.${[...over.classList].join(".")}` : hit ? undefined : "nothing";
   }, at);
 }
@@ -321,10 +321,10 @@ interface ValueSample {
  * every view shows it is kept as a reference.
  */
 function armValue({ views, selector, property, expected }: { views: string[]; selector: string; property: string; expected: string }) {
-  const w = window as unknown as { tkValue: Promise<ValueSample> };
+  const w = window as unknown as { htValue: Promise<ValueSample> };
   const { scheduler } = window as unknown as WithScheduler;
-  w.tkValue = new Promise((resolve) => {
-    const root = document.querySelector("third-kind")!.shadowRoot!;
+  w.htValue = new Promise((resolve) => {
+    const root = document.querySelector("human-touch")!.shadowRoot!;
     const docs = views.map((title) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`)!.contentDocument!);
     const showsIn = (doc: Document) => getComputedStyle(doc.querySelector(selector)!).getPropertyValue(property) === expected;
     const shown = () => docs.every(showsIn);
@@ -384,7 +384,7 @@ async function stepValue(page: Page, field: string, selector: string, property: 
     const expected = `${parseFloat(await valueOnCanvas(page, selector, property)) + 1}px`;
     await page.evaluate(armValue, { views, selector, property, expected });
     await page.keyboard.press("ArrowUp");
-    samples.push(await page.evaluate(() => (window as unknown as { tkValue: Promise<ValueSample> }).tkValue));
+    samples.push(await page.evaluate(() => (window as unknown as { htValue: Promise<ValueSample> }).htValue));
     await settle(page, 150);
   }
   // After the last step, every view shows the last value.
@@ -425,7 +425,7 @@ interface HeldRecord {
  */
 function armHeld({ views, selector, property, from }: { views: string[]; selector: string; property: string; from: number }) {
   const { scheduler } = window as unknown as WithScheduler;
-  const root = document.querySelector("third-kind")!.shadowRoot!;
+  const root = document.querySelector("human-touch")!.shadowRoot!;
   const docs = views.map((title) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`)!.contentDocument!);
   const valueIn = (doc: Document) => parseFloat(getComputedStyle(doc.querySelector(selector)!).getPropertyValue(property));
   /** Once a frame has been drawn, before what the page has queued meanwhile (see `armEnter`). */
@@ -484,7 +484,7 @@ function armHeld({ views, selector, property, from }: { views: string[]; selecto
     },
     { capture: true, signal: listening.signal },
   );
-  (window as unknown as { tkHeld: HeldRecord }).tkHeld = record;
+  (window as unknown as { htHeld: HeldRecord }).htHeld = record;
 }
 
 /**
@@ -511,7 +511,7 @@ async function holdValue(page: Page, field: string, selector: string, property: 
   sent.push(cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...key }));
   await Promise.all(sent);
   await cdp.detach();
-  const held = await page.evaluate(() => (window as unknown as { tkHeld: HeldRecord }).tkHeld.done);
+  const held = await page.evaluate(() => (window as unknown as { htHeld: HeldRecord }).htHeld.done);
   await settle(page);
   await everyViewShows(page, selector, property, `${from + HELD_STEPS}px`);
   return held;
@@ -535,8 +535,8 @@ interface FrameRecord {
 }
 
 function armFrames(shows: string) {
-  const w = window as unknown as { tkFrames: FrameRecord };
-  const root = document.querySelector("third-kind")!.shadowRoot!;
+  const w = window as unknown as { htFrames: FrameRecord };
+  const root = document.querySelector("human-touch")!.shadowRoot!;
   const record: FrameRecord = { times: [], withLine: 0, long: [], moves: 0, stop() {} };
   const moved = () => record.moves++;
   addEventListener("pointermove", moved, true);
@@ -554,7 +554,7 @@ function armFrames(shows: string) {
     observer.disconnect();
     removeEventListener("pointermove", moved, true);
   };
-  w.tkFrames = record;
+  w.htFrames = record;
 }
 
 /**
@@ -586,7 +586,7 @@ async function dragFor(page: Page, from: { x: number; y: number }, shows: string
   await Promise.all(sent);
   await cdp.detach();
   const record = await page.evaluate(() => {
-    const record = (window as unknown as { tkFrames: FrameRecord }).tkFrames;
+    const record = (window as unknown as { htFrames: FrameRecord }).htFrames;
     record.stop();
     return { times: record.times, withLine: record.withLine, long: record.long, moves: record.moves };
   });
@@ -601,7 +601,7 @@ async function dragCard(page: Page, n: number) {
   const box = (await canvas(page).locator(card(n)).boundingBox())!;
   const step = (await canvas(page).locator(card(n + 1)).boundingBox())!.x - box.x;
   const from = { x: box.x + box.width / 2, y: box.y + box.height / 3 };
-  return dragFor(page, from, ".tk-drop-line", (elapsed) => {
+  return dragFor(page, from, ".ht-drop-line", (elapsed) => {
     // Across two cards and back, and down a row and back, once every 1.25s.
     const phase = (elapsed / 1250) * 2 * Math.PI;
     return [from.x + Math.sin(phase) * step * 2, from.y + (1 - Math.cos(phase)) * box.height * 0.6];
@@ -615,9 +615,9 @@ async function dragCard(page: Page, n: number) {
  * same card. The pointer is sent as `dragCard` sends it.
  */
 async function resizeCard(page: Page) {
-  const corner = (await host(page).locator('.tk-handles[data-view="Desktop"] .tk-handle[data-handle="se"]').boundingBox())!;
+  const corner = (await host(page).locator('.ht-handles[data-view="Desktop"] .ht-handle[data-handle="se"]').boundingBox())!;
   const from = { x: corner.x + corner.width / 2, y: corner.y + corner.height / 2 };
-  return dragFor(page, from, ".tk-size-label", (elapsed) => {
+  return dragFor(page, from, ".ht-size-label", (elapsed) => {
     // Out and back once every 1.25s: up to 80 screen px wider and 60 taller, never back within the threshold of where it was pressed.
     const phase = (elapsed / 1250) * 2 * Math.PI;
     return [from.x + 10 + (1 - Math.cos(phase)) * 40, from.y + 10 + (1 - Math.cos(phase)) * 30];
@@ -756,17 +756,17 @@ test("a value changed shows in the view worked in in the next frame, its work wi
 
 /** What `hearKeysFirst` tells of each key pressed, if anything listens. */
 interface WithKeysFirst {
-  tkKeyFirst?: (event: KeyboardEvent) => void;
+  htKeyFirst?: (event: KeyboardEvent) => void;
 }
 
 /**
  * Before any of the page's own: a listener for every key pressed, first of all
- * at the window, that tells `window.tkKeyFirst` of it. The editor layer takes
+ * at the window, that tells `window.htKeyFirst` of it. The editor layer takes
  * ⌘Z and ⇧⌘Z at the window, as they come, so a listener added once it is up
  * would hear them only once they are handled.
  */
 function hearKeysFirst() {
-  addEventListener("keydown", (event) => (window as unknown as WithKeysFirst).tkKeyFirst?.(event), true);
+  addEventListener("keydown", (event) => (window as unknown as WithKeysFirst).htKeyFirst?.(event), true);
 }
 
 interface UndoRedoSample {
@@ -796,9 +796,9 @@ interface UndoRedoSample {
  * Waits for the frame under way to be drawn before listening.
  */
 function armUndoRedo({ views, selector, property, expected, code }: { views: string[]; selector: string; property: string; expected: string; code?: string }) {
-  const w = window as unknown as WithKeysFirst & { tkUndoRedo: Promise<UndoRedoSample> };
+  const w = window as unknown as WithKeysFirst & { htUndoRedo: Promise<UndoRedoSample> };
   const { scheduler } = window as unknown as WithScheduler;
-  const root = document.querySelector("third-kind")!.shadowRoot!;
+  const root = document.querySelector("human-touch")!.shadowRoot!;
   const docs = views.map((title) => root.querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`)!.contentDocument!);
   const valueIn = (doc: Document) => getComputedStyle(doc.querySelector(selector)!).getPropertyValue(property);
   /** ⌘Z or ⇧⌘Z (Ctrl on other systems): the keys pressed here; with `code`, ⌥⌘ and that key, as ⌥⌘V (ticket 117). */
@@ -808,7 +808,7 @@ function armUndoRedo({ views, selector, property, expected, code }: { views: str
     requestAnimationFrame(() =>
       scheduler.postTask(
         () => {
-          w.tkUndoRedo = new Promise((resolve) => {
+          w.htUndoRedo = new Promise((resolve) => {
             let start = 0;
             let arrived = 0;
             let handled = 0;
@@ -839,9 +839,9 @@ function armUndoRedo({ views, selector, property, expected, code }: { views: str
                 { priority: "user-blocking" },
               );
             };
-            w.tkKeyFirst = (event) => {
+            w.htKeyFirst = (event) => {
               if (!isUndoOrRedo(event)) return;
-              w.tkKeyFirst = undefined;
+              w.htKeyFirst = undefined;
               // Read before the time starts: the frame before has been drawn, so this lays nothing out.
               const shown = docs.map(valueIn);
               behind = shown.slice(1).some((value) => value !== shown[0]);
@@ -877,7 +877,7 @@ async function undoAndRedo(page: Page, field: string, selector: string, property
   await (await fieldOf(page, field)).focus();
   const undo: UndoRedoSample[] = [];
   const redo: UndoRedoSample[] = [];
-  const measured = () => page.evaluate(() => (window as unknown as { tkUndoRedo: Promise<UndoRedoSample> }).tkUndoRedo);
+  const measured = () => page.evaluate(() => (window as unknown as { htUndoRedo: Promise<UndoRedoSample> }).htUndoRedo);
   for (let i = 0; i < UNDO_RUNS; i++) {
     const from = parseFloat(await valueOnCanvas(page, selector, property));
     await page.keyboard.press("ArrowUp");
@@ -986,12 +986,12 @@ test("⌥⌘V on one of 96 cards shows in the view worked in in the next frame, 
     await field.fill(String(parseFloat(typed)));
     await page.evaluate(armValue, { views: VIEWS.slice(0, 1), selector, property, expected: typed });
     await page.keyboard.press("Enter");
-    edits.push(await page.evaluate(() => (window as unknown as { tkValue: Promise<ValueSample> }).tkValue));
+    edits.push(await page.evaluate(() => (window as unknown as { htValue: Promise<ValueSample> }).htValue));
     await field.blur();
     await settle(page, 150);
     await page.evaluate(armUndoRedo, { views: VIEWS, selector, property, expected: copied, code: "KeyV" });
     await page.keyboard.press("Alt+ControlOrMeta+KeyV");
-    pastes.push(await page.evaluate(() => (window as unknown as { tkUndoRedo: Promise<UndoRedoSample> }).tkUndoRedo));
+    pastes.push(await page.evaluate(() => (window as unknown as { htUndoRedo: Promise<UndoRedoSample> }).htUndoRedo));
     await settle(page, 150);
   }
   await everyViewShows(page, selector, property, copied);
@@ -1034,15 +1034,15 @@ interface ParentSample {
  * first frame after it when its contents are other than before then.
  */
 function armSelectParent() {
-  const w = window as unknown as WithKeysFirst & { tkSelectParent: Promise<ParentSample> };
+  const w = window as unknown as WithKeysFirst & { htSelectParent: Promise<ParentSample> };
   const { scheduler } = window as unknown as WithScheduler;
-  const panel = document.querySelector("third-kind")!.shadowRoot!.querySelector('[aria-label="Design"]')!;
+  const panel = document.querySelector("human-touch")!.shadowRoot!.querySelector('[aria-label="Design"]')!;
   const before = panel.innerHTML;
   return new Promise<void>((armed) =>
     requestAnimationFrame(() =>
       scheduler.postTask(
         () => {
-          w.tkSelectParent = new Promise((resolve) => {
+          w.htSelectParent = new Promise((resolve) => {
             let start = 0;
             let arrived = 0;
             let handled = 0;
@@ -1056,9 +1056,9 @@ function armSelectParent() {
                 { priority: "user-blocking" },
               );
             };
-            w.tkKeyFirst = (event) => {
+            w.htKeyFirst = (event) => {
               if (event.key !== "Escape") return;
-              w.tkKeyFirst = undefined;
+              w.htKeyFirst = undefined;
               start = performance.now();
               arrived = event.timeStamp;
               requestAnimationFrame(frame);
@@ -1096,7 +1096,7 @@ test("selecting one of 96 cards shows it in the Design panel in the next frame, 
     await settle(page, 150);
     await page.evaluate(armSelectParent);
     await page.keyboard.press("Escape");
-    samples.push(await page.evaluate(() => (window as unknown as { tkSelectParent: Promise<ParentSample> }).tkSelectParent));
+    samples.push(await page.evaluate(() => (window as unknown as { htSelectParent: Promise<ParentSample> }).htSelectParent));
     await settle(page, 150);
   }
   const work = summarize(samples.map((s) => s.work));
@@ -1125,7 +1125,7 @@ function layerRows(page: Page) {
 /** Whether the views on the stage all show whole in the viewport, and how tall the stage and the viewport are, in page px. */
 function stageInSight(page: Page) {
   return host(page)
-    .locator(".tk-stage")
+    .locator(".ht-stage")
     .evaluate((stage) => {
       const [s, v] = [stage.getBoundingClientRect(), stage.parentElement!.getBoundingClientRect()];
       return { inSight: s.left >= v.left && s.top >= v.top && s.right <= v.right && s.bottom <= v.bottom, stageHeight: s.height, viewportHeight: v.height };
@@ -1151,7 +1151,7 @@ test("after the views beside are deleted and the page's main column deleted and 
   await enterEditMode(page);
   const views = [VIEWS[0]];
   for (const name of ["Tablet", "Phone"]) await page.getByRole("button", { name: `Delete ${name} view` }).click();
-  await expect(host(page).locator("iframe.tk-canvas")).toHaveCount(1);
+  await expect(host(page).locator("iframe.ht-canvas")).toHaveCount(1);
   await settle(page, 500);
   // From a card's body up to the main column: the body, the card, the cards' grid, their section, the column.
   await selectCard(page, 6);
@@ -1289,7 +1289,7 @@ async function withBriefs(page: Page) {
   await settle(page, 300);
   await page.keyboard.press("b");
   const viewport = (await host(page).getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
-  const cards = host(page).locator(".tk-brief-card");
+  const cards = host(page).locator(".ht-brief-card");
   const frame = page.locator('iframe[title="Canvas"]');
   let written = 0;
   /** The elements clicked so far, by their place among those read. */
@@ -1357,7 +1357,7 @@ async function zoomFor(page: Page) {
   const viewport = (await host(page).getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
   const at = { x: viewport.x + viewport.width / 2, y: viewport.y + viewport.height / 2 };
   await page.mouse.move(at.x, at.y);
-  await page.evaluate(armFrames, ".tk-brief-card");
+  await page.evaluate(armFrames, ".ht-brief-card");
   const cdp = await page.context().newCDPSession(page);
   const sent: Promise<unknown>[] = [];
   const started = Date.now();
@@ -1376,7 +1376,7 @@ async function zoomFor(page: Page) {
   await Promise.all(sent);
   await cdp.detach();
   const record = await page.evaluate(() => {
-    const record = (window as unknown as { tkFrames: FrameRecord }).tkFrames;
+    const record = (window as unknown as { htFrames: FrameRecord }).htFrames;
     record.stop();
     return { times: record.times, withLine: record.withLine, long: record.long, moves: record.moves };
   });
@@ -1432,10 +1432,10 @@ interface SelectSample {
  * follow-up), from its first callback to being drawn.
  */
 function armSelect(count: number) {
-  const w = window as unknown as { tkSelect: Promise<SelectSample> };
+  const w = window as unknown as { htSelect: Promise<SelectSample> };
   const { scheduler } = window as unknown as WithScheduler;
-  w.tkSelect = new Promise((resolve) => {
-    const root = document.querySelector("third-kind")!.shadowRoot!;
+  w.htSelect = new Promise((resolve) => {
+    const root = document.querySelector("human-touch")!.shadowRoot!;
     const shown = () =>
       root.querySelectorAll('[role=tree][aria-label=Layers] [role=treeitem][aria-selected=true]').length === count &&
       !!root.querySelector('[aria-label="Make Stack"], [aria-label="Make Grid"]');
@@ -1474,7 +1474,7 @@ test("selecting free layers in rows and columns one by one with ⇧ held, the pa
   const elements = await openBigPage(page);
   // A Frame of free boxes, at the top of the page, in rows and columns.
   await page.evaluate(({ columns, rows }) => {
-    const board = Object.assign(document.createElement("div"), { id: "tk-boxes" });
+    const board = Object.assign(document.createElement("div"), { id: "ht-boxes" });
     board.style.cssText = `position: relative; height: ${rows * 42 + 20}px`;
     for (let i = 0; i < columns * rows; i++) {
       const box = document.createElement("div");
@@ -1486,7 +1486,7 @@ test("selecting free layers in rows and columns one by one with ⇧ held, the pa
   await enterEditMode(page);
   const total = BOX_COLUMNS * BOX_ROWS;
   const tree = page.getByRole("tree", { name: "Layers" });
-  const first = (await canvas(page).locator("#tk-boxes > div").first().boundingBox())!;
+  const first = (await canvas(page).locator("#ht-boxes > div").first().boundingBox())!;
   await selectDeepestIn(page, first);
   await settle(page);
   // The boxes' rows, as the panel lists them: the selected one and the siblings after it.
@@ -1500,7 +1500,7 @@ test("selecting free layers in rows and columns one by one with ⇧ held, the pa
     for (let n = 2; n <= total; n++) {
       await page.evaluate(armSelect, n);
       await boxRows.nth(firstRow + n - 1).click({ modifiers: ["Shift"] });
-      const sample = await page.evaluate(() => (window as unknown as { tkSelect: Promise<SelectSample> }).tkSelect);
+      const sample = await page.evaluate(() => (window as unknown as { htSelect: Promise<SelectSample> }).htSelect);
       if (run > 0) samples.push(sample);
       await settle(page, 100);
     }
@@ -1527,7 +1527,7 @@ interface Seen {
   measures: { start: number; duration: number }[];
 }
 function armTasks(measure: string) {
-  const w = window as unknown as { tkSeen: Seen; tkStop: () => void };
+  const w = window as unknown as { htSeen: Seen; htStop: () => void };
   const seen: Seen = { long: [], measures: [] };
   const observer = new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) {
@@ -1537,14 +1537,14 @@ function armTasks(measure: string) {
   });
   observer.observe({ type: "longtask" });
   observer.observe({ type: "measure" });
-  w.tkSeen = seen;
-  w.tkStop = () => observer.disconnect();
+  w.htSeen = seen;
+  w.htStop = () => observer.disconnect();
 }
 function takenTasks(page: Page): Promise<Seen> {
   return page.evaluate(() => {
-    const w = window as unknown as { tkSeen: Seen; tkStop: () => void };
-    w.tkStop();
-    return w.tkSeen;
+    const w = window as unknown as { htSeen: Seen; htStop: () => void };
+    w.htStop();
+    return w.htSeen;
   });
 }
 
@@ -1564,7 +1564,7 @@ function longTasksOf(long: Seen["long"], own: { start: number; end: number; dura
  * reading all 96 of them, at the page's width and at the tablet's and the
  * phone's on copies of the page), then four hot updates to the cards' code:
  * one that applies none of them, then one per change. Each stretch of
- * checking is a `03kind:check` measure; a long task is the check's when
+ * checking is a `humantouch:check` measure; a long task is the check's when
  * it would not be one without the checking in it. For reference, the same
  * hot updates with no round claimed: the page's own long tasks. The claim is
  * measured too: the page looks at every change, and makes its copies; and
@@ -1611,7 +1611,7 @@ test.describe("a claimed round", () => {
     { name: "gap applied", from: "flex flex-1 flex-col gap-2 p-gutter", to: "flex flex-1 flex-col gap-[10px] p-gutter", shows: () => getComputedStyle(document.querySelector("[data-testid=product] > div:nth-of-type(2)")!).rowGap === "10px" },
   ];
 
-  const CHECKS = "03kind:check";
+  const CHECKS = "humantouch:check";
 
   /**
    * Makes each hot update in turn, waits till the page shows it and has
@@ -1939,7 +1939,7 @@ test.describe("a claimed round", () => {
  * afresh; three hot updates to the cards' code: one that leaves the page as
  * it was (a type added at the top, every source marker in the file a line
  * down), one to the words of the 96 cards, and one to a class on them, new to
- * the stylesheet. Each stretch of telling is a `03kind:page-changed`
+ * the stylesheet. Each stretch of telling is a `humantouch:page-changed`
  * measure; a long task is its own when it would not be one without it.
  */
 test.describe("the code changing in edit mode, with no claim", () => {
@@ -1957,8 +1957,8 @@ test.describe("the code changing in edit mode, with no claim", () => {
   });
 
   const IMPORT = 'import { avatar, picture } from "./images";';
-  const MEASURE = "03kind:page-changed";
-  const productLoc = () => document.querySelector("[data-testid=product]")!.getAttribute("data-tk-loc");
+  const MEASURE = "humantouch:page-changed";
+  const productLoc = () => document.querySelector("[data-testid=product]")!.getAttribute("data-ht-loc");
 
   test("in edit mode with no claim, the page tells whether it changed on each hot update with no long task of its own", async ({ page }) => {
     const elements = await openBigPage(page);
@@ -2000,7 +2000,7 @@ test.describe("the code changing in edit mode, with no claim", () => {
         telling: own.reduce((sum, entry) => sum + entry.duration, 0),
         longTasks: seen.long.map((task) => task.duration),
         longTasksOfTelling: longTasksOf(seen.long, own.map((entry) => ({ start: entry.start, end: entry.start + entry.duration, duration: entry.duration }))).map((task) => task.duration),
-        told: await host(page).locator('[data-tk-notice="page-changed"]').count(),
+        told: await host(page).locator('[data-ht-notice="page-changed"]').count(),
       });
     }
     const longest = Math.max(...rows.map((row) => row.longestStretch));
@@ -2065,7 +2065,7 @@ test.describe("the code changing in edit mode, with no claim", () => {
         telling: own.reduce((sum, entry) => sum + entry.duration, 0),
         longTasks: seen.long.map((task) => task.duration),
         longTasksOfTelling: longTasksOf(seen.long, own.map((entry) => ({ start: entry.start, end: entry.start + entry.duration, duration: entry.duration }))).map((task) => task.duration),
-        told: await host(page).locator('[data-tk-notice="page-changed"]').count(),
+        told: await host(page).locator('[data-ht-notice="page-changed"]').count(),
       });
     }
     const longest = Math.max(...rows.map((row) => row.longestStretch));
@@ -2103,7 +2103,7 @@ test.describe("the code changing in edit mode, with no claim", () => {
  * finish after. Three changes to the hero made one after another in the
  * tablet view, each read once the designer stops; then two each followed at
  * once by going back to preview mode. Each step of reading is a
- * `03kind:parts` measure. No long task may come from the reading's first
+ * `humantouch:parts` measure. No long task may come from the reading's first
  * step to its last, the reading's own or not: one the reading makes between
  * its steps (the browser laying the copy out, say) is counted too.
  */
@@ -2118,7 +2118,7 @@ test.describe("a change at a breakpoint", () => {
   const tablet = (page: Page) => page.locator('iframe[title="Tablet 768"]').contentFrame();
   const changes = (): { id: number; parts?: unknown[] | null }[] => (existsSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`, "utf8")).changes : []);
 
-  const PARTS_MEASURE = "03kind:parts";
+  const PARTS_MEASURE = "humantouch:parts";
 
   /** Selects the deepest layer at a point just inside `selector`'s box in the tablet view: edits apply from 560px to 1119px. */
   async function selectInTablet(page: Page, selector: string) {

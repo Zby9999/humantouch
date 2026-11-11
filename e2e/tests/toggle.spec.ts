@@ -123,7 +123,7 @@ test("the change list too long for the window: its title and Discard all stay, t
   await page.setViewportSize({ width: 800, height: 200 });
   await page.getByRole("button", { name: /not applied yet/ }).click();
   const dialog = page.getByRole("dialog", { name: "Changes" });
-  const rows = dialog.locator(".tk-changes-list");
+  const rows = dialog.locator(".ht-changes-list");
   await expect(dialog.getByRole("heading")).toBeInViewport();
   await expect(dialog.getByRole("button", { name: "Discard all" })).toBeInViewport();
   const [box, title, discard] = [await steadyBox(dialog), await steadyBox(dialog.getByRole("heading")), await steadyBox(dialog.getByRole("button", { name: "Discard all" }))];
@@ -170,7 +170,7 @@ test("the round claimed, the change list opens by itself, the change the Agent i
     (route) =>
       route.fulfill({
         status: 200,
-        headers: { "Access-Control-Allow-Origin": route.request().headers().origin ?? "*", "Access-Control-Allow-Headers": "X-03Kind-Token, Content-Type" },
+        headers: { "Access-Control-Allow-Origin": route.request().headers().origin ?? "*", "Access-Control-Allow-Headers": "X-Human-Touch-Token, Content-Type" },
         contentType: route.request().url().endsWith("/events") ? "application/x-ndjson" : "application/json",
         body: `${JSON.stringify(claimed ? { status: "claimed", done: applied, applied } : { status: "editing" })}\n`,
       }),
@@ -179,31 +179,31 @@ test("the round claimed, the change list opens by itself, the change the Agent i
   await expect(list).toBeVisible();
   expect(await list.evaluate((el) => el.matches(":focus-within"))).toBe(false);
   // Locked, the ring right round the toggle: the count stays where it was (designer, 2026-11-09).
-  await expect(page.locator(".tk-progress")).toBeVisible();
+  await expect(page.locator(".ht-progress")).toBeVisible();
   expect(await steadyBox(page.getByRole("button", { name: /not applied yet/ }))).toEqual(countBox);
   const rows = list.getByRole("listitem");
   await expect(rows).toHaveText([/Fill · Button/, /Fill · Card/]);
   await expect(rows.first()).toHaveAttribute("aria-current", "step");
   await expect(rows.first()).toHaveClass(/is-current/);
-  await expect(rows.first().locator(".tk-change-spinner")).toBeVisible();
-  await expect(rows.nth(1).locator(".tk-change-spinner")).toHaveCount(0);
+  await expect(rows.first().locator(".ht-change-spinner")).toBeVisible();
+  await expect(rows.nth(1).locator(".ht-change-spinner")).toHaveCount(0);
 
   // The round's changes are numbered from 1, in the order made.
   applied = [1];
   // Gone from the list; its row going back and fading where it was, out of the way of the rows.
   await expect(rows).toHaveText([/Fill · Card/]);
   await expect(rows.first()).toHaveAttribute("aria-current", "step");
-  await expect(list.locator(".tk-change.is-applied")).toHaveCount(0);
+  await expect(list.locator(".ht-change.is-applied")).toHaveCount(0);
 
   // The last applied: the list fades out at once, as it was, its last row and title in it (designer, 2026-11-09). It lasts a moment:
   // what showed is kept as it shows.
   await page.evaluate(() => {
-    const root = document.querySelector("third-kind")!.shadowRoot!;
+    const root = document.querySelector("human-touch")!.shadowRoot!;
     const seen: string[] = ((window as unknown as { seen: string[] }).seen = []);
     new MutationObserver(() => {
-      const dialog = root.querySelector(".tk-changes");
+      const dialog = root.querySelector(".ht-changes");
       if (dialog?.classList.contains("is-leaving")) {
-        seen.push(`leaving:${dialog.querySelector(".tk-changes-title")!.textContent}:${dialog.querySelectorAll(".tk-change:not(.is-applied)").length}:${dialog.querySelectorAll(".is-applied").length}`);
+        seen.push(`leaving:${dialog.querySelector(".ht-changes-title")!.textContent}:${dialog.querySelectorAll(".ht-change:not(.is-applied)").length}:${dialog.querySelectorAll(".is-applied").length}`);
       }
     }).observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
   });

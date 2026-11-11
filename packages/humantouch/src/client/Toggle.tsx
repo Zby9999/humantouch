@@ -5,7 +5,7 @@ import { UNLOCK_HOLD_MS } from "./toggle-motion";
 
 export type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
-const CORNER_KEY = "03kind:toggle-corner";
+const CORNER_KEY = "humantouch:toggle-corner";
 const CORNERS: Corner[] = ["top-left", "top-right", "bottom-left", "bottom-right"];
 /** Pointer travel (px) before a press counts as a drag instead of a click. */
 const DRAG_THRESHOLD = 4;
@@ -164,13 +164,13 @@ export function Toggle({ changeCount = 0, changesOpen, onShowChanges, applying, 
   const label = applying ? "Human Touch: applying design changes. Press and hold to unlock." : "Human Touch: enter edit mode";
 
   return (
-    <div ref={dock} class={dragging ? "tk-dock is-dragging" : "tk-dock"} data-corner={corner}>
-      <div class={holding ? "tk-toggle-wrap is-holding" : "tk-toggle-wrap"}>
+    <div ref={dock} class={dragging ? "ht-dock is-dragging" : "ht-dock"} data-corner={corner}>
+      <div class={holding ? "ht-toggle-wrap is-holding" : "ht-toggle-wrap"}>
         <button
           type="button"
-          class="tk-toggle"
+          class="ht-toggle"
           aria-label={label}
-          data-tk-tip={applying ? "Applying design changes. Press and hold to unlock." : undefined}
+          data-ht-tip={applying ? "Applying design changes. Press and hold to unlock." : undefined}
           aria-disabled={applying ? "true" : undefined}
           aria-busy={busy && !applying ? "true" : undefined}
           onPointerEnter={onReady}
@@ -199,8 +199,8 @@ export function Toggle({ changeCount = 0, changesOpen, onShowChanges, applying, 
         {changeCount > 0 && (
           <button
             type="button"
-            class="tk-toggle-count"
-            data-tk-changes-opener=""
+            class="ht-toggle-count"
+            data-ht-changes-opener=""
             aria-label={`${changeCount} ${changeCount === 1 ? "change" : "changes"} not applied yet`}
             aria-haspopup="dialog"
             aria-expanded={changesOpen}
@@ -220,7 +220,7 @@ export function Toggle({ changeCount = 0, changesOpen, onShowChanges, applying, 
 function ProgressRing({ done, total }: { done: number; total: number }) {
   return (
     <svg
-      class="tk-progress"
+      class="ht-progress"
       viewBox="0 0 36 36"
       role="progressbar"
       aria-label="Applying design changes"
@@ -228,10 +228,10 @@ function ProgressRing({ done, total }: { done: number; total: number }) {
       aria-valuemax={total}
       aria-valuenow={done}
     >
-      {/* Around the toggle's rounded square (designer, 2026-11-08): where and how round, the styles' (`.tk-progress rect`). */}
-      <rect class="tk-progress-track" pathLength={1} />
-      <rect class="tk-progress-done" pathLength={1} style={{ strokeDashoffset: total ? 1 - done / total : 1 }} />
-      <rect class="tk-progress-hold" pathLength={1} />
+      {/* Around the toggle's rounded square (designer, 2026-11-08): where and how round, the styles' (`.ht-progress rect`). */}
+      <rect class="ht-progress-track" pathLength={1} />
+      <rect class="ht-progress-done" pathLength={1} style={{ strokeDashoffset: total ? 1 - done / total : 1 }} />
+      <rect class="ht-progress-hold" pathLength={1} />
     </svg>
   );
 }

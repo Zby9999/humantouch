@@ -62,10 +62,10 @@ export function Toast({ message }: { message: ToastMessage | null }) {
   const [hovered, setHovered] = useState(false);
   const { shown, fading } = useToastTime(message, TOAST_MS, hovered);
   return (
-    <div class="tk-toasts" role="status">
+    <div class="ht-toasts" role="status">
       {shown && (
         // One toast at a time: a new one shows its words in the same place, without coming in again.
-        <p class={`tk-toast${fading ? " is-fading" : ""}`} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
+        <p class={`ht-toast${fading ? " is-fading" : ""}`} onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
           {/* A new toast is new words in the live region, though they be the same: it is read out again. */}
           <span key={shown.key}>{shown.text}</span>
         </p>

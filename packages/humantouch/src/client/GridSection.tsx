@@ -54,10 +54,10 @@ export function GridSection({ editor, layers, onEdit, variable, arrange, dissolv
   };
   return (
     <ChangeMarksProvider value={added ? NO_MARKS : marks}>
-    <section class="tk-section" aria-labelledby="tk-grid">
-      <div class="tk-section-header">
+    <section class="ht-section" aria-labelledby="ht-grid">
+      <div class="ht-section-header">
         {/* Layout, as the Stack's section is titled: one section, a Stack or a Grid (designer, 2026-11-10). */}
-        <h3 id="tk-grid" class="tk-section-title">
+        <h3 id="ht-grid" class="ht-section-title">
           Layout
         </h3>
         {/* As every section's: shown for two changes or more (designer, 2026-11-08). */}
@@ -65,15 +65,15 @@ export function GridSection({ editor, layers, onEdit, variable, arrange, dissolv
         {dissolve && <RemoveButton label="Dissolve Grid" title={added ? undefined : "Dissolve Grid (⌥⇧A)"} added={added} onClick={dissolve} />}
       </div>
       {/* The direction beside the columns, a row the fewer (designer, 2026-11-10). */}
-      <div class="tk-grid-2">
+      <div class="ht-grid-2">
         <NumberField label="Columns" icon="grid" property="columns" value={shown("columns")} min={1} onChange={set("columns")} />
         {arrange && (
-          <div class="tk-row">
+          <div class="ht-row">
             <Segmented<ArrangeAs> label="Direction" property="arrangement" value="grid" options={arrangements(true)} onChange={(as) => as !== "grid" && arrange(as)} />
           </div>
         )}
       </div>
-      <div class="tk-grid-2">
+      <div class="ht-grid-2">
         <VariableSlot label="Row gap" slot={variable("rowGap")} property="rowGap">
           <NumberField label="Row gap" icon="row-gap" property="rowGap" value={shown("rowGap")} min={0} onChange={set("rowGap")} />
         </VariableSlot>

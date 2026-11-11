@@ -89,7 +89,7 @@ test("a drag on a number's icon is undone as a whole", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");
   const radius = design(page).getByRole("textbox", { name: "Corner radius" });
-  const icon = page.locator('.tk-field:has([aria-label="Corner radius"]) .tk-scrub');
+  const icon = page.locator('.ht-field:has([aria-label="Corner radius"]) .ht-scrub');
   const { x, y } = await steadyBox(icon);
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
@@ -114,7 +114,7 @@ test("while a number's icon is dragged, ⌘Z, ⇧⌘Z, the field's own arrows an
   await expect(radius).toHaveValue("12");
   // The focus stays in the field as its icon is dragged.
   await radius.focus();
-  const icon = page.locator('.tk-field:has([aria-label="Corner radius"]) .tk-scrub');
+  const icon = page.locator('.ht-field:has([aria-label="Corner radius"]) .ht-scrub');
   const { x, y } = await steadyBox(icon);
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
@@ -188,7 +188,7 @@ test("several layers edited together go back together with ⌘Z, the focus still
 test("in edit mode, an X beside the Design title goes back to preview mode, and the change count beside it opens the change list", async ({ page }) => {
   await makeThreeChanges(page);
   // No toggle floats over the canvas meanwhile.
-  await expect(page.locator(".tk-dock")).toHaveCount(0);
+  await expect(page.locator(".ht-dock")).toHaveCount(0);
 
   const count = design(page).getByRole("button", { name: "3 changes not applied yet" });
   await expect(count).toHaveText("3");
@@ -213,9 +213,9 @@ test("the change list has the keys as soon as it is on the page: Esc pressed bef
 
   // In the page, so no frame passes between the press on the count and Esc. The key goes where a real one would: to what has focus.
   const closed = await page.evaluate(async () => {
-    const root = document.querySelector("third-kind")!.shadowRoot!;
+    const root = document.querySelector("human-touch")!.shadowRoot!;
     const settle = () => new Promise((resolve) => setTimeout(resolve));
-    root.querySelector<HTMLElement>(".tk-count")!.click();
+    root.querySelector<HTMLElement>(".ht-count")!.click();
     await settle();
     if (!root.querySelector('[role="dialog"]')) throw new Error("The change list did not open");
     (root.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true, cancelable: true }));
@@ -252,14 +252,14 @@ test("a row of the change list names its change on one line, its values in its t
   await badge(page).click();
   const rows = changeList(page).getByRole("listitem");
   await expect(rows).toHaveText(["Fill · Card", "Corner radius · Card", "Fill · Button"]);
-  await expect(rows.first().locator(".tk-change-text")).toHaveAttribute("data-tk-tip", "#FFFFFF → #FF0000");
+  await expect(rows.first().locator(".ht-change-text")).toHaveAttribute("data-ht-tip", "#FFFFFF → #FF0000");
   // Pointed at, its layer is outlined on the canvas, as pointed at there; and no longer, once the pointer leaves.
   await rows.nth(2).hover();
-  await expect(page.locator(".tk-hover")).not.toHaveCount(0);
+  await expect(page.locator(".ht-hover")).not.toHaveCount(0);
   // A change at every width: as dark in every view.
-  await expect(page.locator(".tk-hover[data-away]")).toHaveCount(0);
+  await expect(page.locator(".ht-hover[data-away]")).toHaveCount(0);
   await page.getByRole("dialog", { name: "Changes" }).getByRole("heading").hover();
-  await expect(page.locator(".tk-hover")).toHaveCount(0);
+  await expect(page.locator(".ht-hover")).toHaveCount(0);
   await rows.nth(2).getByRole("button", { name: "Fill · Button" }).click();
 
   await expect(changeList(page)).toHaveCount(0);
@@ -267,13 +267,13 @@ test("a row of the change list names its change on one line, its values in its t
   // In the middle of the viewport, across.
   const viewport = (await page.getByLabel("Canvas viewport").boundingBox())!;
   const off = async () => {
-    const box = (await page.locator(".tk-selection:not([data-away])").first().boundingBox())!;
+    const box = (await page.locator(".ht-selection:not([data-away])").first().boundingBox())!;
     return Math.abs(box.x + box.width / 2 - (viewport.x + viewport.width / 2));
   };
   await expect.poll(off).toBeLessThanOrEqual(1);
-  await expect.poll(() => design(page).locator('[data-tk-mark="fill"]').first().evaluate((el) => getComputedStyle(el).animationName)).toBe("tk-ping");
+  await expect.poll(() => design(page).locator('[data-ht-mark="fill"]').first().evaluate((el) => getComputedStyle(el).animationName)).toBe("ht-ping");
   // Blinked, as it was.
-  await expect(design(page).locator('[data-tk-mark="fill"]').first()).not.toHaveClass(/\btk-ping\b/);
+  await expect(design(page).locator('[data-ht-mark="fill"]').first()).not.toHaveClass(/\btk-ping\b/);
 });
 
 test("a shadow added, clicked in the change list, blinks its − in the accent, its fields being unmarked (designer, 2026-11-10)", async ({ page }) => {
@@ -287,7 +287,7 @@ test("a shadow added, clicked in the change list, blinks its − in the accent, 
   await badge(page).click();
   await changeList(page).getByRole("button", { name: "Shadows · Button" }).click();
   // Blinking, not only marked so: a − is a button, whose styles unset all else.
-  await expect.poll(() => design(page).getByRole("button", { name: "Remove shadow 1" }).evaluate((el) => getComputedStyle(el).animationName)).toBe("tk-ping");
+  await expect.poll(() => design(page).getByRole("button", { name: "Remove shadow 1" }).evaluate((el) => getComputedStyle(el).animationName)).toBe("ht-ping");
 });
 
 test("in preview mode, a change undone from the list leaves the round at once; the list opens from the keyboard too", async ({ page }) => {

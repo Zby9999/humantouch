@@ -21,7 +21,7 @@ async function enterEditMode(page: Page) {
  */
 function headerOf(panel: Locator) {
   return panel.evaluate((aside) => {
-    const header = aside.querySelector(":scope > .tk-panel-header")!;
+    const header = aside.querySelector(":scope > .ht-panel-header")!;
     const box = header.getBoundingClientRect();
     const line = getComputedStyle(header, "::after");
     const inset = /inset\(([\d.]+)px(?: ([\d.]+)px)?/.exec(line.clipPath);
@@ -86,7 +86,7 @@ test("the Design panel scrolled: its header stays at its top over what scrolls u
   expect((await headerOf(panel)).headerTop).toBe(0);
   // What scrolled up under the header is there, and hidden: at a point of the header over it, the header is what shows.
   const covered = await panel.evaluate((aside) => {
-    const header = aside.querySelector(":scope > .tk-panel-header")!;
+    const header = aside.querySelector(":scope > .ht-panel-header")!;
     const box = header.getBoundingClientRect();
     const under = [...aside.children].filter((el) => el !== header && el.getBoundingClientRect().top < box.bottom && el.getBoundingClientRect().bottom > box.top);
     const root = aside.getRootNode() as ShadowRoot;
@@ -120,8 +120,8 @@ test("the Layers' tree scrolled: their header stays at its top, the rows going u
   // The list starts right under the header's line, so rows scroll up to it, not 16px short of it.
   const edges = () =>
     panel.evaluate((aside) => {
-      const header = aside.querySelector(":scope > .tk-panel-header")!.getBoundingClientRect();
-      const list = aside.querySelector(":scope > .tk-tree")!.getBoundingClientRect();
+      const header = aside.querySelector(":scope > .ht-panel-header")!.getBoundingClientRect();
+      const list = aside.querySelector(":scope > .ht-tree")!.getBoundingClientRect();
       return { headerBottom: Math.round(header.bottom), listTop: Math.round(list.top), headerLeft: Math.round(header.left) };
     });
   const before = await edges();
@@ -133,7 +133,7 @@ test("the Layers' tree scrolled: their header stays at its top, the rows going u
   expect(await edges()).toEqual(before);
   // A row scrolled up to the line is cut there, under the header: at the header's bottom, the header is what shows.
   const covered = await panel.evaluate((aside) => {
-    const header = aside.querySelector(":scope > .tk-panel-header")!;
+    const header = aside.querySelector(":scope > .ht-panel-header")!;
     const box = header.getBoundingClientRect();
     const root = aside.getRootNode() as ShadowRoot;
     const shown = root.elementFromPoint(box.left + box.width / 2, box.bottom - 2);
@@ -162,7 +162,7 @@ test("the button showing the Layers panel, alone over the canvas, is the editor'
 
   await page.mouse.move(700, 400);
   const looks = (el: Element) => ({ background: getComputedStyle(el).backgroundColor, shadow: getComputedStyle(el).boxShadow });
-  const backing = await page.locator(".tk-tools-backing").evaluate(looks);
+  const backing = await page.locator(".ht-tools-backing").evaluate(looks);
   expect(await show.evaluate(looks)).toEqual(backing);
   expect(backing.shadow).not.toBe("none");
   expect(backing.background).toBe("rgb(255, 255, 255)");

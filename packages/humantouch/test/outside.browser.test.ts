@@ -13,9 +13,9 @@ import { noteChange, noteRound, outsideChanged, unnoted } from "../src/client/ot
 const chain = "";
 const PAGE = `<!DOCTYPE html>
 <body style="margin: 0">
-  <main data-tk-loc="src/App.tsx:2:5" ${chain} style="display: flex; flex-direction: column; padding: 8px">
-    <div id="box" data-tk-loc="src/App.tsx:3:7" ${chain} style="background-color: rgb(255, 255, 255); width: 100px; height: 40px"></div>
-    <p data-tk-loc="src/App.tsx:4:7" ${chain} style="margin: 0">Words</p>
+  <main data-ht-loc="src/App.tsx:2:5" ${chain} style="display: flex; flex-direction: column; padding: 8px">
+    <div id="box" data-ht-loc="src/App.tsx:3:7" ${chain} style="background-color: rgb(255, 255, 255); width: 100px; height: 40px"></div>
+    <p data-ht-loc="src/App.tsx:4:7" ${chain} style="margin: 0">Words</p>
   </main>
 </body>`;
 const PHONE = { min: null, max: 768 };

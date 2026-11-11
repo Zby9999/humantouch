@@ -110,7 +110,7 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onSh
     // A press anywhere else closes it; what opened it (the count beside the toggle, or the one in edit mode) toggles it itself.
     const onPointerDown = (event: PointerEvent) => {
       const path = event.composedPath();
-      if (!path.includes(dialog.current!) && !path.some((target) => target instanceof Element && target.hasAttribute("data-tk-changes-opener"))) {
+      if (!path.includes(dialog.current!) && !path.some((target) => target instanceof Element && target.hasAttribute("data-ht-changes-opener"))) {
         latestOnClose.current();
       }
     };
@@ -148,7 +148,7 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onSh
       setConfirming(false);
       return;
     }
-    const opener = (event.currentTarget.getRootNode() as ShadowRoot).querySelector<HTMLElement>("[data-tk-changes-opener]");
+    const opener = (event.currentTarget.getRootNode() as ShadowRoot).querySelector<HTMLElement>("[data-ht-changes-opener]");
     onClose();
     opener?.focus();
   };
@@ -158,7 +158,7 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onSh
   return (
     <div
       ref={dialog}
-      class={closing ? "tk-changes is-leaving" : "tk-changes"}
+      class={closing ? "ht-changes is-leaving" : "ht-changes"}
       role="dialog"
       aria-label="Changes"
       tabIndex={-1}
@@ -167,12 +167,12 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onSh
         if (closing && event.target === event.currentTarget && event.propertyName === "opacity") latestOnClose.current();
       }}
     >
-      <h2 class="tk-changes-title">{count} not applied yet</h2>
-      {readOnly && <p class="tk-changes-note">The Agent is applying these changes.</p>}
-      {!changes.length && !readOnly && <p class="tk-changes-note">No changes left.</p>}
+      <h2 class="ht-changes-title">{count} not applied yet</h2>
+      {readOnly && <p class="ht-changes-note">The Agent is applying these changes.</p>}
+      {!changes.length && !readOnly && <p class="ht-changes-note">No changes left.</p>}
       <ul
         ref={list}
-        class={["tk-changes-list", hidden.above && "is-above", hidden.below && "is-below"].filter(Boolean).join(" ")}
+        class={["ht-changes-list", hidden.above && "is-above", hidden.below && "is-below"].filter(Boolean).join(" ")}
         onScroll={measure}
       >
         {rowsShown.map((change, index) => (
@@ -182,19 +182,19 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onSh
               if (row) rows.current.set(change.id, row);
               else rows.current.delete(change.id);
             }}
-            class={readOnly && index === 0 ? "tk-change is-current" : "tk-change"}
+            class={readOnly && index === 0 ? "ht-change is-current" : "ht-change"}
             aria-current={readOnly && index === 0 ? "step" : undefined}
             onPointerEnter={onHover && (() => onHover(change.id))}
             onPointerLeave={onHover && (() => onHover(null))}
           >
             {rowText(change, names, onShow)}
-            {readOnly && index === 0 && <span class="tk-change-spinner" aria-hidden="true" />}
+            {readOnly && index === 0 && <span class="ht-change-spinner" aria-hidden="true" />}
             {!readOnly && (
               <button
                 type="button"
-                class="tk-icon-button"
+                class="ht-icon-button"
                 aria-label={`Undo the ${changeTitle(change).toLowerCase()} of ${layerName(change)}`}
-                data-tk-tip="Undo this change"
+                data-ht-tip="Undo this change"
                 onClick={() => {
                   // Its row goes: focus stays in the list, so Esc still closes it.
                   dialog.current!.focus({ preventScroll: true });
@@ -211,7 +211,7 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onSh
         {leaving.current.map(({ change, top, current }) => (
           <li
             key={`applied-${change.id}`}
-            class={current ? "tk-change is-current is-applied" : "tk-change is-applied"}
+            class={current ? "ht-change is-current is-applied" : "ht-change is-applied"}
             style={{ top: `${top}px` }}
             aria-hidden="true"
             onAnimationEnd={(event) => {
@@ -221,27 +221,27 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onSh
             }}
           >
             {rowText(change, names)}
-            {current && <span class="tk-change-spinner" />}
+            {current && <span class="ht-change-spinner" />}
           </li>
         ))}
       </ul>
       {!readOnly &&
         changes.length > 0 &&
         (confirming ? (
-          <div class="tk-changes-confirm">
+          <div class="ht-changes-confirm">
             <p>Discard all {count}? The canvas goes with them: edit mode freezes the page afresh.</p>
-            <div class="tk-changes-actions">
-              <button ref={cancel} type="button" class="tk-button" onClick={() => setConfirming(false)}>
+            <div class="ht-changes-actions">
+              <button ref={cancel} type="button" class="ht-button" onClick={() => setConfirming(false)}>
                 Cancel
               </button>
-              <button type="button" class="tk-button is-danger" onClick={onDiscard}>
+              <button type="button" class="ht-button is-danger" onClick={onDiscard}>
                 Discard
               </button>
             </div>
           </div>
         ) : (
-          <div class="tk-changes-actions">
-            <button type="button" class="tk-button" onClick={() => setConfirming(true)}>
+          <div class="ht-changes-actions">
+            <button type="button" class="ht-button" onClick={() => setConfirming(true)}>
               Discard all
             </button>
           </div>
@@ -280,18 +280,18 @@ function namesOf(changes: Change[]): Map<number, string> {
  */
 function rowText(change: Change, names: Map<number, string>, onShow?: (id: number) => void) {
   const name = (
-    <span class="tk-change-name">
+    <span class="ht-change-name">
       {names.get(change.id) ?? nameOf(change)}
-      {change.breakpoint && <span class="tk-change-breakpoint"> · {breakpointName(change.breakpoint)}</span>}
+      {change.breakpoint && <span class="ht-change-breakpoint"> · {breakpointName(change.breakpoint)}</span>}
     </span>
   );
   const values = `${changeValues(change)}${change.copiedBreakpoints?.length ? " · with copied breakpoints" : ""}`;
   return onShow ? (
-    <button type="button" class="tk-change-text" data-tk-tip={values} onClick={() => onShow(change.id)}>
+    <button type="button" class="ht-change-text" data-ht-tip={values} onClick={() => onShow(change.id)}>
       {name}
     </button>
   ) : (
-    <span class="tk-change-text" data-tk-tip={values}>
+    <span class="ht-change-text" data-ht-tip={values}>
       {name}
     </span>
   );

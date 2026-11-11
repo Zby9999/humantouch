@@ -32,7 +32,7 @@ let runs: CodeRun[] = [];
 beforeEach(() => {
   (window as unknown as Record<string, CodeUpdates>)[CODE_GLOBAL] = { at: Date.now(), updating: 0, inTurn: true };
   root = document.createElement("main");
-  root.innerHTML = `<style>.card { color: red; }</style><article class="card" data-tk-loc="src/Card.tsx:3:5"><h3 data-tk-loc="src/Card.tsx:4:7">Freeze</h3><p data-tk-loc="src/Card.tsx:5:7">Turn the page into a canvas.</p></article>`;
+  root.innerHTML = `<style>.card { color: red; }</style><article class="card" data-ht-loc="src/Card.tsx:3:5"><h3 data-ht-loc="src/Card.tsx:4:7">Freeze</h3><p data-ht-loc="src/Card.tsx:5:7">Turn the page into a canvas.</p></article>`;
   document.body.append(root);
   busy = false;
   runs = [];
@@ -59,7 +59,7 @@ const card = () => root.querySelector("article")!;
 test("source markers moving, attributes set to what they were, and text put back as it was, are no change", async () => {
   expect(
     await hotUpdate(() => {
-      for (const el of root.querySelectorAll("[data-tk-loc]")) el.setAttribute("data-tk-loc", el.getAttribute("data-tk-loc")!.replace(/:(\d+):/, (_, line) => `:${Number(line) + 2}:`));
+      for (const el of root.querySelectorAll("[data-ht-loc]")) el.setAttribute("data-ht-loc", el.getAttribute("data-ht-loc")!.replace(/:(\d+):/, (_, line) => `:${Number(line) + 2}:`));
       card().setAttribute("class", "card");
       card().querySelector("h3")!.firstChild!.textContent = "Freeze";
     }),
@@ -76,7 +76,7 @@ test("React drawing the same anew, elements and stylesheet alike, is no change; 
   expect(
     await hotUpdate(() => {
       const again = card().cloneNode(true) as Element;
-      for (const el of [again, ...again.querySelectorAll("*")]) if (el.hasAttribute("data-tk-loc")) el.setAttribute("data-tk-loc", "src/Card.tsx:9:9");
+      for (const el of [again, ...again.querySelectorAll("*")]) if (el.hasAttribute("data-ht-loc")) el.setAttribute("data-ht-loc", "src/Card.tsx:9:9");
       card().replaceWith(again);
       root.querySelector("style")!.textContent = ".card { color: red; }";
     }),
@@ -90,7 +90,7 @@ test("an element put in and changed within the run is told as a whole: the same 
       const again = document.createElement("article");
       card().replaceWith(again);
       again.className = "card";
-      again.setAttribute("data-tk-loc", "src/Card.tsx:3:5");
+      again.setAttribute("data-ht-loc", "src/Card.tsx:3:5");
       again.innerHTML = `<h3>Freeze</h3><p>Turn the page into a canvas.</p>`;
     }),
   ).toBe(false);
@@ -107,7 +107,7 @@ test("an element put in and changed within the run is told as a whole: the same 
 test("the editor layer's own host is not the page's: no change", async () => {
   expect(
     await hotUpdate(() => {
-      const host = document.querySelector("third-kind") ?? document.documentElement.appendChild(document.createElement("third-kind"));
+      const host = document.querySelector("human-touch") ?? document.documentElement.appendChild(document.createElement("human-touch"));
       host.setAttribute("data-anything", "1");
     }),
   ).toBe(false);

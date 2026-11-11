@@ -148,7 +148,7 @@ test("a layer deleted and the delete undone is listed open and closed as it was,
   });
   await enterEditMode(page);
   // A closed list item opened by hand; another opened as the text in it is selected; then the list selected.
-  await layerTree(page).locator('[role="treeitem"][aria-expanded="false"]').nth(3).locator(".tk-tree-chevron").click();
+  await layerTree(page).locator('[role="treeitem"][aria-expanded="false"]').nth(3).locator(".ht-tree-chevron").click();
   await page.keyboard.press("Shift+Digit1");
   await clickOn(page, "li:nth-child(1) span", "Meta");
   await expect(selectedRow(page)).toHaveText("Item 0-0");
@@ -180,7 +180,7 @@ test("a layer deleted, then the Layers panel hidden and shown again: the delete 
     document.body.append(list);
   });
   await enterEditMode(page);
-  await layerTree(page).locator('[role="treeitem"][aria-expanded="false"]').nth(3).locator(".tk-tree-chevron").click();
+  await layerTree(page).locator('[role="treeitem"][aria-expanded="false"]').nth(3).locator(".ht-tree-chevron").click();
   await page.keyboard.press("Shift+Digit1");
   await clickOn(page, "li:nth-child(1) span", "Meta");
   await page.keyboard.press("Escape");
@@ -240,7 +240,7 @@ test("one line under the Layers panel's top, the header's own, also once hidden 
   /** Every line drawn between the panel's top and its first row, as `who: width`: borders, and pseudo-elements 1px high. */
   const lines = () =>
     panel.evaluate((aside) => {
-      const header = aside.querySelector(".tk-panel-header")!.getBoundingClientRect();
+      const header = aside.querySelector(".ht-panel-header")!.getBoundingClientRect();
       const firstRow = aside.querySelector('[role="treeitem"]')!.getBoundingClientRect();
       const found: string[] = [];
       for (const el of [aside, ...aside.querySelectorAll("*")]) {
@@ -265,7 +265,7 @@ test("one line under the Layers panel's top, the header's own, also once hidden 
         const { found, header } = await lines();
         return { found: found.map((line) => line.replace(/: .*$/, "")), header };
       })
-      .toEqual({ found: ["tk-panel-header::after"], header: 47 });
+      .toEqual({ found: ["ht-panel-header::after"], header: 47 });
   };
   await noRuleAcross();
   // Shown again, the panel once took the Design panel's elements, and its header the rule under that panel's.
@@ -290,7 +290,7 @@ test("after edits in the Design panel, the layer around the one selected closes 
   await setField("Gap", "20");
 
   // The selected Card is in the Grid: the Grid, closed, stays closed. It was opened again at once.
-  await grid.locator(".tk-tree-chevron").click();
+  await grid.locator(".ht-tree-chevron").click();
   await expect.poll(() => grid.getAttribute("aria-expanded")).toBe("false");
   await expect(layerTree(page).getByRole("treeitem", { name: "Card", exact: true })).toHaveCount(0);
   // Another edit to the Card, still selected, leaves it so.
@@ -306,7 +306,7 @@ test("after edits in the Design panel, the layer around the one selected closes 
   await expect(selectedRow(page)).toHaveText("Card");
   await expect(grid).toHaveAttribute("aria-expanded", "true");
   // Selected anew, a layer inside a closed one opens it.
-  await grid.locator(".tk-tree-chevron").click();
+  await grid.locator(".ht-tree-chevron").click();
   await expect.poll(() => grid.getAttribute("aria-expanded")).toBe("false");
   await layerTree(page).getByRole("treeitem", { name: "Header", exact: true }).click();
   await clickOn(page, "article h3", "Meta");
@@ -318,32 +318,32 @@ test("a level closed folds up: its rows go a little way up and fade as the rows 
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await enterEditMode(page);
   const header = layerTree(page).getByRole("treeitem", { name: "Header", exact: true });
-  const fold = layerTree(page).locator(".tk-tree-fold");
+  const fold = layerTree(page).locator(".ht-tree-fold");
   const next = header.locator("xpath=following-sibling::*[1]");
   await expect(header).toHaveAttribute("aria-expanded", "true");
 
   // Its motion held where it starts, so that it is read midway however busy the machine (ticket 126).
   const letGo = await holdMotion(page);
-  await header.locator(".tk-tree-chevron").click();
+  await header.locator(".ht-tree-chevron").click();
   // Closed at once, for the tree and its readers: its rows are gone from it, copies of them in a fold hidden from them.
   await expect(header).toHaveAttribute("aria-expanded", "false");
   await expect(layerTree(page).getByRole("treeitem", { name: "Third Kind", exact: true })).toHaveCount(0);
   await expect(fold).toHaveAttribute("aria-hidden", "true");
-  await expect(fold.locator(".tk-tree-row")).not.toHaveCount(0);
+  await expect(fold.locator(".ht-tree-row")).not.toHaveCount(0);
   await expect(fold.locator('[role="treeitem"]')).toHaveCount(0);
   // The copies going up 8px and fading over the fold's time, however many, shown only above the rows rising after them; the row after rising from where it was.
-  await expectFolding(fold, fold.locator(".tk-tree-rows"), next);
+  await expectFolding(fold, fold.locator(".ht-tree-rows"), next);
   // Then, played on, gone.
   await letGo();
   await expect(fold).toHaveCount(0);
 
   // With reduced motion, closed at once.
-  await header.locator(".tk-tree-chevron").click();
+  await header.locator(".ht-tree-chevron").click();
   await expect(header).toHaveAttribute("aria-expanded", "true");
   await page.emulateMedia({ reducedMotion: "reduce" });
   // Motion held: a fold, had it started, would still be there; read once, not waited for.
   const letGoAgain = await holdMotion(page);
-  await header.locator(".tk-tree-chevron").click();
+  await header.locator(".ht-tree-chevron").click();
   await expect(header).toHaveAttribute("aria-expanded", "false");
   expect(await fold.count()).toBe(0);
   expect(await next.evaluate((el) => el.getAnimations().filter((a) => !(a instanceof CSSTransition)).length)).toBe(0);
@@ -354,10 +354,10 @@ test("an instance's disclosure (a row under Components) is drawn as every other 
   await enterEditMode(page);
   /** How a row's disclosure and its layer icon are drawn, the pointer away and over the disclosure. */
   const looks = async (row: Locator) => {
-    const chevron = row.locator(".tk-tree-chevron");
+    const chevron = row.locator(".ht-tree-chevron");
     const drawn = () =>
       chevron.evaluate((el) => {
-        const icon = el.querySelector(".tk-icon")!;
+        const icon = el.querySelector(".ht-icon")!;
         const box = el.getBoundingClientRect();
         const iconBox = icon.getBoundingClientRect();
         return { color: getComputedStyle(icon).color, background: getComputedStyle(el).backgroundColor, shadow: getComputedStyle(el).boxShadow, size: [box.width, box.height, iconBox.width, iconBox.height] };
@@ -365,7 +365,7 @@ test("an instance's disclosure (a row under Components) is drawn as every other 
     await page.mouse.move(700, 400);
     const away = await drawn();
     await chevron.hover();
-    return { away, hovered: await drawn(), layerIcon: await row.locator(":scope > .tk-icon").evaluate((el) => getComputedStyle(el).color) };
+    return { away, hovered: await drawn(), layerIcon: await row.locator(":scope > .ht-icon").evaluate((el) => getComputedStyle(el).color) };
   };
   const card = await looks(layerTree(page).getByRole("treeitem", { name: "Card", exact: true }).first());
   const grid = await looks(layerTree(page).getByRole("treeitem", { name: "Grid", exact: true }));
@@ -377,7 +377,7 @@ test("an instance's disclosure (a row under Components) is drawn as every other 
 test("a deletion taken back from the change list lists the layer open and closed as it was", async ({ page }) => {
   await enterEditMode(page);
   // The header closed by hand, then the Stack it is in deleted: the button beside it is open.
-  await layerTree(page).getByRole("treeitem", { name: "Header" }).locator(".tk-tree-chevron").click();
+  await layerTree(page).getByRole("treeitem", { name: "Header" }).locator(".ht-tree-chevron").click();
   await layerTree(page).getByRole("treeitem", { name: "Stack", exact: true }).nth(1).click();
   const before = await treeRows(page);
   expect(before).not.toContain("5 Third Kind — Text");
@@ -607,7 +607,7 @@ test.describe("text beside other layers", () => {
     await expect.poll(() => layerInfo(page)).toEqual({ Type: "Text", Component: "App", Source: locate("src/App.tsx", "<button") });
     await expect(page.getByRole("complementary", { name: "Design" })).toContainText("Text styles apply to the layer it sits in, Button.");
     // Outlines the text only, not the whole button.
-    const outline = (await page.locator('.tk-selection[data-view="Desktop"]').boundingBox())!;
+    const outline = (await page.locator('.ht-selection[data-view="Desktop"]').boundingBox())!;
     expect(outline.width).toBeCloseTo(text.width, 0);
   });
 
@@ -625,7 +625,7 @@ test.describe("text beside other layers", () => {
 });
 
 test.describe("the selection box", () => {
-  const box = (page: Page) => page.locator('.tk-selection[data-view="Desktop"]');
+  const box = (page: Page) => page.locator('.ht-selection[data-view="Desktop"]');
 
   test("outlines the selected layer in blue", async ({ page }) => {
     await enterEditMode(page);
@@ -658,7 +658,7 @@ test.describe("the selection box", () => {
 
     await expect(selectedRow(page)).toHaveText("Badge");
     await expect(box(page)).toHaveCSS("border-color", "rgb(140, 140, 140)");
-    await expect(box(page).locator(".tk-selection-lock")).toBeVisible();
+    await expect(box(page).locator(".ht-selection-lock")).toBeVisible();
   });
 
   test("follows the layer when the canvas zooms", async ({ page }) => {
@@ -678,7 +678,7 @@ test.describe("the selection box", () => {
 });
 
 test.describe("the hover outline", () => {
-  const hover = (page: Page) => page.locator('.tk-hover[data-view="Desktop"]');
+  const hover = (page: Page) => page.locator('.ht-hover[data-view="Desktop"]');
   const rect = async (locator: ReturnType<Page["locator"]>) => {
     const { x, y, width, height } = (await locator.boundingBox())!;
     return [x, y, width, height].map(Math.round);
@@ -696,7 +696,7 @@ test.describe("the hover outline", () => {
     await expect.poll(() => rect(hover(page))).toEqual(outermost);
 
     await page.mouse.click(h1.x, h1.y);
-    await expect.poll(() => rect(page.locator('.tk-selection[data-view="Desktop"]'))).toEqual(outermost);
+    await expect.poll(() => rect(page.locator('.ht-selection[data-view="Desktop"]'))).toEqual(outermost);
   });
 
   test("is not drawn over the selected layer, and goes when the pointer leaves the canvas", async ({ page }) => {

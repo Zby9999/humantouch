@@ -24,7 +24,7 @@ export function BreakpointBadge({ editor, layers, view }: Props) {
   // A view in the desktop view's range edits every width, as it does; only what a narrower range recorded before holds there is shown.
   if (!breakpoint && !changed.length) return null;
   return (
-    <span class="tk-breakpoint-badge" role="note" aria-label={`${view} breakpoint`}>
+    <span class="ht-breakpoint-badge" role="note" aria-label={`${view} breakpoint`}>
       {breakpointName(breakpoint)}
     </span>
   );

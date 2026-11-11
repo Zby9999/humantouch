@@ -214,9 +214,9 @@ export function ResetButton({ label, onReset }: { label: string; onReset(): void
   return (
     <button
       type="button"
-      class="tk-reset"
+      class="ht-reset"
       aria-label={`Reset ${label}`}
-      data-tk-tip={`Reset ${label}`}
+      data-ht-tip={`Reset ${label}`}
       onPointerDown={(event) => event.preventDefault()}
       onClick={(event) => {
         event.preventDefault();

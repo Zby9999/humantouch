@@ -89,7 +89,7 @@ test("the toolbar picks the same tools as V, F and T; text typed in is boxed in 
   await tools.getByRole("button", { name: "Text" }).click();
   const board = await boxOf(canvas(page).locator("#board"));
   await drawFrom(page, { x: board.x + 20, y: board.y + 20 }, { x: board.x + 20, y: board.y + 20 });
-  const box = page.locator('.tk-selection[data-kind="typing"][data-view="Desktop"]');
+  const box = page.locator('.ht-selection[data-kind="typing"][data-view="Desktop"]');
   await expect(box).toHaveCSS("border-color", "rgb(0, 143, 240)");
   await expect(box).toHaveCSS("border-top-width", "1px");
   const narrow = (await boxOf(box)).width;
@@ -104,7 +104,7 @@ test("the toolbar picks the same tools as V, F and T; text typed in is boxed in 
 test("the chosen tool's backing slides to a tool clicked and jumps to one a key picks", async ({ page }) => {
   await enterEditMode(page);
   const tools = page.getByRole("toolbar", { name: "Tools" });
-  const backing = tools.locator(".tk-tools-backing");
+  const backing = tools.locator(".ht-tools-backing");
   const over = async (name: string) => {
     const [a, b] = await Promise.all([backing.boundingBox(), tools.getByRole("button", { name }).boundingBox()]);
     return a !== null && b !== null && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5 && Math.abs(a.width - b.width) < 0.5 && Math.abs(a.height - b.height) < 0.5;
@@ -166,10 +166,10 @@ test("F and a drag in a Frame's empty space make an absolute Frame, with no fill
   await expect(page.getByRole("group", { name: "Brief on Frame" })).toContainText("A pricing table with three plans");
   // No outline of its own on the canvas: a stroke will say that.
   await expect.poll(() => frame.evaluate((el) => getComputedStyle(el).outlineStyle)).toBe("none");
-  await expect(frame).toHaveAttribute("data-tk-brief", "A pricing table with three plans");
+  await expect(frame).toHaveAttribute("data-ht-brief", "A pricing table with three plans");
   // A plain Frame on the canvas, room to draw in: the brief shows in the Layers panel, not in it.
   await expect.poll(() => frame.evaluate((el) => getComputedStyle(el, "::before").content)).toBe("none");
-  await expect(page.locator('.tk-tree-row[aria-selected="true"] .tk-tree-brief')).toHaveAttribute("data-tk-tip", "Brief: A pricing table with three plans");
+  await expect(page.locator('.ht-tree-row[aria-selected="true"] .ht-tree-brief')).toHaveAttribute("data-ht-tip", "Brief: A pricing table with three plans");
   await expect(await changeRows(page)).toReadAs([/New Frame.*200 × 120px, “A pricing table with three plans”/]);
   await page.keyboard.press("Escape");
 
@@ -177,9 +177,9 @@ test("F and a drag in a Frame's empty space make an absolute Frame, with no fill
   await layerTree(page).getByRole("treeitem", { name: "Frame", description: "Frame · Absolute" }).click();
   await page.keyboard.press("ControlOrMeta+d");
   const copy = canvas(page).locator("#board > div").nth(1);
-  await expect(copy).toHaveAttribute("data-tk-brief", "A pricing table with three plans");
-  await expect(page.locator('.tk-tree-row[aria-selected="true"] .tk-tree-brief')).toHaveAttribute("data-tk-tip", "Brief: A pricing table with three plans");
-  await expect(page.locator(".tk-brief-card")).toHaveCount(2);
+  await expect(copy).toHaveAttribute("data-ht-brief", "A pricing table with three plans");
+  await expect(page.locator('.ht-tree-row[aria-selected="true"] .ht-tree-brief')).toHaveAttribute("data-ht-tip", "Brief: A pricing table with three plans");
+  await expect(page.locator(".ht-brief-card")).toHaveCount(2);
   await expect(page.getByRole("group", { name: "Brief on Frame" }).nth(1)).toContainText("A pricing table with three plans");
 });
 

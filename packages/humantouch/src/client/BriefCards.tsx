@@ -31,7 +31,7 @@ export function briefedLayers(doc: Document, tree: LayerTree): Layer[] {
 }
 
 /** Where the designer's briefs are kept, by page: each card's view, by the card's key. */
-const VIEWS_KEY = "03kind:brief-views";
+const VIEWS_KEY = "humantouch:brief-views";
 
 /**
  * The view each card is beside, by its key (`keyOf` of the view), as the
@@ -127,7 +127,7 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
     if (!el) return;
     let changed = false;
     const now: Record<string, number> = {};
-    for (const card of el.querySelectorAll<HTMLElement>(".tk-brief-card")) {
+    for (const card of el.querySelectorAll<HTMLElement>(".ht-brief-card")) {
       const key = card.dataset.key!;
       now[key] = card.offsetHeight;
       if (heights[key] !== now[key]) changed = true;
@@ -187,8 +187,8 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
     }
     toGlide.current = null;
     const key = CSS.escape(cards[i].key);
-    const el = layer.current?.querySelector<HTMLElement>(`.tk-brief-card[data-key="${key}"]`);
-    const line = layer.current?.querySelector<SVGGElement>(`.tk-brief-lines g[data-key="${key}"]`);
+    const el = layer.current?.querySelector<HTMLElement>(`.ht-brief-card[data-key="${key}"]`);
+    const line = layer.current?.querySelector<SVGGElement>(`.ht-brief-lines g[data-key="${key}"]`);
     const to = placed[i];
     const dx = was.box.x - to.x;
     const dy = was.box.y - to.y;
@@ -213,8 +213,8 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
     if (dx || dy) onReveal(dx, dy);
   }, [writing]);
   return (
-    <div ref={layer} class="tk-brief-cards" style={{ transform: transformOf(camera) }}>
-      <svg class="tk-brief-lines" width="1" height="1" aria-hidden="true">
+    <div ref={layer} class="ht-brief-cards" style={{ transform: transformOf(camera) }}>
+      <svg class="ht-brief-lines" width="1" height="1" aria-hidden="true">
         {placed.map(
           (p, i) =>
             p.line && (
@@ -258,7 +258,7 @@ interface CardProps {
 function Card({ card, box, writing, onWrite, onWritten, onResize }: CardProps) {
   return (
     <div
-      class="tk-brief-card"
+      class="ht-brief-card"
       role="group"
       aria-label={`Brief on ${card.name}`}
       data-key={card.key}
@@ -280,15 +280,15 @@ function Card({ card, box, writing, onWrite, onWritten, onResize }: CardProps) {
         if (writing && !(event.target as Element).closest("textarea")) event.preventDefault();
       }}
     >
-      {writing ? <Field text={card.text} onWritten={onWritten} onResize={onResize} /> : <p class="tk-brief-card-text">{card.text}</p>}
+      {writing ? <Field text={card.text} onWritten={onWritten} onResize={onResize} /> : <p class="ht-brief-card-text">{card.text}</p>}
       {writing && (
         <button
           type="button"
-          class="tk-brief-card-set"
+          class="ht-brief-card-set"
           aria-label="Set brief"
           // The field keeps the focus till it is left, by this: what is typed is set as it is left.
           onMouseDown={(event) => event.preventDefault()}
-          onClick={(event) => (event.currentTarget.closest(".tk-brief-card")!.querySelector("textarea") as HTMLTextAreaElement | null)?.blur()}
+          onClick={(event) => (event.currentTarget.closest(".ht-brief-card")!.querySelector("textarea") as HTMLTextAreaElement | null)?.blur()}
         >
           <Icon name="arrow-up" />
         </button>
@@ -316,7 +316,7 @@ function Field({ text, onWritten, onResize }: { text: string; onWritten(text: st
   return (
     <textarea
       ref={field}
-      class="tk-brief-card-text tk-brief-card-field"
+      class="ht-brief-card-text ht-brief-card-field"
       aria-label="Brief"
       placeholder="What should the Agent achieve here?"
       defaultValue={text}

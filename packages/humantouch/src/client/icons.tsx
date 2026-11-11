@@ -33,7 +33,7 @@ import { role, type Layer } from "./layers";
  * the dots' radius.
  * Each is the markup inside a 16px square, its lines drawn in the current text
  * color; their size and the width of their lines are the styles'
- * (`--tk-icon-size`, `--tk-icon-stroke`). A dot is filled.
+ * (`--ht-icon-size`, `--ht-icon-stroke`). A dot is filled.
  * Each is named for what it shows here, and above it, its IconMCP name.
  */
 const ICONS: Record<string, string> = {
@@ -167,7 +167,7 @@ export type IconName = keyof typeof ICONS;
 
 export function Icon({ name }: { name: IconName }) {
   return (
-    <svg class="tk-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" dangerouslySetInnerHTML={{ __html: ICONS[name] }} />
+    <svg class="ht-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" dangerouslySetInnerHTML={{ __html: ICONS[name] }} />
   );
 }
 

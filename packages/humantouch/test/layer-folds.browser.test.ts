@@ -66,7 +66,7 @@ function openPanel(editor: ReturnType<typeof openCanvas>["editor"], outside: () 
     toggle(level: number, nth: number) {
       const row = rows().filter((row) => row.getAttribute("aria-level") === String(level))[nth];
       act(() => {
-        row.querySelector(".tk-tree-chevron")!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        row.querySelector(".ht-tree-chevron")!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
       });
     },
     /** Makes `edit`, which brings layers back as they were (an undo, a redo) when `bringsBack`, and shows what it leaves. */

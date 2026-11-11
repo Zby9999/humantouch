@@ -4,7 +4,7 @@
  * Measuring). Each runs unattended in the run's project, on the model its
  * arguments pin, in an environment with nothing of the shell it was started
  * from (no gateway, no model setting), as the designer's own login.
- * TK_BENCH_CLAUDE, TK_BENCH_CURSOR and TK_BENCH_PI name another binary; TK_BENCH_CURSOR_MODEL
+ * HT_BENCH_CLAUDE, HT_BENCH_CURSOR and HT_BENCH_PI name another binary; HT_BENCH_CURSOR_MODEL
  * another id of Cursor's model, which must name the same model (its command
  * line, in meta.json, shows the id; a run on another model stops the bench).
  */
@@ -64,16 +64,16 @@ function desktopClaudeCode(): string {
       if (existsSync(binary)) return binary;
     }
   }
-  throw new Error(`No Claude Code of the desktop app in ${DESKTOP_CLAUDE_CODE}: name one with TK_BENCH_CLAUDE`);
+  throw new Error(`No Claude Code of the desktop app in ${DESKTOP_CLAUDE_CODE}: name one with HT_BENCH_CLAUDE`);
 }
 
 /**
  * Playwright's headless shell, for the Agent's own browsers: the one
- * TK_BENCH_HEADLESS_SHELL names, else the one installed beside the Chromium
+ * HT_BENCH_HEADLESS_SHELL names, else the one installed beside the Chromium
  * the repository's Playwright launches. Null when there is none.
  */
 export function headlessShell(env: NodeJS.ProcessEnv = process.env, chromiumPath = chromium.executablePath()): string | null {
-  const named = env.TK_BENCH_HEADLESS_SHELL;
+  const named = env.HT_BENCH_HEADLESS_SHELL;
   if (named) return existsSync(named) ? named : null;
   // `<browsers>/chromium-<revision>/…` beside `<browsers>/chromium_headless_shell-<revision>/chrome-headless-shell-<platform>/chrome-headless-shell`.
   const [, browsers, revision] = /^(.*)[/\\]chromium-(\d+)[/\\]/.exec(chromiumPath) ?? [];
@@ -218,7 +218,7 @@ function undoRules(project: string): string[] {
 export const AGENTS: Record<AgentName, AgentSpec> = {
   claude: {
     // The Claude Code the designer's desktop app ships, not one installed by npm.
-    binary: () => process.env.TK_BENCH_CLAUDE ?? desktopClaudeCode(),
+    binary: () => process.env.HT_BENCH_CLAUDE ?? desktopClaudeCode(),
     model: "claude-sonnet-5-5",
     effort: "medium (--effort medium)",
     // In its debug log only.
@@ -259,7 +259,7 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
   },
   cursor: {
     // The agent-cli the Cursor app runs its own Agent with; else the one installed on its own.
-    binary: () => process.env.TK_BENCH_CURSOR ?? (existsSync(CURSOR_APP_AGENT) ? CURSOR_APP_AGENT : onPath("cursor-agent")),
+    binary: () => process.env.HT_BENCH_CURSOR ?? (existsSync(CURSOR_APP_AGENT) ? CURSOR_APP_AGENT : onPath("cursor-agent")),
     // Run headless, Cursor turns every shell command away unless forced, its allowlist or not: forced, in its
     // sandbox (writes in the project only), with the commands below denied besides.
     // Pinned to the model the designer chose (Grok 4.7 256K High, as its runs name it); its explore subagent keeps its own.
@@ -275,7 +275,7 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
       // Baselines A and B ran it as `grok-4.7[context=256k,reasoning_effort=high,fast=false]`, the id in the designer's
       // Cursor settings. The account turned that id away on 10/31, now and then; the designer confirmed `grok-4.7-high`
       // is the same model, and it is the bench's id from baseline B' on (ticket 63).
-      process.env.TK_BENCH_CURSOR_MODEL ?? "grok-4.7-high",
+      process.env.HT_BENCH_CURSOR_MODEL ?? "grok-4.7-high",
       "--trust",
       "--force",
       "--sandbox",
@@ -299,7 +299,7 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
   },
   pi: {
     // The designer's pi, run with no terminal: `-p` prints and exits, and nothing of it opens a window.
-    binary: () => process.env.TK_BENCH_PI ?? DESIGNERS_PI,
+    binary: () => process.env.HT_BENCH_PI ?? DESIGNERS_PI,
     // The provider and the model as the transcript's answers name them (metrics.ts, parsePi).
     model: "command-code/deepseek/deepseek-v4.1-flash",
     effort: "high (--thinking high)",

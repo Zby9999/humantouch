@@ -6,12 +6,12 @@ describe("compacting the editor layer's CSS as it builds", () => {
   test("comments and spare whitespace go, placeholders stay as written", () => {
     const css = `
       /* The dock. */
-      .tk-dock { top: var(--tk-gap) ; font: 500 12px/16px \${FONT_STACK}; }
+      .ht-dock { top: var(--ht-gap) ; font: 500 12px/16px \${FONT_STACK}; }
       .a, .b { color: rgb(0, 0, 0); }
     `;
 
     expect(compactCss(css)).toBe(
-      ".tk-dock{top:var(--tk-gap);font:500 12px/16px ${FONT_STACK}}.a,.b{color:rgb(0,0,0)}",
+      ".ht-dock{top:var(--ht-gap);font:500 12px/16px ${FONT_STACK}}.a,.b{color:rgb(0,0,0)}",
     );
   });
 

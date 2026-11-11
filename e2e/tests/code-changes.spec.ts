@@ -162,7 +162,7 @@ test("the Agent claiming and editing at once tells nothing, even with the page n
     (route) =>
       route.fulfill({
         status: 200,
-        headers: { "Access-Control-Allow-Origin": route.request().headers().origin ?? "*", "Access-Control-Allow-Headers": "X-03Kind-Token, Content-Type" },
+        headers: { "Access-Control-Allow-Origin": route.request().headers().origin ?? "*", "Access-Control-Allow-Headers": "X-Human-Touch-Token, Content-Type" },
         contentType: "application/x-ndjson",
         body: `${JSON.stringify({ status: "editing" })}\n`,
       }),
@@ -256,7 +256,7 @@ test("the toasts: at the canvas's bottom left, by the Layers panel or the window
   const viewport = page.viewportSize()!;
   /** Where a toast is, once it has come in. */
   const at = async (notice: string) => {
-    const toast = page.locator(`[data-tk-notice="${notice}"]`);
+    const toast = page.locator(`[data-ht-notice="${notice}"]`);
     await expect.poll(() => toast.evaluate((el) => el.getAnimations().length)).toBe(0);
     return (await toast.boundingBox())!;
   };
@@ -287,7 +287,7 @@ test("the toasts: at the canvas's bottom left, by the Layers panel or the window
   expect(box.x).toBe(16);
   expect(viewport.height - (box.y + box.height)).toBe(16);
   await setField(page, "Stroke weight", "1.3");
-  await expect(page.locator(".tk-toast").filter({ hasText: "Stroke must be a multiple of 0.5px." })).toBeVisible();
+  await expect(page.locator(".ht-toast").filter({ hasText: "Stroke must be a multiple of 0.5px." })).toBeVisible();
   await expect(changed).toBeVisible();
   // About 8 seconds, then its fade.
   await expect(changed).toHaveCount(0, { timeout: 12_000 });

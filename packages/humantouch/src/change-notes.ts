@@ -470,7 +470,7 @@ function putBackFrom({ layer }: PutBack, list: Change[]): string[] {
       ? `**Source:** not kept: it could not be read at \`${layer.origin.written}\` when the layer was moved off the canvas. Write it from its look, below, as the project writes markup and styles.`
       : "**Source:** not kept: the layer had no source of its own when moved off the canvas. Write it from its look, below, as the project writes markup and styles.";
   const look =
-    "**Look**, as it was off the canvas, every style it had written onto it (its classes as they were, in `data-tk-class`). " +
+    "**Look**, as it was off the canvas, every style it had written onto it (its classes as they were, in `data-ht-class`). " +
     "Where its classes no longer give it this look, their rules gone with its code, give it the styles that do, as the project writes styles:\n\n" +
     fenced(lookOf(layer.look), "html");
   const edited = editsOf(layer);

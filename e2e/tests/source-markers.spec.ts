@@ -18,13 +18,13 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("elements written by project source carry their element location", async ({ page }) => {
-  await expect(page.locator("main")).toHaveAttribute("data-tk-loc", locate("src/App.tsx", "<main"));
-  await expect(page.locator("h1")).toHaveAttribute("data-tk-loc", locate("src/App.tsx", "<h1"));
+  await expect(page.locator("main")).toHaveAttribute("data-ht-loc", locate("src/App.tsx", "<main"));
+  await expect(page.locator("h1")).toHaveAttribute("data-ht-loc", locate("src/App.tsx", "<h1"));
 
   const cards = page.locator("article");
   await expect(cards).toHaveCount(4);
   for (const card of await cards.all()) {
-    await expect(card).toHaveAttribute("data-tk-loc", locate("src/components/Card.tsx", "<article"));
+    await expect(card).toHaveAttribute("data-ht-loc", locate("src/components/Card.tsx", "<article"));
   }
 });
 
@@ -42,16 +42,16 @@ function ownerProps(page: import("./fixtures").Page, selector: string) {
 test("component usages carry their usage location", async ({ page }) => {
   const props = await ownerProps(page, "article");
 
-  expect(props["data-tk-usage"]).toBe(locate("src/App.tsx", "<Card"));
+  expect(props["data-ht-usage"]).toBe(locate("src/App.tsx", "<Card"));
 });
 
 test("code from third-party dependencies is not marked", async ({ page }) => {
   const badge = page.getByTestId("acme-badge");
   await expect(badge).toBeVisible();
 
-  await expect.poll(() => badge.getAttribute("data-tk-loc")).toBeNull();
+  await expect.poll(() => badge.getAttribute("data-ht-loc")).toBeNull();
   // The usage of the third-party component is project source, so it is marked.
-  await expect.poll(async () => (await ownerProps(page, "[data-testid=acme-badge]"))["data-tk-usage"]).toBe(
+  await expect.poll(async () => (await ownerProps(page, "[data-testid=acme-badge]"))["data-ht-usage"]).toBe(
     locate("src/App.tsx", "<Badge"),
   );
 });

@@ -100,13 +100,13 @@ test("the views beside the desktop view stay hidden while the page shrinks into 
         addEventListener(
           "click",
           () => {
-            const root = () => document.querySelector("third-kind")!.shadowRoot!;
+            const root = () => document.querySelector("human-touch")!.shadowRoot!;
             const frameOf = (title: string) => root().querySelector<HTMLIFrameElement>(`iframe[title="${title}"]`);
             const shows = (title: string) => !!frameOf(title)?.contentDocument?.querySelector("h1") && getComputedStyle(frameOf(title)!).visibility === "visible";
             let travelled = false;
             let hiddenWhileTravelling = true;
             const frame = () => {
-              const travelling = !!root().querySelector(".tk-viewport.is-travelling");
+              const travelling = !!root().querySelector(".ht-viewport.is-travelling");
               if (travelling) {
                 travelled = true;
                 hiddenWhileTravelling &&= views.slice(1).every((title) => !frameOf(title) || getComputedStyle(frameOf(title)!).visibility === "hidden");
@@ -155,7 +155,7 @@ test("going back to preview after the window narrowed, the canvas grows into the
   await holdTravel(page);
   // Its last frame: the desktop view as wide as the window, as tall at least, its h1 where the page's is.
   const last = await page.evaluate(() => {
-    const root = document.querySelector("third-kind")!.shadowRoot!;
+    const root = document.querySelector("human-touch")!.shadowRoot!;
     for (const animation of root.getAnimations()) {
       animation.pause();
       animation.currentTime = 10000;
@@ -171,7 +171,7 @@ test("going back to preview after the window narrowed, the canvas grows into the
 
   // Turned around on the way: the desktop view as wide as it was frozen.
   await page.evaluate(() => {
-    for (const animation of document.querySelector("third-kind")!.shadowRoot!.getAnimations()) animation.currentTime = 40;
+    for (const animation of document.querySelector("human-touch")!.shadowRoot!.getAnimations()) animation.currentTime = 40;
   });
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await playbackRate(cdp, 1);
@@ -182,7 +182,7 @@ test("going back to preview after the window narrowed, the canvas grows into the
 /** Where the frame (the desktop view), the panels and the tools are, the editor's animations held `t` ms in; null, as they are. */
 function chromeAt(page: Page, t: number | null) {
   return page.evaluate((t) => {
-    const root = document.querySelector("third-kind")!.shadowRoot!;
+    const root = document.querySelector("human-touch")!.shadowRoot!;
     if (t !== null) {
       for (const animation of root.getAnimations()) {
         animation.pause();
@@ -191,16 +191,16 @@ function chromeAt(page: Page, t: number | null) {
     }
     const rect = (selector: string) => root.querySelector(selector)!.getBoundingClientRect();
     const frame = rect('iframe[title="Canvas"]');
-    const tools = rect(".tk-tools");
+    const tools = rect(".ht-tools");
     return {
       frameLeft: frame.left,
       frameRight: frame.right,
-      layersRight: rect(".tk-panel.is-layers").right,
-      designLeft: rect(".tk-panel.is-design").left,
+      layersRight: rect(".ht-panel.is-layers").right,
+      designLeft: rect(".ht-panel.is-design").left,
       toolsLeft: tools.left,
       toolsMiddle: { x: tools.left + tools.width / 2, y: tools.top + tools.height / 2 },
-      width: (root.querySelector(".tk-shell") as HTMLElement).clientWidth,
-      opacity: Number(getComputedStyle(root.querySelector(".tk-panel.is-layers")!).opacity),
+      width: (root.querySelector(".ht-shell") as HTMLElement).clientWidth,
+      opacity: Number(getComputedStyle(root.querySelector(".ht-panel.is-layers")!).opacity),
     };
   }, t);
 }
@@ -228,7 +228,7 @@ function expectOffTheWindow(now: ChromeAt) {
 /** Has the editor's animations held where they start, once edit mode has been left or entered and the canvas has started travelling. */
 async function holdTravel(page: Page) {
   await expect
-    .poll(() => page.evaluate(() => document.querySelector("third-kind")?.shadowRoot?.querySelector(".tk-viewport.is-travelling") !== null && document.querySelector("third-kind")!.shadowRoot!.getAnimations().length > 1))
+    .poll(() => page.evaluate(() => document.querySelector("human-touch")?.shadowRoot?.querySelector(".ht-viewport.is-travelling") !== null && document.querySelector("human-touch")!.shadowRoot!.getAnimations().length > 1))
     .toBe(true);
 }
 
@@ -251,8 +251,8 @@ test("going back to preview, the panels are pushed out by the growing frame, eac
   const grown = await chromeAt(page, 240);
   expectOffTheWindow(grown);
   // Grown, the canvas covers where the tools were: they are under it, not on it.
-  const onTools = await page.evaluate(({ x, y }) => document.querySelector("third-kind")!.shadowRoot!.elementFromPoint(x, y)?.className, rest.toolsMiddle);
-  expect(onTools).toContain("tk-stage");
+  const onTools = await page.evaluate(({ x, y }) => document.querySelector("human-touch")!.shadowRoot!.elementFromPoint(x, y)?.className, rest.toolsMiddle);
+  expect(onTools).toContain("ht-stage");
 });
 
 test("entering edit mode, the panels come in with the shrinking frame, each edge travelling with the frame's (designer, 2026-11-08)", async ({ page }) => {
@@ -305,7 +305,7 @@ function lowestShellOpacity(page: Page) {
       new Promise<number>((resolve) => {
         let lowest = 1;
         const look = () => {
-          const shell = document.querySelector("third-kind")!.shadowRoot!.querySelector(".tk-shell");
+          const shell = document.querySelector("human-touch")!.shadowRoot!.querySelector(".ht-shell");
           if (!shell) return resolve(lowest);
           lowest = Math.min(lowest, Number(getComputedStyle(shell).opacity));
           requestAnimationFrame(look);
@@ -325,7 +325,7 @@ test("with changes not yet applied, the canvas fades into the page once it has g
   await page.getByRole("button", { name: EXIT_LABEL }).click();
 
   // The page shows none of the changes: rather than cut to it, the editor dissolves into it, the canvas at full size.
-  const shell = page.locator(".tk-shell");
+  const shell = page.locator(".ht-shell");
   await expect.poll(() => shell.evaluate((el) => Number(getComputedStyle(el).opacity))).toBeLessThan(0.9);
   const grown = await box(page);
   expect(grown.x).toBeCloseTo(0, 0);

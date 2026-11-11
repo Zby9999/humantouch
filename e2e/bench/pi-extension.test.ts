@@ -6,7 +6,7 @@ import { after, test } from "node:test";
 import { DENIED, SHELL } from "./allowlist.ts";
 import benchExtension, { shellDenied } from "./pi-extension.ts";
 
-const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-pi-extension-test-"));
+const scratch = mkdtempSync(join(tmpdir(), "humantouch-bench-pi-extension-test-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
 /** The handlers the extension registers, by event, as pi would call them. */

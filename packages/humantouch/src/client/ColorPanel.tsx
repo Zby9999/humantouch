@@ -63,7 +63,7 @@ export function ColorPanel({ color, onChange }: { color: Color; onChange(color: 
 
   const hue = rgbToHex(hsbToRgb({ h: hsb.h, s: 1, b: 1 }));
   const opacityField = (
-    <label class="tk-field tk-color-opacity" data-tk-tip="Opacity">
+    <label class="ht-field ht-color-opacity" data-ht-tip="Opacity">
       <TextField
         label="Opacity"
         value={`${Math.round(color.opacity * 100)}%`}
@@ -78,7 +78,7 @@ export function ColorPanel({ color, onChange }: { color: Color; onChange(color: 
   );
   /** A number of the color typed in, from `min` to `max`, shown to `digits` decimals. */
   const part = (label: string, value: number, min: number, max: number, set: (n: number) => void, digits = 0) => (
-    <label class="tk-field" data-tk-tip={label} key={label}>
+    <label class="ht-field" data-ht-tip={label} key={label}>
       <TextField
         label={label}
         value={String(Math.round(value * 10 ** digits) / 10 ** digits)}
@@ -90,15 +90,15 @@ export function ColorPanel({ color, onChange }: { color: Color; onChange(color: 
   );
 
   return (
-    <div class="tk-color-panel">
+    <div class="ht-color-panel">
       <Area hsb={hsb} hue={hue} onChange={setHsb} />
-      <div class="tk-color-bars">
+      <div class="ht-color-bars">
         {EyeDropper && (
           <button
             type="button"
-            class="tk-icon-button"
+            class="ht-icon-button"
             aria-label="Pick a color from the screen"
-            data-tk-tip="Pick a color from the screen"
+            data-ht-tip="Pick a color from the screen"
             onClick={() => {
               new EyeDropper()
                 .open()
@@ -109,7 +109,7 @@ export function ColorPanel({ color, onChange }: { color: Color; onChange(color: 
             <Icon name="eyedropper" />
           </button>
         )}
-        <div class="tk-color-sliders">
+        <div class="ht-color-sliders">
           <Slider label="Hue" value={hsb.h} min={0} max={360} track={HUE_TRACK} thumb={hue} onChange={(h, continues) => setHsb({ ...hsb, h }, continues)} />
           <Slider
             label="Opacity"
@@ -117,14 +117,14 @@ export function ColorPanel({ color, onChange }: { color: Color; onChange(color: 
             min={0}
             max={100}
             unit="%"
-            track={`linear-gradient(90deg, transparent, ${color.color}), var(--tk-checker)`}
+            track={`linear-gradient(90deg, transparent, ${color.color}), var(--ht-checker)`}
             thumb={color.color}
             onChange={(percent, continues) => setOpacity(percent / 100, continues)}
           />
         </div>
       </div>
-      <div class="tk-row tk-color-values">
-        <Select class="tk-select tk-color-format" aria-label="Color format" value={format} onChange={(event) => setFormat(event.currentTarget.value as Format)}>
+      <div class="ht-row ht-color-values">
+        <Select class="ht-select ht-color-format" aria-label="Color format" value={format} onChange={(event) => setFormat(event.currentTarget.value as Format)}>
           {FORMATS.map(({ value, label }) => (
             <option key={value} value={value}>
               {label}
@@ -132,7 +132,7 @@ export function ColorPanel({ color, onChange }: { color: Color; onChange(color: 
           ))}
         </Select>
         {format === "hex" && (
-          <label class="tk-field" data-tk-tip="Hex">
+          <label class="ht-field" data-ht-tip="Hex">
             <TextField label="Hex" value={color.color.slice(1)} parse={parseHexText} onChange={(hex) => setRgb(hexToRgb(hex))} />
           </label>
         )}
@@ -149,7 +149,7 @@ export function ColorPanel({ color, onChange }: { color: Color; onChange(color: 
         {opacityField}
       </div>
       {format === "oklch" && (
-        <div class="tk-color-oklch">
+        <div class="ht-color-oklch">
           <OklchRow label="L" name="OKLCH lightness" value={oklch.l * 100} min={0} max={100} digits={1} step={1} track={oklchTrack((t) => ({ ...oklch, l: t }))} thumb={color.color} onChange={(l, continues) => setOklch({ ...oklch, l: l / 100 }, continues)} />
           <OklchRow label="C" name="OKLCH chroma" value={oklch.c} min={0} max={MAX_CHROMA} digits={3} step={0.01} track={oklchTrack((t) => ({ ...oklch, c: t * MAX_CHROMA }))} thumb={color.color} onChange={(c, continues) => setOklch({ ...oklch, c }, continues)} />
           <OklchRow label="H" name="OKLCH hue" value={oklch.h} min={0} max={360} digits={1} step={1} track={oklchTrack((t) => ({ ...oklch, h: t * 360 }))} thumb={color.color} onChange={(h, continues) => setOklch({ ...oklch, h }, continues)} />
@@ -227,16 +227,16 @@ function Area({ hsb, hue, onChange }: { hsb: Hsb; hue: string; onChange(hsb: Hsb
   };
   return (
     <div
-      class="tk-color-area"
+      class="ht-color-area"
       role="slider"
       tabIndex={0}
       aria-label="Saturation and brightness"
       aria-valuetext={`Saturation ${Math.round(hsb.s * 100)}%, brightness ${Math.round(hsb.b * 100)}%`}
-      style={{ "--tk-hue": hue }}
+      style={{ "--ht-hue": hue }}
       onKeyDown={onKeyDown}
       {...drag}
     >
-      <span class="tk-color-thumb" style={{ left: `${hsb.s * 100}%`, top: `${(1 - hsb.b) * 100}%`, "--tk-thumb": rgbToHex(hsbToRgb(hsb)) }} />
+      <span class="ht-color-thumb" style={{ left: `${hsb.s * 100}%`, top: `${(1 - hsb.b) * 100}%`, "--ht-thumb": rgbToHex(hsbToRgb(hsb)) }} />
     </div>
   );
 }
@@ -262,7 +262,7 @@ function Slider({ label, value, min, max, unit = "", track, thumb, onChange }: {
   };
   return (
     <div
-      class="tk-color-slider"
+      class="ht-color-slider"
       role="slider"
       tabIndex={0}
       aria-label={label}
@@ -270,11 +270,11 @@ function Slider({ label, value, min, max, unit = "", track, thumb, onChange }: {
       aria-valuemax={max}
       aria-valuenow={value}
       aria-valuetext={`${Math.round(value * 1000) / 1000}${unit}`}
-      style={{ "--tk-track": track }}
+      style={{ "--ht-track": track }}
       onKeyDown={onKeyDown}
       {...drag}
     >
-      <span class="tk-color-thumb" style={{ left: `${((value - min) / (max - min)) * 100}%`, "--tk-thumb": thumb }} />
+      <span class="ht-color-thumb" style={{ left: `${((value - min) / (max - min)) * 100}%`, "--ht-thumb": thumb }} />
     </div>
   );
 }
@@ -295,12 +295,12 @@ function OklchRow({ label, name, value, min, max, digits, step, track, thumb, on
 }) {
   const shown = Math.round(value * 10 ** digits) / 10 ** digits;
   return (
-    <div class="tk-color-oklch-row">
-      <span class="tk-glyph" aria-hidden="true">
+    <div class="ht-color-oklch-row">
+      <span class="ht-glyph" aria-hidden="true">
         {label}
       </span>
       <Slider label={name} value={value} min={min} max={max} track={track} thumb={thumb} onChange={onChange} />
-      <label class="tk-field" data-tk-tip={name}>
+      <label class="ht-field" data-ht-tip={name}>
         <TextField
           label={`${name} value`}
           value={String(shown)}

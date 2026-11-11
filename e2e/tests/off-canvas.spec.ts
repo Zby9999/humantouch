@@ -277,7 +277,7 @@ async function zoomOut(page: Page) {
 /** The changes not applied yet, as the change list names them. */
 async function changeNames(page: Page) {
   await badge(page).click();
-  const names = await page.getByRole("dialog", { name: "Changes" }).locator(".tk-change-name").allTextContents();
+  const names = await page.getByRole("dialog", { name: "Changes" }).locator(".ht-change-name").allTextContents();
   await page.keyboard.press("Escape");
   return names;
 }
@@ -308,7 +308,7 @@ test("dragged back as it was in the same round, a layer is listed open and close
   await enterEditMode(page);
   await pan(page, 400);
   // The header closed by hand, then moved off the canvas.
-  await layerTree(page).getByRole("treeitem", { name: "Header" }).locator(".tk-tree-chevron").click();
+  await layerTree(page).getByRole("treeitem", { name: "Header" }).locator(".ht-tree-chevron").click();
   const before = await rows();
   expect(before).not.toContain("5 Third Kind");
   const view = (await desktop(page).boundingBox())!;
@@ -316,7 +316,7 @@ test("dragged back as it was in the same round, a layer is listed open and close
   await dragTo(page, desktop(page).contentFrame().locator("header"), { x: view.x - 300, y: view.y + 100 });
   await expect(offCanvas(page)).toHaveCount(1);
   // Opened off the canvas: that does not count.
-  await layerTree(page).locator('[data-off-canvas="true"][aria-expanded="false"]').locator(".tk-tree-chevron").click();
+  await layerTree(page).locator('[data-off-canvas="true"][aria-expanded="false"]').locator(".ht-tree-chevron").click();
   await expect(layerTree(page).getByRole("treeitem", { name: "Third Kind" })).toHaveCount(1);
 
   // Let go in its Stack: its deletion taken back, it is moved there, not put back new.
@@ -330,7 +330,7 @@ test("dragged back as it was in the same round, a layer is listed open and close
 test("edited off the canvas and dragged back, a layer is put back new: listed open, as any layer new to the list", async ({ page }) => {
   await enterEditMode(page);
   await pan(page, 400);
-  await layerTree(page).getByRole("treeitem", { name: "Header" }).locator(".tk-tree-chevron").click();
+  await layerTree(page).getByRole("treeitem", { name: "Header" }).locator(".ht-tree-chevron").click();
   await expect(layerTree(page).getByRole("treeitem", { name: "Third Kind" })).toHaveCount(0);
   const view = (await desktop(page).boundingBox())!;
   await select(page, "Header");

@@ -9,7 +9,7 @@
  *   pnpm bench:install [--agents claude,pi,scripted] [--starts id,…] [--runs 1]
  *                      [--package npm|local]   humantouch@latest from the registry (the steps as README has them), or this
  *                                              repository's package, packed: step 1 then runs `npx -y file:<the .tgz> init`,
- *                                              and the Agent's environment has TK_INSTALL_FROM=<the .tgz> for `init`
+ *                                              and the Agent's environment has HT_INSTALL_FROM=<the .tgz> for `init`
  *                      [--plant no-dev-server|extra-edit|asks|leaves-file]   the scripted Agent goes wrong in that way
  *                      [--out <dir>]
  *   pnpm bench:install summary <dir>   judge the raw results in <dir> again, and sum them up
@@ -65,7 +65,7 @@ const runAs = (agent: InstallAgent) => (agent === "pi" ? "pi" : "claude");
  */
 function installEnv(tarball: string | null): NodeJS.ProcessEnv {
   const env = cleanEnv();
-  return { ...env, PATH: [...packageManagerPath(), env.PATH].join(delimiter), COREPACK_ENABLE_DOWNLOAD_PROMPT: "0", BROWSER: "none", ...(tarball && { TK_INSTALL_FROM: tarball }) };
+  return { ...env, PATH: [...packageManagerPath(), env.PATH].join(delimiter), COREPACK_ENABLE_DOWNLOAD_PROMPT: "0", BROWSER: "none", ...(tarball && { HT_INSTALL_FROM: tarball }) };
 }
 
 /**
@@ -154,7 +154,7 @@ async function main(argv: string[]) {
   if (plant && agents.some((agent) => agent !== "scripted")) throw new Error("--plant is for the scripted Agent only: --agents scripted");
   const specs = Object.fromEntries(agents.map((agent) => [agent, installSpec(agent, plant)]));
 
-  const packDir = source === "local" ? mkdtempSync(join(tmpdir(), "03kind-install-pack-")) : null;
+  const packDir = source === "local" ? mkdtempSync(join(tmpdir(), "humantouch-install-pack-")) : null;
   const removePack = () => packDir && rmSync(packDir, { recursive: true, force: true });
   underWay.add(removePack);
   try {

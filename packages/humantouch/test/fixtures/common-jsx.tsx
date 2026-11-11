@@ -33,7 +33,7 @@ export function Gallery({ items, footer }: { items: Item[]; footer?: ReactNode }
         <Dialog.Trigger onClick={() => setOpen(identity(true))}>Open</Dialog.Trigger>
       </Dialog.Root>
       <my-element data-x="1"></my-element>
-      <div data-tk-loc="already/marked.tsx:1:1">kept</div>
+      <div data-ht-loc="already/marked.tsx:1:1">kept</div>
       {footer as ReactNode}
     </section>
   );

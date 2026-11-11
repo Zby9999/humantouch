@@ -59,7 +59,7 @@ export function VariantsPanel({ catalog, takes, inUse, onApply }: Props) {
   const [pointed, setPointed] = useState<{ entry: Resolved; at: DOMRect } | null>(null);
   const [detailed, setDetailed] = useState<{ entry: Resolved; at: DOMRect; panel: DOMRect } | null>(null);
 
-  if (!catalog) return <p class="tk-panel-empty">Loading the project's Variables…</p>;
+  if (!catalog) return <p class="ht-panel-empty">Loading the project's Variables…</p>;
   const source = chosen ?? (GROUPS.some(({ group }) => catalog.of(group).some(({ variable }) => variable.own)) ? "own" : "tailwind");
   const text = search.trim().toLowerCase();
   const listed = (group: VariableGroup) =>
@@ -80,12 +80,12 @@ export function VariantsPanel({ catalog, takes, inUse, onApply }: Props) {
       if (group === "shadow") {
         // A shadow's layers, in a panel over the canvas; on a mouse's pointing only, as a spacing bar's whole length (designer, 2026-11-08).
         if (!(event instanceof PointerEvent) || event.pointerType !== "mouse") return;
-        const panel = (button.closest(".tk-panel") ?? button).getBoundingClientRect();
+        const panel = (button.closest(".ht-panel") ?? button).getBoundingClientRect();
         setDetailed({ entry, at: button.getBoundingClientRect(), panel });
         return;
       }
       // A tile that shows its name whole tells nothing more pointed at (designer, 2026-11-08).
-      const name = button.querySelector(".tk-variants-tile-name");
+      const name = button.querySelector(".ht-variants-tile-name");
       if (name && name.scrollWidth <= name.clientWidth) return;
       setPointed({ entry, at: button.getBoundingClientRect() });
     };
@@ -113,19 +113,19 @@ export function VariantsPanel({ catalog, takes, inUse, onApply }: Props) {
   };
 
   return (
-    <div class="tk-variants">
-      <div class="tk-row">
-        <label class="tk-field">
+    <div class="ht-variants">
+      <div class="ht-row">
+        <label class="ht-field">
           <Icon name="search" />
-          <input class="tk-input" type="search" placeholder="Search variables" aria-label="Search variables" value={search} onInput={(event) => setSearch(event.currentTarget.value)} />
+          <input class="ht-input" type="search" placeholder="Search variables" aria-label="Search variables" value={search} onInput={(event) => setSearch(event.currentTarget.value)} />
         </label>
-        <Select class="tk-select tk-variants-source" aria-label="Variables shown" value={source} onChange={(event) => setChosen(event.currentTarget.value as Source)}>
+        <Select class="ht-select ht-variants-source" aria-label="Variables shown" value={source} onChange={(event) => setChosen(event.currentTarget.value as Source)}>
           <option value="all">All</option>
           <option value="own">Project</option>
           <option value="tailwind">Tailwind</option>
         </Select>
       </div>
-      {!groups.length && <p class="tk-panel-empty">{text ? `No Variable is named “${search.trim()}”.` : "The project has no Variables to show."}</p>}
+      {!groups.length && <p class="ht-panel-empty">{text ? `No Variable is named “${search.trim()}”.` : "The project has no Variables to show."}</p>}
       {groups.map(({ group, title, entries }) => {
         const open = !closed.has(group);
         const toggle = () => {
@@ -136,13 +136,13 @@ export function VariantsPanel({ catalog, takes, inUse, onApply }: Props) {
         const own = entries.filter((e) => e.variable.own);
         const theirs = entries.filter((e) => !e.variable.own);
         return (
-          <section key={group} class="tk-section" aria-label={title}>
-            <div class="tk-section-header">
-              <h3 class="tk-section-title">
+          <section key={group} class="ht-section" aria-label={title}>
+            <div class="ht-section-header">
+              <h3 class="ht-section-title">
                 {title}
-                <span class="tk-variants-count">{entries.length}</span>
+                <span class="ht-variants-count">{entries.length}</span>
               </h3>
-              <button type="button" class="tk-icon-button" aria-label={`${open ? "Fold" : "Unfold"} ${title}`} aria-expanded={open} onClick={toggle}>
+              <button type="button" class="ht-icon-button" aria-label={`${open ? "Fold" : "Unfold"} ${title}`} aria-expanded={open} onClick={toggle}>
                 <Icon name="chevron-down" />
               </button>
             </div>
@@ -152,8 +152,8 @@ export function VariantsPanel({ catalog, takes, inUse, onApply }: Props) {
                 ["Tailwind", theirs],
               ].map(([label, list]) =>
                 (list as Resolved[]).length ? (
-                  <div key={label as string} class="tk-variants-part">
-                    <p class="tk-variants-subtitle">{label as string}</p>
+                  <div key={label as string} class="ht-variants-part">
+                    <p class="ht-variants-subtitle">{label as string}</p>
                     {view(group, list as Resolved[], item)}
                   </div>
                 ) : null,
@@ -178,16 +178,16 @@ function view(group: VariableGroup, entries: Resolved[], item: Item) {
       return <Lengths entries={entries} />;
     case "radius":
       return (
-        <div class="tk-variants-tiles is-four">
+        <div class="ht-variants-tiles is-four">
           {entries.map((entry) =>
             item(
               entry,
-              "tk-variants-tile",
+              "ht-variants-tile",
               <>
-                <span class="tk-variants-radius" style={{ borderTopLeftRadius: `${Math.min(entry.drawn as number, 40)}px` }} />
-                <span class="tk-variants-label is-stacked">
-                  <span class="tk-variants-tile-name">{entry.variable.name}</span>
-                  <span class="tk-variants-value">{px(entry.drawn as number)}</span>
+                <span class="ht-variants-radius" style={{ borderTopLeftRadius: `${Math.min(entry.drawn as number, 40)}px` }} />
+                <span class="ht-variants-label is-stacked">
+                  <span class="ht-variants-tile-name">{entry.variable.name}</span>
+                  <span class="ht-variants-value">{px(entry.drawn as number)}</span>
                 </span>
               </>,
             ),
@@ -198,26 +198,26 @@ function view(group: VariableGroup, entries: Resolved[], item: Item) {
       return entries.map((entry) =>
         item(
           entry,
-          "tk-variants-row is-button",
+          "ht-variants-row is-button",
           <>
-            <span class="tk-variants-sample" style={{ fontSize: `${Math.min(entry.drawn as number, SAMPLE_MAX)}px` }}>
+            <span class="ht-variants-sample" style={{ fontSize: `${Math.min(entry.drawn as number, SAMPLE_MAX)}px` }}>
               Aa
             </span>
-            <span class="tk-variants-name">{entry.variable.name}</span>
-            <span class="tk-variants-value">{valueOf(entry)}</span>
+            <span class="ht-variants-name">{entry.variable.name}</span>
+            <span class="ht-variants-value">{valueOf(entry)}</span>
           </>,
         ),
       );
     case "shadow":
       return (
-        <div class="tk-variants-tiles is-three">
+        <div class="ht-variants-tiles is-three">
           {entries.map((entry) =>
             item(
               entry,
-              "tk-variants-tile",
+              "ht-variants-tile",
               <>
-                <span class="tk-variants-shadow" style={{ boxShadow: shadowCss(entry.drawn as Shadow[]) }} />
-                <span class="tk-variants-label is-center">{entry.variable.name}</span>
+                <span class="ht-variants-shadow" style={{ boxShadow: shadowCss(entry.drawn as Shadow[]) }} />
+                <span class="ht-variants-label is-center">{entry.variable.name}</span>
               </>,
             ),
           )}
@@ -242,17 +242,17 @@ function Lengths({ entries }: { entries: Resolved[] }) {
         const show = (event: PointerEvent) => {
           if (event.pointerType !== "mouse") return;
           const row = event.currentTarget as HTMLElement;
-          const track = row.querySelector(".tk-variants-track")!;
+          const track = row.querySelector(".ht-variants-track")!;
           // Measured as the CSS draws it, to the fraction of a px: a bar shown past its value shows whole.
           if (length > track.getBoundingClientRect().width) setWhole({ length, at: row.getBoundingClientRect() });
         };
         return (
-          <div key={entry.variable.name} class="tk-variants-row is-length" onPointerEnter={show} onPointerLeave={() => setWhole(null)}>
-            <span class="tk-variants-name">{entry.variable.name}</span>
-            <span class="tk-variants-track">
-              <span class="tk-variants-bar" style={{ "--tk-length": `${length}px` }} />
+          <div key={entry.variable.name} class="ht-variants-row is-length" onPointerEnter={show} onPointerLeave={() => setWhole(null)}>
+            <span class="ht-variants-name">{entry.variable.name}</span>
+            <span class="ht-variants-track">
+              <span class="ht-variants-bar" style={{ "--ht-length": `${length}px` }} />
             </span>
-            <span class="tk-variants-value">{valueOf(entry)}</span>
+            <span class="ht-variants-value">{valueOf(entry)}</span>
           </div>
         );
       })}
@@ -268,8 +268,8 @@ const GAP = 8;
 /** A bar too long for its row, whole: above the row, ending at its right, out over the canvas; cut only by the window. */
 function WholeLength({ length, at }: { length: number; at: DOMRect }) {
   return (
-    <div class="tk-variants-whole" aria-hidden="true" style={{ right: `${window.innerWidth - at.right}px`, top: `${at.top - ABOVE}px`, maxWidth: `${at.right - GAP}px` }}>
-      <span class="tk-variants-bar" style={{ width: `${length}px` }} />
+    <div class="ht-variants-whole" aria-hidden="true" style={{ right: `${window.innerWidth - at.right}px`, top: `${at.top - ABOVE}px`, maxWidth: `${at.right - GAP}px` }}>
+      <span class="ht-variants-bar" style={{ width: `${length}px` }} />
     </div>
   );
 }
@@ -370,30 +370,30 @@ export function paletteLines({ steps, ramps }: Scale): [string, (Resolved | unde
 function Palette({ entries, item }: { entries: Resolved[]; item: Item }) {
   const { scales, named } = palette(entries);
   const swatch = (entry: Resolved | undefined, i: number) =>
-    entry ? item(entry, "tk-variants-swatch", undefined, { "--tk-swatch": cssColor(entry.drawn as Color) }) : <span key={`empty ${i}`} class="tk-variants-empty" />;
+    entry ? item(entry, "ht-variants-swatch", undefined, { "--ht-swatch": cssColor(entry.drawn as Color) }) : <span key={`empty ${i}`} class="ht-variants-empty" />;
   return (
-    <div class="tk-variants-palette">
+    <div class="ht-variants-palette">
       {scales.flatMap((scale, s) =>
         paletteLines(scale).map(([name, steps], r) => (
-          <div key={`${s} ${r}`} class="tk-variants-ramp" style={{ "--tk-steps": `${steps.length}` }}>
-            <span class="tk-variants-ramp-name">{name}</span>
+          <div key={`${s} ${r}`} class="ht-variants-ramp" style={{ "--ht-steps": `${steps.length}` }}>
+            <span class="ht-variants-ramp-name">{name}</span>
             {steps.map(swatch)}
           </div>
         )),
       )}
       {named.length > 0 && (
-        <div class="tk-variants-named" role="group" aria-label="Named">
-          {scales.length > 0 && <p class="tk-variants-named-title">Named</p>}
-          <div class="tk-variants-names">
+        <div class="ht-variants-named" role="group" aria-label="Named">
+          {scales.length > 0 && <p class="ht-variants-named-title">Named</p>}
+          <div class="ht-variants-names">
             {named.flatMap((group, g) =>
               group.map((entry, i) =>
                 item(
                   entry,
                   // A group starts a row; so does the color after one.
-                  `tk-variants-named-item${!i && (group.length > 1 || named[g - 1]?.length > 1) ? " is-start" : ""}`,
+                  `ht-variants-named-item${!i && (group.length > 1 || named[g - 1]?.length > 1) ? " is-start" : ""}`,
                   <>
-                    <span class="tk-variants-named-swatch" style={{ "--tk-swatch": cssColor(entry.drawn as Color) }} />
-                    <span class="tk-variants-named-name">{bare(entry)}</span>
+                    <span class="ht-variants-named-swatch" style={{ "--ht-swatch": cssColor(entry.drawn as Color) }} />
+                    <span class="ht-variants-named-name">{bare(entry)}</span>
                   </>,
                 ),
               ),
@@ -408,11 +408,11 @@ function Palette({ entries, item }: { entries: Resolved[]; item: Item }) {
 /** Over the Variable pointed at: its name and value, and what clicking it does. The color picker's palette shows it too (designer, 2026-11-08). */
 export function Tip({ entry, at, hint, inUse }: { entry: Resolved; at: DOMRect; hint: string | undefined; inUse: boolean }) {
   return (
-    <div class="tk-variants-tip" role="tooltip" style={{ left: `${at.left + at.width / 2}px`, top: `${at.top - 4}px` }}>
+    <div class="ht-variants-tip" role="tooltip" style={{ left: `${at.left + at.width / 2}px`, top: `${at.top - 4}px` }}>
       <span>
-        <span class="tk-variants-tip-name">{entry.variable.name}</span> <span class="tk-variants-tip-value">{valueOf(entry)}</span>
+        <span class="ht-variants-tip-name">{entry.variable.name}</span> <span class="ht-variants-tip-value">{valueOf(entry)}</span>
       </span>
-      {inUse ? <span class="tk-variants-tip-hint">In use</span> : hint && <span class="tk-variants-tip-hint">Click to set the {hint}</span>}
+      {inUse ? <span class="ht-variants-tip-hint">In use</span> : hint && <span class="ht-variants-tip-hint">Click to set the {hint}</span>}
     </div>
   );
 }
@@ -437,15 +437,15 @@ export function ShadowDetails({ entry, at, panel }: { entry: Resolved; at: DOMRe
   }, [entry, at]);
   const number = (n: number) => `${Math.round(n * 100) / 100}`;
   return (
-    <div ref={box} class="tk-variants-details" aria-hidden="true" style={{ right: `${window.innerWidth - panel.left + BESIDE}px`, top: `${top}px` }}>
-      <span class="tk-variants-details-name">{entry.variable.name}</span>
+    <div ref={box} class="ht-variants-details" aria-hidden="true" style={{ right: `${window.innerWidth - panel.left + BESIDE}px`, top: `${top}px` }}>
+      <span class="ht-variants-details-name">{entry.variable.name}</span>
       {(entry.drawn as Shadow[]).map((s, i) => (
-        <div key={i} class="tk-variants-details-layer">
-          <div class="tk-variants-details-head">
-            <span class="tk-variants-details-title">Shadow {i + 1}</span>
-            <span class="tk-variants-details-label">{s.type === "inner" ? "Inner shadow" : "Drop shadow"}</span>
+        <div key={i} class="ht-variants-details-layer">
+          <div class="ht-variants-details-head">
+            <span class="ht-variants-details-title">Shadow {i + 1}</span>
+            <span class="ht-variants-details-label">{s.type === "inner" ? "Inner shadow" : "Drop shadow"}</span>
           </div>
-          <dl class="tk-variants-details-grid">
+          <dl class="ht-variants-details-grid">
             {(
               [
                 ["X", s.x],
@@ -454,18 +454,18 @@ export function ShadowDetails({ entry, at, panel }: { entry: Resolved; at: DOMRe
                 ["Spread", s.spread],
               ] as const
             ).map(([label, value]) => (
-              <div key={label} class="tk-variants-details-pair">
-                <dt class="tk-variants-details-label">{label}</dt>
-                <dd class="tk-variants-details-value">{number(value)}</dd>
+              <div key={label} class="ht-variants-details-pair">
+                <dt class="ht-variants-details-label">{label}</dt>
+                <dd class="ht-variants-details-value">{number(value)}</dd>
               </div>
             ))}
-            <div class="tk-variants-details-pair is-color">
-              <dt class="tk-variants-details-label">Color</dt>
-              <dd class="tk-variants-details-value">
+            <div class="ht-variants-details-pair is-color">
+              <dt class="ht-variants-details-label">Color</dt>
+              <dd class="ht-variants-details-value">
                 {/* The swatch whole: a shadow's color is often a few % opaque, and would show as nothing; its opacity is told beside it. */}
-                <span class="tk-variants-details-swatch" style={{ "--tk-swatch": s.color }} />
+                <span class="ht-variants-details-swatch" style={{ "--ht-swatch": s.color }} />
                 {s.color.slice(1).toUpperCase()}
-                <span class="tk-variants-details-opacity">{Math.round(s.opacity * 100)}%</span>
+                <span class="ht-variants-details-opacity">{Math.round(s.opacity * 100)}%</span>
               </dd>
             </div>
           </dl>

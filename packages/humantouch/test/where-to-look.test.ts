@@ -9,7 +9,7 @@ import type { Change } from "../src/client/changeset";
 let project: string;
 
 beforeEach(() => {
-  project = mkdtempSync(join(tmpdir(), "03kind-look-"));
+  project = mkdtempSync(join(tmpdir(), "humantouch-look-"));
 });
 afterEach(() => rmSync(project, { recursive: true, force: true }));
 
