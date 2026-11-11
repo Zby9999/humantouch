@@ -1,0 +1,27 @@
+<!--
+  Put at the top of the example's page by shadow-roots.spec.ts (ticket 135), so the example itself is left as it is.
+  An open shadow root, styled by a style element in it and by a constructable stylesheet, each answering to the width,
+  with a script's animation under way in it; and a closed shadow root.
+-->
+<div id="shadow-host"></div>
+<div id="closed-host"><span>Light of the closed host</span></div>
+<script>
+  (() => {
+    // A closed one: nothing of it can be read, so the canvas shows the host as one with none.
+    document.getElementById("closed-host").attachShadow({ mode: "closed" }).innerHTML = "<b>Closed content</b><slot></slot>";
+    const shadow = document.getElementById("shadow-host").attachShadow({ mode: "open" });
+    shadow.innerHTML = `<style>
+  .title { margin: 0; font: 700 24px/32px sans-serif; color: rgb(200, 0, 0) }
+  @media (max-width: 1000px) { .title { color: rgb(0, 150, 0) } }
+  @media (max-width: 500px) { .title { color: rgb(0, 0, 200) } }
+</style>
+<div class="panel"><h2 class="title">Shadow title</h2><p class="body">Shadow body</p><p class="fade">Fading</p></div>`;
+    // A script's animation, as motion libraries make: at its end on the canvas.
+    shadow.querySelector(".fade").animate([{ opacity: 1 }, { opacity: 0.4 }], { duration: 60000, fill: "forwards" });
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(`:host { display: block; padding: 12px }
+.panel { padding: 16px; border-radius: 16px; background: rgb(255, 230, 0) }
+@media (max-width: 500px) { .panel { border-radius: 4px } }`);
+    shadow.adoptedStyleSheets = [sheet];
+  })();
+</script>

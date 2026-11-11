@@ -11,6 +11,7 @@ import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import { DELETED_ATTR } from "./canvas-style";
 import { readValue } from "./property-table";
 import { doctypeOf, editable, FROZEN, serializeEditable } from "./freezer";
+import { hostsShadowRoots, mayHoldShadowRoots, noteShadowRoots } from "./shadow-roots";
 import { LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./style-marks";
 import { CHAIN_ATTR } from "./usage-chain";
 
@@ -43,6 +44,8 @@ export function freezeLook(el: Element, into: HTMLIFrameElement) {
   doc.open();
   doc.write(`${doctypeOf(from)}<html><head><style ${LOOK_STYLES_ATTR}="${LOOK_STYLES_BASE}">${BASE}</style></head><body></body></html>`);
   doc.close();
+  // A layer hosting a shadow root takes it along, kept with the look (`shadow-roots.ts`).
+  noteShadowRoots(doc, mayHoldShadowRoots(from));
 
   // What an element of each kind has as it is, in this document: what the frozen style need not say.
   const defaults = new Map<string, { own: Values; before: Values; after: Values }>();
@@ -145,6 +148,7 @@ const PLACING = new Set(["position", "top", "right", "bottom", "left", "float", 
  */
 export function copyLook(source: Element, doc: Document): { copy: Element; pairs: [Element, Element][] } {
   const copy = doc.importNode(source, true) as Element;
+  if (hostsShadowRoots(copy)) noteShadowRoots(doc, true);
   const sources = [source, ...source.querySelectorAll("*")];
   const copies = [copy, ...copy.querySelectorAll("*")];
   const pairs: [Element, Element][] = [];
