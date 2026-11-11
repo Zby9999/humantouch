@@ -6,6 +6,7 @@ import { DemoPage, layerId, type Selection, type Target } from "./DemoPage";
 import { EDITOR_CSS } from "./editor-css.generated";
 import { NumberField, Tips } from "./fields";
 import { Icon } from "./Icon";
+import { VariablesPanel } from "./VariablesPanel";
 import type { IconName } from "./icon-paths";
 import { ACME_COLORS, LAYERS, RADIUS_VARIABLES, SPACING_VARIABLES, TEXT_VARIABLES, TREE, VIEWS, nameOf, styleOf, type Key, type ViewName } from "./model";
 
@@ -53,9 +54,6 @@ const SITE_CSS = `
 .ht-pop button:hover { background: var(--ht-field); }
 .ht-pop .ht-pop-value { margin-left: auto; color: var(--ht-text-muted); font-variant-numeric: tabular-nums; }
 .ht-pop .ht-pop-swatch { width: 14px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.2); }
-.ht-var-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; }
-.ht-var-list li { display: flex; align-items: center; gap: 8px; list-style: none; }
-.ht-var-list .ht-var-value { margin-left: auto; color: var(--ht-text-muted); font-variant-numeric: tabular-nums; }
 `;
 
 type Box = { left: number; top: number; width: number; height: number };
@@ -721,34 +719,7 @@ function DesignPanel({ view, selected, root, atRest, onLeave }: { view: ViewName
     return (
       <aside className="ht-panel is-design" aria-label="Design">
         {header}
-        <section className="ht-section">
-          <div className="ht-section-header">
-            <h3 className="ht-section-title">Color</h3>
-          </div>
-          <ul className="ht-var-list">
-            {ACME_COLORS.map((v) => (
-              <li key={v.name}>
-                <span className="ht-swatch" style={{ ["--ht-swatch" as string]: v.value }} />
-                {v.name}
-                <span className="ht-var-value">{v.value}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-        <section className="ht-section">
-          <div className="ht-section-header">
-            <h3 className="ht-section-title">Spacing</h3>
-          </div>
-          <ul className="ht-var-list">
-            {SPACING_VARIABLES.slice(1, 8).map((v) => (
-              <li key={v.name}>
-                <Icon name="gap" />
-                {v.name}
-                <span className="ht-var-value">{v.value}px</span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <VariablesPanel />
       </aside>
     );
   }
