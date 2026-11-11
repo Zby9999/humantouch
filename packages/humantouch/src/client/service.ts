@@ -4,6 +4,7 @@ import {
   BREAKPOINTS_PATH,
   CHECKS_PATH,
   OFF_CANVAS_PATH,
+  ROUND_PATH,
   STATUS_PATH,
   UNLOCK_PATH,
   VARIABLES_PATH,
@@ -16,11 +17,16 @@ import {
   type Variable,
 } from "../service-protocol";
 import { CLAIM_PATH, OTHER_USAGES_PATH } from "./code-changes";
-import { roundWatch, serviceConfig, serviceRequest, type RoundWatch } from "./round-watch";
+import { gzipSync, strToU8 } from "fflate";
+import { KEEPALIVE_MAX_BYTES, roundWatch, serviceConfig, serviceRequest, type RoundWatch } from "./round-watch";
 
 export interface RoundStore extends RoundWatch {
-  /** Saves the round; null drops it. */
-  save(round: SavedRound | null): Promise<void>;
+  /**
+   * Saves the round; null drops it. `leaving`: the page is going (ticket 160):
+   * sent at once, not after the saves before it, as a request the browser
+   * sends on once the page has gone.
+   */
+  save(round: SavedRound | null, leaving?: boolean): Promise<void>;
   /** How the round stands now, read afresh: claimed the moment the Agent claims it, before `watch` says so. */
   status(): Promise<RoundStatus>;
   /** Ends a claimed round as it is. */
@@ -41,8 +47,10 @@ export interface RoundStore extends RoundWatch {
   /** The layers off the canvas, kept apart from any round (ADR 0009). */
   loadOffCanvas(): Promise<SavedOffCanvasLayer[]>;
   /** Keeps the layers off the canvas, all of them. Answers with the JSX that writes each, as kept. */
-  saveOffCanvas(layers: SavedOffCanvasLayer[]): Promise<OffCanvasSaveAnswer["snippets"]>;
+  saveOffCanvas(layers: SavedOffCanvasLayer[], leaving?: boolean): Promise<OffCanvasSaveAnswer["snippets"]>;
 }
+
+
 
 /** The project's Variables, as the local service reads them; none when there is no service, or it cannot say. */
 export async function loadVariables(): Promise<Variable[]> {
@@ -65,10 +73,36 @@ export function connectRoundStore(): RoundStore | null {
   // Saves go one after another, so the last one made is the one that stays.
   let saving: Promise<unknown> = Promise.resolve();
   let savingOffCanvas: Promise<unknown> = Promise.resolve();
+  /** The newest save of each kind made: one still waiting for its turn when a newer one is made is not sent (ticket 160). */
+  const newest = { round: 0, offCanvas: 0 };
+  /** The bytes of the requests sent as the page goes and not yet answered: together within what the browser carries on. */
+  let leavingBytes = 0;
+  /**
+   * `body` sent at once, as the page goes (ticket 160): gzipped, as a request
+   * the browser sends on once the page has gone; one it cannot carry on with
+   * those still in flight goes as an ordinary request.
+   */
+  const sendLeaving = (method: string, path: string, body: string | undefined) => {
+    const packed = body === undefined ? undefined : gzipSync(strToU8(body));
+    const bytes = packed?.length ?? 0;
+    const keepalive = leavingBytes + bytes <= KEEPALIVE_MAX_BYTES;
+    if (keepalive) leavingBytes += bytes;
+    return request(method, { path, body: packed as Uint8Array<ArrayBuffer> | undefined, keepalive, gzipped: !!packed }).finally(() => {
+      if (keepalive) leavingBytes -= bytes;
+    });
+  };
+  /** `send` once the save before has had its turn; not at all when a newer save has been made meanwhile. */
+  const inTurn = <T,>(before: Promise<unknown>, kind: keyof typeof newest, send: () => Promise<T>) => {
+    const mine = ++newest[kind];
+    return before.then(() => (mine === newest[kind] ? send() : undefined));
+  };
   return {
     ...roundWatch(request),
-    save(round) {
-      const next = saving.then(() => (round ? request("PUT", { body: JSON.stringify(round) }) : request("DELETE")));
+    save(round, leaving) {
+      const body = round ? JSON.stringify(round) : undefined;
+      const method = body ? "PUT" : "DELETE";
+      // The page going: no waiting for the save before, which went first and the service takes first; one still waiting goes unsent.
+      const next = leaving ? (++newest.round, sendLeaving(method, ROUND_PATH, body)) : inTurn(saving, "round", () => request(method, { body }));
       saving = next.catch(() => {});
       return next.then(() => {});
     },
@@ -96,10 +130,11 @@ export function connectRoundStore(): RoundStore | null {
       const response = await request("GET", { path: OFF_CANVAS_PATH });
       return response.status === 204 ? [] : ((await response.json()) as { layers: SavedOffCanvasLayer[] }).layers;
     },
-    saveOffCanvas(layers) {
-      const next = savingOffCanvas.then(() => request("PUT", { path: OFF_CANVAS_PATH, body: JSON.stringify({ layers }) }));
+    saveOffCanvas(layers, leaving) {
+      const body = JSON.stringify({ layers });
+      const next = leaving ? (++newest.offCanvas, sendLeaving("PUT", OFF_CANVAS_PATH, body)) : inTurn(savingOffCanvas, "offCanvas", () => request("PUT", { path: OFF_CANVAS_PATH, body }));
       savingOffCanvas = next.catch(() => {});
-      return next.then(async (response) => (response.status === 200 ? ((await response.json()) as OffCanvasSaveAnswer).snippets : {}));
+      return next.then(async (response) => (response?.status === 200 ? ((await response.json()) as OffCanvasSaveAnswer).snippets : {}));
     },
   };
 }
