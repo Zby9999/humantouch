@@ -1,0 +1,352 @@
+/**
+ * Whether the page already draws what a change's style draws (ADR 0016): the
+ * value read off the page is written otherwise than the change's, yet it may
+ * draw the same, as 0 letter spacing written `0px` or `normal`, or a fixed
+ * width written as a maximum the container is wide enough for. The canvas's
+ * style for the change (its reference style, `Change.style`) is put on the
+ * page's elements for a moment, and taken off again, all before anything is
+ * painted: if nothing drawn moves, the page shows the change.
+ *
+ * The style is put on through a stylesheet adopted by the document, its
+ * declarations important, its rules found by each element's place among its
+ * container's: no attribute changes, nor any element put in, so nothing that
+ * watches the page for changes takes it for one. What is drawn: where the
+ * layer, its container, the container's other layers and the layers in it
+ * are, and how large, within half a px (a box with no area, drawn nowhere, but
+ * for its size); their colors, rounded as the panel reads them, and the rest
+ * of how they are painted; where their text is, and how wide. What a change
+ * of one layer cannot move (the rest of the page) is not looked at.
+ *
+ * Put on a page that applies the change in another way that adds to it (a
+ * margin for a padding, a gap for a margin), the style moves things again, so
+ * this alone would not tell. What it moves on the page before the change is
+ * applied is noted too (`Moved`): the page that moves the same to the same
+ * shows the change (`movedAsNoted`).
+ */
+import { NOT_DRAWN } from "./layers";
+import { colorReader } from "./paint";
+import { sourcesOf, type StyleSource } from "./style-source";
+
+/** An element, and the style to put on it: CSS properties to values, as the canvas writes them. */
+export interface Restyled {
+  el: Element;
+  style: Record<string, string>;
+}
+
+/** How many elements around and in the layers are looked at, and how many runs of text: past these, the first ones. */
+const MAX_ELEMENTS = 1500;
+const MAX_TEXTS = 500;
+/** Within this, in px, a place or a size is the same. */
+const NEAR = 0.5;
+
+/** How an element is painted, past where it is: its computed values of these. */
+const PAINTED = [
+  "color",
+  "background-color",
+  "background-image",
+  "background-position",
+  "background-size",
+  "background-repeat",
+  "background-clip",
+  ...["top", "right", "bottom", "left"].flatMap((side) => ["color", "style", "width"].map((part) => `border-${side}-${part}`)),
+  "border-top-left-radius",
+  "border-top-right-radius",
+  "border-bottom-right-radius",
+  "border-bottom-left-radius",
+  "box-shadow",
+  "text-shadow",
+  "opacity",
+  "filter",
+  "backdrop-filter",
+  "mix-blend-mode",
+  "outline-color",
+  "outline-style",
+  "outline-width",
+  "outline-offset",
+  "text-decoration-line",
+  "text-decoration-color",
+  "text-decoration-style",
+  "text-decoration-thickness",
+  "text-underline-offset",
+  "visibility",
+  "clip-path",
+  "overflow-x",
+  "overflow-y",
+  "transform",
+  "translate",
+  "rotate",
+  "scale",
+  "font-family",
+  "font-weight",
+  "font-style",
+  "-webkit-text-stroke-width",
+  "-webkit-text-stroke-color",
+  "object-fit",
+  "object-position",
+  "fill",
+  "stroke",
+];
+/** Of those, the colors: compared as painted, so a color written in another space is the same color. */
+const COLORS = new Set(PAINTED.filter((name) => name.endsWith("color") || name === "fill" || name === "stroke"));
+
+/** Properties that lay out what is in a container only where it is a flex or grid container. */
+const OF_CONTAINERS = new Set(["gap", "row-gap", "column-gap", "justify-content", "justify-items", "align-items", "align-content", "flex-direction", "flex-wrap", "grid-template-columns", "grid-template-rows", "grid-auto-flow"]);
+/** Properties that place an element only where its container is a flex or grid container. */
+const OF_ITEMS = new Set(["flex-grow", "flex-shrink", "flex-basis", "align-self", "justify-self", "order", "grid-column-start", "grid-column-end", "grid-row-start", "grid-row-end"]);
+
+/** What is drawn of an element: where and how large (page coordinates), and how it is painted. */
+interface Drawn {
+  box: number[];
+  paint: string[];
+}
+
+/**
+ * What a change's style moves of how the page lays out one of its layer's
+ * elements, noted before the change is applied (`drawsAlike`): each place or
+ * size it changes, by what it is of (`layoutOf`), and what to.
+ */
+export type Moved = Map<string, number[]>;
+
+/** What `drawsAlike` found: whether nothing drawn moved; and, for each element it was asked to note, what the style moved (none, where it could not be told). */
+export interface Drawing {
+  alike: boolean;
+  moved: Map<Element, Moved>;
+}
+
+/**
+ * Whether the page draws the same with each of `restyled` given its style as
+ * without: so, with the layer the change is to, and the elements around and
+ * in it. Not, where it cannot be told: an element not drawn (or in a shadow
+ * root), a style with nothing in it, one the page's own important
+ * declarations would win over, or one that lays out a container (a gap, an
+ * alignment) or an item in one where there is none, which would draw nothing
+ * there either way. Of each of `noting`, what the style moved, as `layoutOf`
+ * reads it; not `look`ing, that alone, at what costs little.
+ */
+export function drawsAlike(restyled: Restyled[], noting: Element[] = [], look = true): Drawing {
+  const drawing: Drawing = { alike: false, moved: new Map() };
+  const [first] = restyled;
+  if (!first) return drawing;
+  const doc = first.el.ownerDocument;
+  const win = doc.defaultView;
+  if (!win || !restyled.every(({ el, style }) => el.isConnected && el.getRootNode() === doc && Object.keys(style).length > 0 && el.getClientRects().length > 0)) return drawing;
+  const sheet = new win.CSSStyleSheet();
+  const rules = restyled.map(({ el, style }) => `${pathOf(el)} { ${Object.entries(style).map(([name, value]) => `${name}: ${value} !important;`).join(" ")} }`);
+  try {
+    sheet.replaceSync(rules.join("\n"));
+  } catch {
+    return drawing;
+  }
+  const longhands = restyled.map((_, i) => {
+    const rule = sheet.cssRules[i] as CSSStyleRule | undefined;
+    return rule ? [...rule.style] : [];
+  });
+  if (longhands.some((names) => !names.length)) return drawing;
+  // The page's own important declarations that would win over these (its style attribute's, those in a CSS layer, or by an id): what they draw would not be the change's.
+  const winsOver = (source: StyleSource) => source.important && (source.kind === "inline" || source.layer !== null || (source.selector ?? "").includes("#"));
+  if (restyled.some(({ el }, i) => sourcesOf(el, longhands[i]).some(winsOver))) return drawing;
+
+  const els = [...new Set(restyled.flatMap(({ el }) => around(el)))].slice(0, MAX_ELEMENTS);
+  const texts = [...new Set(restyled.flatMap(({ el }) => textsIn(el)))].slice(0, MAX_TEXTS);
+  const before = look ? drawnOf(els, texts, win) : null;
+  const laidOut = noting.map(layoutOf);
+  // A transition on any of them would start as the style goes on, or comes off: it is held off meanwhile.
+  const transitions = els.some((el) => /[1-9]/.test(getComputedStyle(el).transitionDuration));
+  const held = restyled.map(({ el }) => `${pathOf(el)}, ${pathOf(el)} * { transition: none !important; }`);
+  if (transitions) for (const rule of held) sheet.insertRule(rule, sheet.cssRules.length);
+  const scroll = [win.scrollX, win.scrollY];
+  doc.adoptedStyleSheets = [...doc.adoptedStyleSheets, sheet];
+  try {
+    if (!restyled.some(({ el, style }, i) => inertOn(el, longhands[i]) || heldBack(el, style))) {
+      drawing.alike = !!before && same(before, drawnOf(els, texts, win), doc);
+      noting.forEach((el, i) => drawing.moved.set(el, movedBetween(laidOut[i], layoutOf(el))));
+    }
+  } finally {
+    if (transitions) {
+      // Off again with transitions still held: what the elements go back to is what they were, so none starts as they are let go.
+      sheet.replaceSync(held.join("\n"));
+      void doc.documentElement.getBoundingClientRect();
+    }
+    doc.adoptedStyleSheets = doc.adoptedStyleSheets.filter((one) => one !== sheet);
+    if (win.scrollX !== scroll[0] || win.scrollY !== scroll[1]) win.scrollTo(scroll[0], scroll[1]);
+  }
+  return drawing;
+}
+
+/**
+ * Where the page lays out what a style on `el` may move, each by what it is
+ * of, so it is found again as the code changes and the elements are made
+ * anew: `el` itself (`layer`) and the others in its container (`s`, and their
+ * place among its nodes), from the container's corner, and the container's
+ * size (`container`); what is in `el` (`d` for an element, `t` for a run of
+ * text, and the places among their containers' nodes down to them), from
+ * `el`'s corner. Each as x, y, width and height, in px.
+ */
+export function layoutOf(el: Element): Moved {
+  const out: Moved = new Map();
+  const of = (rect: DOMRect, from: DOMRect) => [rect.left - from.left, rect.top - from.top, rect.width, rect.height];
+  const own = el.getBoundingClientRect();
+  const parent = el.parentElement;
+  if (parent) {
+    const from = parent.getBoundingClientRect();
+    out.set("container", [0, 0, from.width, from.height]);
+    out.set("layer", of(own, from));
+    parent.childNodes.forEach((node, i) => {
+      if (node !== el && node.nodeType === Node.ELEMENT_NODE && !NOT_DRAWN.has((node as Element).localName)) out.set(`s${i}`, of((node as Element).getBoundingClientRect(), from));
+    });
+  } else out.set("layer", [0, 0, own.width, own.height]);
+  const range = el.ownerDocument.createRange();
+  const walk = (node: Node, path: string) => {
+    node.childNodes.forEach((child, i) => {
+      if (out.size >= MAX_ELEMENTS) return;
+      if (child.nodeType === Node.TEXT_NODE && (child as Text).data.trim()) {
+        range.selectNodeContents(child);
+        out.set(`t${path}.${i}`, of(range.getBoundingClientRect(), own));
+      } else if (child.nodeType === Node.ELEMENT_NODE && !NOT_DRAWN.has((child as Element).localName)) {
+        out.set(`d${path}.${i}`, of((child as Element).getBoundingClientRect(), own));
+        walk(child, `${path}.${i}`);
+      }
+    });
+  };
+  walk(el, "");
+  range.detach();
+  return out;
+}
+
+/** What moved from `before` to `after`, as `after` has it: what is in one and not the other moves too; a box with no area either side is drawn nowhere. */
+function movedBetween(before: Moved, after: Moved): Moved {
+  const moved: Moved = new Map();
+  for (const [key, box] of after) {
+    const was = before.get(key);
+    if (!was || !alike(was, box)) moved.set(key, box);
+  }
+  return moved;
+}
+
+/**
+ * Whether the page lays out `el` as a change's style was noted to move it
+ * (`Moved`): all it moved, where it moved them to, within half a px. Not
+ * where it moved nothing: a style that moves nothing is told by what is
+ * drawn (`drawsAlike`).
+ */
+export function movedAsNoted(el: Element, moved: Moved): boolean {
+  if (!moved.size || !el.isConnected || !el.getClientRects().length) return false;
+  const now = layoutOf(el);
+  return [...moved].every(([key, box]) => {
+    const there = now.get(key);
+    return !!there && alike(there, box);
+  });
+}
+
+/** Two boxes, x, y, width and height, the same within half a px: where neither has an area, by their size alone. */
+function alike(a: number[], b: number[]): boolean {
+  const nowhere = (box: number[]) => box[2] * box[3] === 0;
+  const from = nowhere(a) && nowhere(b) ? 2 : 0;
+  return a.length === b.length && a.every((n, i) => i < from || Math.abs(n - b[i]) <= NEAR);
+}
+
+/** Whether the style, now on `el`, lays out a container it is not, or places an item in no container that lays it out: it draws nothing there. */
+function inertOn(el: Element, longhands: string[]): boolean {
+  const laysOut = (of: Element | null) => !!of && /(flex|grid)/.test(getComputedStyle(of).display);
+  if (longhands.some((name) => OF_CONTAINERS.has(name)) && !laysOut(el)) return true;
+  return longhands.some((name) => OF_ITEMS.has(name)) && !laysOut(el.parentElement);
+}
+
+/**
+ * Whether the style, now on `el`, is held back from what it declares: a
+ * length in px the element does not come to, as a size its own maximum or
+ * minimum keeps it from (`max-width` written by the page for a fixed width).
+ * Then nothing moving tells nothing: the page's own styles keep it as it was.
+ */
+function heldBack(el: Element, style: Record<string, string>): boolean {
+  const computed = getComputedStyle(el);
+  return Object.entries(style).some(([name, value]) => /^-?\d*\.?\d+px$/.test(value.trim()) && Math.abs(parseFloat(computed.getPropertyValue(name)) - parseFloat(value)) > NEAR);
+}
+
+/** A selector for `el` alone, by its place among its container's elements, from the root: its tag and a class it has in its own part. */
+function pathOf(el: Element): string {
+  const parts: string[] = [];
+  for (let at: Element | null = el; at; at = at.parentElement) {
+    if (!at.parentElement) {
+      parts.unshift(":root");
+      break;
+    }
+    const nth = [...at.parentElement.children].indexOf(at) + 1;
+    const own = at === el && at.classList[0] ? `.${CSS.escape(at.classList[0])}` : "";
+    parts.unshift(`${CSS.escape(at.localName)}${own}:nth-child(${nth})`);
+  }
+  return parts.join(" > ");
+}
+
+/** The elements a style on `el` may move: its container, the container's elements, and those in `el`, in order. */
+function around(el: Element): Element[] {
+  const els = new Set<Element>();
+  const parent = el.parentElement;
+  if (parent) {
+    els.add(parent);
+    for (const child of parent.children) if (!NOT_DRAWN.has(child.localName)) els.add(child);
+  }
+  els.add(el);
+  const walker = el.ownerDocument.createTreeWalker(el, NodeFilter.SHOW_ELEMENT);
+  for (let node = walker.nextNode(); node && els.size < MAX_ELEMENTS; node = walker.nextNode()) {
+    if (!NOT_DRAWN.has((node as Element).localName)) els.add(node as Element);
+  }
+  return [...els];
+}
+
+/** The runs of text in `el`, but white space alone. */
+function textsIn(el: Element): Text[] {
+  const texts: Text[] = [];
+  const walker = el.ownerDocument.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node && texts.length < MAX_TEXTS; node = walker.nextNode()) {
+    if ((node as Text).data.trim() && !NOT_DRAWN.has(node.parentElement?.localName ?? "")) texts.push(node as Text);
+  }
+  return texts;
+}
+
+/** What is drawn of `els` and `texts` now. */
+function drawnOf(els: Element[], texts: Text[], win: Window): { els: Drawn[]; texts: number[][] } {
+  const [sx, sy] = [win.scrollX, win.scrollY];
+  const box = (r: DOMRect) => [r.left + sx, r.top + sy, r.width, r.height];
+  const range = win.document.createRange();
+  const drawn = {
+    els: els.map((el) => {
+      const style = getComputedStyle(el);
+      return { box: box(el.getBoundingClientRect()), paint: PAINTED.map((name) => style.getPropertyValue(name)) };
+    }),
+    texts: texts.map((text) => {
+      range.selectNodeContents(text);
+      return box(range.getBoundingClientRect());
+    }),
+  };
+  range.detach();
+  return drawn;
+}
+
+/** Whether two drawings are the same: places and sizes within half a px, paint the same, colors as painted. */
+function same(a: { els: Drawn[]; texts: number[][] }, b: { els: Drawn[]; texts: number[][] }, doc: Document): boolean {
+  if (!a.texts.every((box, i) => alike(box, b.texts[i]))) return false;
+  const colors = colorReader(doc);
+  const painted = (css: string) => {
+    const { color, opacity } = colors.color(css);
+    return `${color} ${opacity}`;
+  };
+  return a.els.every((drawn, i) => {
+    const other = b.els[i];
+    if (!alike(drawn.box, other.box)) return false;
+    return drawn.paint.every((value, j) => {
+      const then = other.paint[j];
+      if (value === then) return true;
+      if (COLORS.has(PAINTED[j])) return painted(value) === painted(then);
+      return roundedIn(value) === roundedIn(then);
+    });
+  });
+}
+
+/** A computed value with its numbers rounded: to the hundredth up to 1, else to the whole number, as colors and lengths are drawn. */
+function roundedIn(css: string): string {
+  return css.replace(/-?\d*\.?\d+(e-?\d+)?/g, (n) => {
+    const value = Number(n);
+    return String(Math.abs(value) <= 1 ? Math.round(value * 100) / 100 : Math.round(value));
+  });
+}

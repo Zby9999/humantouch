@@ -17,7 +17,7 @@
  */
 import { CHECK_ARRIVE_MS, CHECK_SETTLE_MS, CODE_EVENT, type CheckAsk, type CheckReport, type CheckResult } from "../service-protocol";
 import type { Change } from "./changeset";
-import { checkAcross, checkHere, itself, outsideOf, uncheckable, widthsOf, type PageWidth } from "./check";
+import { checkAcross, checkHere, itself, outsideOf, uncheckable, widthsOf, type EffectNotes, type PageWidth } from "./check";
 import { codeUpdates, sliced } from "./code-changes";
 import { otherUsagesChanged, looksAtOtherUsages, noteChange, noteOutside, outsideChanged, unnoted, withOutside, type OtherUsagesNoted } from "./other-usages";
 import { CHECK_MEASURE } from "./host";
@@ -53,6 +53,14 @@ interface Options {
   otherUsages?: Map<number, OtherUsagesNoted | null>;
   /** Each note taken into `otherUsages` as the page first looks at a change, to be kept with the claim (ticket 82). */
   onNoted?(id: number, noted: OtherUsagesNoted | null): void;
+  /**
+   * What each change's style moved as the page first looked at it (ADR 0016,
+   * `EffectNotes`): kept by the caller for as long as the round is claimed,
+   * as `otherUsages` is, so a page that checks the round anew, read again,
+   * goes by what was noted before the code changed. Not kept in `.humantouch/`:
+   * a page reloaded goes without.
+   */
+  effects?: EffectNotes;
 }
 
 /** The longest the page looks in one go before it lets the page have a turn. */
@@ -121,7 +129,7 @@ function hotUpdates(win: Window): HotUpdates | undefined {
  * check at all (a brief, a copy made this round) it never looks at by itself:
  * asked, it says why.
  */
-export function watchPage({ window: win, changes, report, onShown, viewWidths, copiesIn, otherUsages: others = new Map(), onNoted }: Options): PageChecks {
+export function watchPage({ window: win, changes, report, onShown, viewWidths, copiesIn, otherUsages: others = new Map(), onNoted, effects = new Map() }: Options): PageChecks {
   const doc = win.document;
   const code = () => codeUpdates(win);
   const shown = new Set<number>();
@@ -220,7 +228,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   /** Looks at `change`, shown, again as wide as the window; null when it is to show on copies of the page only. */
   const checkAgain = (change: Change): CheckResult | null =>
     measured(change, () => {
-      const result = checkHere(doc, change, changes, viewWidths());
+      const result = checkHere(doc, change, changes, viewWidths(), effects);
       observer.takeRecords();
       return orAtOtherUsages(change, result, false);
     });
@@ -239,7 +247,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       loading ||= !copy;
       return copy;
     };
-    const result = checkAcross(doc, change, changes, viewWidths(), at, sources);
+    const result = checkAcross(doc, change, changes, viewWidths(), at, sources, effects);
     observer.takeRecords();
     // A copy still loading its stylesheets: looked at again once it has.
     return loading && result.outcome === "unchecked" ? { outcome: "unchecked", reason: "loading" } : result;

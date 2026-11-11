@@ -11,6 +11,7 @@ import { ENTER_MARK, HOST_TAG } from "./host";
 import { Icon } from "./icons";
 import { placedOnCanvas, type RoundOnCanvas } from "./moves";
 import { showsAnyHere, watchPage, type PageChecks } from "./page-checks";
+import type { EffectNotes } from "./check";
 import { keptOf, notedFor, notedFrom, noteRound, type OtherUsagesNoted } from "./other-usages";
 import { PageToast, type PageToastMessage } from "./PageToast";
 import { createPartsReader } from "./range-parts";
@@ -138,11 +139,14 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
    * round for the Agent before the code changed (ticket 82).
    */
   const otherUsages = useRef(new Map<number, OtherUsagesNoted | null>());
+  /** What each change's style moved as the page first looked at it (ADR 0016): kept as `otherUsages` is, but in this page alone. */
+  const effects = useRef<EffectNotes>(new Map());
   /** Whether the round, read before it was claimed, has been asked for again since (ticket 82). */
   const reread = useRef(false);
   useEffect(() => {
     if (isClaimed) return;
     otherUsages.current = new Map();
+    effects.current = new Map();
     reread.current = false;
   }, [isClaimed]);
   useLayoutEffect(() => {
@@ -172,6 +176,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       viewWidths: readViewWidths,
       copiesIn,
       otherUsages: otherUsages.current,
+      effects: effects.current,
       onNoted(id, noted) {
         if (!toKeep.size) {
           notedAt = new Date().toISOString();
