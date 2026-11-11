@@ -86,10 +86,10 @@ export function HeroEditor() {
   }, []);
 
   return (
-    <section aria-label="Human Touch's editor, to try" className="relative w-full max-w-[1200px] rounded-[18px] bg-raised shadow-[0_0_0_0.5px_var(--color-surface)]" style={{ padding: FRAME_PAD }}>
+    <section aria-label="Human Touch's editor, to try" className="relative w-full max-w-[1200px] rounded-[18px] bg-neutral-0 shadow-[0_0_0_0.5px_var(--color-surface)] dark:bg-raised" style={{ padding: FRAME_PAD }}>
       <div
         ref={inner}
-        className="relative overflow-hidden shadow-[0_1px_1px_rgb(0_0_0/0.15),0_0_0_0.5px_rgb(0_0_0/0.15)]"
+        className="relative overflow-hidden bg-neutral-100 shadow-[0_1px_1px_rgb(0_0_0/0.15),0_0_0_0.5px_rgb(0_0_0/0.15)] dark:bg-transparent"
         style={{ height: H * scale, borderRadius: EDITOR_RADIUS }}
       >
         <div className="absolute top-0 left-0 origin-top-left" style={{ width: W, height: H, transform: `scale(${scale})` }}>

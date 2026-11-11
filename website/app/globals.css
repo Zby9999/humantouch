@@ -19,6 +19,8 @@
   --color-neutral-100: #f5f5f5;
   --color-neutral-150: #ededec;
   --color-neutral-200: #e5e5e4;
+  /* Between 200 and 300, for the cards (designer, 2026-11-11: "200 I wanted as 250"). */
+  --color-neutral-250: #dddddc;
   --color-neutral-300: #d4d4d3;
   --color-neutral-400: #a0a19f;
   --color-neutral-500: #737472;
@@ -62,8 +64,8 @@
 }
 
 :root {
-  --page: #e5e5e4;
-  --surface: #d4d4d3;
+  --page: var(--color-neutral-150);
+  --surface: var(--color-neutral-250);
   --raised: #f5f5f5;
   --sunk: #a0a19f;
   --ink: #262625;
