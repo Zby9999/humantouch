@@ -1029,7 +1029,7 @@ export function CanvasView(props: Props) {
       const rectOf = (l: Layer) => into?.view.boxOf(l) ?? new DOMRect();
       const there = into && new DOMRect(offCanvasLayer.x + box.x - into.x, offCanvasLayer.y + box.y - into.y, box.width, box.height);
       const drop = into && there && editorIn(into) ? inLayer(findDrop(editorIn(into)!, into.view, null, toView(event, into), there, rectOf, snapWithin), into) : null;
-      session.edge = !drop && !!into && !!editorIn(into) && stopsAtShadowEdge(editorIn(into)!, into.view, null, toView(event, into));
+      session.shadowEdge = !drop && !!into && !!editorIn(into) && stopsAtShadowEdge(editorIn(into)!, into.view, null, toView(event, into));
       // Snapped, it is shown where it snaps to.
       if (drop && there) [dx, dy] = [dx + drop.box.x - there.x, dy + drop.box.y - there.y];
       moveWhole(session, dx, dy);
@@ -1047,7 +1047,7 @@ export function CanvasView(props: Props) {
       // Out of a shadow root, or slotted in one, it goes into no other document (ticket 138).
       const stays = !!editorIn(shown)?.acrossShadowRoot(layer, null);
       const drop = stays ? null : inLayer(findDrop(editorIn(across)!, across.view, null, toView(event, across), there, (l) => across.view.boxOf(l) ?? new DOMRect(), snapWithin), across);
-      session.edge = stays || (!drop && stopsAtShadowEdge(editorIn(across)!, across.view, null, toView(event, across)));
+      session.shadowEdge = stays || (!drop && stopsAtShadowEdge(editorIn(across)!, across.view, null, toView(event, across)));
       session.out = false;
       session.drop = null;
       session.into = drop && { shown: across, drop };
@@ -1065,7 +1065,7 @@ export function CanvasView(props: Props) {
     const rectOf = (l: Layer) => laidOut(session, l);
     const drop = session.out ? null : (editorIn(shown) && findDrop(editorIn(shown)!, shown.view, layer, toView(event, shown), box, rectOf, snapWithin, session.marginsAside));
     session.drop = drop;
-    session.edge = stays || (!session.out && !drop && !!editorIn(shown) && stopsAtShadowEdge(editorIn(shown)!, shown.view, layer, toView(event, shown)));
+    session.shadowEdge = stays || (!session.out && !drop && !!editorIn(shown) && stopsAtShadowEdge(editorIn(shown)!, shown.view, layer, toView(event, shown)));
     // Snapped, it is shown where it snaps to.
     const at = drop?.box ?? box;
     session.box = at;
@@ -1271,7 +1271,7 @@ export function CanvasView(props: Props) {
     if (!commit) return;
     const { layer, in: shown, box, to, out, drop, back, holder, into } = session;
     // Let go past a shadow root's edge: it stays where it was, and the toast says why (ticket 138).
-    if (session.edge) {
+    if (session.shadowEdge) {
       onHint?.(SHADOW_EDGE_HINT);
       return;
     }

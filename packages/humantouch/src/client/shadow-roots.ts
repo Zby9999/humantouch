@@ -88,8 +88,7 @@ export function shadowRootsIn(doc: Document): ShadowRoot[] {
  */
 export function flatParent(node: Node): Element | null {
   const slot = (node as Element | Text).assignedSlot;
-  if (slot) return slot;
-  return node.parentElement ?? (node.parentNode as ShadowRoot | null)?.host ?? null;
+  return slot ?? parentOf(node);
 }
 
 /**

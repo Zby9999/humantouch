@@ -325,17 +325,17 @@ const drawnByThirdParty = (target: Target) => !!target.chain[0]?.thirdParty;
 /** Whether the layer is in the shadow root of a custom element a dependency defines (ticket 137): not a third-party React component's, though in a shadow root. */
 const inThirdPartyWebComponent = (target: Target) => !!target.chain[0]?.webComponent;
 
-/**
- * The layers a change styles (ticket 120): its own, and those it gives styles
- * of their own: each layer of a Stack or Grid dissolved (absolute, placed and
- * sized), and each a new Stack or Grid takes over the margins of.
- */
 /** A change to the structure alone, which writes no style (ticket 138): a reorder or a move into a layout, new words, a copy into a layout, a deletion. */
 export function structureOnly(change: Change): boolean {
   if (change.kind === "move") return !(change.after as Place).absolute && !Object.keys(change.style).length;
   return change.kind === "text" || change.kind === "delete" || (change.kind === "duplicate" && !Object.keys(change.style).length);
 }
 
+/**
+ * The layers a change styles (ticket 120): its own, and those it gives styles
+ * of their own: each layer of a Stack or Grid dissolved (absolute, placed and
+ * sized), and each a new Stack or Grid takes over the margins of.
+ */
 function layersStyled(change: Change): Target[] {
   if (change.kind === "unstack") return [change.target, ...((change.after as Dissolved | null)?.layers ?? []).map((layer) => layer.target)];
   if (change.kind === "stack") return [change.target, ...((change.after as Composed | null)?.layers ?? []).filter((layer) => layer.unmargined).map((layer) => layer.target)];

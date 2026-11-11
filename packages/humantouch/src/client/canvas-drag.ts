@@ -47,7 +47,7 @@ export interface DragSession {
   /** Let go now, the layer goes off the canvas (ADR 0009). */
   out: boolean;
   /** Let go now, it goes nowhere because of a shadow root's edge, which no layer crosses (ticket 138): the hint shows. */
-  edge?: boolean;
+  shadowEdge?: boolean;
   /** A layer off the canvas, dragged whole: where its top left would go on the stage; null over a view. */
   to: { x: number; y: number } | null;
   /** A layer off the canvas dragged whole, rather than a layer in a view or in it. */

@@ -7,6 +7,7 @@ import type { Destination, Editor } from "./edit-commands";
 import { placesItself } from "./property-table";
 import { trackCount } from "./grid-tracks";
 import type { Layer } from "./layers";
+import { mayHoldShadowRoots } from "./shadow-roots";
 import { snap, type Axis, type Mark } from "./snap";
 import { insideBorder, marginsAside, paddingBox } from "./stacks";
 import type { View } from "./views";
@@ -146,6 +147,8 @@ export const SHADOW_EDGE_HINT = "Layers can't move into or out of a shadow root.
  * walks out, for a drop it found none for; `layer` null: one from another document.
  */
 export function stopsAtShadowEdge(editor: Editor, view: View, layer: Layer | null, point: { x: number; y: number }): boolean {
+  // On a canvas with no shadow root, no edge: no second walk on a drag step that goes nowhere.
+  if (!mayHoldShadowRoots(editor.tree().root.el.ownerDocument)) return false;
   for (let container = view.layerAt(editor.tree(), point.x, point.y, layer ?? undefined); container; container = container.parent) {
     if (editor.acrossShadowRoot(layer, container)) return true;
     if (layer ? editor.canDrop(layer, container) : editor.canHold(container)) return false;
