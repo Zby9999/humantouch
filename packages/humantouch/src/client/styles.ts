@@ -678,6 +678,9 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 .ht-tree-row .ht-icon { flex: none; color: var(--ht-text-muted); }
 .ht-tree-name { flex: none; }
 .ht-tree-brief { display: flex; margin-left: auto; color: var(--ht-text-muted); }
+/* An instance that edits alone (ticket 114): its mark in its own purple, after the brief's if it has one. */
+.ht-tree-alone { display: flex; margin-left: auto; color: var(--ht-instance); }
+.ht-tree-brief + .ht-tree-alone { margin-left: 4px; }
 /* An effect's fold (Properties: FoldButton) is a layer's chevron, as a button (designer, 2026-11-08): the same look from these rules, 28px as the panel's other buttons. */
 .ht-fold { all: unset; position: relative; }
 .ht-tree-chevron { position: relative; z-index: 1; }
@@ -1455,6 +1458,10 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   cursor: default;
 }
 .ht-selection-tool:focus-visible { outline: 2px solid var(--ht-instance); outline-offset: 2px; }
+/* Edit alone, pressed (ticket 114): the instance edits alone, no longer following the others. */
+.ht-selection-tool[aria-pressed="true"] { background: #fff; color: var(--ht-instance); box-shadow: inset 0 0 0 1px var(--ht-instance); }
+/* An instance that edits alone, and what is in it, outlined dashed on the canvas (ticket 114). */
+:is(.ht-selection, .ht-hover)[data-alone] { border-style: dashed; }
 /*
  * The briefs (ticket 121): cards beside the views, drawn on the screen where the stage has them, as large at any zoom
  * from FULL_SIZE_FROM up as Figma's comments, shrinking with the canvas below it till opened (ticket 134, designer,

@@ -1,7 +1,7 @@
 /** @jsxImportSource preact */
 import type { TargetedKeyboardEvent } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import { changeTitle, changeValues, layerName } from "../design-values";
+import { changeTitle, changeValues, layerName, ordinal } from "../design-values";
 import { breakpointName } from "./breakpoints";
 import { historyKey } from "./canvas-keys";
 import type { Change } from "./changeset";
@@ -252,7 +252,7 @@ export function ChangeList({ changes, readOnly, takeFocus = true, onRevert, onSh
 
 /** A change as its row names it: what changed, of which layer, and where it applies, the same for two changes alike. */
 function nameOf(change: Change): string {
-  const itself = change.scope === "component" ? ` · ${change.target.component} itself` : "";
+  const itself = change.scope === "component" ? ` · ${change.target.component} itself` : change.alone && change.instance ? ` · ${ordinal(change.instance.nth)} alone` : "";
   return `${changeTitle(change)} · ${layerName(change)}${itself}`;
 }
 
@@ -296,3 +296,4 @@ function rowText(change: Change, names: Map<number, string>, onShow?: (id: numbe
     </span>
   );
 }
+

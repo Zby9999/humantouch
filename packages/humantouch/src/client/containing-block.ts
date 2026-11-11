@@ -6,6 +6,7 @@
  * styles, with nothing laid out; the freezer goes by it too, for what holds
  * a layer placed fixed.
  */
+import { flatParent } from "./shadow-roots";
 
 /**
  * Whether an element, by its computed `style`, is the box that places layers
@@ -48,7 +49,7 @@ function holdsPlacedLayers(style: CSSStyleDeclaration, root = false): boolean {
 export function containingBlockOf(el: Element): Element | null {
   const { position } = getComputedStyle(el);
   const placed = position === "absolute" || position === "fixed";
-  for (let at = el.parentElement; at; at = at.parentElement) {
+  for (let at = flatParent(el); at; at = flatParent(at)) {
     const style = getComputedStyle(at);
     if (style.display === "contents") continue;
     if (!placed) {

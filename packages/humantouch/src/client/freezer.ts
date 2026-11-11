@@ -7,7 +7,7 @@ import { dropUnusedRules, orderEditStyles, PUT_BACK_ATTR, syncEditStyles, upgrad
 import { containingBlockOf } from "./containing-block";
 import { HOST_TAG } from "./host";
 import { EDIT_STYLES_ATTR } from "./style-marks";
-import { elementsWithin, htmlOf, mayHoldShadowRoots, NOT_THE_PAGES, noteShadowRoots, ON_CANVAS, putBackShadowRoots, queryWithin, shadowRootsIn } from "./shadow-roots";
+import { elementsWithin, htmlOf, mayHoldShadowRoots, NOT_THE_PAGES, noteShadowRoots, ON_CANVAS, putBackShadowRoots, queryWithin, shadowRootsIn, styleShadowRoots } from "./shadow-roots";
 import { PIN_OFFSET_ATTR, PINNED_ATTR, SHEET_HREF_ATTR } from "./style-source";
 import { FONT_STACK } from "./toggle-styles";
 import { CHAIN_ATTR, readUsageChain } from "./usage-chain";
@@ -362,7 +362,14 @@ export function editable(doc: Document) {
   const styles = Object.assign(doc.createElement("style"), { textContent: CANVAS_STYLES });
   styles.setAttribute(CANVAS_STYLES_ATTR, "");
   doc.head.append(styles);
+  // The canvas's styles do not reach into shadow roots: each of them is given them too (ticket 136).
+  editableShadowRoots(doc);
   orderEditStyles(doc);
+}
+
+/** Gives the shadow roots in `root`, of a document made `editable`, the canvas's styles, which a copy of them leaves out (`styleShadowRoots`). */
+export function editableShadowRoots(root: Document | Element) {
+  styleShadowRoots(root, CANVAS_STYLES);
 }
 
 /** `doc`, made `editable`, as an HTML document: what `editable` added left out. */
@@ -392,6 +399,8 @@ export function copyCanvas(canvas: Canvas, iframe: HTMLIFrameElement, width: num
   // The canvas's edit styles may have changed in place since their text was written.
   syncEditStyles(copy);
   doc.replaceChild(copy, doc.documentElement);
+  // Its shadow roots come without the canvas's styles they were given (`editable`): given them again.
+  editableShadowRoots(doc);
   // What lives outside the markup: the pixels of stills, the options chosen.
   const froms = elementsWithin(from.documentElement);
   const copies = elementsWithin(copy);

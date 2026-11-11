@@ -11,6 +11,7 @@ import { openingTag } from "./layer-target";
 import type { Definition } from "./property-table";
 import { wordsOf } from "./layer-changes";
 import { cssColor, type Color, type ColorReader } from "./paint";
+import { flatParent } from "./shadow-roots";
 import { sourcesOf } from "./style-source";
 
 export type TextAlign = "left" | "center" | "right" | "justify";
@@ -229,7 +230,7 @@ function inheritedFrom(css: string) {
  * (null where a stylesheet that cannot be read may). Undefined: nowhere, the browser's default.
  */
 function declaring(el: Element, css: string): { el: Element; value: string | null } | undefined {
-  for (let e: Element | null = el; e; e = e.parentElement) {
+  for (let e: Element | null = el; e; e = flatParent(e)) {
     const [source] = sourcesOf(e, [css]);
     if (source.kind === "unknown") return { el: e, value: null };
     if (!source.declaration) continue;
@@ -263,6 +264,11 @@ export interface Font {
  * and of each stack of fonts its text uses, the first that is there (a font of
  * the system), in the weights the text uses it in. Not every font of the
  * system: those the page uses only. By name.
+ *
+ * A family whose faces only name fonts of the system (`local()`, no `url()`),
+ * as next/font's `__X_Fallback_…` sizing a font's fallback does, is one of the
+ * system's under another name: offered as those are, only where the text uses
+ * it first (ticket 149).
  */
 export function fontsOf(doc: Document): Font[] {
   const fonts = new Map<string, { family: string; weights: Set<number> }>();
@@ -272,17 +278,63 @@ export function fontsOf(doc: Document): Font[] {
     if (!fonts.has(key)) fonts.set(key, { family, weights: new Set() });
     for (const weight of weights) fonts.get(key)!.weights.add(weight);
   };
+  const local = localOnly(doc);
   doc.fonts.forEach((face) => {
-    if (face.status !== "error") add(unquoted(face.family), weightsOf(face.weight));
+    const family = unquoted(face.family);
+    if (face.status !== "error" && !local.has(family.toLowerCase())) add(family, weightsOf(face.weight));
   });
   for (const el of textOf(doc)) {
     const style = getComputedStyle(el);
     const family = firstThere(doc, style.fontFamily);
-    if (!isWebFont(doc, family)) add(family, [Number(style.fontWeight)]);
+    if (!isWebFont(doc, family) || local.has(family.toLowerCase())) add(family, [Number(style.fontWeight)]);
   }
   return [...fonts.values()]
     .map(({ family, weights }) => ({ family, weights: [...weights].sort((a, b) => a - b) }))
     .sort((a, b) => a.family.localeCompare(b.family));
+}
+
+/**
+ * The families, lowercased, whose every face the page has is an `@font-face`
+ * rule it can read whose `src` has no `url()`: read from the rules, as a
+ * `FontFace` does not tell its `src`. A family with a face from a sheet that
+ * cannot be read (another origin's) or added by script is not one: whether
+ * that face is the system's cannot be told.
+ */
+function localOnly(doc: Document): Set<string> {
+  const rules = new Map<string, { local: number; url: boolean }>();
+  const visit = (list: CSSRuleList) => {
+    for (const rule of list) {
+      // Rules live in the canvas's realm, so they are told by type, not `instanceof`.
+      if (rule.type === CSSRule.FONT_FACE_RULE) {
+        const style = (rule as CSSFontFaceRule).style;
+        const key = unquoted(style.getPropertyValue("font-family").trim()).toLowerCase();
+        const family = rules.get(key) ?? { local: 0, url: false };
+        if (/\burl\(/i.test(style.getPropertyValue("src"))) family.url = true;
+        else family.local++;
+        rules.set(key, family);
+      } else if (rule.type === CSSRule.IMPORT_RULE) {
+        const sheet = (rule as CSSImportRule).styleSheet;
+        if (sheet) read(sheet);
+      } else if ("cssRules" in rule) visit(rule.cssRules as CSSRuleList);
+    }
+  };
+  const read = (sheet: CSSStyleSheet) => {
+    try {
+      visit(sheet.cssRules);
+    } catch {
+      // Another origin's sheet: its faces cannot be read; they are counted below as faces no rule accounts for.
+    }
+  };
+  for (const sheet of doc.styleSheets) read(sheet);
+  for (const sheet of doc.adoptedStyleSheets ?? []) read(sheet);
+  const faces = new Map<string, number>();
+  doc.fonts.forEach((face) => {
+    const key = unquoted(face.family).toLowerCase();
+    faces.set(key, (faces.get(key) ?? 0) + 1);
+  });
+  const local = new Set<string>();
+  for (const [key, family] of rules) if (!family.url && (faces.get(key) ?? 0) <= family.local) local.add(key);
+  return local;
 }
 
 /** A face's weights: one, or each hundred in a range (a variable font's). */
