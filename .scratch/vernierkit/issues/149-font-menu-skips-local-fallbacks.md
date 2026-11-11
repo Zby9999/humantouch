@@ -18,7 +18,7 @@
 
 **Blocked by:** 140（合进 main 后）。发布前做（设计师 2026-11-11 定）。
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 单元测试（`fontsOf`）：一个 family 只有 `src: local("Arial")` 的 face，不列。一个 family 有 `url()` 的 face，照旧列出。同一个 family 一个 face 是 `local()`、一个是 `url()` 的，照旧列出。
 - [x] e2e 或浏览器测试：在 140 的字体示例里加一个 next/font 式的后备 family（`local("Arial")` 加 `size-adjust`），字体菜单里没有它。
@@ -65,3 +65,14 @@
 2. `fontsOf` 每次面板渲染都走一遍所有样式表规则。Tailwind 开发样式表规则多，perf 20/20 没看出变慢，更大的项目没量过。
 3. `@media` 里当前不生效的 `@font-face` 规则也算进 `local()` 规则数。只会让判断偏向「不列」，而这种 family 本来就是 `local()`。
 4. 官网线（Next 16）拿掉 493045bf 的绕法后可以再看一眼：next/font 实际生成的后备 family 应该不再出现在菜单里。这条线没碰官网。
+
+**规划会话，2026-11-12（设计师离开电脑，把决定交给规划会话，并批准合并）**
+
+- 规划会话审了代码（`localOnly` 读 `@font-face` 规则，跟进 `@import`、`@media` 和 `adoptedStyleSheets`，读不到的照 140 列），无问题。合入 main 后，整套验证和这一批（136、官网、114）一起在 main 上跑。
+- 代定 1–4 都确认：
+  1. 文字正在用的充数 family 当系统字体列，只列用到的字重。
+  2. 「全是 `local()`」按 family 算。
+  3. 没有 `url()` 的无效规则也算充数。
+  4. ticket 13 的测试页补 `url()`，期望值不改。
+- 风险 1–3 接受。
+- 风险 4：请官网线拿掉 493045bf 以后，在官网上确认 next/font 的后备 family 不再出现在字体菜单里。
