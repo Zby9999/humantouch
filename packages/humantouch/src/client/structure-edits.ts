@@ -615,7 +615,8 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
         return layer;
       }
       // Into another container, a change to the structure in every view: where it was placed freely at a breakpoint goes with what it leaves.
-      const placings = layer.text ? [] : changes.list().filter((change) => change.layer === layer.el.getAttribute(LAYER_ID_ATTR) && change.property === "absolute");
+      // Placed freely on its instance alone (ticket 114): those too.
+      const placings = layer.text ? [] : changes.list().filter((change) => (change.layer === layer.el.getAttribute(LAYER_ID_ATTR) || change.layer === editor().recordedAs(layer)) && change.property === "absolute");
       if (placings.length && to.parent !== layer.parent) {
         let there = layer;
         editor().batch(() => {

@@ -91,7 +91,8 @@ const MADE_LAYOUT: Property[] = [...STACK_PROPERTIES, "columns", "rowGap", "colu
  * changes as it began.
  */
 export function changeMarks(changes: Change[], editor: Editor, layers: Layer[], onEdit: () => void, heldFrom: Change[] | null = null): ChangeMarks {
-  const ids = new Set(layers.map((layer) => layer.el.getAttribute(LAYER_ID_ATTR)));
+  // In an instance that edits alone, those made there alone (ticket 114).
+  const ids = new Set(layers.map((layer) => editor.recordedAs(layer)));
   const here = editor.breakpoint();
   const of = (property: Property, list = changes) =>
     list.filter((change) => change.kind === "style" && change.property === property && ids.has(change.layer) && sameBreakpoint(change.breakpoint ?? null, here));
@@ -138,7 +139,7 @@ export function changeMarks(changes: Change[], editor: Editor, layers: Layer[], 
           for (const { layer, list, before, after } of going) {
             const back = part.back(after, before);
             if (same(back, before)) for (const change of list) editor.revert(change.id);
-            else editor.set(layers.find((l) => l.el.getAttribute(LAYER_ID_ATTR) === layer)!, property, back as never);
+            else editor.set(layers.find((l) => editor.recordedAs(l) === layer)!, property, back as never);
           }
         });
         onEdit();

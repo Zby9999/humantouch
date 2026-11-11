@@ -150,6 +150,8 @@ export interface OtherUsageChanged {
   chain: UsageLevel[];
   was: unknown;
   is: unknown;
+  /** Another of the instances the loop renders, of the change's own usage, the change being for one of them alone (ticket 114): its place among them on the page, from 1. */
+  nth?: number;
 }
 
 /**
@@ -196,7 +198,7 @@ export interface SavedRound {
  */
 export interface OtherUsagesNote<More = unknown> {
   width: number;
-  seen: (More & { key: string; chain: UsageLevel[]; value: unknown })[];
+  seen: (More & { key: string; chain: UsageLevel[]; value: unknown; nth?: number })[];
 }
 
 /**

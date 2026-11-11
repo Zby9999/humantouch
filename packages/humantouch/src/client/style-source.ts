@@ -5,6 +5,7 @@
  * The browser offers no such lookup to pages, so the cascade is resolved here:
  * importance, the style attribute, CSS layers, specificity, then order.
  */
+import { isCanvasSheet, mayHoldShadowRoots } from "./shadow-roots";
 import { EDIT_STYLES_ATTR } from "./style-marks";
 
 /** What sets some of the CSS properties a change is about. */
@@ -94,6 +95,13 @@ interface Candidate {
   key: string;
   source: Omit<StyleSource, "properties">;
   inline: boolean;
+  /**
+   * From a shadow root's stylesheet reaching out to the element, of the tree
+   * around it (ticket 136): the shadow root it hosts, by `:host`, or the one
+   * it is slotted in, by `::slotted()`. Those of the element's own tree beat
+   * them, but for important ones.
+   */
+  inner: boolean;
   /** Position among CSS layers: one index per level, `Infinity` for declarations directly at that level. */
   layerPath: number[];
   specificity: Specificity;
@@ -150,15 +158,18 @@ export function winnersAmong(el: Element, lists: string[][]): ({ declaration: st
 function cascade(el: Element, properties: string[]): { winners: Map<string, Candidate | null>; unreadable: boolean } {
   const doc = el.ownerDocument;
   const candidates = new Map<string, Candidate[]>(properties.map((p) => [p, []]));
-  const layers = new LayerOrder();
+  /** The CSS layers of the tree whose stylesheets are read now: each tree has its own. */
+  let layers = new LayerOrder();
   const view = doc.defaultView!;
   const logical = logicalBorders(el);
   let order = 0;
   let unreadable = false;
+  /** While a shadow root's stylesheets reaching out to the element are read: how their selectors reach it (`Candidate.inner`). */
+  let reach: ReachIn | null = null;
 
   /** The declarations of a style rule, or of a nested block of them, for `selector`. */
   const declare = (style: CSSStyleDeclaration, selector: string, file: string | null, layer: string[]) => {
-    const match = bestMatch(el, selector);
+    const match = reach ? innerMatch(selector, reach) : bestMatch(el, selector);
     if (!match) return;
     const position = order++;
     for (const property of properties) {
@@ -176,6 +187,7 @@ function cascade(el: Element, properties: string[]): { winners: Map<string, Cand
           declaration: declared.text,
         },
         inline: false,
+        inner: reach !== null,
         layerPath: layers.path(layer),
         specificity: match.specificity,
         order: position,
@@ -235,13 +247,30 @@ function cascade(el: Element, properties: string[]): { winners: Map<string, Cand
   /** Media that do not match (print, another width) leave their rules out. */
   const matchesMedia = (media: MediaList) => !media.mediaText || view.matchMedia(media.mediaText).matches;
 
-  for (const sheet of doc.styleSheets) {
-    const owner = sheet.ownerNode as Element | null;
-    if (owner?.hasAttribute(CANVAS_STYLES_ATTR) || owner?.hasAttribute(EDIT_STYLES_ATTR) || sheet.disabled || !matchesMedia(sheet.media)) continue;
-    const rules = readRules(sheet);
-    if (!rules) unreadable = true;
-    else visit(rules, owner?.getAttribute(VITE_ID_ATTR) ?? owner?.getAttribute(SHEET_HREF_ATTR) ?? sheet.href, [], null);
-  }
+  const visitSheets = (sheets: Iterable<CSSStyleSheet>) => {
+    for (const sheet of sheets) {
+      const owner = sheet.ownerNode as Element | null;
+      if (owner?.hasAttribute(CANVAS_STYLES_ATTR) || owner?.hasAttribute(EDIT_STYLES_ATTR) || isCanvasSheet(sheet) || sheet.disabled || !matchesMedia(sheet.media)) continue;
+      const rules = readRules(sheet);
+      if (!rules) unreadable = true;
+      else visit(rules, owner?.getAttribute(VITE_ID_ATTR) ?? owner?.getAttribute(SHEET_HREF_ATTR) ?? sheet.href, [], null);
+    }
+  };
+
+  // In an open shadow root, the element is styled by that shadow root's stylesheets, not the document's (ticket 136);
+  // a host by its shadow root's `:host` rules too, an element slotted by the `::slotted()` rules of the shadow root it is slotted in.
+  const shadows = mayHoldShadowRoots(doc);
+  const tree = shadows ? el.getRootNode() : doc;
+  visitSheets(tree === doc ? doc.styleSheets : sheetsOf(tree as ShadowRoot));
+  const reachingOut = (shadow: ShadowRoot, how: ReachIn) => {
+    reach = how;
+    layers = new LayerOrder();
+    visitSheets(sheetsOf(shadow));
+    reach = null;
+  };
+  if (shadows && el.shadowRoot) reachingOut(el.shadowRoot, asHost(el));
+  // Slotted on through a slot slotted in another shadow root, by that one's `::slotted()` rules too.
+  for (let slot = shadows ? el.assignedSlot : null; slot; slot = slot.assignedSlot) reachingOut(slot.getRootNode() as ShadowRoot, asSlotted(el, slot));
 
   // The style attribute as the page wrote it, before any edit added to it, and without what the freezer pinned.
   const original = el.getAttribute(ORIGINAL_STYLE_ATTR) ?? el.getAttribute("style");
@@ -257,6 +286,7 @@ function cascade(el: Element, properties: string[]): { winners: Map<string, Cand
         key: "inline",
         source: { kind: "inline", selector: null, file: null, layer: null, important: declared.important, className: null, declaration: declared.text },
         inline: true,
+        inner: false,
         layerPath: [Infinity],
         specificity: [0, 0, 0],
         order: Infinity,
@@ -279,9 +309,11 @@ export function pinnedOf(el: Element): string[] {
   return el.getAttribute(PINNED_ATTR)?.split(" ") ?? [];
 }
 
-/** The cascade, for declarations of one origin: importance, the style attribute, layers, specificity, order. */
+/** The cascade, for declarations of one origin: importance, the tree they style from, the style attribute, layers, specificity, order. */
 function beats(a: Candidate, b: Candidate): boolean {
   if (a.source.important !== b.source.important) return a.source.important;
+  // Those of the element's own tree beat those of a shadow root reaching out to it; important ones, the other way round.
+  if (a.inner !== b.inner) return a.source.important ? a.inner : b.inner;
   if (a.inline !== b.inline) return a.inline;
   const layer = compare(a.layerPath, b.layerPath);
   // Important declarations rank layers the other way round: earlier layers, then those in no layer.
@@ -383,6 +415,62 @@ function bestMatch(el: Element, selectorList: string): { selector: string; speci
   return best;
 }
 
+/** How a selector of a shadow root's stylesheet reaches an element of the tree around it: its specificity, if it matches the element. */
+type ReachIn = (selector: string) => Specificity | null;
+
+/**
+ * Of a selector list in a shadow root's stylesheet, the most specific
+ * selector that matches `el`, an element of the tree around it, as `reach`
+ * tells (ticket 136); its other selectors are for the elements in it.
+ */
+function innerMatch(selectorList: string, reach: ReachIn): { selector: string; specificity: Specificity } | null {
+  let best: { selector: string; specificity: Specificity } | null = null;
+  for (const selector of splitList(selectorList)) {
+    let s: Specificity | null = null;
+    try {
+      s = reach(selector);
+    } catch {} // Selectors this browser does not know.
+    if (s && (!best || compare(s, best.specificity) > 0)) best = { selector, specificity: s };
+  }
+  return best;
+}
+
+/**
+ * How the selectors of the shadow root `el` hosts reach it: `:host`, or
+ * `:host(…)` of what it is. Not `:host-context()`, nor `:host` with more after
+ * it (`:host(.a):hover`): those are left out.
+ */
+function asHost(el: Element): ReachIn {
+  return (selector) => {
+    const match = /^:host(?:\((.*)\))?$/.exec(selector);
+    if (!match || (match[1] && !el.matches(match[1]))) return null;
+    return specificity(selector);
+  };
+}
+
+/**
+ * How the selectors of the shadow root `el` is slotted in reach it, through
+ * `slot`: `::slotted(…)` of what it is, after what `slot` is, if anything
+ * (`slot[name=a]::slotted(p)`, `.box ::slotted(p)`).
+ */
+function asSlotted(el: Element, slot: Element): ReachIn {
+  return (selector) => {
+    const match = /^(.*?)::slotted\((.*)\)$/.exec(selector);
+    if (!match || !el.matches(match[2])) return null;
+    // `::slotted()` alone, or after a combinator, is of any slot there.
+    const before = !match[1] || /[\s>+~]$/.test(match[1]) ? `${match[1]}*` : match[1];
+    if (!slot.matches(before)) return null;
+    const [a, b, c] = specificity(match[1]);
+    const [x, y, z] = specificity(match[2]);
+    return [a + x, b + y, c + z + 1];
+  };
+}
+
+/** A shadow root's stylesheets, in the order of the cascade: its style elements', then those it adopted. */
+function sheetsOf(shadow: ShadowRoot): CSSStyleSheet[] {
+  return [...shadow.styleSheets, ...shadow.adoptedStyleSheets];
+}
+
 /** The selectors of a list, split at its top-level commas. */
 function splitList(list: string): string[] {
   const parts: string[] = [];
@@ -463,6 +551,11 @@ function specificity(selector: string): Specificity {
       const arg = selector[i] === "(" ? parens() : null;
       if (arg !== null && MATCHES_ANY.has(name)) add(maxOf(arg));
       else if (name === "where") continue;
+      else if (arg !== null && (name === "host" || name === "host-context")) {
+        // A pseudo-class, and what it is of (CSS Scoping).
+        add([0, 1, 0]);
+        add(maxOf(arg));
+      }
       else if (arg !== null && /^nth-(last-)?child$/.test(name) && / of /.test(arg)) {
         add([0, 1, 0]);
         add(maxOf(arg.slice(arg.indexOf(" of ") + 4)));

@@ -7,6 +7,7 @@ import {
   AS_STACK_ATTR,
   BRIEF_ATTR,
   changesOn,
+  ALONE_ATTR,
   copyRules,
   declare,
   lookRules,
@@ -69,7 +70,8 @@ export function insertCopies(originals: Element[], containers: Element[], id: st
         continue;
       }
       // Changes to the original are not the copy's: it starts as it looks.
-      for (const attr of [LAYER_ID_ATTR, MOVE_ATTR, AS_STACK_ATTR, REFERENCE_ATTR, TEXT_ATTR, ORIGINAL_TEXT_ATTR]) el.removeAttribute(attr);
+      // Nor is an instance that edits alone (ticket 114): the copy follows the others.
+      for (const attr of [LAYER_ID_ATTR, MOVE_ATTR, AS_STACK_ATTR, REFERENCE_ATTR, TEXT_ATTR, ORIGINAL_TEXT_ATTR, ALONE_ATTR]) el.removeAttribute(attr);
       // Nor is a brief on a layer that is there, which is for that usage of it; a new Frame's says what to make of it, and a copy of it is made by it too.
       if (el.getAttribute(NEW_ATTR) !== "frame") el.removeAttribute(BRIEF_ATTR);
       // It looks as the original does, at every width, with styles of its own.
@@ -98,6 +100,7 @@ export function insertPutBack(doc: Document, id: string, source: Element, place:
     const chain = container.getAttribute(CHAIN_ATTR);
     for (const [, el] of pairs) {
       el.setAttribute(MADE_ATTR, id);
+      el.removeAttribute(ALONE_ATTR);
       if (chain) el.setAttribute(CHAIN_ATTR, chain);
       else el.removeAttribute(CHAIN_ATTR);
     }

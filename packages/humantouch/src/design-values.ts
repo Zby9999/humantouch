@@ -201,14 +201,19 @@ export function usedAt(level: UsageLevel): string {
 /** Other usages of a change's component, as many as `usages` has, in a sentence: `another usage of Card`, `2 other usages of Card` (ticket 77). */
 export function otherUsagesWord(change: Change, usages: OtherUsageChanged[]): string {
   const component = change.target.chain[0]?.component;
-  return usages.length === 1 ? `another usage of ${component}` : `${usages.length} other usages of ${component}`;
+  // The loop's other instances, of a change made on one alone (ticket 114).
+  const instances = usages.filter((usage) => usage.nth).length;
+  const others = usages.length - instances;
+  const ofInstances = instances === 1 ? "another instance the loop renders" : `${instances} other instances the loop renders`;
+  const ofUsages = others === 1 ? `another usage of ${component}` : `${others} other usages of ${component}`;
+  return instances ? (others ? `${ofUsages} and ${ofInstances}` : ofInstances) : ofUsages;
 }
 
 /** What other usages of a change's component show of its property now, and showed as the round was claimed (ticket 77): each `Card used at …, its fill from … to …`; of new words, `its words from “…” to “…”` (ticket 90). */
 export function otherUsagesWords(property: string, usages: OtherUsageChanged[], outer = true): string {
   const words = property === "text";
   const from = (was: unknown, is: unknown) => (words ? `words from ${quotedWords(was as string)} to ${quotedWords(is as string)}` : `${propertyName(property)} from ${value(property, was)} to ${value(property, is)}`);
-  return usages.map(({ chain, was, is }) => `${usageWhere(chain, outer)}, its ${from(was, is)}`).join("; ");
+  return usages.map(({ chain, was, is, nth }) => `${nth ? `the ${ordinal(nth)} instance` : usageWhere(chain, outer)}, its ${from(was, is)}`).join("; ");
 }
 
 /** What a layer shows of a change's property at widths outside the change's range now, and showed as the round was claimed (ticket 104): each `at 1280px wide, its fill from … to …`. */
