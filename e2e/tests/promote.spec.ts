@@ -161,5 +161,7 @@ test("no Promote on a layer whose only change is free placement at a breakpoint,
   await page.keyboard.press("Shift+ArrowDown");
   await expect.poll(() => tablet(page).contentFrame().locator("article h3").first().evaluate((el) => getComputedStyle(el).position)).toBe("absolute");
   await expect(badge(page)).toHaveText("1");
-  await expect(toolbar(page)).toHaveCount(0);
+  // Edit alone only (ticket 114): the title is in a card of the loop.
+  await expect(promote(page)).toHaveCount(0);
+  await expect(toolbar(page).getByRole("button", { name: "Edit alone" })).toBeVisible();
 });
