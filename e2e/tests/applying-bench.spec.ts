@@ -1532,7 +1532,8 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
 
   test("playbook: the loop's cards filled red, promoted to the Card itself; the Agent writes it into the Card: every card is red, as asked (as before 77)", async ({ page }) => {
     await changeACard(page, 0, [["Fill color", "ff0000"]], true);
-    expect(changesNow()[0]).toMatchObject({ scope: "component" });
+    // Saved as edit mode is left, a moment after: the promotion with it.
+    await expect.poll(() => (changesNow()[0] as { scope?: string } | undefined)?.scope).toBe("component");
     const result = await applyTheChange(page, [[CARD, "bg-white", "bg-[#ff0000]"]], async () => (await cardsOnThePage(page, "backgroundColor")).every((fill) => fill === "rgb(255, 0, 0)"));
     record("usage-promoted", kept(result));
     expect(result.checks.outcomes[1]).toBe("shown");
