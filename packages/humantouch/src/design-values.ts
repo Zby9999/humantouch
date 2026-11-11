@@ -6,7 +6,7 @@ import type { LineHeight, TextCase, TextLength } from "./client/typography";
 import type { UsageLevel } from "./client/usage-chain";
 import type { OtherUsageChanged } from "./service-protocol";
 import type { OutsideChanged } from "./outside-protocol";
-import type { AdaptedAt, BreakFound } from "./widths-protocol";
+import { DRAWS_NO_BREAK, type AdaptedAt, type BreakFound } from "./widths-protocol";
 
 const PROPERTIES: Record<string, string> = {
   fill: "Fill",
@@ -278,10 +278,11 @@ export function adaptedWords(change: Change, widths: AdaptedAt[]): string {
 }
 
 /** A break of the layout, as a sentence goes on after its subject: "makes the page wider than the screen"; `self`, the layer as it is said there. */
-function breakWords({ kind, of, size, room }: BreakFound, self: string): string {
+function breakWords({ kind, of, size, room, by }: BreakFound, self: string): string {
   const who = of === "layer" ? self : "its container";
   if (kind === "page") return "makes the page wider than the screen (it scrolls sideways)";
   if (kind === "wider") return `makes ${who} wider than ${of === "layer" ? "its container" : "the container around it"} (${size}px in ${room}px)`;
+  if (by === "screen") return `pushes ${who} past the screen's edge, where the page cannot be scrolled to`;
   return `has ${who} cut off by an element around it that hides what overflows it (\`overflow: hidden\`)`;
 }
 
@@ -296,7 +297,7 @@ export function brokenWords(breaks: BreakFound[], subject: string, opening = tru
   const widths = [...new Set(breaks.map((one) => one.width))];
   return widths
     .map((width, i) => {
-      const self = i || subject === "the layer" ? "itself" : "the layer";
+      const self = i || subject.startsWith("the layer") ? "itself" : "the layer";
       // "makes the page wider than the screen, and the layer wider than its container": the verb said once.
       const here = breaks.filter((one) => one.width === width).sort((a, b) => BREAK_ORDER.indexOf(a.kind) - BREAK_ORDER.indexOf(b.kind));
       const words = here.map((one, n) => (n ? breakWords(one, self).replace(/^makes /, "") : breakWords(one, self)));
@@ -307,6 +308,16 @@ export function brokenWords(breaks: BreakFound[], subject: string, opening = tru
 
 /** The order breaks of the layout are said in: what makes something wider first, as one verb says them. */
 const BREAK_ORDER: BreakFound["kind"][] = ["page", "wider", "clipped"];
+
+/**
+ * The other changes of `round` to `change`'s layer that may break the layout
+ * too (ticket 147), by id: style changes to a property that can
+ * (`DRAWS_NO_BREAK`). A break of the layer may be any of theirs.
+ */
+export function breakingWith(change: Change, round: Change[]): number[] {
+  const same = (other: Change) => other.target.loc === change.target.loc && JSON.stringify(other.target.chain) === JSON.stringify(change.target.chain);
+  return round.filter((other) => other.id !== change.id && other.kind === "style" && !DRAWS_NO_BREAK.has(other.property) && same(other)).map((other) => other.id);
+}
 
 /** How to fix a change whose layer breaks the layout (ticket 147): made in the desktop view, to use its value only where it fits; at a breakpoint, to keep it within its container. */
 export function breakFix(change: Change): string {

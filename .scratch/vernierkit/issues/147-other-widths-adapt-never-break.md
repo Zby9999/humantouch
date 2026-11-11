@@ -109,3 +109,55 @@ ticket 64 以来按新规矩改的测试：
 5. 编辑层自己加在页面上的元素如果撑宽了页面，会算进「之前」，不会误报，但也可能掩盖认领后出现的横向滚动。
 
 后续（不编号，交给 planner）：认领时等各宽度的记录写好再让 Agent 开始改（风险 1）；148 的 Skill、`finish` 三栏用 `adapted`。
+
+**2026-11-12，审查后的修改（同一分支）**
+
+审查的 8 条逐条对着代码核过，都成立；第 8 条按 planner 的意思只记风险。改了什么：
+
+1. 破版只看能改变几何的属性。`breakWidthsOf` 跳过 `DRAWS_NO_BREAK`（新常量，在 `widths-protocol.ts`，CLI 也用）：填充、圆角、阴影、文字阴影、透明度、两种模糊、裁切、文字颜色、文字装饰、文字对齐。其余（尺寸、最小最大、内外边距、间距、X/Y/right/bottom/absolute、排列和列数、字号字距字重行高、描边、显隐等）照旧看。同一图层上还有别的能改变几何的改动时，`done` 不再只怪一条，改说「At Tablet (768px) the layer of changes 1 and 2 makes the page wider …, which it did not when the round was claimed; any of those changes may be what does it: …」（`design-values.ts` 的 `breakingWith`）。round.spec 的 ticket 75 那条（审查说的 ~l.652）正是这个情况：宽度那条原来背了 right→left 改写造成的破版，现在两条都说成「the layer of changes 1 and 2」。
+2. 晚记的「之前」（按 planner 定的 (a)）。`watchPage` 里记一个 `codeChanged`：开始时页面已经不能记样式影响（`effects` 关了：认领后才打开，或代码先于认领变了）就是真；之后开发服务器说代码变了（`CODE_EVENT`），或没有开发服务器的消息时页面有任何变化，也置真。从那以后记下的破版记录带 `late: true`（`BreaksNote.late`，存进 `.humantouch/`）。晚记的宽度上看到的破版全算 not shown，每条带 `late`；`done` 说「…; the page could not note that width before the code changed, so it cannot tell whether that is new. If the change does it: <修法>, and run `npx humantouch done 1` again; if the page did so before the change, say so in the report.」新旧混着时分两句说。78 的路子：`noteRound` 在代码开始变时记的窗口宽度不算晚记（测试里看了），之后页面在其他宽度补记的算晚记。(b) 没做：CLI 不知道页面要记哪些宽度（窗口宽、视图宽都在页面那边），要等就得让页面另写一个「记完了」的标记，再给 claim 加一段等待，不算便宜；记在风险里。
+3. `words.ts`：Stack、Grid（`display` 以 flex 或 grid 结尾）里的子元素不再一律算块。子元素只有画在前面那些的下方（top ≥ 已有的最低 bottom − 0.5px）才另起一行；并排的按词隔开（中间加一个空格），svg、img 夹在中间也一样。列方向、换了行的 wrap 照旧算行。
+4. 被推出屏幕起始边算破版：从左到右是左边，从右到左是右边（看 `<html>` 的 `direction`），页面滚不过去，算「cut off by the screen」（`BreakFound.by: "screen"`），照旧只算新出现的。`done` 说「pushes the layer past the screen's edge, where the page cannot be scrolled to」。横向滚动只算结束边。`edits.browser.test.ts` ~l.4472（ticket 75 在 Phone 上差 390px）核过：那是推出了结束边（`left: 740px` 在 390px 宽的页面），页面会横向滚动，破版那一路能抓到；`checkAcross` 本身只管适配，照旧「shown, adapted」。在那条测试里加了一句，用同一个 Phone 页面查破版，得到「page wider」。
+5. 同一种破版变严重也报。记录里多存每个破版伸出多少 px（`BreaksNote.over`，另存页面整体伸出屏幕多少，键 `page`）；之后同一种比记下时多伸出 4px 以上（`GREW_PX`）就算新的。认领时页面已经横向滚动的，只有页面伸得更远、而且这一层也伸得更远时才报横向滚动。旧记录没有 `over` 的，照旧只比有没有。
+6. `clipped()` 改成沿包含块链走：每一步从当前元素的包含块往上（absolute 用 `offsetParent`，fixed 停，其他用父元素），所以 absolute 元素和它的定位祖先之间、不定位的 `overflow: hidden` 祖先不再算截断；定位祖先自己是 absolute 的，再从它的定位祖先接着走。返回伸出的 px（给第 5 条用）。`transform` 造成的包含块没管（`offsetParent` 不认它）。
+7. 说法统一成「不算显示」（ADR 0016）：`done` 本来就说「it does not show the change」，「which it did not as the round was claimed」改成「when the round was claimed」；`finish` 的「Shown, but breaking the layout at a width: 1.」改成「Not shown, breaking the layout at a width: 1.」；报告的 Why 从「the page shows it, but at Phone …」改成「the page does not show it: at Phone …」，有晚记的再加「(the page could not note every width before the code changed)」。
+
+测试（每条修改至少一条）：
+
+- `breaks.browser.test.ts`（11 → 19 条）：不看破版的属性（fill、radius、opacity、shadows、textColor、textAlign）和看的（padding、gap、fontSize、letterSpacing、stroke、x）；已破的同一种、多伸出不到 4px 不报，更严重了报（比容器宽和被截断各一）；推出起始边（左到右、右到左各一）和右到左的结束边算横向滚动；absolute 元素和定位祖先之间的 `overflow: hidden` 不截断、定位祖先自己的截断、两层 absolute 往上接着走；`noteChange(…, late)` 晚记后全报且带 `late`；`watchPage` 三条：认领路子上页面开始时就不能记（`effectNotes(false)`）→ 晚记、已破的也报；开始核对后先来一次 `CODE_EVENT` → 之后补记的宽度是晚记的；78 路子：`noteRound` 先记窗口宽度（不带 late），之后 `watchPage` 关着 `effects` 也不报已有的破版。原来那条「认领前已破的同一种不报」改了（被截断的那半，宽度变大后截得更多，按第 5 条现在会报）。
+- `promote.browser.test.ts` 加一条：flex 列方向、wrap 换到下一行算两行（shown），横排夹 svg、grid 两列都读成「Plan ahead」（not shown）。
+- `cli.test.ts` 加 2 条：同一图层上宽度加内边距两条改动时的说法（圆角那条不点名）；晚记的 `done`、`finish` 开头、报告 Why。已有 3 条的说法跟着第 7 条改了。
+- `edits.browser.test.ts` 那条 ticket 75 的测试加了破版的断言（见第 4 条）。
+- `outside.browser.test.ts`、`promote.browser.test.ts` 里 3 处期望回到了 main 上的样子：填色、圆角的改动不再记破版。
+- e2e `round.spec.ts` ticket 75 那条：claim 后先等 `.humantouch/other-usages.json` 里两条改动在 768 和 390 都有不晚记的破版记录，再改代码；期望改成「the layer of changes 1 and 2 … any of those changes may be what does it」。不等的话，这条测试改代码太快，Phone、Tablet 的副本还没载入就改了，记录是晚记的，`done` 给的是晚记那种说法（第一轮全跑时就是这样失败的，说明晚记的判断在真页面上起作用）。另外两条（79、96）的期望跟着第 7 条改了措辞。bench 场景 `width-500-literal` 的 `scripted.done` 同样改了措辞。
+
+数字（审查修改之后；分支仍基于 main 7e48398，main 现在是 07670ae，按 brief 没有合）：
+
+- `pnpm typecheck` 过（website 也过）。`pnpm test`：vitest 57 个文件 1356 过、1 跳过；node 132 过、0 失败。
+- e2e（`HT_E2E_PORT=6900`）：`round.spec.ts` + `applying-bench.spec.ts` + `claim.spec.ts` + `promote.spec.ts` 一起跑 578 过、1 失败（就是上面 ticket 75 那条，改测试前）；改完单跑这条 `--workers=1 --repeat-each=3` 3/3 过。`bench-scenarios.spec.ts` 的 3 个新场景（含依赖）490 过、0 失败。
+- `--dry`：38/38；base 7e48398 35/35。`--claim-out` 两边 `diff -r`：已有 35 个场景逐字相同，只多 3 个新场景的文件。临时 worktree 已删。跑之前发现 6924 端口上有一个 45 分钟前留下的孤儿 bench vite（父进程是 launchd，cwd 是 bench 的临时目录），在我的端口段里，停掉了；它让 base 的第一次 `--dry` 跳过了一个场景，停掉后重跑。
+- `--scripted`：29/29（main 7e48398 上 26 个，多 3 个新场景），一次过。
+- 结果有变的已有场景：没有。
+- 没碰拖动、改尺寸、编辑模式、画布绘制；破版比对多算了伸出的 px，量的还是同样那些盒子，没跑 perf。没跑真实 Agent。
+
+代定（接着上面的编号）：
+
+10. 晚记按 planner 定的 (a)：代码变过之后才记的宽度，那里看到的破版都算 not shown，`done` 说分不清是不是新的，原来就有就在报告里说。「代码变过」= 开发服务器说的热更新；没有开发服务器的消息时，页面的任何 DOM 变化都算（和 ADR 0016 的样式影响记录一样）；页面开始核对时已经不能记样式影响的，也算。
+11. 不看破版的属性：填充、圆角、阴影、文字阴影、透明度、两种模糊、裁切（`clip` 只截这一层里面的东西，这一层自己不会因此被截或撑宽）、文字颜色、文字装饰、文字对齐。显隐、描边、字重、行高、大小写都看。
+12. 同一图层上有几条能改变几何的改动时，说成「the layer of changes 1 and 2」，加「any of those changes may be what does it」，修法仍按 `done` 问的那条给。只按图层（位置加组件链）认，不管断点，也不管那几条结果如何。
+13. 变严重的阈值 4px（`GREW_PX`）。横向滚动是否变严重按页面整体伸出屏幕的 px 比。
+14. 推出起始边算「被屏幕截断」，按 `<html>` 的 `direction` 定哪边是起始边；`<html>`、`<body>` 的 `overflow-x: hidden` 只算结束边（起始边已经由屏幕算过）。
+15. Stack/Grid 里子元素分不分行按画出来的位置：在前面的下方才另起一行，并排的中间加空格。只在按行核对时用，不带换行的改字照旧。
+16. 说法统一成「不算显示」：`finish` 的「Not shown, breaking the layout at a width: N.」仍单列一栏，不并进「The page does not show」。
+
+代定 2（删除也适配）按 planner 的意思保留，没改。
+
+风险（更新）：
+
+- 风险 1 现在一半被第 2 条盖住：代码先变了，记录会标成晚记的，不会再悄悄地 ✓；但晚记时原来就有的破版也会报 not shown（偏向 ⚠️），要 Agent 在报告里说明。没有开发服务器消息的页面（一直在动的轮播、动画）几乎每次都会晚记。认领时等页面记完（(b)）仍值得做，留给 planner。
+- 风险 3（认领后热更新的快速复查只看窗口宽度）不变，记给 148。
+- 新：Stack/Grid 的子元素按 `getBoundingClientRect` 判断上下，有 `transform` 或负外边距叠在一起时，可能把并排当成分行，或反过来。
+- 新：`clipped()` 用 `offsetParent` 找 absolute 元素的包含块，不认 `transform`、`filter`、`contain` 造成的包含块；`offsetParent` 为 null（祖先 `display: none`）时当作没被截。
+- 新：「the layer of changes 1 and 2」按改动的目标认同一图层，循环里不同实例、不同使用处的同一个源码位置会被当成同一图层。
+
+ticket 64 以来按新规矩改的测试（这次）：round.spec 的 ticket 75 那条（见上）；`breaks.browser.test.ts` 那条「已破的同一种不报」；其余见上面测试一节。

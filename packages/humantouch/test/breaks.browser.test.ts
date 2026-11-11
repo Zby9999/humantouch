@@ -1,10 +1,10 @@
 import { afterEach, expect, test } from "vitest";
 import type { Change } from "../src/client/changeset";
-import { breakWidthsOf, checkAcross, itself, type PageWidth } from "../src/client/check";
+import { breakWidthsOf, checkAcross, effectNotes, itself, type PageWidth } from "../src/client/check";
 import { placedOnCanvas } from "../src/client/moves";
-import { breaksNow, noteChange, type OtherUsagesNoted } from "../src/client/other-usages";
+import { breaksNow, noteChange, noteRound, type OtherUsagesNoted } from "../src/client/other-usages";
 import { watchPage } from "../src/client/page-checks";
-import type { CheckReport } from "../src/service-protocol";
+import { CODE_EVENT, type CheckReport } from "../src/service-protocol";
 
 /**
  * ADR 0016, ticket 147: at the width a change is made at the page is to draw
@@ -100,11 +100,71 @@ test("its container made wider than the column around it: the box growing a cont
   expect(found).toContainEqual({ width: 390, kind: "page", of: "layer" });
 });
 
-test("broken already as the round was claimed, the same way: not said; cut off already, and wider too now, the wider alone is", () => {
+test("broken already when the round was claimed, the same way, as far: not said; a few px further, not either; cut off already, and wider too now, the wider is", () => {
   const page = pageOf(PAGE("#column { overflow-x: auto } #box { width: 400px }"));
-  expect(breaksBy(page, style(BOX, "width"), widen(page))).toEqual([]);
+  expect(breaksBy(page, style(BOX, "width"), widen(page, "width: 402px"))).toEqual([]);
   const hidden = pageOf(PAGE("#column { overflow: hidden; height: 20px }"));
-  expect(breaksBy(hidden, style(BOX, "width"), widen(hidden))).toEqual([{ width: 390, kind: "wider", of: "layer", size: 500, room: 342 }]);
+  expect(breaksBy(hidden, style(BOX, "width"), widen(hidden, "width: 100px; height: 42px"))).toEqual([]);
+  const wider = pageOf(PAGE("#column { overflow: hidden; height: 20px }"));
+  expect(breaksBy(wider, style(BOX, "width"), widen(wider, "width: 500px; height: 40px"))).toContainEqual({ width: 390, kind: "wider", of: "layer", size: 500, room: 342 });
+});
+
+test("broken already the same way, but further now (ticket 147's review): wider than its column by more, or cut off further, is said; the page reaching further past the screen too", () => {
+  const page = pageOf(PAGE("#box { width: 400px }"));
+  expect(breaksBy(page, style(BOX, "width"), widen(page))).toEqual([
+    { width: 390, kind: "page", of: "layer" },
+    { width: 390, kind: "wider", of: "layer", size: 500, room: 342 },
+  ]);
+  const hidden = pageOf(PAGE("#column { overflow: hidden; height: 20px }"));
+  expect(breaksBy(hidden, style(BOX, "height"), widen(hidden, "height: 80px"))).toEqual([{ width: 390, kind: "clipped", of: "layer" }]);
+});
+
+test("pushed past the screen's start edge, which the page cannot be scrolled to: cut off by the screen; right to left, past its right edge", () => {
+  const page = pageOf(PAGE("#column { position: relative; height: 40px } #box { position: absolute; left: 0 }"));
+  expect(breaksBy(page, style(BOX, "x"), widen(page, "left: -60px"))).toEqual([{ width: 390, kind: "clipped", of: "layer", by: "screen" }]);
+  const rtl = pageOf(PAGE("#column { position: relative; height: 40px } #box { position: absolute; right: 0 }").replace("<body", '<html dir="rtl"><body'));
+  expect(breaksBy(rtl, style(BOX, "x"), widen(rtl, "right: -60px"))).toEqual([{ width: 390, kind: "clipped", of: "layer", by: "screen" }]);
+  // Right to left, past the left edge is the page's end: it scrolls to it.
+  const end = pageOf(PAGE("#column { position: relative; height: 40px } #box { position: absolute; right: 0 }").replace("<body", '<html dir="rtl"><body'));
+  expect(breaksBy(end, style(BOX, "x"), widen(end, "right: 360px"))).toEqual([{ width: 390, kind: "page", of: "layer" }]);
+});
+
+test("placed absolute: an element between it and the box it is placed in that hides what overflows does not cut it off; the box it is placed in does", () => {
+  const between = pageOf(PAGE("main { position: relative } #column { overflow: hidden; height: 20px } #box { position: absolute; top: 0 }"));
+  expect(breaksBy(between, style(BOX, "height"), widen(between, "height: 80px"))).toEqual([]);
+  const placedIn = pageOf(PAGE("#column { position: relative; overflow: hidden; height: 20px } #box { position: absolute; top: 0 }"));
+  expect(breaksBy(placedIn, style(BOX, "height"), widen(placedIn, "height: 80px"))).toEqual([{ width: 390, kind: "clipped", of: "layer" }]);
+  // Nor, for the box it is placed in, one between that and the box that is placed in.
+  const up = pageOf(
+    PAGE("main { position: relative } #column { overflow: hidden; height: 20px } #inner { position: absolute; top: 0; left: 0; width: 200px } #box { position: absolute; top: 0 }").replace(
+      '<div id="box"',
+      '<div id="inner" style="position: absolute"><div id="box"',
+    ).replace('data-ht-loc="src/App.tsx:4:9"></div>', 'data-ht-loc="src/App.tsx:4:9"></div></div>'),
+  );
+  expect(breaksBy(up, style(BOX, "height"), widen(up, "height: 80px"))).toEqual([]);
+});
+
+test("noted late, after the code changed: every break found is said, as the page cannot tell which are new", () => {
+  const page = pageOf(PAGE("#box { width: 400px }"));
+  const width = style(BOX, "width");
+  const at = () => itself(page);
+  const noted = noteChange(page, width, [width], 390, [], at, [390], true);
+  expect(noted?.breaks?.[0]).toMatchObject({ width: 390, late: true });
+  expect(breaksNow(page, width, onCanvas([width]), noted, [390], at).found).toEqual([
+    { width: 390, kind: "page", of: "layer", late: true },
+    { width: 390, kind: "wider", of: "layer", size: 400, room: 342, late: true },
+  ]);
+});
+
+test("looked at for breaks: not a change to a property that cannot break the layout, a fill, a radius, opacity, a shadow, the text's alignment", () => {
+  for (const property of ["fill", "radius", "opacity", "shadows", "textColor", "textAlign"]) {
+    const one = style(BOX, property);
+    expect(breakWidthsOf(one, [one], 1280, [768, 390])).toEqual([]);
+  }
+  for (const property of ["padding", "gap", "fontSize", "letterSpacing", "stroke", "x"]) {
+    const one = style(BOX, property);
+    expect(breakWidthsOf(one, [one], 1280, [768, 390])).toEqual([1280, 768, 390]);
+  }
 });
 
 test("a box not drawn, as `display: none` makes it: no break to tell", () => {
@@ -140,7 +200,7 @@ test("a width made in the desktop view, drawn otherwise at a view's width: shown
 });
 
 /** The page's checks of `round` on `page`, as a claimed round's are, the window its only width. */
-function watch(page: Document, round: Change[]) {
+function watch(page: Document, round: Change[], more: Partial<Parameters<typeof watchPage>[0]> = {}) {
   const reports: CheckReport[] = [];
   const noted = new Map<number, OtherUsagesNoted | null>();
   const checks = watchPage({
@@ -151,6 +211,7 @@ function watch(page: Document, round: Change[]) {
     viewWidths: () => [],
     copiesIn: () => document.body,
     onNoted: (one, notes) => noted.set(one, notes),
+    ...more,
   });
   return { checks, noted, last: (one: number) => reports.filter((r) => r.id === one).at(-1) };
 }
@@ -160,7 +221,7 @@ test("the page's checks: what breaks is noted as they begin; the code written so
   const page = pageOf(PAGE(), 600);
   const width = style(BOX, "width", { before: { type: "fixed", value: 100 }, after: { type: "fixed", value: 500 }, style: { width: "500px" } });
   const { checks, noted, last } = watch(page, [width]);
-  await expect.poll(() => noted.get(width.id)?.breaks).toEqual([{ width: 600, scrolls: false, seen: [] }]);
+  await expect.poll(() => noted.get(width.id)?.breaks).toEqual([{ width: 600, scrolls: false, seen: [], over: { page: 0 } }]);
   await expect.poll(() => last(width.id)?.outcome).toBe("not shown");
 
   widen(page, "width: 500px; margin-left: 200px")();
@@ -168,5 +229,41 @@ test("the page's checks: what breaks is noted as they begin; the code written so
   widen(page)();
   await expect.poll(() => last(width.id)?.outcome).toBe("shown");
   expect(last(width.id)).not.toHaveProperty("breaks");
+  checks.stop();
+});
+
+/** The box 400px wide in its 342px column at a phone's width, a change making it so: broken already, or by the change, the page cannot tell by looking now. */
+const brokenBox = () => {
+  const page = pageOf(PAGE("#box { width: 400px }"));
+  const width = style(BOX, "width", { before: { type: "fixed", value: 100 }, after: { type: "fixed", value: 400 }, style: { width: "400px" } });
+  return { page, width };
+};
+
+test("late notes, the claim's way (ticket 147's review): a page that could note nothing before the code changed notes late, and every break it finds is said, as late", async () => {
+  const { page, width } = brokenBox();
+  // Opened since the claim, or the code changed first: what a change's style moves it could not note either.
+  const { checks, noted, last } = watch(page, [width], { effects: effectNotes(false) });
+  await expect.poll(() => noted.get(width.id)?.breaks?.[0]?.late).toBe(true);
+  await expect.poll(() => last(width.id)).toMatchObject({ outcome: "not shown", breaks: [{ width: 390, kind: "page", late: true }, { width: 390, kind: "wider", late: true }] });
+  checks.stop();
+});
+
+test("late notes, the claim's way: the code changing once the checks began, a width noted from then on is late", async () => {
+  const { page, width } = brokenBox();
+  const { checks, noted, last } = watch(page, [width], { viewWidths: () => [], otherUsages: new Map([[width.id, null]]) });
+  // Noted already for other usages (none), not for breaks: the code comes in first.
+  page.defaultView!.dispatchEvent(new Event(CODE_EVENT));
+  await expect.poll(() => noted.get(width.id)?.breaks?.[0]?.late).toBe(true);
+  await expect.poll(() => last(width.id)?.outcome).toBe("not shown");
+  checks.stop();
+});
+
+test("late notes, ticket 78's way: noted as wide as the window as the code began to change, before it, not late: what was broken then is not said", async () => {
+  const { page, width } = brokenBox();
+  const before = noteRound(page, [width], 390);
+  expect(before.get(width.id)?.breaks?.[0]).not.toHaveProperty("late");
+  // The round claimed for the Agent once a change showed: the code has changed, the window's note goes from before it.
+  const { checks, last } = watch(page, [width], { effects: effectNotes(false), otherUsages: before });
+  await expect.poll(() => last(width.id)?.outcome).toBe("shown");
   checks.stop();
 });

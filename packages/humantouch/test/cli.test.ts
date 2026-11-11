@@ -2957,7 +2957,7 @@ describe("other views' widths adapted, any width never broken (ADR 0016, ticket 
 
     expect((await cli("done", "1")).output).toBe(
       "Change 1 done: 0 of 2 changes applied.\n" +
-        "Checked on the page: it does not show the change. At Phone (390px) change 1 makes the page wider than the screen (it scrolls sideways) and the layer wider than its container (500px in 342px), which it did not as the round was claimed: " +
+        "Checked on the page: it does not show the change. At Phone (390px) change 1 makes the page wider than the screen (it scrolls sideways) and the layer wider than its container (500px in 342px), which it did not when the round was claimed: " +
         "use 500px only from a breakpoint up where it fits (a variant such as `md:`), or keep the layer within its container, and run `npx humantouch done 1` again.\n",
     );
   });
@@ -2969,7 +2969,36 @@ describe("other views' widths adapted, any width never broken (ADR 0016, ticket 
 
     expect((await cli("done", "1")).output).toContain(
       "Checked on the page: it does not show the change. At Phone (390px) change 1 has its container cut off by an element around it that hides what overflows it (`overflow: hidden`); " +
-        "at 500px wide it makes its container wider than the container around it (520px in 452px), which it did not as the round was claimed: keep the layer within its container there, and run `npx humantouch done 1` again.\n",
+        "at 500px wide it makes its container wider than the container around it (520px in 452px), which it did not when the round was claimed: keep the layer within its container there, and run `npx humantouch done 1` again.\n",
+    );
+  });
+
+  test("another change to the layer that can break the layout too (ticket 147's review): the break is said as the layer of both, any of them may do it; a radius cannot, and is not named", async () => {
+    const padded = { ...redFill, id: 3, property: "padding", before: [0, 0, 0, 0], after: [0, 40, 0, 40], style: {} };
+    saveRound(wide, smallRadius, padded);
+    await cli("claim");
+    closePage = openPage((id) => (id === 1 ? broken : { outcome: "shown" }));
+
+    expect((await cli("done", "1")).output).toContain(
+      "Checked on the page: it does not show the change. At Phone (390px) the layer of changes 1 and 3 makes the page wider than the screen (it scrolls sideways) and itself wider than its container (500px in 342px), which it did not when the round was claimed; any of those changes may be what does it: " +
+        "use 500px only from a breakpoint up where it fits (a variant such as `md:`), or keep the layer within its container, and run `npx humantouch done 1` again.\n",
+    );
+  });
+
+  test("a break at a width the page noted only after the code changed (ticket 147's review): not shown, and done says the page cannot tell whether it is new; the report's Why too", async () => {
+    saveRound(wide, smallRadius);
+    await cli("claim");
+    const late = { ...broken, breaks: [{ width: 390, kind: "clipped", of: "layer", by: "screen", late: true }] };
+    closePage = openPage((id) => (id === 1 ? late : { outcome: "shown" }));
+
+    expect((await cli("done", "1")).output).toContain(
+      "Checked on the page: it does not show the change. At Phone (390px) change 1 pushes the layer past the screen's edge, where the page cannot be scrolled to; the page could not note that width before the code changed, so it cannot tell whether that is new. " +
+        "If the change does it: use 500px only from a breakpoint up where it fits (a variant such as `md:`), or keep the layer within its container, and run `npx humantouch done 1` again; if the page did so before the change, say so in the report.\n",
+    );
+    const { output } = await cli("finish");
+    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. Not shown, breaking the layout at a width: 1.\n");
+    expect(output).toContain(
+      "  Why: the page does not show it: at Phone (390px) the layer pushes itself past the screen's edge, where the page cannot be scrolled to (the page could not note every width before the code changed): <what keeps it so>\n",
     );
   });
 
@@ -2980,9 +3009,9 @@ describe("other views' widths adapted, any width never broken (ADR 0016, ticket 
 
     const { output } = await cli("finish");
 
-    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. Shown, but breaking the layout at a width: 1.\n");
+    expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. Not shown, breaking the layout at a width: 1.\n");
     expect(output).toContain(
-      "⚠️ Not applied 1:1\n- 1. Width: <the layer>\n  Why: the page shows it, but at Phone (390px) the layer makes the page wider than the screen (it scrolls sideways) and itself wider than its container (500px in 342px): <what keeps it so>\n",
+      "⚠️ Not applied 1:1\n- 1. Width: <the layer>\n  Why: the page does not show it: at Phone (390px) the layer makes the page wider than the screen (it scrolls sideways) and itself wider than its container (500px in 342px): <what keeps it so>\n",
     );
   });
 });

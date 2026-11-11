@@ -12,19 +12,36 @@
  * `blocks` too, as the page draws them (ADR 0016): an element laid out as a
  * block (`display: block`, `flex`, …) in it starts a line and ends one, as
  * a line break does, once between two blocks; a `<br>` or new line kept
- * where one ends and the next starts reads as no more than itself.
+ * where one ends and the next starts reads as no more than itself. A
+ * Stack's or a Grid's layers (in an element laid out `flex` or `grid`),
+ * laid out as blocks whichever way they go, start a line only where one is
+ * drawn below those before it: side by side, they read as words apart.
  */
 export function wordsOf(el: Element, lines = true, blocks = false): string {
   let text = "";
   const view = el.ownerDocument.defaultView;
   // Not a table's cells or columns either, which stand side by side on a line.
-  const block = (child: Element) => blocks && lines && !!view && child.isConnected && !/^(inline|contents|none|table-cell|table-column)/.test(view.getComputedStyle(child).display);
+  const drawing = blocks && lines && !!view;
+  const block = (child: Element) => drawing && child.isConnected && !/^(inline|contents|none|table-cell|table-column)/.test(view!.getComputedStyle(child).display);
+  // A Stack's or a Grid's layers are laid out as blocks, side by side as often as not.
+  const laysOut = (node: Node) => drawing && node.nodeType === Node.ELEMENT_NODE && (node as Element).isConnected && /(flex|grid)$/.test(view!.getComputedStyle(node as Element).display);
   const walk = (node: Node) => {
+    const items = laysOut(node);
+    /** In a Stack or a Grid: the lowest of its layers walked so far reaches, and whether one was. */
+    let below = -Infinity;
+    let first = true;
     for (const child of node.childNodes) {
       if (child.nodeType === Node.TEXT_NODE || child.nodeType === Node.CDATA_SECTION_NODE) text += lines ? spacedOut((child as Text).data, node as Element) : (child as Text).data;
       else if (child.nodeType !== Node.ELEMENT_NODE) continue;
       else if ((child as Element).localName === "br") text += lines ? "\n" : " ";
-      else if (block(child as Element)) {
+      else if (items && block(child as Element)) {
+        // A layer of a Stack or a Grid starts a line only where it starts below those before it; beside them, it is parted from them as words are.
+        const box = (child as Element).getBoundingClientRect();
+        if (!first) text += box.top >= below - 0.5 ? BLOCK_EDGE : " ";
+        walk(child);
+        below = Math.max(below, box.bottom);
+        first = false;
+      } else if (block(child as Element)) {
         text += BLOCK_EDGE;
         walk(child);
         text += BLOCK_EDGE;

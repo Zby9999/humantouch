@@ -8,6 +8,7 @@ import { checkAcross, checkChange, itself, uncheckable, valuesAt, widthsOf, type
 import { copyPage, type PageCopy } from "../src/client/page-copy";
 import { measureParts, PARTS_MEASURE } from "../src/client/range-parts";
 import { PAGE_UPDATE_LOST_MS, watchPage } from "../src/client/page-checks";
+import { breaksNow, noteChange } from "../src/client/other-usages";
 import { createClipboard } from "../src/client/clipboard";
 import { asPage, declaredByEdit, moveInlineEdits } from "../src/client/canvas-style";
 import { findDrop, findPlace } from "../src/client/drag";
@@ -4470,6 +4471,10 @@ describe("changes to the structure are checked on the live page", () => {
     // At the phone's width, the canvas has it 20px from the right; the page, 390px off it.
     const phone = pageAt(fromTheRight().replace("</style>", `#tag { ${byLeft} }</style>`), 390);
     expect(checkAcross(page, right, onCanvas(changes.list()), [390], () => phone)).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: { value: -390, margin: 0 } }] });
+    // Past the screen's end edge there, the page wider than the screen, as it was not with the tag at its right: a break, not shown after all (ADR 0016, ticket 147's review).
+    const was = pageAt(fromTheRight(), 390);
+    const noted = noteChange(page, right, changes.list(), 800, [], () => was, [390]);
+    expect(breaksNow(page, right, onCanvas(changes.list()), noted, [390], () => phone).found).toEqual([{ width: 390, kind: "page", of: "layer" }]);
   });
 
   test("a layer the canvas places from its left edge in a view, as the page's breakpoints say: its `right` places nothing there, and is not looked at in the view's range, the page's window there or not (ticket 75)", async () => {

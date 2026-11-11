@@ -39,10 +39,14 @@ export function adaptedIn(result: CheckResult | undefined): AdaptedAt[] | undefi
 export type BreakKind = "page" | "wider" | "clipped";
 
 /**
- * A break a change's layer makes at `width` that it did not as the round was
- * claimed (ticket 147): of the layer itself, or of its container (`of`).
+ * A break a change's layer makes at `width` that it did not when the round
+ * was claimed (ticket 147): of the layer itself, or of its container (`of`).
  * `size` and `room`, of one wider than its container: how wide it is drawn,
- * and how wide its container's content is, px.
+ * and how wide its container's content is, px. `by`, of one cut off: by the
+ * screen, pushed past its start edge (left; right to left, right), which the
+ * page cannot be scrolled to; else by an element around it. `late`: the page
+ * noted that width only after the code changed (`BreaksNote.late`), and
+ * cannot tell whether the break is new.
  */
 export interface BreakFound {
   width: number;
@@ -50,9 +54,18 @@ export interface BreakFound {
   of: "layer" | "container";
   size?: number;
   room?: number;
+  by?: "screen";
+  late?: true;
 }
 
-/** A check's result where the page shows a change, but its layer breaks the layout at a width as it did not as the round was claimed (`breaks`); `actual` is then the change's own value. */
+/**
+ * Properties whose change cannot break the layout (ticket 147): they change
+ * how a layer is painted alone, or where its text sits in its lines, never
+ * its size or its place. A change to one is not looked at for breaks.
+ */
+export const DRAWS_NO_BREAK = new Set<string>(["fill", "radius", "shadows", "textShadows", "opacity", "layerBlur", "backgroundBlur", "clip", "textColor", "textDecoration", "textAlign"]);
+
+/** A check's result where the page does not show a change (ADR 0016): its layer shows the value, but breaks the layout at a width as it did not when the round was claimed (`breaks`); `actual` is then the change's own value. */
 export type NotShownBroken = Extract<CheckResult, { outcome: "not shown" }> & { breaks?: BreakFound[] };
 
 /** The breaks a check found a change's layer making, if it did. */
@@ -61,15 +74,21 @@ export function breaksIn(result: CheckResult | undefined): BreakFound[] | undefi
 }
 
 /**
- * What breaks of the layout a change's layer made at a width as the round
+ * What breaks of the layout a change's layer made at a width when the round
  * was claimed (ticket 147): whether the page scrolled sideways there, and the
  * breaks of its elements, each as `<element's place, from 0>:<layer or
- * container>:<kind>`.
+ * container>:<kind>`; `over`, by key, how far each reached past where it is
+ * to stay, px, and by `page`, how far the page reached past the screen.
+ * `late`: noted only after the code changed since the round was claimed (or,
+ * claimed for an Agent that applied it with no claim, ticket 78, since the
+ * page saw it), the code's own breaks may be among those noted.
  */
 export interface BreaksNote {
   width: number;
   scrolls: boolean;
   seen: string[];
+  over?: Record<string, number>;
+  late?: true;
 }
 
 declare module "./service-protocol" {

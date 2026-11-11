@@ -151,10 +151,11 @@ export function noteRound(doc: Document, round: Change[], width: number, viewWid
  * change at a breakpoint, what its layer shows at each of the widths
  * `outside` its range, as `at` shows the page that wide (ticket 104); of a
  * style change, what breaks of the layout its layer makes at each of
- * `breaks` (ticket 147). Null when it looks at none of these.
+ * `breaks` (ticket 147), `late` when the code has changed since. Null when
+ * it looks at none of these.
  */
-export function noteChange(doc: Document, change: Change, round: Change[], width: number, outside: number[], at: (width: number) => PageWidth | null, breaks: number[] = []): OtherUsagesNoted | null {
-  return withBreaks(withOutside(noteOtherUsages(doc, change, round, width), width, noteOutside(doc, change, round, outside, at)), width, noteBreaksAt(doc, change, round, breaks, at));
+export function noteChange(doc: Document, change: Change, round: Change[], width: number, outside: number[], at: (width: number) => PageWidth | null, breaks: number[] = [], late = false): OtherUsagesNoted | null {
+  return withBreaks(withOutside(noteOtherUsages(doc, change, round, width), width, noteOutside(doc, change, round, outside, at)), width, noteBreaksAt(doc, change, round, breaks, at, late));
 }
 
 /** `noted`, with what breaks of the layout the layer made at more widths (`more`, ticket 147): as noted already when there are none. */
@@ -162,13 +163,13 @@ export function withBreaks(noted: OtherUsagesNoted | null, width: number, more: 
   return more.length ? { ...(noted ?? { width, seen: [] }), breaks: [...(noted?.breaks ?? []), ...more] } : noted;
 }
 
-/** What breaks of the layout the layer of a style change makes at each of `widths`, as `at` shows the page that wide (ticket 147): none at a width the page cannot be shown at now, or does not have the layer at. */
-export function noteBreaksAt(doc: Document, change: Change, round: Change[], widths: number[], at: (width: number) => PageWidth | null): BreaksNote[] {
+/** What breaks of the layout the layer of a style change makes at each of `widths`, as `at` shows the page that wide (ticket 147), `late` when the code has changed since the round was claimed: none at a width the page cannot be shown at now, or does not have the layer at. */
+export function noteBreaksAt(doc: Document, change: Change, round: Change[], widths: number[], at: (width: number) => PageWidth | null, late = false): BreaksNote[] {
   const kept: BreaksNote[] = [];
   for (const width of widths) {
     const page = at(width);
     const els = page ? elementsAt(doc, change, round as RoundOnCanvas, page) : [];
-    if (page && els.length) kept.push(noteBreaks(page.doc, els, width));
+    if (page && els.length) kept.push(noteBreaks(page.doc, els, width, late));
   }
   return kept;
 }

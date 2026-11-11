@@ -643,16 +643,20 @@ test.describe("done checks the change on the page", () => {
     ]);
     const [width, right, otherWidth, otherRight] = changes.map(({ id }) => String(id));
     await npxHumanTouch("claim");
+    // What breaks of the layout the layers made at the views' widths, noted before the code changes: else noted late, and said so (ticket 147's review).
+    const notedAt = (id: string) => (readHumanTouchFile("other-usages.json")?.otherUsages?.[id]?.breaks ?? []).filter((one: { late?: true }) => !one.late).map((one: { width: number }) => one.width);
+    for (const id of [width, right]) await expect.poll(() => notedAt(id).sort()).toEqual(expect.arrayContaining([390, 768]));
 
     // Not as the notes say: placed by its left, where the canvas draws it as wide as the window. The other, as they say.
     editSource(APP, "top-[30px] right-10 h-[40px] w-20", `top-[30px] left-[${hero - 20 - 100}px] right-auto h-[40px] w-[100px]`);
     editSource(APP, "right-[100px] h-[40px] w-[80px]", "right-[140px] h-[40px] w-[40px]");
     await drawnWith(page.getByTestId("from-right"), `left-[${hero - 20 - 100}px]`, "right-auto", "w-[100px]");
     await drawnWith(page.getByTestId("left-on-phones"), "right-[140px]", "w-[40px]");
-    // Its left as wide as the window is past the screen at the views' widths: the page wider than the screen there, which it was not as the round was claimed (ADR 0016, ticket 147).
+    // Its left as wide as the window is past the screen at the views' widths: the page wider than the screen there, which it was not when the round was claimed (ADR 0016, ticket 147).
+    // Its width and its right both on the layer, either may do it: said as the layer of both (ticket 147's review).
     for (const id of [width, right]) {
       expect(await npxHumanTouch("done", id)).toContain(
-        `Checked on the page: it does not show the change. At Tablet (768px) change ${id} makes the page wider than the screen (it scrolls sideways); at Phone (390px) it makes the page wider than the screen (it scrolls sideways), which it did not as the round was claimed: `,
+        `Checked on the page: it does not show the change. At Tablet (768px) the layer of changes ${width} and ${right} makes the page wider than the screen (it scrolls sideways); at Phone (390px) it makes the page wider than the screen (it scrolls sideways), which it did not when the round was claimed; any of those changes may be what does it: `,
       );
     }
     for (const id of [otherWidth, otherRight]) expect(await npxHumanTouch("done", id)).toContain("Checked on the page: it shows the change.");
@@ -902,7 +906,7 @@ test.describe("done checks the change on the page", () => {
     const centered = String(changes[3].id);
     // Right as wide as the window, past the phone's screen there: the page wider than the screen (ADR 0016, ticket 147).
     expect(await npxHumanTouch("done", centered)).toContain(
-      `Checked on the page: it does not show the change. At Phone (390px) change ${centered} makes the page wider than the screen (it scrolls sideways), which it did not as the round was claimed: give it this place only from a breakpoint up where it fits (a variant such as \`md:\`), or place the layer within its container, and run \`npx humantouch done ${centered}\` again.`,
+      `Checked on the page: it does not show the change. At Phone (390px) change ${centered} makes the page wider than the screen (it scrolls sideways), which it did not when the round was claimed: give it this place only from a breakpoint up where it fits (a variant such as \`md:\`), or place the layer within its container, and run \`npx humantouch done ${centered}\` again.`,
     );
     editSource(APP, `left-[${hero / 2 + 40}px] h-[40px] w-[80px]`, "left-[calc(50%+40px)] h-[40px] w-[80px]");
     await drawnWith(page.getByTestId("centered"), "left-[calc(50%+40px)]");
@@ -952,7 +956,7 @@ test.describe("done checks the change on the page", () => {
     editSource(APP, "absolute inset-x-0 top-[120px] mx-auto", `absolute left-[${hero / 2}px] top-[120px] mx-auto`);
     await drawnWith(layer, `left-[${hero / 2}px]`);
     // Right as wide as the window, past the phone's screen there: the page wider than the screen (ADR 0016, ticket 147).
-    expect(await npxHumanTouch("done", id)).toContain(`Checked on the page: it does not show the change. At Phone (390px) change ${id} makes the page wider than the screen (it scrolls sideways), which it did not as the round was claimed: `);
+    expect(await npxHumanTouch("done", id)).toContain(`Checked on the page: it does not show the change. At Phone (390px) change ${id} makes the page wider than the screen (it scrolls sideways), which it did not when the round was claimed: `);
     editSource(APP, `absolute left-[${hero / 2}px] top-[120px] mx-auto`, "absolute left-[40px] right-[-40px] top-[120px] mx-auto");
     await drawnWith(layer, "left-[40px]", "right-[-40px]");
     expect(await npxHumanTouch("done", id)).toContain("Checked on the page: it shows the change.");

@@ -1112,7 +1112,7 @@ export const SCENARIOS: Scenario[] = [
         shows: () => Math.abs(document.querySelector('[data-testid="hero"] button')!.getBoundingClientRect().width - 500) <= 0.5,
         scripted: {
           done:
-            "it does not show the change. At Phone (390px) change 1 makes the page wider than the screen (it scrolls sideways) and the layer wider than its container (500px in 342px), which it did not as the round was claimed: " +
+            "it does not show the change. At Phone (390px) change 1 makes the page wider than the screen (it scrolls sideways) and the layer wider than its container (500px in 342px), which it did not when the round was claimed: " +
             "use 500px only from a breakpoint up where it fits (a variant such as `md:`), or keep the layer within its container",
           notShown: true,
         },

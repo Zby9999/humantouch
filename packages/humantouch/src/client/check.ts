@@ -36,7 +36,7 @@ import { colorReader } from "./paint";
 import { drawnStroke, showsStroke } from "./stroke-weight";
 import { drawsAlike, movedAlike, movedAsNoted, type Moved, type Restyled } from "./draws-alike";
 import type { TextLength } from "./typography";
-import type { AdaptedAt, ShownAdapted } from "../widths-protocol";
+import { DRAWS_NO_BREAK, type AdaptedAt, type ShownAdapted } from "../widths-protocol";
 
 /**
  * Properties the browser draws otherwise than written: compared as the code
@@ -534,10 +534,12 @@ function adaptedAt(doc: Document, change: Change, round: RoundOnCanvas, apart: s
  * ticket 147): those it is to show at (`widthsOf`), the page's window's
  * among them where it is. Of a style change to a layer the page finds by
  * its source marker alone: a layer made this round was not there to break
- * nothing as the round was claimed, and other changes are to the structure.
+ * nothing when the round was claimed, and other changes are to the
+ * structure. Not of a property that cannot break it (`DRAWS_NO_BREAK`): a
+ * break the code makes then is another change's, or another edit's.
  */
 export function breakWidthsOf(change: Change, round: Change[], pageWidth: number, viewWidths: number[]): number[] {
-  if (change.kind !== "style" || !foundByMarker(change.target) || notChecked(change, round)) return [];
+  if (change.kind !== "style" || DRAWS_NO_BREAK.has(change.property) || !foundByMarker(change.target) || notChecked(change, round)) return [];
   const { own, others } = widthsOf(change, round, pageWidth, viewWidths);
   return [...(own ? [pageWidth] : []), ...others];
 }
