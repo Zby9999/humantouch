@@ -6,7 +6,7 @@ import { Nav } from "@/components/Nav";
 import { SITE_URL } from "@/lib/site";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
-/** Every weight Rajdhani has, for the labels to be tried at each (designer, 2026-11-11); all loaded, see globals.css. */
+/** Every weight Rajdhani has, for the labels to be tried at each (designer, 2026-11-11). */
 const rajdhani = Rajdhani({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"], variable: "--font-rajdhani" });
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });

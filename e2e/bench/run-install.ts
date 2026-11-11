@@ -28,7 +28,6 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { TOGGLE_LABEL } from "../playwright.config.ts";
 import { pack } from "../tests/install-copy.ts";
 import { agentVersion, AGENTS, cleanEnv, commandLine, runAgent, type AgentRun, type AgentSpec } from "./agents.ts";
 import { installSpec, type InstallAgent } from "./install-allowlist.ts";
@@ -37,6 +36,7 @@ import { AgentProcesses, type Server } from "./install-servers.ts";
 import { packageManagerPath, portInUse, scaffold, STARTS, type Start } from "./install-starts.ts";
 import { fffProblem, parseTranscript, summarize } from "./metrics.ts";
 import { PLANTS, type Plant } from "./scripted-agent.ts";
+import { watchForToggle } from "./toggle-watch.ts";
 
 const RESULTS = fileURLToPath(new URL("../../bench-results/install/", import.meta.url));
 const README = fileURLToPath(new URL("../../README.md", import.meta.url));
@@ -45,10 +45,6 @@ const INSTALL_AGENTS: InstallAgent[] = ["claude", "pi", "scripted"];
 
 /** Longest an Agent gets for an install. */
 const AGENT_TIMEOUT_MS = 10 * 60_000;
-/** How often the bench looks for the Agent's dev servers, and at their pages. */
-const LOOK_MS = 250;
-/** How long the bench keeps looking for the toggle once the Agent has ended. */
-const GRACE_MS = 15_000;
 /** The default ports of the starts' dev servers: free before each run. */
 const DEFAULT_PORTS = [5173, 3000];
 
@@ -238,37 +234,6 @@ async function projectCli(dir: string, command: string, env: NodeJS.ProcessEnv):
   );
 }
 
-/**
- * Looks for the toggle on the pages of the Agent's dev servers, from its
- * start until it is found, or until the Agent has ended and `GRACE_MS` more
- * have gone by: a server it started just before it ended may not listen yet.
- */
-async function watchForToggle(browser: Browser, servers: AgentProcesses, start: Start, ended: () => number | null, seen: Map<string, Server>): Promise<{ at: number; server: Server } | null> {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
-  const page = await context.newPage();
-  try {
-    for (;;) {
-      const endedAt = ended();
-      if (endedAt !== null && Date.now() > endedAt + GRACE_MS) return null;
-      // The start's own port first: a server listens on others too (a debugger, a worker's).
-      const up = (await servers.look()).sort((a, b) => Number(b.port === start.port) - Number(a.port === start.port));
-      for (const server of up) seen.set(`${server.pid}:${server.port}`, server);
-      for (const server of up) {
-        try {
-          await page.goto(server.url, { timeout: 60_000 });
-          await page.getByRole("button", { name: TOGGLE_LABEL }).waitFor({ state: "visible", timeout: 3000 });
-          return { at: Date.now(), server };
-        } catch {
-          // Not up yet, still compiling, or no toggle on it yet: looked at again.
-        }
-      }
-      await new Promise((resolve) => setTimeout(resolve, LOOK_MS));
-    }
-  } finally {
-    await context.close().catch(() => {});
-  }
-}
-
 /** One install by one Agent in a fresh build of one start, its raw results written to `folder`. */
 async function installOnce({
   browser,
@@ -332,7 +297,7 @@ async function installOnce({
         leaveRunning: true,
         onStart(pid) {
           servers.agentPid = agentGroup = pid;
-          watching = watchForToggle(browser, servers, start, () => endedAt, seen).catch((error) => {
+          watching = watchForToggle(browser, () => servers.look(), start.port, () => endedAt, seen).catch((error) => {
             console.error(`Bench: looking for the toggle failed: ${(error as Error).message}`);
             return null;
           });

@@ -118,38 +118,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/*
- * Rajdhani in the weights the page does not use yet, drawn where nothing shows: a browser loads a face only for text
- * that needs it, and Human Touch's Design panel offers a font in the weights loaded on its canvas, a copy of the page
- * that runs no scripts. So every weight is on offer there, for the labels to be tried at each (designer, 2026-11-11).
- * Pseudo-elements, not elements: the Layers do not list them.
- */
-html::before,
-html::after,
-body::before,
-body::after {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-  font-family: var(--font-label);
-  content: "a";
-}
-html::before {
-  font-weight: 300;
-}
-html::after {
-  font-weight: 400;
-}
-body::before {
-  font-weight: 500;
-}
-body::after {
-  font-weight: 700;
-}
-
 @utility shadow-raised {
   box-shadow: var(--raised-shadow);
 }

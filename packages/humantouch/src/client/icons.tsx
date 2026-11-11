@@ -145,6 +145,8 @@ const ICONS: Record<string, string> = {
   "align-right": '<line x1="2.25" y1="3.25" x2="13.75" y2="3.25"/><line x1="6.25" y1="6.375" x2="13.75" y2="6.375"/><line x1="2.25" y1="9.625" x2="13.75" y2="9.625"/><line x1="6.25" y1="12.75" x2="13.75" y2="12.75"/>',
   // Justify
   "align-justify": '<line x1="2.25" y1="3.25" x2="13.75" y2="3.25"/><line x1="2.25" y1="6.375" x2="13.75" y2="6.375"/><line x1="2.25" y1="9.625" x2="13.75" y2="9.625"/><line x1="2.25" y1="12.75" x2="13.75" y2="12.75"/>',
+  // Two squares, one dashed apart: one instance alone (ticket 114)
+  alone: '<rect x="2.5" y="2.5" width="5" height="5" rx="1"/><rect x="8.5" y="8.5" width="5" height="5" rx="1" stroke-dasharray="2 1.5"/>',
   // Arrow up to line
   promote: '<g transform="rotate(-90 8 8)"><line x1="2.5" y1="8" x2="10.5" y2="8"/><path d="M6.75 4.25 L10.5 8 L6.75 11.75"/><line x1="13.5" y1="3" x2="13.5" y2="13"/></g>',
   // Arrow up: a brief set (designer, 2026-11-10)

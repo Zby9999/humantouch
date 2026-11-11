@@ -4,8 +4,9 @@
  * bench's extension; the scripted pass). Nothing here but Node's own: pi
  * loads it from the run's folder, beside that extension.
  */
-import { realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { execFileSync } from "node:child_process";
+import { lstatSync, realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 /**
  * The shell commands an Agent may run: the command line, and reading the
@@ -25,12 +26,15 @@ export const DENIED = "Not run: the Human Touch bench allows";
  * The reason a turned-away command is given, for the Agent to read; `allowed`
  * and `servers` as the install bench gives them (ticket 91). The Skill's undo
  * (`git -C` of the project, ticket 86) is named only when `undo` says it goes
- * ahead: the applying list's, asked for by name, not any list's by default.
+ * ahead: the applying list's, asked for by name, not any list's by default;
+ * and `rm` of a file git does not track only when `remove` says it does (the
+ * install list's, ticket 151).
  */
-export function deniedReason(command: string, allowed: readonly string[] = SHELL, servers: readonly string[] = [], undo = false): string {
+export function deniedReason(command: string, allowed: readonly string[] = SHELL, servers: readonly string[] = [], undo = false, remove = false): string {
   const background = servers.length ? `; and a dev server started in the background, one command of these alone, its output to /dev/null or to a .log file in the project, ending in &: ${servers.join(", ")}` : "";
   const undoText = undo ? "; git -C with the project's own folder (written in full) as git, and git -C with it and apply alone, the patch on its input;" : ",";
-  return `${DENIED} only these shell commands, each on its own or joined by &&, ||, ;, | (output to /dev/null or 2>&1 at most; no $ expansion, brace expansion, subshell or background &): ${allowed.join(", ")}${undoText} and cd to a folder in the project${background}. Turned away: ${command}`;
+  const removeText = remove ? " rm of a file in the project that git does not track (rm or rm -f, each file by its name, no folder or pattern, no cd before it);" : "";
+  return `${DENIED} only these shell commands, each on its own or joined by &&, ||, ;, | (output to /dev/null or 2>&1 at most; no $ expansion, brace expansion, subshell or background &): ${allowed.join(", ")}${undoText}${removeText} and cd to a folder in the project${background}. Turned away: ${command}`;
 }
 
 /**
@@ -113,10 +117,14 @@ interface Word {
  * (`$name`, `${ }`, `$'…'`, `$"…"`, braces), or a pattern that could name an
  * option of a command that has one of those; and output is redirected only to
  * /dev/null or another stream. What the rule cannot read is turned away.
+ * With `removeIn` given (the install bench's, ticket 151), `rm` goes ahead of
+ * files there git does not track (removesUntracked), when no `cd` came before
+ * it in the line.
  */
-export function shellAllowed(command: string, allowed: readonly string[] = SHELL, project?: string): boolean {
+export function shellAllowed(command: string, allowed: readonly string[] = SHELL, project?: string, removeIn?: string): boolean {
   const commands = parse(command)?.filter((words) => words.length > 0);
-  return !!commands && commands.length > 0 && commands.every((words) => {
+  return !!commands && commands.length > 0 && commands.every((words, i) => {
+    if (words[0].text === "rm" && removeIn !== undefined) return !commands.slice(0, i).some((before) => before[0].text === "cd") && removesUntracked(words, removeIn);
     const rest = inProjectGit(words, project);
     if (!rest) return allowedCommand(words, allowed);
     // The undo: `apply` alone, no option and no patch file (`--unsafe-paths`, `--directory`, `x.patch`).
@@ -142,6 +150,42 @@ function inProjectGit(words: Word[], project: string | undefined): Word[] | null
   // Not the repository's own folder: in `.git` git sees no work tree, and `git apply` there could write its config.
   const inGit = there.slice(root.length).split(sep).some((part) => part.toLowerCase() === ".git");
   return (there === root || there.startsWith(root + sep)) && !inGit ? words.slice(3) : null;
+}
+
+/**
+ * Whether `rm` removes only files the Agent made in `project` (ticket 151:
+ * pi wrote a helper script it could not run, and could not take it out
+ * again): `-f` the one option there may be; each file named in full (no
+ * pattern or braces bash fills in), a file or a link, not a folder; by the
+ * real path of its folder in the project and not in `.git`; and one git
+ * neither tracks nor ignores (`git ls-files --others --exclude-standard`), so
+ * not the project's own source, nor `node_modules` or a build's output.
+ */
+function removesUntracked(words: Word[], project: string): boolean {
+  const options = words.slice(1).filter((word) => word.text.startsWith("-"));
+  const files = words.slice(1).filter((word) => !word.text.startsWith("-"));
+  if (!files.length || !options.every((word) => word.text === "-f")) return false;
+  if (files.some((word) => expandsBraces(word) || [...word.text].some((char, i) => word.bare[i] && "*?[".includes(char)))) return false;
+  const root = realPath(project);
+  return files.every(({ text }) => {
+    const path = resolve(project, text);
+    try {
+      const stat = lstatSync(path);
+      if (!stat.isFile() && !stat.isSymbolicLink()) return false;
+    } catch {
+      return false;
+    }
+    const there = join(realPath(dirname(path)), basename(path));
+    if (!there.startsWith(root + sep)) return false;
+    const inside = relative(root, there);
+    if (inside.split(sep).some((part) => part.toLowerCase() === ".git")) return false;
+    try {
+      const listed = execFileSync("git", ["--literal-pathspecs", "ls-files", "--others", "--exclude-standard", "-z", "--", inside], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+      return listed === `${inside.split(sep).join("/")}\0`;
+    } catch {
+      return false;
+    }
+  });
 }
 
 /** A path as the file system has it, so `/var/…` and `/private/var/…` compare alike: the real path of the nearest folder there is, and the rest. */

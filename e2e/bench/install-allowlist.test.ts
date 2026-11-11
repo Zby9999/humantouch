@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -230,4 +231,41 @@ test("fff's search tools (ticket 92) go ahead in the project under the install l
     assert.ok(blocked(call(tool, input)), `${tool} ${JSON.stringify(input)}`);
     assert.ok(blocked(call(tool, input, none)), `${tool} ${JSON.stringify(input)}, applying list`);
   }
+});
+
+test("under the install list, pi may remove a file it made, one git does not track (ticket 151), and nothing else", () => {
+  // A project git tracks, as the starts are: src/App.tsx tracked; ht-check.mjs and the rest the Agent's own, new.
+  const repo = join(scratch, "repo");
+  mkdirSync(join(repo, "src"), { recursive: true });
+  mkdirSync(join(repo, "tmp"), { recursive: true });
+  writeFileSync(join(repo, "src", "App.tsx"), "export {};\n");
+  writeFileSync(join(repo, ".gitignore"), "ignored.mjs\n");
+  execFileSync("git", ["init", "-q"], { cwd: repo });
+  execFileSync("git", ["add", "."], { cwd: repo });
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "start"], { cwd: repo });
+  for (const file of ["ht-check.mjs", "tmp/x.mjs", "src/new.mjs", "ignored.mjs"]) writeFileSync(join(repo, file), "// the Agent's\n");
+  writeFileSync(join(scratch, "x"), "outside\n");
+  const inRepo = (command: string, file = listFile) => {
+    const handlers: Record<string, (event: any, ctx?: any) => any> = {};
+    benchExtension({ on: (event, handler) => void (handlers[event] = handler) }, file);
+    return handlers.tool_call({ type: "tool_call", toolName: "bash", toolCallId: "x", input: { command } }, { cwd: repo });
+  };
+  for (const command of ["rm ht-check.mjs", "rm -f ht-check.mjs", "rm src/new.mjs tmp/x.mjs", `rm ${join(repo, "ht-check.mjs")}`, "rm -f ht-check.mjs && git status"]) {
+    assert.equal(inRepo(command), undefined, command);
+  }
+  const turnedAway = [
+    // The ticket's.
+    ...["rm -rf src", "rm src/App.tsx", "rm ../x", "rm *.mjs", "rm -r tmp"],
+    // A folder, other options, patterns and braces, what git ignores or keeps, what is not there, a cd first.
+    ...["rm tmp", "rm -rf ht-check.mjs", "rm -i ht-check.mjs", "rm -- -f", "rm ht-check.m?s", "rm {ht-check,x}.mjs", "rm ignored.mjs", "rm .git/HEAD", "rm nothing-here.mjs", "rm", "cd src && rm new.mjs", "rm ht-check.mjs src/App.tsx", "rm -f ht-check.mjs &"],
+  ];
+  for (const command of turnedAway) {
+    const result = inRepo(command);
+    assert.ok(blocked(result), command);
+    assert.match(result.reason, /rm of a file in the project that git does not track/, command);
+  }
+  // The applying bench's list, as before: no rm, and its reason names none.
+  const none = join(scratch, "nothing-here.json");
+  assert.ok(blocked(inRepo("rm ht-check.mjs", none)));
+  assert.doesNotMatch(inRepo("rm ht-check.mjs", none).reason, /git does not track/);
 });
