@@ -106,6 +106,14 @@
 - **`PROJECT_FILES`**（可选 8）：`e2e/playwright.config.ts` 里明写了 `page-since-round`。
 - ADR 0018（main 26d43bf）按实现改了文字：指纹存在 `page.json`，带着代码的 git tree；先看代码、再看指纹；「只看页面指纹」列进否决的做法；后果里写了哪些东西不算、文件坏了怎么办。文件名和编号没动。
 
+**评审修改后的测试**（合并 main 7e48398 之后，轻量规则，不排锁，端口 6700–6770）
+
+- `pnpm typecheck` 通过；`pnpm test` 1340 passed、1 skipped（58 个文件）。新增单测：`page-print.browser.test.ts` 3 条（数字串和 AM/PM、类名 hash、shadow root 的 adopted 样式表），`page-service.test.ts` 2 条（`page.json` 坏了三种写法；代码 tree：没有 git 是 null，存了是 true，改文件是 false，改回去、重启服务又是 true）。
+- e2e：page 项目 `edit-mode` + `toggle-first` + `install` 26/26；project files 项目（`--no-deps`）`page-since-round` + `round` + `autosave` + `code-changes` + `applying-bench` 105 passed、1 skipped。合并 main 之前同样两组也跑过一次：26/26，101 passed、1 skipped。
+- perf（`flex.perf.ts` headless，`HT_PERF_PORT=6740`，20/20，只作参考）：进入编辑模式所有进入中位数 122.8ms（第一次 136.1，再次 107.8）；回到同一张画布：保存的一轮 120.3 / 124.5ms，留下改动的一轮 120.6 / 131.0ms，每次 1 个 long task，最长 113ms。
+- bench `--dry --claim-out`（`HT_BENCH_PORT=6720`）：分支 35/35，main 7e48398 35/35，claim-out 逐字相同。
+- 第一次跑 e2e 时过滤写错，连带跑了别的 spec，又用的是合并 main 之前构建的 dist，dark-mode、typing、variables、next、shell 有 21 条失败。这些都是 main 新功能的测试，重新构建后没有再跑它们；它们不在 141 的范围里。
+
 **代定**（请设计师确认）
 
 1. 提示的英文：「The page changed after this round began. The canvas still shows it as it was then: to see the new code, have the Agent apply your changes, or discard them.」文字折行显示，停 8 秒，带 ticket 78 的「Update canvas」按钮（确认后放弃改动、重新冻结）。
@@ -131,6 +139,7 @@
 7. 代码之外的东西也会让 git tree 变：仓库里任何没被忽略的文件变了（不只是这个项目的源码），都算代码变了，于是回到比指纹。这只会让「先看代码」少挡一些，不会漏报。
 8. 代码变了、而页面又按时间画东西（几秒后才出现的元素、按日期切换的内容）：指纹会把它算成结构变了，出提示。数字和类名 hash 已经去掉，剩下的就是这类。Turbopack 的 CSS Modules / next/font 类名格式没有核对过，网站（Next 16，Turbopack）上手改了 CSS Module 时，可能被算成结构变了。
 9. `restyle()` 按当前窗口高度判断高度类的媒体查询（`min-height` 之类），而 `vh` 按存下来的窗口高度换算。冻结之后窗口高度变了，两者可能对不上。没改，只记下。
+10. 页面关闭时（ticket 160 的 pagehide）存画布走 keepalive，指纹的 `PUT /page` 没有走：样式换进来后半秒内关掉页面，新指纹可能没存上，下次进入会再换一次样式（结果一样，只是多存一次）。
 5. 新的 `@font-face` 要在画布里加载。情况 2 那一次进入最多多等 500ms（`settle` 的上限）。
 
 **ADR**：已经有了：ADR 0018（main 26d43bf），本分支按实现改了文字，见上面「评审后的修改」。下面是当初的草稿，留作记录。
