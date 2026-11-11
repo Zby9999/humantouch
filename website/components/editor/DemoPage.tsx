@@ -104,7 +104,7 @@ export function DemoPage({ view, width, onPick, onHover, styles, hug = false }: 
                 </>,
                 "h1",
               )}
-              {layer({ key: "lede" }, [P, HE], { fontSize: at(20, 18, 16), lineHeight: 1.5, color: color("lede"), maxWidth: at(520, 460, 340) }, "Acme makes tools for the slow parts of work: notes, drafts and the quiet hours between.", "p")}
+              {layer({ key: "lede" }, [P, HE], { fontSize: styles?.lede?.fontSize === undefined ? at(20, 18, 16) : Number(styles.lede.fontSize), lineHeight: 1.5, color: color("lede"), maxWidth: at(520, 460, 340) }, "Acme makes tools for the slow parts of work: notes, drafts and the quiet hours between.", "p")}
               {layer(
                 B,
                 [P, HE],
