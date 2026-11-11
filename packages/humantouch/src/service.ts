@@ -15,6 +15,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import type { PutBack } from "./client/changeset";
 import { CLAIM_PATH, CODE_QUIET_MS, OTHER_USAGES_PATH } from "./client/code-changes";
+import { PAGE_PATH, type PagePrint } from "./client/page-print";
 import { readProjectBreakpoints } from "./project-breakpoints";
 import { snippetAt } from "./source-snippet";
 import {
@@ -148,7 +149,8 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
         // Claimed: with what was noted of the other usages, for a page opened or reloaded since to go by (ticket 82).
         const state = await readState(files);
         const otherUsages = state && (await readOtherUsages(files, state));
-        return send(res, 200, JSON.stringify({ canvas, changeSet: JSON.parse(changeSet), ...(otherUsages && { otherUsages }) } satisfies SavedRound));
+        const page = await readIfThere(files.page);
+        return send(res, 200, JSON.stringify({ canvas, changeSet: JSON.parse(changeSet), ...(otherUsages && { otherUsages }), ...(page && { page: JSON.parse(page) as PagePrint }) } satisfies SavedRound));
       }
       case `PUT ${ROUND_PATH}`: {
         // The Agent is applying the ChangeSet: it stays as claimed.
@@ -171,6 +173,15 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
         await updateChecks((checks) => void (checks.results = {}));
         // The code as it is now, unless it is at rest as read already: a round the page claims may go back to it.
         void takeRested().catch((error) => console.error("Human Touch:", error));
+        return send(res, 204);
+      }
+      case `PUT ${PAGE_PATH}`: {
+        // The page a canvas reflects (ticket 141): kept for the round being edited, or about to be, as edit mode put the canvas up.
+        if ((await status()).status === "claimed") return send(res, 409);
+        const print = JSON.parse(body || "null") as PagePrint | null;
+        if (!print || typeof print.path !== "string" || typeof print.structure !== "string" || typeof print.styles !== "string") return send(res, 400);
+        await mkdir(files.dir, { recursive: true });
+        await writeAtomically(files.page, `${JSON.stringify({ path: print.path, structure: print.structure, styles: print.styles })}\n`);
         return send(res, 204);
       }
       case `DELETE ${ROUND_PATH}`:
@@ -273,7 +284,7 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
       case `POST ${UNLOCK_PATH}`:
         return send(res, (await archiveRound(files, "unlocked")) ? 204 : 409);
       default:
-        return send(res, [ROUND_PATH, EVENTS_PATH, STATUS_PATH, CLAIM_PATH, OTHER_USAGES_PATH, UNLOCK_PATH, CHECKS_PATH, VARIABLES_PATH, BREAKPOINTS_PATH, OFF_CANVAS_PATH].includes(path) ? 405 : 404);
+        return send(res, [ROUND_PATH, PAGE_PATH, EVENTS_PATH, STATUS_PATH, CLAIM_PATH, OTHER_USAGES_PATH, UNLOCK_PATH, CHECKS_PATH, VARIABLES_PATH, BREAKPOINTS_PATH, OFF_CANVAS_PATH].includes(path) ? 405 : 404);
     }
   };
 

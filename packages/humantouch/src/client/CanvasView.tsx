@@ -38,8 +38,11 @@ type Modifiers = Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "shiftKey" | "altKe
 interface Props {
   /** A saved canvas to put back; null to freeze the page. */
   restoreFrom: string | null;
-  /** Done on the saved canvas put back, before it is laid out: what was applied in a round before taken in (ticket 68). */
-  takeIn?(doc: Document): void;
+  /**
+   * Done on the saved canvas put back, before it is laid out, told the height of the window it was frozen in: what was
+   * applied in a round before taken in (ticket 68), the page's styles as they are now (ticket 141).
+   */
+  takeIn?(doc: Document, windowHeight: number): void;
   /** The page frozen afresh in place of a canvas (ticket 78): the camera to start at, where it was, with no mode switch to show. */
   startAt?: Camera | null;
   /** Kept up to date with where the camera is, once there is a canvas: for a canvas frozen afresh in its place to start there. */

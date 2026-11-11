@@ -1,5 +1,6 @@
 /** How the editor layer and the local service talk. Shared by both sides. */
 import type { Change, Place, SavedChangeSet, Target } from "./client/changeset";
+import type { PagePrint } from "./client/page-print";
 import type { Snippet } from "./source-snippet";
 import type { StyleSource } from "./client/style-source";
 import type { UsageLevel } from "./client/usage-chain";
@@ -185,6 +186,15 @@ export interface SavedRound {
    * `PUT /round`.
    */
   otherUsages?: OtherUsagesKept;
+  /**
+   * As `GET /round` answers: the page the canvas reflects, printed (ticket
+   * 141): as the canvas was frozen, or its styles last taken in, or as the
+   * page was once a round before had ended with changes not applied. None
+   * when not known: a round carried over since, the Agent's code in, or one
+   * saved by an earlier Human Touch. Kept apart, by `PUT /page`, so never
+   * saved with the round: the service ignores it in `PUT /round`.
+   */
+  page?: PagePrint;
 }
 
 /**

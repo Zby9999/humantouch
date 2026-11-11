@@ -29,6 +29,8 @@ export interface HumanTouchFolder {
   offCanvas: string;
   /** What a page noted of the other usages of the claimed round's changes for one usage alone (ticket 82): the claimed round's, gone as it ends. */
   otherUsages: string;
+  /** The page the canvas reflects, printed (ticket 141): gone as a round ends, the code then the Agent's. */
+  page: string;
 }
 
 /** What `checks.json` holds. */
@@ -91,7 +93,7 @@ export async function roundStatus(folder: HumanTouchFolder): Promise<RoundStatus
 
 export function humanTouchFolder(root: string): HumanTouchFolder {
   const dir = join(root, HUMAN_TOUCH_DIR);
-  return { dir, canvas: join(dir, "canvas.html"), changeSet: join(dir, "changeset.json"), state: join(dir, "state.json"), history: join(dir, "history"), checks: join(dir, "checks.json"), offCanvas: join(dir, "off-canvas.json"), otherUsages: join(dir, "other-usages.json") };
+  return { dir, canvas: join(dir, "canvas.html"), changeSet: join(dir, "changeset.json"), state: join(dir, "state.json"), history: join(dir, "history"), checks: join(dir, "checks.json"), offCanvas: join(dir, "off-canvas.json"), otherUsages: join(dir, "other-usages.json"), page: join(dir, "page.json") };
 }
 
 /** The project a command runs for: the nearest folder up from `cwd` with a `.humantouch/`, else `cwd` itself. */
@@ -180,6 +182,8 @@ export async function archiveRound(folder: HumanTouchFolder, ended: RoundResult[
   }
   // What was noted of the other usages is this round's alone (ticket 82).
   await rm(folder.otherUsages, { force: true });
+  // The page the canvas reflects is the page with the Agent's code in now: printed afresh as edit mode comes back to it (ticket 141).
+  await rm(folder.page, { force: true });
   await rm(folder.state, { force: true });
   return result;
 }

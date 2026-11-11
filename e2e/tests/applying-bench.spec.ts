@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { STALL_MS } from "../../packages/humantouch/src/client/agent-stall";
-import { canvasUpdatedNotice, canvasUpdatedNoticesShown, pageChangedNotice, pageChangedNoticesShown, recordNotices, stalledNotice, stalledNoticesShown, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
+import { canvasUpdatedNotice, canvasUpdatedNoticesShown, pageChangedNotice, pageChangedNoticesShown, pageSinceNoticesShown, recordNotices, stalledNotice, stalledNoticesShown, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
 import { canvasInPlace, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
 import { clearHumanTouchFolder, EXAMPLE, forTheLoopAlone, readHumanTouchFile, HUMAN_TOUCH_FOLDER, npxHumanTouch, servesAsWritten } from "./project-files";
 
@@ -840,6 +840,7 @@ test("playbook: the Agent stops halfway; the designer ends the round, and edits 
     leftWhenEndedAgain: leftAgain,
     frozenAfreshOnceDiscarded: refrozen,
     unclaimedNoticesShown: (await unclaimedNoticesShown(page)).length,
+    pageSinceNoticesShown: (await pageSinceNoticesShown(page)).length,
   });
   // Ticket 68: every change not applied is left, in its place on the same canvas, numbered from 1; none applied.
   expect(kept / unapplied.length).toBe(1);
@@ -857,6 +858,8 @@ test("playbook: the Agent stops halfway; the designer ends the round, and edits 
   expect(leftAgain).toEqual([1, 2, 3, 4, 5]);
   expect(refrozen).toBe(true);
   expect((await unclaimedNoticesShown(page)).length).toBe(0);
+  // Ticket 141: the Agent's code, applying the round, is no change to the page the canvas reflects.
+  expect((await pageSinceNoticesShown(page)).length).toBe(0);
 });
 
 test("playbook: the Agent finishes with changes not applied (⚠️); they are left for the next round on the same canvas, and once all are applied, edit mode freezes the page afresh (ticket 68)", async ({ page }) => {
@@ -897,6 +900,7 @@ test("playbook: the Agent finishes with changes not applied (⚠️); they are l
     leftOnceAllApplied: leftAtLast?.changes.length ?? 0,
     frozenAfreshOnceAllApplied: refrozen,
     lastIsTheNextRound: lastRound.includes("## 1. Corner radius") && !lastRound.includes("## 3."),
+    pageSinceNoticesShown: (await pageSinceNoticesShown(page)).length,
   });
   expect(finished).toBe("Round finished: 1 of 3 changes applied. The page does not show: 2, 3.");
   expect(left.map((change) => [change.id, change.property])).toEqual([
@@ -906,6 +910,8 @@ test("playbook: the Agent finishes with changes not applied (⚠️); they are l
   expect(same.differing).toBe(0);
   expect(leftAtLast).toBeNull();
   expect(refrozen).toBe(true);
+  // Ticket 141: the Agent's code, applying the round, is no change to the page the canvas reflects.
+  expect((await pageSinceNoticesShown(page)).length).toBe(0);
 });
 
 /** The padding top of the canvas's Cards, in page order: the three of the loop, then the one of its own. */

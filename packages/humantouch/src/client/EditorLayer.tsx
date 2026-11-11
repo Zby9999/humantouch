@@ -12,6 +12,7 @@ import { Icon } from "./icons";
 import { placedOnCanvas, type RoundOnCanvas } from "./moves";
 import { showsAnyHere, watchPage, type PageChecks } from "./page-checks";
 import { keptOf, notedFor, notedFrom, noteRound, type OtherUsagesNoted } from "./other-usages";
+import type { PagePrint, PageSince } from "./page-print";
 import { PageToast, type PageToastMessage } from "./PageToast";
 import { createPartsReader } from "./range-parts";
 import { revertSaved, withPartsRead } from "./saved-round";
@@ -89,11 +90,22 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   const [status, setStatus] = useState<RoundStatus | undefined>(store ? undefined : { status: "editing" });
   const claimed = status?.status === "claimed" ? status : null;
 
+  /**
+   * The page the round's canvas reflects, printed (ticket 141): as loaded with the round, kept as edit mode puts the
+   * canvas up. Null when not known: a round carried over, the Agent's code in since; the page as it is next taken.
+   */
+  const reflected = useRef<PagePrint | null>(saved?.page ?? null);
   const load = () =>
-    store?.load().then(setRound, (error: unknown) => {
-      console.warn(error);
-      setRound(null);
-    });
+    store?.load().then(
+      (round) => {
+        reflected.current = round?.page ?? null;
+        setRound(round);
+      },
+      (error: unknown) => {
+        console.warn(error);
+        setRound(null);
+      },
+    );
   useEffect(() => {
     if (saved === undefined) void load();
     store?.breakpoints().then(setBreakpoints, (error: unknown) => {
@@ -481,6 +493,20 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       stop();
     };
   }, [unclaimed]);
+  /**
+   * The canvas is up (ticket 141): the page it reflects from now on kept, when it is another; the page changed since
+   * the page it reflects, its structure too, told, the canvas as it was, and not again as the code changes till it is
+   * frozen afresh (ticket 78).
+   */
+  const keepPage = ({ since, keep }: { since: PageSince; keep: PagePrint | null }) => {
+    if (keep) {
+      reflected.current = keep;
+      store?.savePage(keep).catch((error: unknown) => console.warn(error));
+    }
+    // Its styles taken in, the canvas is up to date with the page, as it is frozen afresh.
+    stale.current = since === "structure";
+    if (stale.current) tell("since");
+  };
   const updateCanvas = () => {
     tell(null);
     discardRound();
@@ -530,6 +556,8 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
           onChanges={setLive}
           control={control}
           notice={editing && <PageToast message={pageToast} changes={listed.length} onUpdate={updateCanvas} />}
+          reflects={reflected.current}
+          onPage={keepPage}
           startAt={startAt}
           cameraNow={cameraNow}
           animate={animate}
