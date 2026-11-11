@@ -18,8 +18,7 @@ interface PickerRow {
   cells: (Resolved | undefined)[];
   columns: number;
   /** A ramp's line with a second line (ticket 143): the ramp's name, for its fold, and that line's colors. */
-  name?: string;
-  extra?: (Resolved | undefined)[][];
+  second?: { name: string; lines: (Resolved | undefined)[][] };
 }
 
 /**
@@ -31,7 +30,7 @@ interface PickerRow {
 function pickerRows(entries: Resolved[]): PickerRow[] {
   const { scales, named } = palette(entries);
   const colors = named.flat();
-  const rows: PickerRow[] = scales.flatMap((scale) => paletteLines(scale).map(([name, cells, extra]) => ({ cells, columns: cells.length, ...(extra && { name, extra }) })));
+  const rows: PickerRow[] = scales.flatMap((scale) => paletteLines(scale).map(([name, cells, extra]) => ({ cells, columns: cells.length, ...(extra && { second: { name, lines: extra } }) })));
   for (let i = 0; i < colors.length; i += NAMED_ROW) rows.push({ cells: colors.slice(i, i + NAMED_ROW), columns: NAMED_ROW });
   return rows;
 }
@@ -266,7 +265,7 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
  * opened by itself when the Variable picked is on it.
  */
 function PickerPalette({ rows, bound, point, unpoint, onPick }: { rows: PickerRow[]; bound: Variable | null; point(entry: Resolved, swatch: HTMLElement): void; unpoint(): void; onPick(entry: Resolved): void }) {
-  const [open, toggle] = useSecondLines(rows.flatMap(({ name, extra }) => (name && extra?.flat().some((entry) => entry && sameVariable(bound, entry.variable)) ? [name] : [])));
+  const [open, toggle] = useSecondLines(rows.flatMap(({ second }) => (second?.lines.flat().some((entry) => entry && sameVariable(bound, entry.variable)) ? [second.name] : [])));
   const swatch = (entry: Resolved, style?: Record<string, string>) => (
     <button
       key={entry.variable.name}
@@ -285,15 +284,15 @@ function PickerPalette({ rows, bound, point, unpoint, onPick }: { rows: PickerRo
   );
   return (
     <div class="ht-variants-palette">
-      {rows.map(({ cells, columns, name, extra }, r) => (
+      {rows.map(({ cells, columns, second }, r) => (
         <Fragment key={r}>
           <div class="ht-variants-ramp is-bare" style={{ "--ht-steps": `${columns}` }}>
-            {name && extra && <SecondLineButton name={name} open={open.has(name)} bare onToggle={() => toggle(name)} />}
+            {second && <SecondLineButton name={second.name} open={open.has(second.name)} bare onToggle={() => toggle(second.name)} />}
             {cells.map((entry, i) => (entry ? swatch(entry) : <span key={`empty ${i}`} class="ht-variants-empty" />))}
           </div>
-          {name && extra && (
-            <SecondLine open={open.has(name)}>
-              {extra.map((line, l) => (
+          {second && (
+            <SecondLine open={open.has(second.name)}>
+              {second.lines.map((line, l) => (
                 <div key={l} class="ht-variants-ramp is-bare" style={{ "--ht-steps": `${columns}` }}>
                   {secondLineSwatches(line, 1, (entry, column, order) => swatch(entry, { gridColumn: `${column}`, "--ht-order": `${order}` }))}
                 </div>

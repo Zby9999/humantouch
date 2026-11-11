@@ -1863,7 +1863,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 }
 .ht-variable-search::placeholder { color: var(--ht-text-muted); font-weight: 500; }
 /* The picker's colors: the palette of the Variables tab, without its ramps' names. */
-.ht-variants-ramp.is-bare { grid-template-columns: repeat(var(--ht-steps, 11), minmax(0, 1fr)); }
+.ht-variants-ramp.is-bare { position: relative; grid-template-columns: repeat(var(--ht-steps, 11), minmax(0, 1fr)); }
 .ht-variants-swatch[aria-selected="true"] { box-shadow: inset 0 0 0 1px #fff, 0 0 0 2px var(--ht-accent); }
 .ht-variable-list { overflow: auto; min-height: 0; margin: 0 -12px; padding: 0 12px; }
 .ht-variable-list .ht-subtitle { margin: 8px 0 4px; }
@@ -1982,7 +1982,6 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 .ht-variants-more-button[aria-expanded="true"] > .ht-icon { rotate: 0deg; }
 .ht-variants-more-button:hover > .ht-icon { color: var(--ht-text); }
 .ht-variants-more-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ht-variants-ramp.is-bare { position: relative; }
 .ht-variants-more-button.is-bare { position: absolute; top: 0; bottom: 0; left: -12px; width: 12px; height: auto; }
 .ht-variants-more-button.is-bare::before { inset: 0 1px; }
 .ht-variants-more-button.is-bare > .ht-icon { left: 1px; top: calc(50% - 5px); width: 10px; height: 10px; }
@@ -1996,8 +1995,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 .ht-variants-more .ht-variants-swatch { opacity: 0; translate: 0 -3px; transition: opacity ${SECOND_LINE_FADE_MS}ms ${EASE_OUT}, translate ${SECOND_LINE_MS}ms ${EASE_OUT}; }
 .ht-variants-more.is-open .ht-variants-swatch { opacity: 1; translate: none; transition-delay: calc(var(--ht-order, 0) * ${SECOND_LINE_STAGGER_MS}ms); }
 @media (prefers-reduced-motion: reduce) {
-  .ht-variants-more, .ht-variants-more .ht-variants-swatch, .ht-variants-more-button > .ht-icon { transition-duration: 0ms; transition-delay: 0ms; }
-  .ht-variants-more-lines { transition: none; }
+  .ht-variants-more, .ht-variants-more-lines, .ht-variants-more .ht-variants-swatch, .ht-variants-more.is-open .ht-variants-swatch, .ht-variants-more-button > .ht-icon { transition: none; }
   .ht-variants-more .ht-variants-swatch { translate: none; }
 }
 .ht-variants-row { display: flex; align-items: center; gap: 8px; box-sizing: border-box; min-height: 24px; padding: 0 8px; border-radius: 8px; }
