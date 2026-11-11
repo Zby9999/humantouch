@@ -4,3 +4,4 @@ next-env.d.ts
 .humantouch/
 components/editor/editor-css.generated.ts
 .vercel
+/out
