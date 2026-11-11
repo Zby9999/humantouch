@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { CARD_GAP, CARD_OFFSET, CARD_WIDTH, LABEL_ROOM, lineOf, pathOf, placeCards, type Box, type CardToPlace } from "../src/client/brief-cards";
+import { CARD_GAP, CARD_OFFSET, CARD_WIDTH, FULL_SIZE_FROM, LABEL_ROOM, lineOf, pathOf, placeCards, type Box, type CardToPlace } from "../src/client/brief-cards";
+import { VIEW_GAP_WITH_BRIEFS } from "../src/client/view-layout";
 
 const desktop: Box = { x: 0, y: 0, width: 1440, height: 3000 };
 const tablet: Box = { x: 1520, y: 0, width: 768, height: 3600 };
@@ -158,5 +159,104 @@ describe("the cards of the briefs, beside their views", () => {
   test("a line's corners are rounded, 8px at most and never more than half a leg", () => {
     expect(pathOf([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }])).toBe("M0,0 L92,0 Q100,0 100,8 L100,100");
     expect(pathOf([{ x: 0, y: 0 }, { x: 6, y: 0 }, { x: 6, y: 100 }])).toBe("M0,0 L3,0 Q6,0 6,3 L6,100");
+  });
+});
+
+describe("the cards of the briefs at any zoom (ticket 134)", () => {
+  // With briefs, the gaps between the views are wide: each view has its cards in the gap at its right.
+  const gap = VIEW_GAP_WITH_BRIEFS;
+  const wDesktop: Box = { x: 0, y: 0, width: 1440, height: 3000 };
+  const wTablet: Box = { x: 1440 + gap, y: 0, width: 768, height: 6000 };
+  const wPhone: Box = { x: 1440 + gap + 768 + gap, y: 0, width: 390, height: 9000 };
+  const wide = [wDesktop, wTablet, wPhone];
+  const both = { left: true, right: true };
+  // A layer in the right half of the tablet view.
+  const onTablet = (key: string, y: number, height = 120, x = wTablet.x + 400): CardToPlace => ({ key, host: wTablet, free: both, layer: { x, y, width: 300, height: 80 }, height });
+
+  test("a view between two others has its cards beside it, on the side nearer the layer, level with it, not in a row above it (designer, 2026-11-11)", () => {
+    const [right, left] = placeCards([onTablet("r", 4000), onTablet("l", 4000, 120, wTablet.x + 20)], wide);
+    expect(right.side).toBe("right");
+    expect(right.x).toBe(wTablet.x + wTablet.width + CARD_OFFSET);
+    expect(right.y + right.height / 2).toBe(4040);
+    expect(left.side).toBe("left");
+    expect(left.x + left.width).toBe(wTablet.x - CARD_OFFSET);
+    expect(left.y + left.height / 2).toBe(4040);
+    for (const p of [right, left]) for (const view of wide) expect(overlaps(p, view)).toBe(false);
+  });
+
+  test("in a gap with cards of the views on both sides, they take turns down it, in the order of their layers, none over another (designer, 2026-11-11)", () => {
+    for (const zoom of [0.3, FULL_SIZE_FROM, 1]) {
+      const cards: CardToPlace[] = [
+        { key: "d1", host: wDesktop, free: both, layer: { x: 1300, y: 1000, width: 100, height: 40 }, height: 60 },
+        onTablet("t1", 1005, 60, wTablet.x + 20),
+        { key: "d2", host: wDesktop, free: both, layer: { x: 1300, y: 1030, width: 100, height: 40 }, height: 60 },
+        onTablet("t2", 1040, 60, wTablet.x + 20),
+      ];
+      const placed = placeCards(cards, wide, null, { zoom });
+      expect(placed.map((p) => p.side)).toEqual(["right", "left", "right", "left"]);
+      const down = [...placed].sort((a, b) => a.y - b.y).map((p) => p.key);
+      expect(down).toEqual(["d1", "t1", "d2", "t2"]);
+      for (const a of placed) for (const b of placed) if (a !== b) expect(overlaps(a, b)).toBe(false);
+      for (const p of placed) for (const view of wide) expect(overlaps(p, view)).toBe(false);
+    }
+  });
+
+  test("from FULL_SIZE_FROM up, a card is as large on the screen at any zoom: 220 screen px wide, as far from its view, and it fits in the gap", () => {
+    for (const zoom of [FULL_SIZE_FROM, 0.75, 1, 2]) {
+      const [placed] = placeCards([onTablet("t", 4000)], wide, null, { zoom });
+      expect(placed.scale).toBe(1);
+      expect(placed.width * zoom).toBeCloseTo(CARD_WIDTH);
+      expect(placed.height * zoom).toBeCloseTo(120);
+      expect((placed.x - wTablet.x - wTablet.width) * zoom).toBeCloseTo(CARD_OFFSET);
+      expect(overlaps(placed, wPhone)).toBe(false);
+    }
+  });
+
+  test("below FULL_SIZE_FROM, a card shrinks with the canvas, as large in canvas px as at FULL_SIZE_FROM, still in the gap (designer, 2026-11-11)", () => {
+    const [at] = placeCards([onTablet("t", 4000)], wide, null, { zoom: FULL_SIZE_FROM });
+    for (const zoom of [0.4, 0.25, 0.1]) {
+      const [placed] = placeCards([onTablet("t", 4000)], wide, null, { zoom });
+      expect(placed.scale).toBeCloseTo(zoom / FULL_SIZE_FROM);
+      expect(placed).toMatchObject({ x: at.x, y: at.y, width: at.width, height: at.height });
+      expect(overlaps(placed, wPhone)).toBe(false);
+    }
+  });
+
+  test("opened below FULL_SIZE_FROM, a card is full size, from its edge nearest its view, and the cards below it move down to make room", () => {
+    const zoom = 0.25;
+    const [was, below] = placeCards([onTablet("a", 4000, 36), onTablet("b", 4060, 36)], wide, null, { zoom });
+    const [open, pushed] = placeCards([{ ...onTablet("a", 4000, 96), restHeight: 36 }, onTablet("b", 4060, 36)], wide, null, { zoom, open: "a" });
+    expect(open).toMatchObject({ x: was.x, scale: 1 });
+    // Its middle as it was set where the closed card's was: its line comes to the middle of its side.
+    expect(open.y + (36 / zoom) / 2).toBeCloseTo(was.line!.from.y);
+    expect(open.width).toBeCloseTo(CARD_WIDTH / zoom);
+    expect(open.height).toBeCloseTo(96 / zoom);
+    expect(open.line).toEqual(was.line);
+    expect(pushed.y).toBeGreaterThanOrEqual(open.y + open.height);
+    expect(pushed.y).toBeGreaterThan(below.y);
+    // Left of the desktop view, it grows away from the view.
+    const left: CardToPlace = { key: "d", host: wDesktop, free: { left: true, right: true }, layer: { x: 100, y: 500, width: 100, height: 40 }, height: 60 };
+    const [closed] = placeCards([left], wide, null, { zoom });
+    const [opened] = placeCards([left], wide, null, { zoom, open: "d" });
+    expect(opened.x + opened.width).toBeCloseTo(closed.x + closed.width);
+  });
+
+  test("a new card, written beside its layer, is full size at any zoom", () => {
+    const zoom = 0.25;
+    const [placed] = placeCards([onTablet("new", 4000, 60)], wide, "new", { zoom });
+    expect(placed.scale).toBe(1);
+    expect(placed.width).toBeCloseTo(CARD_WIDTH / zoom);
+  });
+
+  test("dozens of cards at a zoom out lay out, none over another or a view", () => {
+    for (const zoom of [0.15, 0.3, 0.6, 1]) {
+      const cards = Array.from({ length: 45 }, (_, i): CardToPlace => {
+        const host = wide[i % 3];
+        return { key: String(i), host, free: both, layer: { x: host.x + (i % 2 ? 10 : host.width - 50), y: (i * 137) % 2800, width: 40, height: 40 }, height: 60 + (i % 4) * 20 };
+      });
+      const placed = placeCards(cards, wide, null, { zoom });
+      for (const p of placed) for (const view of wide) expect(overlaps(p, view)).toBe(false);
+      for (const a of placed) for (const b of placed) if (a !== b) expect(overlaps(a, b)).toBe(false);
+    }
   });
 });

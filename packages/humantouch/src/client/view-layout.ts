@@ -9,6 +9,11 @@ import { viewName } from "./ViewLabels";
 
 /** Between one view and the next, in canvas px. */
 const VIEW_GAP = 80;
+/**
+ * Between one view and the next once the page has a brief, in canvas px (ticket 134): wide enough for each view's
+ * cards in the gap at its right, full size from `FULL_SIZE_FROM` up (`brief-cards.ts`) (designer, 2026-11-11).
+ */
+export const VIEW_GAP_WITH_BRIEFS = 600;
 /** A view's label sits this far above it, on screen. */
 export const LABEL_OFFSET = 26;
 
@@ -40,22 +45,22 @@ export function keyOf(placed: Placed): string {
 /**
  * Every view of the canvas, side by side on the stage: the desktop view, as
  * wide as the canvas, first; then one for each of `widths`, widest first,
- * `beside` holding those laid out so far, by width.
+ * `beside` holding those laid out so far, by width; `gap` between each.
  */
-export function layoutViews(canvasWidth: number, desktop: View, widths: number[], beside: Map<number, View>): Placed[] {
+export function layoutViews(canvasWidth: number, desktop: View, widths: number[], beside: Map<number, View>, gap = VIEW_GAP): Placed[] {
   const placed: Placed[] = [{ view: desktop, name: viewName(canvasWidth, true), desktop: true, x: 0, y: 0, width: canvasWidth, height: desktop.height }];
   let x = canvasWidth;
   for (const width of widths) {
     const view = beside.get(width) ?? null;
-    placed.push({ view, name: viewName(width, false), desktop: false, x: x + VIEW_GAP, y: 0, width, height: view?.height ?? 0 });
-    x += VIEW_GAP + width;
+    placed.push({ view, name: viewName(width, false), desktop: false, x: x + gap, y: 0, width, height: view?.height ?? 0 });
+    x += gap + width;
   }
   return placed;
 }
 
 /** How wide the views are side by side, in canvas px, the canvas `canvasWidth` px wide. */
-export function viewsWidth(canvasWidth: number, widths: number[]): number {
-  return canvasWidth + widths.reduce((sum, width) => sum + VIEW_GAP + width, 0);
+export function viewsWidth(canvasWidth: number, widths: number[], gap = VIEW_GAP): number {
+  return canvasWidth + widths.reduce((sum, width) => sum + gap + width, 0);
 }
 
 /** The layers off the canvas, where they are on the stage. */

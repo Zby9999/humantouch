@@ -310,7 +310,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   overscroll-behavior: none;
   display: grid;
   grid-template-columns: var(--ht-layers-width) minmax(0, 1fr) var(--ht-design-width);
-  /* The canvas's gray under the panels: as they move out with the frame on leaving, and in as it starts, the canvas shows where they were, not the page under the editor (designer, 2026-11-08). */
+  /* The canvas's gray under the panels: as they come in with the frame as edit mode starts, the canvas shows where they will be, not the page under the editor (designer, 2026-11-08). */
   background: var(--ht-canvas);
   font: 400 11px/16px ${EDITOR_FONT};
   color: var(--ht-text);
@@ -1514,10 +1514,12 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 }
 .ht-selection-tool:focus-visible { outline: 2px solid var(--ht-instance); outline-offset: 2px; }
 /*
- * The briefs (ticket 121): cards on the stage, beside the views, in canvas px, so they pan and zoom with the
- * canvas as notes on it do; a grey dashed line from each to its layer, across and down only, 1px at any zoom (designer, 2026-11-10).
+ * The briefs (ticket 121): cards beside the views, drawn on the screen where the stage has them, as large at any zoom
+ * from FULL_SIZE_FROM up as Figma's comments, shrinking with the canvas below it till opened (ticket 134, designer,
+ * 2026-11-11); a grey dashed line from each to its layer, across and down only, 1px at any zoom (designer, 2026-11-10).
  */
-.ht-brief-cards { position: absolute; top: 0; left: 0; transform-origin: 0 0; pointer-events: none; }
+.ht-brief-cards { position: absolute; top: 0; left: 0; pointer-events: none; }
+.ht-brief-stage { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 .ht-brief-lines { position: absolute; top: 0; left: 0; overflow: visible; }
 .ht-brief-lines path { fill: none; stroke: var(--ht-text-muted); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
 .ht-brief-lines circle { fill: var(--ht-text-muted); }
@@ -1529,6 +1531,9 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
  */
 .ht-brief-card {
   position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;

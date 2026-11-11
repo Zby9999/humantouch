@@ -1,0 +1,7 @@
+.next/
+next-env.d.ts
+*.tsbuildinfo
+.humantouch/
+components/editor/editor-css.generated.ts
+.vercel
+/out

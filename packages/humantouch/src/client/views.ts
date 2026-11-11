@@ -13,10 +13,10 @@
  * pointer pauses (ADR 0011).
  */
 import { changesEditStyles, isEditStyles, syncEditStyles } from "./canvas-style";
-import { copyCanvas, drawInto, fitHeight, type Canvas } from "./freezer";
+import { copyCanvas, drawInto, editableShadowRoots, fitHeight, type Canvas } from "./freezer";
 import { rangeOf, runAt, type Layer, type LayerTree } from "./layers";
 import { createLater } from "./later";
-import { elementsWithin, noteShadowRoots } from "./shadow-roots";
+import { elementsWithin, flatParent, hitAt, noteShadowRoots } from "./shadow-roots";
 
 /**
  * How long the steps of a value pause, ms, before the views beside the one
@@ -393,8 +393,8 @@ function viewOf(document: Document, width: number, { inView, onCanvas, typeIn }:
     layerAt(tree, x, y, skip) {
       let layer: Layer | null = null;
       const skipped = skip && !skip.text ? inView(skip.el) : null;
-      const hit = skipped ? (document.elementsFromPoint(x, y).find((e) => !skipped.contains(e)) ?? null) : document.elementFromPoint(x, y);
-      for (let e = hit; e && !layer; e = e.parentElement) {
+      // Into its open shadow roots too, where it may hold any (ticket 136).
+      for (let e = hitAt(document, x, y, skipped); e && !layer; e = flatParent(e)) {
         const node = onCanvas(e);
         layer = node && tree.layerOf(node as Element);
       }
@@ -468,6 +468,7 @@ function follow(canvas: Document, copy: Document, typed: () => void, lags: () =>
       if (way === down) observer.observe(shadow, EVERYTHING);
       pair(shadow, copied, way);
       noteShadowRoots(way.doc, true);
+      editableShadowRoots(made as Element);
       // The pixels of the stills in it, nested shadow roots too, which no copy of them takes.
       for (const still of elementsWithin(shadow)) {
         if (still.localName === "canvas") drawInto(way.to.get(still) as HTMLCanvasElement, still as HTMLCanvasElement);
