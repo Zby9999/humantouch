@@ -151,7 +151,7 @@ const INTRO_DELAY_MS = 1200;
 const PRESS_MS = 120;
 
 /**
- * The editor and the page under it. The hero opens on Acme as it is, the toggle at its corner; a moment later the
+ * The editor and the page under it. The hero opens on Acme as it is, the toggle at its top right corner; a moment later the
  * toggle is pressed and the page shrinks into its place on the canvas, the panels and the tools coming in with its
  * edges, as the product switches into edit mode. The Design panel's × switches back, the page growing over the window
  * again; the toggle, again into edit mode, as often as anyone likes.
@@ -193,14 +193,15 @@ function Editor({ scale, root }: { scale: number; root: ShadowRoot }) {
   );
 }
 
-/** The page as it is, at the window's width, the toggle at its corner: preview mode. */
+/** The page as it is, at the window's width, the toggle at its top right corner: preview mode. */
 function Preview({ toggle, onEnter }: { toggle: React.RefObject<HTMLButtonElement | null>; onEnter: () => void }) {
   return (
     <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
       <div style={{ pointerEvents: "none" }}>
         <DemoPage view="Desktop" width={W} onPick={() => {}} onHover={() => {}} />
       </div>
-      <div className="ht-dock" data-corner="bottom-right">
+      {/* At the top right, as the product can dock it: at the bottom it would be under the hero's blur, out of sight (designer, 2026-11-11). */}
+      <div className="ht-dock" data-corner="top-right">
         <div className="ht-toggle-wrap">
           <button ref={toggle} type="button" className="ht-toggle" aria-label="Human Touch: enter edit mode" onClick={onEnter}>
             <svg width="13.5" height="13.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.24" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
