@@ -10,7 +10,8 @@
  */
 import { createWorkingView, rangeOfEdit } from "./breakpoint-edits";
 import { contains, outside, widestFirst, within, writtenWith, type Breakpoint, type ProjectBreakpoints } from "./breakpoints";
-import { AS_STACK_ATTR, asShown, changesOn, declare, droppedStyle, elementsOf, keepOriginal, LAYER_ID_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
+import { aloneOf, lastAloneMark, loopInstanceOf } from "./alone";
+import { ALONE_ATTR, aloneKey, aloneOfKey, AS_STACK_ATTR, asShown, changesOn, declare, declareFor, droppedStyle, elementsOf, keepOriginal, LAYER_ID_ATTR, restoreFor, restoreStyle, WRAP_ATTR } from "./canvas-style";
 import { changeKey, type Bindings, type Change, type ChangeSet, type Picked } from "./changeset";
 import type { Binder, CodeReader, Editor, SetOptions } from "./edit-commands";
 import { targetOf } from "./layer-target";
@@ -69,7 +70,26 @@ export function createEditor(
     return id;
   };
 
-  const layerById = (id: string) => find(tree.root, (layer) => !layer.text && layer.el.getAttribute(LAYER_ID_ATTR) === id);
+  /** The marks of instances alone (ticket 114) handed out. */
+  let lastMark = lastAloneMark(doc);
+  /**
+   * What the layer's changes are recorded under: its id, or, in an instance
+   * that no longer follows the others (ticket 114), the key of its changes
+   * made there alone (`aloneKey`). Null before it has an id.
+   */
+  const keyOf = (layer: Layer) => {
+    const id = layer.el.getAttribute(LAYER_ID_ATTR);
+    const alone = id && aloneOf(tree, layer);
+    return alone ? aloneKey(id, alone.mark) : id;
+  };
+  const layerById = (id: string) => {
+    // Made on one instance alone: the layer in it.
+    if (aloneOfKey(id)) {
+      const [el] = elementsOf(doc, id);
+      return el ? tree.layerOf(el) : null;
+    }
+    return find(tree.root, (layer) => !layer.text && layer.el.getAttribute(LAYER_ID_ATTR) === id);
+  };
   /**
    * Whether `change` is the layer's. Those recorded on its element are, but,
    * on any layer but text, those to text styles and words: a Frame drawn
@@ -79,9 +99,11 @@ export function createEditor(
    */
   const ofLayer = (layer: Layer, change: Change) => {
     const text = ofText(change);
-    if (!layer.text && change.layer === layer.el.getAttribute(LAYER_ID_ATTR)) return layer.kind === "text" || !text;
+    // Made on its instance alone (ticket 114), as well as on every instance.
+    const its = (of: Layer) => change.layer === of.el.getAttribute(LAYER_ID_ATTR) || (!!change.alone && change.layer === keyOf(of));
+    if (!layer.text && its(layer)) return layer.kind === "text" || !text;
     const frame = layer.kind === "text" && layer.parent?.framesText ? layer.parent : null;
-    return !!frame && text && change.layer === frame.el.getAttribute(LAYER_ID_ATTR);
+    return !!frame && text && its(frame);
   };
   /** The layer's changes at a breakpoint that holds in the view worked in, to `property` or to any, in the order they were first made; none in the desktop view. */
   const changesHereOf = (layer: Layer, property?: string) => {
@@ -89,10 +111,12 @@ export function createEditor(
     if (!view) return [];
     return changes
       .list()
-      .filter((change) => change.kind === "style" && change.breakpoint && contains(change.breakpoint, view.width) && (!property || change.property === property) && ofLayer(layer, change));
+      .filter((change) => change.kind === "style" && change.breakpoint && contains(change.breakpoint, view.width) && (!property || change.property === property) && ofLayer(layer, change) && !!change.alone === !!aloneOf(tree, layer));
   };
   /** The elements of every instance of the layer with id `id`, as the layers are now; none when it is gone. */
   const instancesOf = (id: string) => {
+    // Made on one instance alone (ticket 114): its element there.
+    if (aloneOfKey(id)) return elementsOf(doc, id);
     const layer = layerById(id);
     return layer ? tree.acrossInstances(layer).map((instance) => instance.el) : [];
   };
@@ -124,7 +148,7 @@ export function createEditor(
         left = pieces.map((piece) => structuredClone(changes.find(id, change.property, piece)!));
       }
       const others = changesOn(id, changes.list());
-      restoreStyle(instancesOf(id), names, others, change.breakpoint!);
+      restoreFor(id, instancesOf(id), names, others, change.breakpoint!);
       for (const breakpoint of [change.breakpoint!, ...pieces]) referenceAt(change.within, breakpoint);
       // The margins its gap takes over (ticket 122): off in the pieces left, as the page has them in the range cut.
       for (const breakpoint of [change.breakpoint!, ...pieces]) if (change.marginsDropped) showDropped(change.marginsDropped, breakpoint, false);
@@ -134,7 +158,7 @@ export function createEditor(
       changes.restore(change);
       const others = changesOn(id, changes.list());
       const els = instancesOf(id);
-      for (const piece of pieces) restoreStyle(els, names, others, piece);
+      for (const piece of pieces) restoreFor(id, els, names, others, piece);
       for (const breakpoint of [...pieces, change.breakpoint!]) referenceAt(change.within, breakpoint);
       for (const breakpoint of [...pieces, change.breakpoint!]) if (change.marginsDropped) showDropped(change.marginsDropped, breakpoint, false);
     };
@@ -154,7 +178,7 @@ export function createEditor(
    */
   const editHere = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], continues: boolean, picked?: Picked) => {
     const view = working.beside();
-    const id = layer.el.getAttribute(LAYER_ID_ATTR);
+    const id = keyOf(layer);
     const range = working.breakpoint();
     if (!view || !id) return edit(layer, property, value, continues, range, undefined, picked);
     const { breakpoint, cut } = rangeOfEdit(changesAtBreakpoints(id, property), view.width, range, project);
@@ -260,12 +284,14 @@ export function createEditor(
     // A gap whose layers have uneven room between them goes from that room, each (ticket 122): no gap set is the same.
     const before = (property === "gap" ? asShown(el, () => gapBefore(el)) : readAsShown(el, property, colors)) as PropertyValues[P];
     // A change keeps the source it started from: the cascade is walked once, not on each step of a drag.
-    const known = layer.el.getAttribute(LAYER_ID_ATTR);
+    const known = keyOf(layer);
     const earlier = known ? changes.find(known, property, breakpoint) : null;
     const started = definition.reference ? earlier : null;
     // A layer made this round has no style of the page's to change.
     const sources = layer.made || earlier ? [] : sourcesFor(definition.setOn?.(el) ?? el, definition.setsOn?.(el) ?? definition.sets);
     const instances = tree.acrossInstances(layer);
+    // In an instance that no longer follows the others (ticket 114): changed on it alone.
+    const alone = aloneOf(tree, layer);
     // A plain flow shown as a vertical Stack takes a Stack's property as a real Stack, laid out as it is now.
     const flowing = () => !asShown(el, () => stackOf(el).flex);
     // At a breakpoint, it is made a real Stack there too: an edit at every width that made it one may be taken back.
@@ -294,15 +320,17 @@ export function createEditor(
             ? idOf(layer.parent, tree.acrossInstances(layer.parent))
             : undefined
         : undefined;
-    const els = instances.map((instance) => instance.el);
+    const els = alone ? [layer.el] : instances.map((instance) => instance.el);
     if (asStack && !breakpoint) for (const el of els) el.setAttribute(AS_STACK_ATTR, "");
     // The instances share their edit styles from the first edit on, their id stamped on them after, as it always was.
     // A Grid made a Stack, read before it is one: how it placed its layers stays in the code (ticket 109's follow-up).
     const placement = !earlier && property === "arrangement" && (before as Arrangement).type === "grid" && (value as Arrangement).type === "stack" ? placementBefore(layer, breakpoint) : null;
     // A gap whose layers have margins between them takes them over, as when first changed (ticket 122): the room between them is the gap alone.
-    const dropped = property === "gap" ? (earlier ? (earlier.marginsDropped ?? null) : marginsBetween(layer, el, breakpoint, instances.length)) : null;
-    declare(els, declarations, breakpoint, idFor(layer));
-    const id = idOf(layer, instances);
+    // Not on one instance alone (ticket 114): the margins are of the layers of every instance.
+    const dropped = property === "gap" && !alone ? (earlier ? (earlier.marginsDropped ?? null) : marginsBetween(layer, el, breakpoint, instances.length)) : null;
+    declareFor(alone ? aloneKey(idFor(layer), alone.mark) : idFor(layer), els, declarations, breakpoint, idFor(layer));
+    const shared = idOf(layer, instances);
+    const id = alone ? aloneKey(shared, alone.mark) : shared;
     const keeps = definition.keeps?.(el, colors);
     // A size of a layer placed from its right or bottom edge, or centered: how, as when first changed.
     // A maximum of one centered by its auto margins, held by it, as a resize sets it: so too (ticket 97).
@@ -352,11 +380,13 @@ export function createEditor(
       ...(offsetInLayoutAt.length ? { offsetInLayoutAt } : {}),
       // Loose text given an element of its own to be placed freely: the code wraps it too, unless a move of it says so already.
       ...(property === "absolute" && layer.el.hasAttribute(WRAP_ATTR) && !changes.list().some((change) => change.layer === id && change.wrap) && { wrap: true }),
+      // Made on one instance alone (ticket 114): which of the loop's instances it is, for the Agent to tell it apart by its data.
+      ...(alone && { alone: true, instance: alone.instance }),
     });
     // Back where it started: the page's own style again, the layer's other changes kept on.
     if (!changes.has(id, property, breakpoint)) {
       const others = changesOn(id, changes.list());
-      restoreStyle(els, cssOf(property), others, breakpoint);
+      restoreFor(id, els, cssOf(property), others, breakpoint);
     }
     // Its layers' margins between them off while the change is there, as the page's again once it is not.
     if (dropped) showDropped(dropped, breakpoint, changes.has(id, property, breakpoint));
@@ -497,7 +527,7 @@ export function createEditor(
       // What the range has once the change is cut back: what it inherits.
       before = read();
     }
-    const known = layer.el.getAttribute(LAYER_ID_ATTR);
+    const known = keyOf(layer);
     const wasPicked = pickedIn((known ? changes.find(known, property, breakpoint) : null)?.variables);
     const id = apply(layer, property, value, breakpoint, picked);
     // A Variable picked for the value the layer has already, with nothing to change: no step.
@@ -541,13 +571,13 @@ export function createEditor(
     const off = () => {
       changes.remove(change.id);
       const others = changesOn(id, changes.list());
-      restoreStyle(instancesOf(id), cssOf(property as Property), others, breakpoint!);
+      restoreFor(id, instancesOf(id), cssOf(property as Property), others, breakpoint!);
       referenceAt(change.within, breakpoint!);
       if (change.marginsDropped) showDropped(change.marginsDropped, breakpoint!, false);
     };
     const on = () => {
       changes.restore(change);
-      declare(instancesOf(id), change.style, breakpoint!);
+      declareFor(id, instancesOf(id), change.style, breakpoint!);
       referenceAt(change.within, breakpoint!);
       if (change.marginsDropped) showDropped(change.marginsDropped, breakpoint!, true);
     };
@@ -669,7 +699,7 @@ export function createEditor(
 
   /** The change that made the layer a Grid or a Stack in the view worked in this round (at every width in the desktop view, at a breakpoint that holds there in another); null when none did. */
   const arrangementHere = (layer: Layer): Change | null => {
-    const id = layer.el.getAttribute(LAYER_ID_ATTR);
+    const id = keyOf(layer);
     if (!id) return null;
     return (working.beside() ? changesHereOf(layer, "arrangement").at(-1) : changes.find(id, "arrangement", null)) ?? null;
   };
@@ -800,7 +830,7 @@ export function createEditor(
         const bound = anew.variables?.[property];
         return bound === undefined ? undefined : { "": bound };
       }
-      const own = (change: Change) => !layer.text && change.layer === layer.el.getAttribute(LAYER_ID_ATTR);
+      const own = (change: Change) => !layer.text && change.layer === keyOf(layer);
       const [here] = changesHereOf(layer, property).sort((a, b) => widestFirst(b.breakpoint!, a.breakpoint!) || Number(own(b)) - Number(own(a)));
       const everywhere = changes.list().filter((change) => change.kind === "style" && change.property === property && !change.breakpoint && ofLayer(layer, change));
       return (here ?? everywhere.find(own) ?? everywhere[0])?.variables;
@@ -832,6 +862,23 @@ export function createEditor(
           "resize",
         ),
       );
+    },
+    canEditAlone: (layer) => !!loopInstanceOf(tree, layer),
+    editsAlone: (layer) => !!loopInstanceOf(tree, layer)?.el.hasAttribute(ALONE_ATTR),
+    editAlone(layer, alone) {
+      const instance = loopInstanceOf(tree, layer);
+      if (!instance) throw new Error(`Human Touch: ${layer.name} is not in an instance a loop renders`);
+      const { el } = instance;
+      if (alone === el.hasAttribute(ALONE_ATTR)) return;
+      const mark = el.getAttribute(ALONE_ATTR) ?? String(++lastMark);
+      const set = (on: boolean) => () => (on ? el.setAttribute(ALONE_ATTR, mark) : el.removeAttribute(ALONE_ATTR));
+      const id = el.getAttribute(LAYER_ID_ATTR);
+      group(() => {
+        // Following again: what was changed on it alone goes, newest first, while it is still alone.
+        if (!alone) for (const change of changes.list().filter((c) => aloneOfKey(c.layer)?.mark === mark).reverse()) structure.revert(change.id);
+        set(alone)();
+        push({ layers: id ? [id] : [], key: `alone ${mark}`, undo: set(!alone), redo: set(alone) }, false);
+      }, false);
     },
     undo: steps.undo,
     redo: steps.redo,
