@@ -107,7 +107,7 @@ test("the old names are caught in each form, and the tickets' folder and the new
   for (const s of [`${v}ernier`, `${V}ernier Kit`, `${V}ERNIERKIT_SERVICE`, `--${v}k-accent`, `data-${v}k-loc`, `class="${v}k-panel"`, `${V}K_E2E_PORT`, `window.${v}kSeen`, `window.__${v}kDraw`, `__${V}K_BENCH`, `__${V}KBENCH`]) {
     assert.notDeepEqual(oldNames(s), [], s);
   }
-  assert.deepEqual(oldNames(`.scratch/${v}ernierkit/issues/70-rename-to-03kind.md`), []);
+  assert.deepEqual(oldNames(`.scratch/${v}ernierkit/issues/70-rename-to-0${"3"}kind.md`), []);
   assert.notDeepEqual(oldNames(`.scratch/${v}ernierkit/issues/x.md and .${v}ernier/`), []);
   assert.deepEqual(oldNames(`Human Touch, human-touch, --ht-accent, data-ht-loc, HT_E2E_PORT, Shift+1, Vk, window.htSeen, __htDraw, __HT_BENCH, d${v}kA`), []);
 });
