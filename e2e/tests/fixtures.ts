@@ -58,8 +58,10 @@ export async function keepRoundIn(context: BrowserContext) {
   let saved: string | null = null;
   /** The layers off the canvas, which belong to no round. */
   let offCanvas: string | null = null;
+  /** The page the round's canvas reflects, printed (ticket 141): answered with the round, dropped with it. */
+  let printed: unknown = null;
   await context.route(
-    (url) => url.hostname === "127.0.0.1" && ["/round", "/events", "/status", "/unlock", "/checks", "/off-canvas"].includes(url.pathname),
+    (url) => url.hostname === "127.0.0.1" && ["/round", "/page", "/events", "/status", "/unlock", "/checks", "/off-canvas"].includes(url.pathname),
     (route) => {
       const request = route.request();
       const headers = {
@@ -73,16 +75,20 @@ export async function keepRoundIn(context: BrowserContext) {
         if (request.method() === "GET" && offCanvas) return route.fulfill({ status: 200, headers, contentType: "application/json", body: offCanvas });
         return route.fulfill({ status: 204, headers });
       }
+      if (pathname === "/page") {
+        printed = JSON.parse(request.postData()!);
+        return route.fulfill({ status: 204, headers });
+      }
       if (pathname === "/events") {
         return route.fulfill({ status: 200, headers, contentType: "application/x-ndjson", body: `${JSON.stringify({ status: "editing" })}\n` });
       }
       if (pathname === "/status") return route.fulfill({ status: 200, headers, contentType: "application/json", body: JSON.stringify({ status: "editing" }) });
       if (pathname === "/unlock" || pathname === "/checks") return route.fulfill({ status: 409, headers });
       if (request.method() === "GET" && saved) {
-        return route.fulfill({ status: 200, headers, contentType: "application/json", body: saved });
+        return route.fulfill({ status: 200, headers, contentType: "application/json", body: printed ? JSON.stringify({ ...JSON.parse(saved), page: printed }) : saved });
       }
       if (request.method() === "PUT") saved = request.postData();
-      if (request.method() === "DELETE") saved = null;
+      if (request.method() === "DELETE") [saved, printed] = [null, null];
       return route.fulfill({ status: 204, headers });
     },
   );
