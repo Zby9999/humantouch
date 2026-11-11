@@ -287,6 +287,12 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   /* What shows out over the canvas from the Variables (a bar whole, a shadow's layers): white, and a soft rule inside it. */
   --ht-popup: #ffffff;
   --ht-rule-soft: #ebebea;
+  /* A spacing Variable's bar: blue 200 (OKLCH L 0.88), 1.29:1 on the panel. */
+  --ht-bar: #bcddff;
+  /* A radius tile's drawn corner, a step off the tile it is on. */
+  --ht-radius-block: #ffffff;
+  /* The chip a shadow is drawn on, so the shadow shows: white. */
+  --ht-shadow-sample: #ffffff;
   /* The panels' widths: each set by its edge (designer, 2026-11-08), on the shell's style, as panel-widths.ts fits them. */
   --ht-layers-width: 320px;
   --ht-design-width: 320px;
@@ -344,6 +350,12 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
     --ht-sample: #ffffff;
     --ht-popup: #2c2c2c;
     --ht-rule-soft: #444444;
+    /* Blue 200's hue and chroma at OKLCH L 0.36, 1.30:1 on the dark panel, as light mode's bar on its panel (planner, 2026-11-11). */
+    --ht-bar: #24405b;
+    /* Lighter than the tile, in use (#4a4a4a) or not (#383838): its corner reads without its outline (planner, 2026-11-11). */
+    --ht-radius-block: #5a5a5a;
+    /* Light, not white, so a dark shadow shows on it; the tile round it stays dark (planner, 2026-11-11). */
+    --ht-shadow-sample: #f2f2f2;
     color-scheme: dark;
   }
 }
@@ -1865,7 +1877,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   background: var(--ht-swatch);
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.1);
 }
-.ht-variable-preview.is-shadow { background: var(--ht-tool-chosen); }
+.ht-variable-preview.is-shadow { background: var(--ht-shadow-sample); }
 /* Marks over a view, as in Figma's guides: red where a layer lines up and for distances measured with ⌥, magenta for equal spacing. 1px, labels one size, at any zoom. */
 .ht-marks { --ht-line: #f24822; --ht-spacing: #e81cc4; pointer-events: none; }
 .ht-mark {
@@ -1951,7 +1963,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 .ht-variants-name { flex: none; width: 60px; overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .ht-variants-row.is-button .ht-variants-name { flex: 1; }
 .ht-variants-track { flex: 1; min-width: 0; }
-.ht-variants-bar { display: block; height: 6px; border-radius: 2px; background: #bcddff; }
+.ht-variants-bar { display: block; height: 6px; border-radius: 2px; background: var(--ht-bar); }
 .ht-variants-value { flex: none; margin-left: auto; color: var(--ht-text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
 /*
  * A length's bar is as long as it is, 1px a px (designer, 2026-11-08). One
@@ -1993,9 +2005,8 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   border-radius: 8px;
   background: var(--ht-field);
 }
-.ht-variants-radius { width: 40px; height: 40px; box-sizing: border-box; border: 1px solid var(--ht-text-faint); border-radius: 2px; background: var(--ht-tool-chosen); }
-/* The shadow drawn on a raised chip: white in light, dark mode's raised grey in dark, as the radius tile's corner. */
-.ht-variants-shadow { width: 48px; height: 28px; margin-top: 4px; border-radius: 6px; background: var(--ht-tool-chosen); }
+.ht-variants-radius { width: 40px; height: 40px; box-sizing: border-box; border: 1px solid var(--ht-text-faint); border-radius: 2px; background: var(--ht-radius-block); }
+.ht-variants-shadow { width: 48px; height: 28px; margin-top: 4px; border-radius: 6px; background: var(--ht-shadow-sample); }
 .ht-variants-label { display: flex; align-self: stretch; justify-content: space-between; gap: 4px; font-weight: 500; }
 .ht-variants-label.is-center { justify-content: center; }
 /*

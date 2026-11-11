@@ -85,3 +85,29 @@ test("dark: the Variables' names and counts are light on the panel, nothing in i
   await item.evaluate((el) => el.classList.add("is-in-use"));
   expect((await look(item)).background).toBe("rgb(74, 74, 74)");
 });
+
+test("dark: a shadow is drawn on a light chip, a spacing bar is blue 200's hue darkened, a radius tile's corner is lighter than its tile (planner, 2026-11-11)", async ({ page }) => {
+  await expect(design(page).locator(".ht-panel-title")).toHaveText("Variables");
+  const panel = design(page);
+  // The shadow's chip light grey, not white, its tile dark round it.
+  const chip = panel.locator(".ht-variants-shadow").first();
+  expect((await look(chip)).background).toBe("rgb(242, 242, 242)");
+  expect(lightness((await look(panel.locator(".ht-variants-tile:has(.ht-variants-shadow)").first())).background)).toBeLessThan(80);
+  // A spacing bar: as far off the dark panel as light mode's bar is off its panel (1.30:1 and 1.29:1).
+  expect((await look(panel.locator(".ht-variants-bar").first())).background).toBe("rgb(36, 64, 91)");
+  // A radius tile's corner a step lighter than its tile, in use or not.
+  const tile = panel.locator(".ht-variants-tile:has(.ht-variants-radius)").first();
+  const block = tile.locator(".ht-variants-radius");
+  for (const inUse of [false, true]) {
+    if (inUse) await tile.evaluate((el) => el.classList.add("is-in-use"));
+    expect(lightness((await look(block)).background), `in use: ${inUse}`).toBeGreaterThan(lightness((await look(tile)).background) + 10);
+  }
+});
+
+test("dark: a shadow Variable's preview in the Add effect menu is drawn on a light chip", async ({ page }) => {
+  await row(page, "Card").click();
+  await design(page).getByRole("group", { name: "Effects" }).getByRole("button", { name: "Add effect" }).click();
+  const preview = page.getByRole("dialog", { name: "Add effect" }).locator(".ht-variable-preview.is-shadow").first();
+  await expect(preview).toBeVisible();
+  expect((await look(preview)).background).toBe("rgb(242, 242, 242)");
+});
