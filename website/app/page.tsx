@@ -87,7 +87,7 @@ export default function Home() {
 
       <section className="flex flex-col items-center gap-3 text-center">
         <h2 className="label leading-normal">Try Human Touch now with your Agents</h2>
-        <CopyButton text={prompt} label="Copy prompt to install" />
+        <CopyButton text={prompt} label="Copy prompt to install" size="h-8 px-3.5" />
       </section>
 
       <footer className="flex w-full max-w-[800px] items-start justify-between">
