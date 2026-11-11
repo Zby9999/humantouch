@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Inter, Rajdhani } from "next/font/google";
+import { Geist, Geist_Mono, Instrument_Serif, Inter, Rajdhani } from "next/font/google";
 import "./globals.css";
 import { HumanTouch } from "humantouch/react";
 import { Nav } from "@/components/Nav";
@@ -8,6 +8,8 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const rajdhani = Rajdhani({ subsets: ["latin"], weight: "600", variable: "--font-rajdhani" });
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
+/** The serif of Acme, the page on the hero's canvas. */
+const instrumentSerif = Instrument_Serif({ subsets: ["latin"], weight: "400", style: ["normal", "italic"], variable: "--font-instrument-serif" });
 
 export const metadata: Metadata = {
   title: "Human Touch",
@@ -19,7 +21,7 @@ const themeScript = `try{var t=localStorage.getItem("theme");if(t==="light"||t==
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${rajdhani.variable} ${geist.variable} ${geistMono.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${rajdhani.variable} ${geist.variable} ${geistMono.variable} ${instrumentSerif.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>

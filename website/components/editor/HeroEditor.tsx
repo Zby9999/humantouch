@@ -7,17 +7,24 @@ import { EDITOR_CSS } from "./editor-css.generated";
 import { NumberField, Tips } from "./fields";
 import { Icon } from "./Icon";
 import type { IconName } from "./icon-paths";
-import { COLOR_VARIABLES, LAYERS, RADIUS_VARIABLES, SPACING_VARIABLES, TEXT_VARIABLES, TREE, VIEWS, styleOf, type Key, type ViewName } from "./model";
+import { ACME_COLORS, LAYERS, RADIUS_VARIABLES, SPACING_VARIABLES, TEXT_VARIABLES, TREE, VIEWS, nameOf, styleOf, type Key, type ViewName } from "./model";
 
 /** The editor is laid out at a laptop's size, then scaled to the hero's width. */
 const W = 1440;
 const H = 900;
 const PANEL = 320;
-const VIEW_GAP = 80;
+/**
+ * The canvas is set out once and stays (designer, 2026-11-11): the three views side by side between the panels, 32px from
+ * the Layers, clear of the toolbar on the right, 24px apart on screen, their tops 72px down; the pages run on under the
+ * hero's bottom edge. No pan, no zoom.
+ */
+const VIEWS_WIDTH = VIEWS.reduce((x, v) => x + v.width, 0);
+const ROOM = W - 2 * PANEL - 32 - 56;
+const SCREEN_GAP = 24;
+const CAMERA = { x: 32, y: 72, k: (ROOM - 2 * SCREEN_GAP) / VIEWS_WIDTH };
+const VIEW_GAP = SCREEN_GAP / CAMERA.k;
 const FRAME_LEFT = VIEWS.map((_, i) => VIEWS.slice(0, i).reduce((x, v) => x + v.width + VIEW_GAP, 0));
 const STAGE_WIDTH = FRAME_LEFT.at(-1)! + VIEWS.at(-1)!.width;
-// Fitted between the panels, clear of the toolbar on the canvas's right edge.
-const FIT: Camera = { x: 32, y: 72, k: (W - 2 * PANEL - 32 - 64) / STAGE_WIDTH };
 /** The hero's frame, as the product's toggle has one (toggle-styles.ts): a ground round it, a hairline, the editor raised in it. */
 const FRAME_PAD = 6;
 const EDITOR_RADIUS = 12;
@@ -42,7 +49,6 @@ const SITE_CSS = `
 .ht-var-list .ht-var-value { margin-left: auto; color: var(--ht-text-muted); font-variant-numeric: tabular-nums; }
 `;
 
-type Camera = { x: number; y: number; k: number };
 type Box = { left: number; top: number; width: number; height: number };
 
 /**
@@ -131,7 +137,7 @@ function pick(path: Target[], selected: Selection): Target {
 }
 
 function Editor({ scale, root }: { scale: number; root: ShadowRoot }) {
-  const [selected, setSelected] = useState<Selection>({ key: "card", index: 0 });
+  const [selected, setSelected] = useState<Selection>({ key: "entry", index: 0 });
   const [hover, setHover] = useState<Selection>(null);
   const [view, setView] = useState<ViewName>("Desktop");
   const [layersShown, setLayersShown] = useState(true);
@@ -174,11 +180,6 @@ function Editor({ scale, root }: { scale: number; root: ShadowRoot }) {
     </div>
   );
 }
-
-const CARD_TEXT = {
-  cardTitle: ["Plan", "Vote", "Go"],
-  cardBody: ["Pin places, add dates, share the list.", "Everyone picks what they want to see.", "Offline maps and tickets in one place."],
-};
 
 type LayersProps = {
   toggle: React.RefObject<HTMLButtonElement | null>;
@@ -284,7 +285,7 @@ function LayersPanel({ toggle, onHide, selected, onSelect, onHover }: LayersProp
             const pad = 16 + row.depth * 26;
             const through: number[] = [];
             for (let a = row.parent, d = row.depth - 1; a !== null && d >= 1; a = TREE[a].parent, d--) if (hasLater(a)) through.push(1 + d * 26);
-            const name = row.key === "cardTitle" || row.key === "cardBody" ? CARD_TEXT[row.key][row.index!] : layer.name;
+            const name = nameOf(row.key, row.index);
             return (
               <div
                 key={at}
@@ -418,40 +419,18 @@ function Tools() {
 
 type Boxes = { selected: (Box & { view: ViewName })[]; hover: (Box & { view: ViewName })[] };
 
-/**
- * The canvas: the three views side by side, the selection drawn over them. Drag its empty space to pan; pinch, or scroll
- * with ⌘ or Ctrl held, to zoom round the pointer; double-click it to fit. Plain scrolling is left to the page.
- */
+/** The canvas: the three views side by side, set out once (`CAMERA`), the selection drawn over them. A click on its empty space selects nothing. */
 function Viewport({ scale, root, selected, hover, view, onSelect, onHover }: { scale: number; root: ShadowRoot; selected: Selection; hover: Selection; view: ViewName; onSelect: (t: Selection, v: ViewName) => void; onHover: (t: Selection) => void }) {
   const el = useRef<HTMLDivElement>(null);
-  const [cam, setCam] = useState<Camera>(FIT);
-  const drag = useRef<{ x: number; y: number; cam: Camera; moved: boolean } | null>(null);
-  const scaleRef = useRef(scale);
-  scaleRef.current = scale;
+  const cam = CAMERA;
   const [boxes, setBoxes] = useState<Boxes>({ selected: [], hover: [] });
   /** Bumped as the viewport changes size (the Layers hidden or shown): the selection is measured again. */
   const [size, setSize] = useState(0);
 
   useEffect(() => {
-    const node = el.current!;
-    const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return;
-      e.preventDefault();
-      const r = node.getBoundingClientRect();
-      const px = (e.clientX - r.left) / scaleRef.current;
-      const py = (e.clientY - r.top) / scaleRef.current;
-      setCam((c) => {
-        const k = Math.min(1.5, Math.max(0.15, c.k * Math.exp(-e.deltaY * 0.01)));
-        return { k, x: px - ((px - c.x) * k) / c.k, y: py - ((py - c.y) * k) / c.k };
-      });
-    };
-    node.addEventListener("wheel", onWheel, { passive: false });
     const observer = new ResizeObserver(() => setSize((n) => n + 1));
-    observer.observe(node);
-    return () => {
-      node.removeEventListener("wheel", onWheel);
-      observer.disconnect();
-    };
+    observer.observe(el.current!);
+    return () => observer.disconnect();
   }, []);
 
   // Where the selected and hovered layers are on each view, in the viewport's own pixels.
@@ -468,7 +447,7 @@ function Viewport({ scale, root, selected, hover, view, onSelect, onHover }: { s
             }),
           );
     setBoxes({ selected: measure(selected), hover: sameTarget(hover, selected) ? [] : measure(hover) });
-  }, [root, selected, hover, cam, scale, size]);
+  }, [root, selected, hover, scale, size]);
 
   const kind = (t: Selection) => (t && LAYERS[t.key].instance ? "instance" : undefined);
   const active = boxes.selected.find((b) => b.view === view);
@@ -479,26 +458,7 @@ function Viewport({ scale, root, selected, hover, view, onSelect, onHover }: { s
       className="ht-viewport"
       role="region"
       aria-label="Canvas viewport"
-      onPointerDown={(e) => {
-        e.currentTarget.setPointerCapture(e.pointerId);
-        drag.current = { x: e.clientX, y: e.clientY, cam, moved: false };
-      }}
-      onPointerMove={(e) => {
-        const d = drag.current;
-        if (!d) return;
-        const dx = (e.clientX - d.x) / scale;
-        const dy = (e.clientY - d.y) / scale;
-        if (!d.moved && Math.hypot(dx, dy) < 3) return;
-        d.moved = true;
-        setCam({ ...d.cam, x: d.cam.x + dx, y: d.cam.y + dy });
-      }}
-      onPointerUp={() => {
-        if (drag.current && !drag.current.moved) onSelect(null, view);
-        drag.current = null;
-      }}
-      onDoubleClick={(e) => {
-        if (e.target === e.currentTarget) setCam(FIT);
-      }}
+      onPointerDown={(e) => e.button === 0 && onSelect(null, view)}
     >
       <div className="ht-stage" style={{ transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})` }}>
         {VIEWS.map((v, i) => (
@@ -602,7 +562,7 @@ function DesignPanel({ view, selected, root }: { view: ViewName; selected: Selec
             <h3 className="ht-section-title">Color</h3>
           </div>
           <ul className="ht-var-list">
-            {COLOR_VARIABLES.map((v) => (
+            {ACME_COLORS.map((v) => (
               <li key={v.name}>
                 <span className="ht-swatch" style={{ ["--ht-swatch" as string]: v.value }} />
                 {v.name}
@@ -633,7 +593,7 @@ function DesignPanel({ view, selected, root }: { view: ViewName; selected: Selec
   const layer = LAYERS[key];
   const style = styleOf(key);
   const isText = layer.kind === "text";
-  const inCard = key === "cardTitle" || key === "cardBody";
+  const owner = layer.instance?.component ?? layer.inComponent?.component;
   const type = layer.kind === "stack" ? (style.direction === "row" ? "Horizontal Stack" : "Vertical Stack") : { grid: "Grid", frame: "Frame", text: "Text" }[layer.kind];
   const padding = style.padding as number[] | undefined;
 
@@ -644,7 +604,7 @@ function DesignPanel({ view, selected, root }: { view: ViewName; selected: Selec
         <div className="ht-layer-head">
           <h3 className={`ht-layer-name${layer.instance ? " is-instance" : ""}`}>
             <Icon name={iconOf(key)} />
-            <span>{inCard ? "Text" : layer.name}</span>
+            <span>{isText ? "Text" : layer.name}</span>
           </h3>
           {view !== "Desktop" && (
             <span className="ht-breakpoint-badge" role="note" aria-label={`${view} breakpoint`}>
@@ -655,10 +615,10 @@ function DesignPanel({ view, selected, root }: { view: ViewName; selected: Selec
         <dl>
           <dt>Type</dt>
           <dd>{type}</dd>
-          {(layer.instance || inCard) && (
+          {owner && (
             <>
               <dt>Component</dt>
-              <dd>Card</dd>
+              <dd>{owner}</dd>
             </>
           )}
           <dt>Source</dt>
@@ -666,15 +626,15 @@ function DesignPanel({ view, selected, root }: { view: ViewName; selected: Selec
           {layer.instance && (
             <>
               <dt>Usage</dt>
-              <dd className="ht-source">src/App.tsx:27:9</dd>
+              <dd className="ht-source">{layer.instance.usage}</dd>
               <dt>Instances</dt>
-              <dd>3</dd>
+              <dd>{layer.instance.count}</dd>
             </>
           )}
-          {inCard && (
+          {layer.inComponent && (
             <>
               <dt>Repeated</dt>
-              <dd>In 3 instances</dd>
+              <dd>In {layer.inComponent.count} instances</dd>
             </>
           )}
         </dl>
@@ -816,10 +776,11 @@ function DesignPanel({ view, selected, root }: { view: ViewName; selected: Selec
             <h3 className="ht-section-title">Text</h3>
           </div>
           <span className="ht-select-field ht-font-field">
-            <span className="ht-font-sample" aria-hidden="true" style={{ fontFamily: "var(--font-inter)" }}>
+            <span className="ht-font-sample" aria-hidden="true" style={{ fontFamily: layer.font === "Instrument Serif" ? "var(--font-instrument-serif)" : "var(--font-inter)" }}>
               Aa
             </span>
-            <select className="ht-select ht-font" aria-label="Font" value="Inter" onChange={() => {}}>
+            <select className="ht-select ht-font" aria-label="Font" value={layer.font} onChange={() => {}}>
+              <option>Instrument Serif</option>
               <option>Inter</option>
             </select>
           </span>
@@ -827,6 +788,7 @@ function DesignPanel({ view, selected, root }: { view: ViewName; selected: Selec
             <span className="ht-select-field ht-wide">
               <select className="ht-select" aria-label="Font weight" value={layer.weight} onChange={() => {}}>
                 <option>Regular</option>
+                <option>Medium</option>
                 <option>Semi Bold</option>
                 <option>Bold</option>
               </select>
@@ -876,30 +838,33 @@ function DesignPanel({ view, selected, root }: { view: ViewName; selected: Selec
         </section>
       )}
 
-      {(layer.props.includes("fill") || isText) && (
-        <section className="ht-section" role="group" aria-label="Fill">
-          <div className="ht-section-header">
-            <h3 className="ht-section-title">Fill</h3>
-          </div>
-          <ColorField name="Fill" value={String(style[isText ? "color" : "fill"])} removable={!isText} />
-        </section>
-      )}
+      <section className="ht-section" role="group" aria-label="Fill">
+        <div className="ht-section-header">
+          <h3 className="ht-section-title">Fill</h3>
+          {!isText && style.fill === undefined && (
+            <button type="button" className="ht-icon-button" aria-label="Add fill" data-tip="Add fill">
+              <Icon name="plus" />
+            </button>
+          )}
+        </div>
+        {(isText || style.fill !== undefined) && <ColorField name="Fill" value={String(style[isText ? "color" : "fill"])} removable={!isText} />}
+      </section>
 
       {!isText && (
         <section className="ht-section" role="group" aria-label="Stroke">
           <div className="ht-section-header">
             <h3 className="ht-section-title">Stroke</h3>
-            {key !== "card" && (
+            {!layer.stroke && (
               <button type="button" className="ht-icon-button" aria-label="Add stroke" data-tip="Add stroke">
                 <Icon name="plus" />
               </button>
             )}
           </div>
-          {key === "card" && (
+          {layer.stroke && (
             <>
-              <ColorField name="Stroke" value="#E5E5E4" removable />
+              <ColorField name="Stroke" value={layer.stroke.color} removable />
               <div className="ht-row ht-joined">
-                <NumberField tip="Stroke weight" icon="stroke-weight" value={1} />
+                <NumberField tip="Stroke weight" icon="stroke-weight" value={layer.stroke.weight} />
                 <span className="ht-select-field">
                   <select className="ht-select" aria-label="Stroke style" value="solid" onChange={() => {}}>
                     <option value="solid">Solid</option>
@@ -907,8 +872,10 @@ function DesignPanel({ view, selected, root }: { view: ViewName; selected: Selec
                   </select>
                 </span>
                 <span className="ht-select-field">
-                  <select className="ht-select" aria-label="Stroke sides" value="all" onChange={() => {}}>
-                    <option value="all">All</option>
+                  <select className="ht-select" aria-label="Stroke sides" value={layer.stroke.sides} onChange={() => {}}>
+                    <option>All</option>
+                    <option>Top</option>
+                    <option>Bottom</option>
                   </select>
                 </span>
               </div>
@@ -924,19 +891,6 @@ function DesignPanel({ view, selected, root }: { view: ViewName; selected: Selec
             <Icon name="plus" />
           </button>
         </div>
-        {key === "card" && (
-          <div className="ht-variable-slot">
-            <div className="ht-field ht-variable-chip">
-              <Icon name="variable" />
-              <button type="button" className="ht-variable-chip-name" aria-label="Shadow variable" data-tip="sm: 0 1px 3px, 0 1px 2px">
-                sm
-              </button>
-              <button type="button" className="ht-icon-button" aria-label="Detach shadow variable" data-tip="Detach variable">
-                <Icon name="detach" />
-              </button>
-            </div>
-          </div>
-        )}
       </section>
     </aside>
   );
@@ -1011,7 +965,7 @@ function PaddingFields({ value }: { value: number[] }) {
 function ColorField({ name, value, removable }: { name: string; value: string; removable?: boolean }) {
   const pop = usePopover();
   const [draft, setDraft] = useState<string | null>(null);
-  const bound = COLOR_VARIABLES.find((v) => v.value.toUpperCase() === value.toUpperCase());
+  const bound = ACME_COLORS.find((v) => v.value.toUpperCase() === value.toUpperCase());
   const row = (
     <div className="ht-color-row">
       <div className={`ht-field ht-color-field${bound ? "" : " is-joined"}`}>
@@ -1044,7 +998,7 @@ function ColorField({ name, value, removable }: { name: string; value: string; r
   );
   const picker = pop.open && (
     <div className="ht-pop" style={{ top: 28, left: 0, right: 0 }}>
-      {COLOR_VARIABLES.map((v) => (
+      {ACME_COLORS.map((v) => (
         <button key={v.name} type="button" aria-current={v.value.toUpperCase() === value.toUpperCase()} onClick={() => pop.setOpen(false)}>
           <span className="ht-pop-swatch" style={{ background: v.value }} />
           {v.name}

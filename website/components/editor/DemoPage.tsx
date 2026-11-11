@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { CARDS, styleOf, type Key, type ViewName } from "./model";
+import { ENTRIES, styleOf, type Key, type ViewName } from "./model";
 
 export type Target = { key: Key; index?: number };
 export type Selection = Target | null;
@@ -16,22 +16,29 @@ type Props = {
   onHover: (target: Target | null) => void;
 };
 
+const SERIF = "var(--font-instrument-serif), Georgia, serif";
+const SANS = "var(--font-inter), sans-serif";
+/** Tall enough to run on under the hero's bottom edge, as a page does past the canvas's; its footer is at its foot, out of sight. */
+const PAGE_MIN_HEIGHT = 3400;
+
 /**
- * The page on one view of the canvas, at the view's width, drawn as the layers' styles say. A pointer
- * down reports the layers under it, outermost first, for the editor to pick from as Figma does.
+ * Acme, on one view of the canvas, at the view's width: a quiet, editorial landing page. Its sizes step down at the
+ * Tablet and Phone widths, as its breakpoints say. A pointer down reports the layers under it, outermost first, for the
+ * editor to pick from as Figma does.
  */
 export function DemoPage({ view, width, onPick, onHover }: Props) {
   const s = styleOf;
   const phone = width < 768;
-  const narrow = width < 1280;
-  const pad = (key: Key, factor = 1) => (s(key).padding as number[]).map((n) => `${Math.round(n * factor)}px`).join(" ");
-  const opacity = (key: Key) => Number(s(key).opacity) / 100;
+  const tablet = !phone && width < 1280;
+  /** A size at Desktop, Tablet and Phone. */
+  const at = (desktop: number, tab: number, ph: number) => (phone ? ph : tablet ? tab : desktop);
+  const side = at(80, 48, 24);
 
-  const layer = (target: Target, path: Target[], style: CSSProperties, children: ReactNode, Tag: "div" | "p" | "h1" | "h3" = "div") => (
+  const layer = (target: Target, path: Target[], style: CSSProperties, children: ReactNode, Tag: "div" | "p" | "h1" | "h2" | "h3" | "blockquote" | "nav" | "footer" = "div") => (
     <Tag
       key={layerId(target)}
       data-ht={layerId(target)}
-      style={{ ...style, opacity: opacity(target.key), margin: 0 }}
+      style={{ margin: 0, ...style, opacity: Number(s(target.key).opacity) / 100 }}
       onPointerDown={(e) => {
         e.stopPropagation();
         if (e.button === 0) onPick([...path, target], view);
@@ -45,67 +52,108 @@ export function DemoPage({ view, width, onPick, onHover }: Props) {
     </Tag>
   );
 
-  const page = s("page");
-  const header = s("header");
-  const title = s("title");
-  const badge = s("badge");
-  const badgeText = s("badgeText");
-  const lede = s("lede");
-  const button = s("button");
-  const buttonText = s("buttonText");
-  const card = s("card");
-  const cardTitle = s("cardTitle");
-  const cardBody = s("cardBody");
-
   const P: Target = { key: "page" };
-  const H: Target = { key: "header" };
-  const B: Target = { key: "badge" };
-  const BT: Target = { key: "button" };
-  const G: Target = { key: "cards" };
+  const N: Target = { key: "nav" };
+  const HE: Target = { key: "hero" };
+  const B: Target = { key: "button" };
+  const C: Target = { key: "cover" };
+  const G: Target = { key: "entries" };
+  const color = (key: Key) => String(s(key).color);
 
   return (
-    <div onPointerLeave={() => onHover(null)} style={{ width, fontFamily: "var(--font-inter), sans-serif", lineHeight: 1.35, color: "#171716" }}>
+    <div onPointerLeave={() => onHover(null)} style={{ width, fontFamily: SANS, color: "#161614", WebkitFontSmoothing: "antialiased" }}>
       {layer(
         P,
         [],
-        { background: String(page.fill), padding: pad("page", phone ? 0.4 : narrow ? 0.7 : 1), display: "flex", flexDirection: page.direction as "row" | "column", gap: Number(page.gap), minHeight: phone ? 0 : 860, justifyContent: "center" },
+        { background: String(s("page").fill), padding: `0 ${side}px`, display: "flex", flexDirection: "column", minHeight: PAGE_MIN_HEIGHT },
         <>
           {layer(
-            H,
+            N,
             [P],
-            { display: "flex", flexDirection: header.direction as "row" | "column", alignItems: header.direction === "row" ? "center" : "flex-start", gap: Number(header.gap), alignSelf: "flex-start" },
+            { display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: `${at(28, 24, 20)}px 0`, borderBottom: "1px solid #E4E2DC" },
             <>
-              {layer({ key: "title" }, [P, H], { fontSize: phone ? Number(title.fontSize) * 0.75 : Number(title.fontSize), fontWeight: 700, letterSpacing: "-0.03em", color: String(title.color), lineHeight: 1.05 }, "Harbor", "h1")}
-              {layer(B, [P, H], { background: String(badge.fill), borderRadius: Number(badge.radius), padding: "4px 10px" }, layer({ key: "badgeText" }, [P, H, B], { fontSize: Number(badgeText.fontSize), fontWeight: 600, color: String(badgeText.color) }, "Beta", "p"))}
+              {layer({ key: "logo" }, [P, N], { fontFamily: SERIF, fontSize: at(28, 26, 24), lineHeight: 1, letterSpacing: "-0.01em", color: color("logo") }, "Acme", "p")}
+              {layer(
+                { key: "links" },
+                [P, N],
+                { fontSize: 14, color: color("links"), display: "flex", gap: at(32, 24, 0), letterSpacing: "0.01em" },
+                phone ? <span>Menu</span> : ["Work", "Studio", "Journal", "Contact"].map((l) => <span key={l}>{l}</span>),
+                "p",
+              )}
+            </>,
+            "nav",
+          )}
+          {layer(
+            HE,
+            [P],
+            { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: at(32, 28, 20), padding: `${at(160, 112, 72)}px 0 ${at(120, 88, 56)}px` },
+            <>
+              {layer({ key: "issue" }, [P, HE], { fontSize: 12, fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase", color: color("issue") }, "Issue 12 — Spring 2026", "p")}
+              {layer(
+                { key: "title" },
+                [P, HE],
+                { fontFamily: SERIF, fontWeight: 400, fontSize: at(128, 84, 56), lineHeight: 0.98, letterSpacing: "-0.025em", color: color("title"), maxWidth: at(1120, 640, 340) },
+                <>
+                  Fewer things,
+                  <br />
+                  <em style={{ fontStyle: "italic" }}>made with care.</em>
+                </>,
+                "h1",
+              )}
+              {layer({ key: "lede" }, [P, HE], { fontSize: at(20, 18, 16), lineHeight: 1.5, color: color("lede"), maxWidth: at(520, 460, 340) }, "Acme makes tools for the slow parts of work: notes, drafts and the quiet hours between.", "p")}
+              {layer(
+                B,
+                [P, HE],
+                { marginTop: at(8, 4, 4), background: String(s("button").fill), borderRadius: Number(s("button").radius), padding: "14px 24px" },
+                layer({ key: "buttonText" }, [P, HE, B], { fontSize: 14, fontWeight: 500, color: color("buttonText"), letterSpacing: "0.01em", lineHeight: 1.2 }, "Read the issue", "p"),
+              )}
             </>,
           )}
-          {layer({ key: "lede" }, [P], { maxWidth: 520, fontSize: Number(lede.fontSize), color: String(lede.color) }, "Plan trips with friends, on one shared map.", "p")}
-          {layer(BT, [P], { alignSelf: "flex-start", background: String(button.fill), borderRadius: Number(button.radius), padding: pad("button") }, layer({ key: "buttonText" }, [P, BT], { fontSize: Number(buttonText.fontSize), fontWeight: 600, color: String(buttonText.color) }, "Get started", "p"))}
+          {layer(
+            C,
+            [P],
+            { position: "relative", height: at(560, 380, 260), background: String(s("cover").fill), padding: at(32, 28, 20), display: "flex", alignItems: "flex-end", overflow: "hidden" },
+            <>
+              {/* The cover's art: a ring and a rule, drawn thin. */}
+              <span aria-hidden="true" style={{ position: "absolute", right: "14%", top: "50%", width: at(360, 240, 150), aspectRatio: "1", translate: "0 -50%", borderRadius: "50%", border: "1px solid rgb(22 22 20 / 0.35)" }} />
+              <span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 1, background: "rgb(22 22 20 / 0.15)" }} />
+              {layer({ key: "coverText" }, [P, C], { position: "relative", fontFamily: SERIF, fontSize: at(48, 40, 32), lineHeight: 1, color: color("coverText") }, "No. 12", "p")}
+            </>,
+          )}
           {layer(
             G,
             [P],
-            { display: "grid", gridTemplateColumns: phone ? "1fr" : "repeat(3, minmax(0, 1fr))", gap: Number(s("cards").gap), marginTop: 24, maxWidth: 960 },
-            CARDS.map((c, index) => {
-              const C: Target = { key: "card", index };
+            { display: "grid", gridTemplateColumns: phone ? "1fr" : "repeat(3, minmax(0, 1fr))", gap: at(48, 24, 40), padding: `${at(120, 88, 72)}px 0` },
+            ENTRIES.map((entry, index) => {
+              const E: Target = { key: "entry", index };
               return layer(
-                C,
+                E,
                 [P, G],
-                {
-                  background: String(card.fill),
-                  borderRadius: Number(card.radius),
-                  padding: pad("card"),
-                  display: "flex",
-                  flexDirection: card.direction as "row" | "column",
-                  gap: Number(card.gap),
-                  border: "1px solid #E5E5E4",
-                  boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
-                },
+                { display: "flex", flexDirection: "column", gap: at(16, 12, 12), paddingTop: 24, borderTop: "1px solid #E4E2DC" },
                 <>
-                  {layer({ key: "cardTitle", index }, [P, G, C], { fontSize: Number(cardTitle.fontSize), fontWeight: 600, color: String(cardTitle.color) }, c.title, "h3")}
-                  {layer({ key: "cardBody", index }, [P, G, C], { fontSize: Number(cardBody.fontSize), color: String(cardBody.color) }, c.body, "p")}
+                  {layer({ key: "entryNumber", index }, [P, G, E], { fontSize: 12, letterSpacing: "0.08em", color: color("entryNumber"), fontVariantNumeric: "tabular-nums" }, entry.number, "p")}
+                  {layer({ key: "entryTitle", index }, [P, G, E], { fontFamily: SERIF, fontWeight: 400, fontSize: at(36, 28, 30), lineHeight: 1.1, color: color("entryTitle") }, entry.title, "h3")}
+                  {layer({ key: "entryBody", index }, [P, G, E], { fontSize: at(16, 14, 15), lineHeight: 1.55, color: color("entryBody") }, entry.body, "p")}
                 </>,
               );
             }),
+          )}
+          {layer(
+            { key: "quote" },
+            [P],
+            { fontFamily: SERIF, fontStyle: "italic", fontWeight: 400, fontSize: at(64, 44, 34), lineHeight: 1.1, letterSpacing: "-0.015em", color: color("quote"), maxWidth: at(900, 600, 340), padding: `${at(40, 24, 8)}px 0 ${at(160, 112, 80)}px` },
+            "“The best tools disappear into the work.”",
+            "blockquote",
+          )}
+          {layer(
+            { key: "footer" },
+            [P],
+            { display: "flex", justifyContent: "space-between", marginTop: "auto", padding: "28px 0", borderTop: "1px solid #E4E2DC", fontSize: 13, color: color("footer"), whiteSpace: "pre" },
+            <>
+              <span>© Acme 2026</span>
+              <span>{phone ? "Newsletter" : "Newsletter  ·  Instagram  ·  Colophon"}</span>
+            </>,
+            "footer",
           )}
         </>,
       )}
