@@ -5,10 +5,13 @@
  * does at its width; none of the page's scripts run in it, and it loads
  * nothing of its own but the stylesheets and images it shares with the page.
  * The page's open shadow roots are copied too, their styles with them, and
- * kept the same as well (ticket 137): only on a page that has some when it is
- * first copied, so a page with none costs no more than before.
+ * kept the same as well (ticket 137): only on a page that has some of its own
+ * when it is first copied (the editor's `<human-touch>` and the dev server's
+ * overlays are not the page's), so a page with none costs no more than
+ * before.
  */
 import { CHECK_FRAME_ATTR } from "./host";
+import { hostsPagesShadowRoot } from "./shadow-roots";
 
 export interface PageCopy {
   width: number;
@@ -76,13 +79,15 @@ export function copyPage(page: Document, width: number, into: ParentNode): PageC
     inCopy.set(node, made);
     if (made.nodeType === Node.ELEMENT_NODE) quiet(made as Element);
     if (!template) update(node, made);
-    if (deep && (node as Element).shadowRoot) copyShadow(node as Element, made as Element);
+    if (deep && node.nodeType === Node.ELEMENT_NODE && hostsPagesShadowRoot(node as Element)) copyShadow(node as Element, made as Element);
     return made;
   };
   /**
    * Gives `to`, the copy of `host`, a copy of the open shadow root it hosts,
    * node for node, the stylesheets it adopted as constructable ones of the
-   * copy's: kept the same as the page's from then on, as the page is.
+   * copy's. Its nodes are kept the same as the page's from then on, as the
+   * page's are; its adopted stylesheets are copied this once, and not
+   * followed after (ticket 137).
    */
   const copyShadow = (host: Element, to: Element) => {
     const shadow = host.shadowRoot!;
@@ -149,7 +154,7 @@ export function copyPage(page: Document, width: number, into: ParentNode): PageC
     for (const el of root.querySelectorAll(`${Object.keys(LOADS).join(", ")}, link, [autofocus]`)) quiet(el);
     doc.replaceChild(root, doc.documentElement);
     // The page's open shadow roots, which a copy of its nodes leaves out: each copied onto its host's copy, those nested in it with it.
-    const hosts = [...page.documentElement.querySelectorAll("*")].filter((el) => el.shadowRoot && !el.hasAttribute(CHECK_FRAME_ATTR));
+    const hosts = [...page.documentElement.querySelectorAll("*")].filter((el) => hostsPagesShadowRoot(el) && !el.hasAttribute(CHECK_FRAME_ATTR));
     deep = hosts.length > 0;
     for (const host of hosts) {
       const to = inCopy.get(host) as Element | undefined;

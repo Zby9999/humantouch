@@ -141,7 +141,7 @@ describe("claim", () => {
     expect(notes).toContain('- **Layer:** Stack, `<div id="root">` (Page › Stack)');
   });
 
-  test("a layer in a shadow root, located, says Location as any other, and that the change is to its component's own styles for the shadow root, not global CSS; the rule that sets it now is named as the component's (ticket 137)", async () => {
+  test("a layer in a shadow root, located, says Location as any other, and that the change is to the styles of the component that renders into the shadow root, not global CSS; the rule that sets it now is named as the component's (ticket 137)", async () => {
     const title = {
       ...cards,
       loc: "src/HeroCard.tsx:21:11",
@@ -158,7 +158,7 @@ describe("claim", () => {
 
     expect(section(notes, 1)).toContain("- **Location:** `src/HeroCard.tsx:21:11`\n");
     expect(section(notes, 1)).toContain(
-      "- **Shadow root:** the layer is in the shadow root of `<hero-card id=\"hero\">`, which the page's CSS does not reach: the change is to that component's own styles for its shadow root (see **Shadow roots**), not to global CSS.\n",
+      "- **Shadow root:** the layer is in the shadow root of `<hero-card id=\"hero\">`, which the page's CSS does not reach: the change is to the styles of the component that renders into its shadow root (see **Shadow roots**), not to global CSS.\n",
     );
     expect(section(notes, 1)).toContain("- **Currently set by:** class `title`: rule `.title` in no CSS layer, of the styles `<hero-card>` has in its shadow root, `background: rgb(0, 128, 0)`\n");
     expect(notes).toContain("- **Shadow roots:** a layer in a shadow root");
@@ -189,7 +189,7 @@ describe("claim", () => {
     const chip = {
       ...cards,
       loc: null,
-      chain: [{ component: "acme-chip", usage: "src/App.tsx:30:9", thirdParty: true }, APP],
+      chain: [{ component: "acme-chip", usage: "src/App.tsx:30:9", thirdParty: true, webComponent: true }, APP],
       component: "acme-chip",
       instances: 1,
       locked: true,
@@ -206,6 +206,42 @@ describe("claim", () => {
     expect(notes).toContain("`::part()` rules for the parts it exposes");
     expect(notes).not.toContain("- **Third-party components:**");
     expect(notes).not.toContain("- **Shadow roots:**");
+  });
+
+  test("a layer a third-party React component draws in the project's own shadow root (a React portal into one) gets the React third-party rule and the shadow root's, not the Web Component's (ticket 137)", async () => {
+    const trigger = {
+      ...cards,
+      loc: null,
+      chain: [{ component: "DropdownMenuTrigger", usage: "src/Hero.tsx:40:9", thirdParty: true }, { component: "Hero", usage: "src/App.tsx:12:7", thirdParty: false }, APP],
+      component: "DropdownMenuTrigger",
+      instances: 1,
+      locked: true,
+      unlocated: true,
+      shadowRoot: '<section class="hero">',
+      context: { path: ["Page", "section", "DropdownMenuTrigger"], element: "<button>" },
+    };
+    saveRound({ ...redFill, target: trigger });
+
+    const notes = (await cli("claim")).output;
+
+    expect(section(notes, 1)).toContain("- **Shadow root:** the layer is in the shadow root of `<section class=\"hero\">`, which the page's CSS does not reach: the change is to the styles of the component that renders into its shadow root");
+    expect(section(notes, 1)).not.toContain("a custom element a dependency defines");
+    expect(notes).toContain("- **Third-party components:**");
+    expect(notes).toContain("- **Shadow roots:**");
+    expect(notes).not.toContain("- **Third-party Web Components:**");
+  });
+
+  test("a layer in a shadow root is told its Variable as a CSS variable, and an exact value with no Tailwind class: no class reaches into it (ticket 137)", async () => {
+    const title = { ...cards, loc: "src/HeroCard.tsx:21:11", chain: [{ component: "HeroCard", usage: "src/App.tsx:12:7", thirdParty: false }, APP], component: "HeroCard", instances: 1, shadowRoot: '<hero-card id="hero">' };
+    const brand = { name: "brand-500", group: "color", value: "#ff0000", from: "tailwind", css: "var(--color-brand-500)", own: true };
+    saveRound({ ...redFill, target: title, variables: { "": brand } }, { ...redFill, id: 2, layer: "2", target: title, variables: { "": null } });
+
+    const notes = (await cli("claim")).output;
+
+    expect(section(notes, 1)).toContain("- **Variables:** the fill is the Variable `brand-500`, from the Tailwind theme: in the shadow root's styles, use `var(--color-brand-500)`.\n");
+    expect(section(notes, 2)).toContain("- **Variables:** no Variable has the fill's value: use the exact value, not a Variable whose value is close.\n");
+    expect(notes).not.toContain("bg-brand-500");
+    expect(notes).not.toContain("arbitrary value");
   });
 
   test("a layer the outermost component writes is changed where it is written, with no other usages to spare", async () => {

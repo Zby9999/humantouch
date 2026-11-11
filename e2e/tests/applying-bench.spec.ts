@@ -1392,6 +1392,8 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
     for (const [field, value] of fields) await setField(page, field, value);
     if (promote) await page.getByRole("toolbar", { name: "Selection" }).getByRole("button", { name: "Promote" }).click();
     await expect.poll(() => changesNow().map((change) => `${change.kind} ${change.property}`)).toEqual(fields.map(([field]) => `style ${field === "Gap" ? "gap" : "fill"}`));
+    // The change promoted is saved after the change itself: read once it is.
+    if (promote) await expect.poll(() => changesNow()[0]?.scope).toBe("component");
     await leaveEditMode(page);
   }
 
@@ -1526,7 +1528,7 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
 
   test("playbook: the loop's cards filled red, promoted to the Card itself; the Agent writes it into the Card: every card is red, as asked (as before 77)", async ({ page }) => {
     await changeACard(page, 0, [["Fill color", "ff0000"]], true);
-    await expect.poll(() => changesNow()[0]?.scope, { timeout: 5000 }).toBe("component");
+    expect(changesNow()[0]).toMatchObject({ scope: "component" });
     const result = await applyTheChange(page, [[CARD, "bg-white", "bg-[#ff0000]"]], async () => (await cardsOnThePage(page, "backgroundColor")).every((fill) => fill === "rgb(255, 0, 0)"));
     record("usage-promoted", kept(result));
     expect(result.checks.outcomes[1]).toBe("shown");

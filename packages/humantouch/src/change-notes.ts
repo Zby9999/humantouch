@@ -932,14 +932,14 @@ const NOT_LOCATED =
 
 /**
  * Where a layer in an open shadow root is styled (ticket 137, ADR 0017): by
- * its component's own styles for it, not the page's CSS; drawn by a
+ * the styles of the component that renders into it, not the page's CSS; drawn by a
  * dependency's custom element, from its usage.
  */
 function shadowRootLine({ shadowRoot, chain }: Target): string {
-  if (chain[0]?.thirdParty) {
+  if (chain[0]?.webComponent) {
     return `**Shadow root:** the layer is in the shadow root of \`${shadowRoot}\`, a custom element a dependency defines: change it from where \`<${chain[0].component}>\` is used, by what it takes there (see **Third-party Web Components**), never inside the dependency.`;
   }
-  return `**Shadow root:** the layer is in the shadow root of \`${shadowRoot}\`, which the page's CSS does not reach: the change is to that component's own styles for its shadow root (see **Shadow roots**), not to global CSS.`;
+  return `**Shadow root:** the layer is in the shadow root of \`${shadowRoot}\`, which the page's CSS does not reach: the change is to the styles of the component that renders into its shadow root (see **Shadow roots**), not to global CSS.`;
 }
 
 function layer({ context, onlyText }: Target): string {

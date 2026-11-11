@@ -46,11 +46,15 @@ export function variablesLine(change: Change): string | null {
 function named(change: Change, slot: string, bound: Bound): string {
   const what = `${partOf(change, slot)} is the Variable \`${bound.name}\``;
   if (bound.from === "css") return `${what}, a CSS variable: use \`${bound.css}\`.`;
+  // In a shadow root (ticket 137), which no Tailwind class reaches: the CSS variable the theme gives it, which the page's custom properties do reach; or, with none, its value.
+  if (change.target.shadowRoot) return bound.css ? `${what}, from the Tailwind theme: in the shadow root's styles, use \`${bound.css}\`.` : `${what}, from the Tailwind theme, which gives it no CSS variable: in the shadow root's styles, use its value, \`${bound.value}\`.`;
   const name = bound.name === "DEFAULT" ? prefixOf(change, slot) : `${prefixOf(change, slot)}-${bound.name}`;
   return `${what}, from the Tailwind theme: use its class, \`${name}\`${bound.css ? ` (in CSS, \`${bound.css}\`)` : ""}.`;
 }
 
 function unnamed(change: Change, slot: string): string {
+  // In a shadow root (ticket 137): no Tailwind class reaches into it.
+  if (change.target.shadowRoot) return `no Variable has ${partOf(change, slot)}'s value: use the exact value, not a Variable whose value is close.`;
   const drawn = slotsOf(change.property, change.after)[slot]?.drawn;
   let arbitrary = "";
   if (typeof drawn === "number") arbitrary = `: \`${prefixOf(change, slot)}-[${drawn}px]\``;

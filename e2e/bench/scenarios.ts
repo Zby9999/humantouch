@@ -1776,7 +1776,7 @@ export const SCENARIOS: Scenario[] = [
       },
     ],
     async apply(desk) {
-      // As the notes say: the component's own styles for its shadow root, not the page's CSS, which does not reach in.
+      // As the notes say: the styles of the component that renders into its shadow root, not the page's CSS, which does not reach in.
       await desk.edit("src/shadow/ShadowPanel.tsx", ".panel { padding: 16px; border-radius: 16px; background: #fde68a; }", ".panel { padding: 16px; border-radius: 10px; background: #2563eb; }");
     },
   },

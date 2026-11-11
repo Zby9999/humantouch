@@ -41,7 +41,7 @@
 - **来源（style-source）**：`Candidate.inner` 换成 `depth`（本树 0、`:host`/`::slotted` 1、`::part` -1），按 CSS Cascade 的树上下文比较：普通声明外层赢，`!important` 内层赢。`::part()` 规则算来源（Design 面板和 claim 都报），`:host-context()` 不算。shadow root 自己的规则在来源上记 `shadowRoot`（host 的标签名）。
 - **claim**：`Target.shadowRoot`（host 的开始标签）。有 `data-ht-loc` 照写 Location；另加一行 **Shadow root**：改的是那个组件给它 shadow root 的样式，不是全局 CSS（新规则 **Shadow roots**）；没有位置（Lit）照「Not located」的规矩。shadow root 自己的规则在 Set by 里写成「of the styles `<tag>` has in its shadow root」，也不再出「A rule in no CSS layer」。
 - **第三方 Web Components（规划会话 A）**：开发时注入的脚本（`src/definitions.ts`，经 `vite.ts` 的 `transformIndexHtml`）包住 `customElements.define`，记下定义时的调用栈；包装之后的模块帧全在 `/node_modules/` 下的，算依赖定义的（`definedByDependency`）。没有 fiber 的层，`webComponentChain` 把 host 作为 `thirdParty` 放进使用链，照 120 的规则锁住；claim 的 Shadow root 行改说「从使用处改，用它接收的东西（见 **Third-party Web Components**）」，规则列出属性、slot、CSS 自定义属性和 `::part()`。
-- **done 的核对**：`page-elements` 的标记查找在页面或存的画布有 shadow root 时进到里面（`deep`），找不到照「Not checked」。其他宽度的页面副本（page-copy）把 open shadow root 连同 adopted 样式表一起复制、跟着同步；页面可克隆的 shadow root 也处理了。
+- **done 的核对**：`page-elements` 的标记查找在页面或存的画布有 shadow root 时进到里面（`deep`），找不到照「Not checked」。其他宽度的页面副本（page-copy）把页面的 open shadow root 连同 adopted 样式表一起复制，节点跟着同步（adopted 样式表只抄一次）；页面可克隆的 shadow root 也处理了。编辑层自己的 `<human-touch>` 和 `NOT_THE_PAGES` 的不算（review 后修，见下）。
 - **例子与 bench**：`examples/vite-react19-tw4` 加 `/shadow` 页（`src/shadow/ShadowPanel.tsx`，React portal 进 open shadow root，样式写在 `<style>` 里），`main.tsx` 只在末尾加动态 import，已有行号不动。新 bench 场景 `shadow-root-style`（填色 #2563EB、圆角 10，apply 步改 ShadowPanel.tsx 里 `.panel` 的 CSS 字符串）。
 - **ADR 0017**：`docs/adr/0017-edits-inside-shadow-roots.md`。
 
@@ -57,20 +57,42 @@
 
 1. 编辑样式表加在 shadow root 的末尾（不是开头）：要压过 shadow root 自己的普通规则；`:last-child` 一类选择器可能受影响（见风险）。
 2. host 元素本身的改动留在外层树（文档）的编辑样式里，只有 shadow root 里的层才写进 shadow root。
-3. 第三方只认 `/node_modules/` 下的模块；放在别的目录里的 vendored 包不认。
-4. 只有 Vite 插件注入包装脚本；Next.js 下没有第三方 Web Component 的检测（层不会被锁）。
+3. 第三方只认 `/node_modules/` 下的模块；放在别的目录里的 vendored 包不认（规划会话 2026-11-12 确认：不按 `vendor/`、`libs/` 推断；node_modules 以外的 vendored 包由 **Every change** 管，Agent 留下不做并报告。已写进 ADR 0017）。
+4. 只有 Vite 插件注入包装脚本；Next.js 下没有第三方 Web Component 的检测（规划会话确认，ticket 159 发布后做）：在那之前 Next 里第三方 Web Component 的 shadow root 算项目自己的、能改，Agent 照 **Every change** 留下不做并报告。已写进 ADR 0017 Consequences。
 5. 例子的 `/shadow` 页用动态 import 加，为了不动 `main.tsx` 已有的行号（已有场景的 claim-out 不变）。
 6. 第三方的检测用 e2e 的 route 提供 `/node_modules/acme-elements/chip.js`，没有在例子里真放一个 node_modules 包（例子的 node_modules 不入库）。
-7. claim 的 Variables 行对 shadow 层仍按原写法（会提 Tailwind 任意值），没有专门改写。
-8. `applying-bench.spec.ts:1527` 的一行改成 `expect.poll`（测试的竞争，不是产品行为）。
+7. claim 的 Variables 行对 shadow 层不提 Tailwind 类：Tailwind 主题的变量写成 `var(--…)`（主题没给 CSS 变量时写它的值），没有变量时只说用准确的值（review 4）。
+8. `applying-bench.spec.ts:1527` 的竞争：promote 之后等 scope 存成 component，放进 `changeACard`（测试的竞争，不是产品行为；reviewer 确认）。
 
 ### 风险
 
 1. 只认 `/node_modules/`；设计系统用 `register()` 之类、或在项目代码里调 `define` 注册第三方元素时，会被当成项目自己的（漏锁）。
 2. 调用栈默认 10 帧，很深的定义链可能把项目的元素误判为第三方。
 3. `dropUnusedRules` 的 PUT_BACK/MADE 和 check 的 `writtenAround` MADE 仍只看 light DOM（138 要处理）。138 还要在层在树之间移动时搬编辑样式。
-4. page-copy 的 observer 在 shadow root 被移走后仍在观察它（直到副本关闭）；`copyAll` 在每个页面上多一次 O(n) 的遍历找 host。
+4. page-copy 的 observer 在 shadow root 被移走后仍在观察它（直到副本关闭）；`copyAll` 在每个页面上多一次 O(n) 的遍历找 host（只在 `copyAll` 时，副本建立和过期重建时各一次）。页面自己没有 shadow root 时不 deep，不复制、不跟编辑层的界面。
+9. 页面副本里 adopted 样式表只在复制时抄一次：页面之后再改 adopted 样式表（`replaceSync`、换一组），其他宽度的核对看到的是旧的样式。
 5. `webComponentChain` 对所有没有 fiber 的层都会跑（读一次全局表，很轻）。
 6. 编辑样式加在 shadow root 末尾，会影响 shadow root 里的 `:last-child`/`:nth-last-child` 之类选择器。
 7. 页面在 shadow root 里分了层的 `!important` 会压过编辑；shadow root 的 `:host { … !important }` 会压过 host 上的编辑（Cascade 规定）。
-8. GLOSSARY 还没有 shadow root 的词条。
+8. ~~GLOSSARY 还没有 shadow root 的词条~~：已加 Shadow root、编辑样式两条（review 8）。
+
+### review 后的修改（2026-11-12）
+
+1. **页面副本不再复制编辑层自己的 shadow root**（high）：`hostsPagesShadowRoot`（`shadow-roots.ts`）去掉 `<human-touch>` 和 `NOT_THE_PAGES`，`copyAll` 的 hosts、`copyOf` 的 deep 判断、`queryDeep` 都用它。开发时每个页面都有 `<human-touch>`，之前副本因此总是 deep、复制编辑层界面、跟着界面的每次变化重排。加单元测试：只有 `<human-touch>` 和 `vite-error-overlay` 有 shadow root 的页面，副本里没有 shadow root、不 deep。ADR 0017 §四、上面的风险 4 已改。
+2. **React 第三方组件在项目自己的 shadow root 里**（medium）：`webComponentChain` 生成的那一级标 `webComponent: true`，claim 的 Shadow root 行和三条规则按这个标记选。portal 进 shadow root 的 Radix 一类组件，现在得到 **Third-party components** 和 **Shadow roots**，不再被说成自定义元素。加 cli 测试。
+3. **`definedByDependency` 认各浏览器的栈**：只读带脚本地址的行，包装那一层按最上面一行的地址去掉（不按位置），认 `at async …`。加 Firefox、Safari 格式和 async 帧的测试。
+4. **Variables 行**：shadow root 里的层不提 Tailwind 类（代定 7 已改）。
+5. `page-copy.ts` 的注释改正：adopted 样式表只抄一次，不跟（风险 9）。
+6. claim 措辞改成 "the styles of the component that renders into its shadow root"（宿主常常只是普通的 `<section>`）。
+7. 加 ⌥⌘C/⌥⌘V 跨树测试（文档层 → shadow 层，再回来，各写进自己树的编辑样式，撤销照常）；`applying-bench:1527` 的 poll 挪进 `changeACard`。
+8. GLOSSARY 加 Shadow root、编辑样式两条。规划会话对 vendored 和 Next.js 的答复写进了 ADR 0017 和上面的代定 3、4。
+
+**检查（不用锁，2026-11-12 02:40–03:09）**：
+- `pnpm typecheck`：packages/humantouch 和三个例子都过；website 在 `video/Root.tsx` 上失败（Remotion 和 @types/react 的类型不合），这个分支没碰那个文件，是 main 上的。
+- `pnpm test`：vitest 1284 passed / 1 skipped，node --test 132/132。
+- e2e（只跑相关的）：
+  - page 项目：`shadow-roots`、`style-copy`、`variables`，28 passed / 2 failed。失败的是 `shadow-roots:51`（像素相似度 0.87 < 0.9）和 `variables:290`（超时），都是机器忙；单独重跑 2/2 过。
+  - project files 项目（`--no-deps`）：`applying-bench`、`claim`、`round`、`bench-scenarios`，125/125 过。
+- bench `--dry`：33 个场景。claim-out 和 main 15e0492 的 32 个比，只多 `shadow-root-style.md`，其余逐字不变。`--scripted` 24/24 过。
+- perf（headless，只作参考）：20 passed。
+- 例子里没有遗留改动。

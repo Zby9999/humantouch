@@ -15,6 +15,8 @@ export interface UsageLevel {
   usage: string | null;
   /** The component comes from a third-party dependency: the JSX it writes carries no markers. */
   thirdParty: boolean;
+  /** The component is a custom element, its host, whose open shadow root the layer is in (ticket 137): one a dependency defines. */
+  webComponent?: true;
 }
 
 /** Where the freezer writes the chain on the canvas copy, as JSON. */
@@ -67,7 +69,7 @@ function webComponentChain(el: Element): UsageLevel[] {
   const host = root.nodeType === Node.DOCUMENT_FRAGMENT_NODE ? (root as ShadowRoot).host : null;
   const stack = host && defined.get(host.localName);
   if (!host || !stack || !definedByDependency(stack)) return [];
-  return [{ component: host.localName, usage: host.getAttribute(LOC_ATTR), thirdParty: true }, ...readUsageChain(host)];
+  return [{ component: host.localName, usage: host.getAttribute(LOC_ATTR), thirdParty: true, webComponent: true }, ...readUsageChain(host)];
 }
 
 /**
@@ -76,15 +78,20 @@ function webComponentChain(el: Element): UsageLevel[] {
  * dev server's own script recording it, is in `node_modules`, as the source
  * markers leave dependencies unmarked. A project's element defined through a
  * library's helper (Lit's `@customElement`) has a module of its own on it.
+ * Read the same in each browser's form of a stack: only its lines that name a
+ * script are read (Chrome heads its own with `Error`, Firefox and Safari do
+ * not), and the recording script is told by its address, that of the line on
+ * top, not by its place.
  */
 export function definedByDependency(stack: string): boolean {
-  const modules = stack
-    .split("\n")
-    .slice(1)
-    .flatMap((line) => /(?:\(|at |@)([a-z][\w+.-]*:\/\/[^\s)]+?):\d+:\d+\)?\s*$/i.exec(line.trim())?.[1] ?? [])
-    .slice(1);
+  const urls = stack.split("\n").flatMap((line) => FRAME.exec(line.trim())?.[1] ?? []);
+  const recording = urls[0];
+  const modules = urls.filter((url) => url !== recording);
   return modules.length > 0 && modules.every((url) => /\/node_modules\//.test(url));
 }
+
+/** A line of a stack that names a script, by its address: Chrome's `at f (…)`, `at …`, `at async …`; Firefox's and Safari's `f@…`. */
+const FRAME = /(?:\(|\bat (?:async )?|@|^)([a-z][\w+.-]*:\/\/[^\s)]+?):\d+:\d+\)?$/i;
 
 function fiberOf(el: Element): Fiber | undefined {
   const node = el as unknown as Record<string, Fiber | undefined>;

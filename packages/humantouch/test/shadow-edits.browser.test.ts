@@ -165,6 +165,27 @@ describe("a style edit to a layer in an open shadow root (ticket 137)", () => {
     expect(fill(b)).toBe("rgb(0, 128, 0)");
   });
 
+  test("copied from a layer of the document onto one in the shadow root, and back: each written into its own tree's edit styles", async () => {
+    const { doc, editor, layerOf } = await open();
+    const [other, a] = [doc.getElementById("other")!, inShadow(doc, "a")];
+    const editStyles = (root: Document | ShadowRoot) => root.querySelectorAll("style[data-ht-rules-for]").length;
+    editor.set(layerOf(other), "fill", RED);
+    pasteStyle(editor, [layerOf(a)], copyStyle(editor, layerOf(other))!);
+    expect(fill(a)).toBe("rgb(255, 0, 0)");
+    expect(editStyles(shadowOf(doc))).toBe(1);
+    editor.set(layerOf(a), "radius", 6);
+    pasteStyle(editor, [layerOf(other)], copyStyle(editor, layerOf(a))!);
+    expect(radius(other)).toBe("6px");
+    expect(radius(a)).toBe("6px");
+    expect(editStyles(doc)).toBe(1);
+    expect(editStyles(shadowOf(doc))).toBe(1);
+    editor.undo();
+    expect(radius(other)).toBe("2px");
+    editor.undo();
+    editor.undo();
+    expect(fill(a)).toBe("rgb(0, 128, 0)");
+  });
+
   test("records the layer's shadow root on its change, and what sets its value now as the shadow root's own rule", async () => {
     const { doc, editor, changes, layerOf } = await open();
     editor.set(layerOf(inShadow(doc, "a")), "fill", RED);
@@ -269,6 +290,28 @@ test("a copy of the page has a shadow root the page made clonable too, and follo
   }
 });
 
+test("a copy of a page whose only open shadow roots are the editor's own (`<human-touch>`) and the dev server's has none, and does not follow them", () => {
+  const live = livePage(`<!DOCTYPE html><body><p id="a">A</p><human-touch></human-touch><vite-error-overlay></vite-error-overlay></body>`, (doc) => {
+    doc.querySelector("human-touch")!.attachShadow({ mode: "open" }).innerHTML = `<div id="ui">Editor</div>`;
+    doc.querySelector("vite-error-overlay")!.attachShadow({ mode: "open" }).innerHTML = `<div>Overlay</div>`;
+  }).document;
+  const copy = copyPage(live, 390, document.body);
+  try {
+    expect(copy.doc.querySelector("human-touch")!.shadowRoot).toBeNull();
+    expect(copy.doc.querySelector("vite-error-overlay")!.shadowRoot).toBeNull();
+    // Not deep: a host added later is copied as any other element, with no shadow root.
+    live.querySelector("human-touch")!.shadowRoot!.getElementById("ui")!.textContent = "Changed";
+    expect(copy.sync()).toBe(false);
+    const later = live.createElement("div");
+    later.attachShadow({ mode: "open" }).innerHTML = `<span>In it</span>`;
+    live.body.append(later);
+    copy.sync();
+    expect(copy.of(later)!.shadowRoot).toBeNull();
+  } finally {
+    copy.close();
+  }
+});
+
 describe("what sets a value in an open shadow root (ticket 137)", () => {
   const PARTS = `<!DOCTYPE html>
 <style>body { margin: 0 } #host::part(label) { color: rgb(0, 0, 255) } #host::part(other) { color: rgb(0, 255, 0) }</style>
@@ -304,6 +347,20 @@ describe("a custom element a dependency defines (ticket 137)", () => {
     expect(definedByDependency(stack(page))).toBe(false);
   });
 
+  test("reads Firefox's and Safari's stacks, with no `Error` line, and async frames, as Chrome's", () => {
+    const page = "http://localhost:5173/";
+    const firefox = (...urls: string[]) => urls.map((url, i) => `${i ? "" : "r.define"}@${url}:1:10`).join("\n");
+    expect(definedByDependency(firefox(page, "http://localhost:5173/node_modules/.vite/deps/acme-ui.js?v=1"))).toBe(true);
+    expect(definedByDependency(firefox(page, "http://localhost:5173/node_modules/.vite/deps/lit.js?v=1", "http://localhost:5173/src/my-card.ts"))).toBe(false);
+    expect(definedByDependency(firefox(page))).toBe(false);
+    const safari = [`define@${page}:1:200`, "module code@http://localhost:5173/node_modules/acme-ui/chip.js:3:1", "evaluate@[native code]"].join("\n");
+    expect(definedByDependency(safari)).toBe(true);
+    const async = ["Error", `    at r.define (${page}:1:200)`, "    at http://localhost:5173/node_modules/acme-ui/chip.js:3:1", "    at async http://localhost:5173/src/main.tsx:9:3"].join("\n");
+    expect(definedByDependency(async)).toBe(false);
+    const asyncDependency = ["Error", `    at r.define (${page}:1:200)`, "    at async http://localhost:5173/node_modules/acme-ui/index.js:3:1"].join("\n");
+    expect(definedByDependency(asyncDependency)).toBe(true);
+  });
+
   test("draws the layers in its shadow root locked, used where its host is written; one the project defines, as any other", async () => {
     for (const dependency of [true, false]) {
       const live = livePage(PAGE_WITH_CHIP, (doc) => {
@@ -315,7 +372,7 @@ describe("a custom element a dependency defines (ticket 137)", () => {
       const label = buildLayerTree(canvas.document).layerOf(inShadowOf(canvas.document, "chip", "label"))!;
       if (dependency) {
         expect(label.kind).toBe("locked");
-        expect(label.chain).toEqual([{ component: "acme-chip", usage: "src/App.tsx:30:9", thirdParty: true }]);
+        expect(label.chain).toEqual([{ component: "acme-chip", usage: "src/App.tsx:30:9", thirdParty: true, webComponent: true }]);
       } else {
         expect(label.kind).not.toBe("locked");
         expect(label.chain).toEqual([]);

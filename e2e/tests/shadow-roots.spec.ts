@@ -280,5 +280,5 @@ test("the layers in the shadow root of a custom element a dependency defines are
   await width.fill("90");
   await width.press("Enter");
   const { changeSet } = JSON.parse((await saved).postData()!);
-  expect(changeSet.changes[0].target).toMatchObject({ locked: true, loc: null, chain: [{ component: "acme-chip", thirdParty: true }], shadowRoot: '<acme-chip id="chip">' });
+  expect(changeSet.changes[0].target).toMatchObject({ locked: true, loc: null, chain: [{ component: "acme-chip", thirdParty: true, webComponent: true }], shadowRoot: '<acme-chip id="chip">' });
 });
