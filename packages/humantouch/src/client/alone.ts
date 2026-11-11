@@ -53,6 +53,8 @@ export interface Alone {
  * own in it renders them. Null when it is not.
  */
 export function aloneOf(tree: LayerTree, layer: Layer): Alone | null {
+  // In no instance alone: nothing to work out, on every step of an edit.
+  if (!layer.el.closest(`[${ALONE_ATTR}]`)) return null;
   const root = loopInstanceOf(tree, layer);
   const mark = root?.el.getAttribute(ALONE_ATTR);
   if (!root || !mark) return null;
