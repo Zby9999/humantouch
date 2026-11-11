@@ -107,9 +107,13 @@ export function HeroEditor() {
   );
 }
 
-/** The bottom of the hero, frame and all, blurred more and more toward the page, and faded into it. */
+/**
+ * The bottom of the hero, frame and all, blurred more and more toward the page, and faded into it. Three layers of
+ * backdrop blur: each one is redrawn on every frame of a scroll, and six made scrolling stutter (57 of 240 frames over
+ * 25ms, headless at 2x; three, none).
+ */
 function ProgressiveBlur() {
-  const steps = [1, 2, 4, 8, 16, 32];
+  const steps = [3, 8, 20];
   return (
     <div aria-hidden="true" className="pointer-events-none absolute -inset-x-px -bottom-px h-[20%]">
       {steps.map((blur, i) => {
