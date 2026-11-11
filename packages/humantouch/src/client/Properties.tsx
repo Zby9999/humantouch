@@ -1026,9 +1026,11 @@ function cssFamily(name: string): string {
 }
 
 /**
- * Text, as in Figma: the font (one the page has loaded) and its weight (one it
- * has loaded) and size, line height and letter spacing, alignment, case and
- * decoration. Its color is its Fill.
+ * Text, as in Figma: the font (one the page has: a web font it declares, or a
+ * font of the system its text uses) and its weight (one it has: of a web font,
+ * those it declares, loaded or not yet (ticket 140); of a font of the system,
+ * those its text uses) and size, line height and letter spacing, alignment,
+ * case and decoration. Its color is its Fill.
  */
 function TextSection({ size, families, weight, lineHeight, letterSpacing, align, textCase, decoration, fonts, fontSize, set }: {
   size: Shown<number>;
@@ -1047,13 +1049,13 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
   set: Setter;
 }) {
   const family = shared(families);
-  const loaded = fonts.filter((font) => families.includes(font.family)).flatMap((font) => font.weights);
-  // The text's own font and weight show where the page has not loaded them, and cannot be chosen again.
+  const offered = fonts.filter((font) => families.includes(font.family)).flatMap((font) => font.weights);
+  // The text's own font and weight show where the page does not have them, and cannot be chosen again.
   const names = [...fonts.map((font) => font.family), ...(family === MIXED || fonts.some((font) => font.family === family) ? [] : [family])];
-  const weights = [...new Set([...loaded, ...(weight === MIXED ? [] : [weight])])].sort((a, b) => a - b);
+  const weights = [...new Set([...offered, ...(weight === MIXED ? [] : [weight])])].sort((a, b) => a - b);
   /**
-   * A font changed: the font alone, the weight kept as it is, though the new font has not loaded it; the browser then draws the
-   * nearest it has, or makes it bolder itself (designer, 2026-11-08).
+   * A font changed: the font alone, the weight kept as it is, though the new font does not declare it; the browser then draws the
+   * nearest it declares, loading it, or makes it bolder itself (designer, 2026-11-08; ticket 140).
    */
   const changeFont = (next: string) => set("fontFamily")(next);
   return (
@@ -1064,7 +1066,7 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
       </div>
       {/* The font, marked when changed, its reset at the right end; at its left, where a field has its icon, "Aa" in it, as in the designer's Figma (designer, 2026-11-08). */}
       <MarkedSelect label="Font" property="fontFamily" class="ht-font-field">
-        {/* Mixed: a plain "Aa", in the editor's font. A font the page never loaded falls back, as the canvas text does. */}
+        {/* Mixed: a plain "Aa", in the editor's font. A font the page does not have falls back, as the canvas text does. */}
         <span class="ht-font-sample" aria-hidden="true" style={family === MIXED ? undefined : { fontFamily: cssFamily(family) }}>
           Aa
         </span>
@@ -1083,7 +1085,7 @@ function TextSection({ size, families, weight, lineHeight, letterSpacing, align,
           <Choice
             label="Font weight"
             value={weight === MIXED ? null : String(weight)}
-            options={weights.map((w) => ({ value: String(w), label: weightName(w), disabled: !loaded.includes(w) }))}
+            options={weights.map((w) => ({ value: String(w), label: weightName(w), disabled: !offered.includes(w) }))}
             onChange={(w) => set("fontWeight")(Number(w))}
           />
         </MarkedSelect>

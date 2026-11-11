@@ -24,3 +24,11 @@
 - [ ] 没有源码位置的层，`claim` 照「找不到位置」的规矩说。有单元测试。
 - [ ] 没有 shadow root 的页面，样式改动、撤销、复制粘贴、核对的已有测试全过；perf（headless）不变差。
 - [ ] `--scripted` 全过；整套 e2e 过。
+
+## 规划会话补充（2026-11-11 晚，136 的问题 A、B）
+
+- **第三方 Web Components 的层要锁住**，和 React 第三方组件一样：
+  - 定义自定义元素的模块来自 `node_modules` 或 vendored 包的，它 shadow root 里的层在使用链上标 thirdParty。
+  - 照 ticket 120 的「Third-party components」规则，只能走组件从使用处接收的东西改：属性、slot、CSS 自定义属性、`::part()`。
+  - 加一个测试或 bench 场景，第三方 Web Component（比如一个放在示例 `node_modules` 里的小组件）里的层带 thirdParty，规则会出现。
+- **`::part()` 写的样式算来源**，Design 面板和 `claim` 都要报出来；`:host-context()` 暂不算。
