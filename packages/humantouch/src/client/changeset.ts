@@ -28,6 +28,12 @@ export interface Target {
   run?: number;
   /** The only text of a Frame, as a button's words are: it has no element of its own, and its styles are written on the Frame's, at `loc`, which its words inherit. */
   onlyText?: true;
+  /**
+   * The layer is in an open shadow root (ticket 137, ADR 0017): its host, as
+   * an opening tag. No CSS of the document reaches it: the component's own
+   * styles for its shadow root do, and `::part()` rules for the parts it exposes.
+   */
+  shadowRoot?: string;
   /** Where the layer is on the page, for the Agent to find it by when its source is not known. */
   context: {
     /** Layer names from the page down to the layer itself. */

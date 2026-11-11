@@ -230,3 +230,37 @@ function attachDeclared(root: ParentNode) {
     attachDeclared(shadow);
   }
 }
+
+/**
+ * The elements in `root` that match `selector`, itself too; with `deep`, those
+ * in its open shadow roots too, nested ones, whether or not its document is
+ * noted to hold any: for the live page, which never is (ticket 137), when
+ * what is looked for may be in one.
+ */
+export function queryDeep<E extends Element = Element>(root: Document | Element, selector: string, deep: boolean): E[] {
+  const found = root.nodeType === Node.ELEMENT_NODE && (root as Element).matches(selector) ? [root as E] : [];
+  found.push(...root.querySelectorAll<E>(selector));
+  if (!deep) return found;
+  const hosts = (scope: ParentNode) => [...(scope === root && root.nodeType === Node.ELEMENT_NODE ? [root as Element] : []), ...scope.querySelectorAll("*")].filter((el) => el.shadowRoot);
+  const scopes: ParentNode[] = [root];
+  for (let i = 0; i < scopes.length; i++) {
+    for (const host of hosts(scopes[i])) {
+      scopes.push(host.shadowRoot!);
+      found.push(...host.shadowRoot!.querySelectorAll<E>(selector));
+    }
+  }
+  return found;
+}
+
+/**
+ * A canvas as saved, parsed with no window to show it in, its declarative
+ * shadow roots made shadow roots again (ticket 137) and the document noted to
+ * hold them, so what looks for layers finds those in them too. With none
+ * written, as `DOMParser` parses it. Written back with `htmlOf`.
+ */
+export function parseCanvas(html: string): Document {
+  if (!html.includes("shadowrootmode") || typeof Document.parseHTMLUnsafe !== "function") return new DOMParser().parseFromString(html, "text/html");
+  const doc = Document.parseHTMLUnsafe(html);
+  noteShadowRoots(doc, true);
+  return doc;
+}

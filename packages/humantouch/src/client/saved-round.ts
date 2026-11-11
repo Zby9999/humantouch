@@ -9,6 +9,7 @@ import { cssOf, type Property } from "./property-table";
 import { removeMade, unhide, writeText } from "./layer-changes";
 import { relocate, syncOrders } from "./moves";
 import { componentBrief, componentElements, showComponent } from "./promote";
+import { htmlOf, parseCanvas, queryWithin } from "./shadow-roots";
 import { decompose, undissolve } from "./stacks";
 
 /** The round with what the page shows in each part of change `id`'s range, read (ticket 65); null: it could not be, and the change is as one with no parts. */
@@ -30,7 +31,8 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
   const changes = createChangeSet(round.changeSet);
   const taken = withDependents(changes.list(), id);
   if (!taken.length) return round;
-  const doc = new DOMParser().parseFromString(round.canvas, "text/html");
+  // Its shadow roots too, as shadow roots, the layers in them found (ticket 137).
+  const doc = parseCanvas(round.canvas);
   upgradeEditStyles(doc);
   takeInApplied(doc, round.changeSet);
   for (const change of taken) {
@@ -65,7 +67,7 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
   syncOrders(doc, changes);
   if (!changes.list().length) return null;
   const doctype = /^<!DOCTYPE html>/i.test(round.canvas) ? "<!DOCTYPE html>" : "";
-  return { canvas: doctype + doc.documentElement.outerHTML, changeSet: changes.save() };
+  return { canvas: doctype + htmlOf(doc.documentElement), changeSet: changes.save() };
 }
 
 /**
@@ -106,7 +108,7 @@ export function takeInApplied(doc: Document, changeSet: SavedChangeSet) {
     }
   }
   const appliedOn = on(applied);
-  const touched = new Set([...doc.querySelectorAll(`[${LAYER_ID_ATTR}]`)].filter((el) => appliedOn(el).length || written.get(el)?.applied.length));
+  const touched = new Set(queryWithin(doc, `[${LAYER_ID_ATTR}]`).filter((el) => appliedOn(el).length || written.get(el)?.applied.length));
   takeInEdits(touched, appliedOn, on(left), (el) => written.get(el) ?? { applied: [], left: [] });
   for (const change of applied) {
     if (change.kind !== "text") continue;

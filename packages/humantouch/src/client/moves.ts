@@ -7,6 +7,7 @@ import { changesOn, declare, DELETED_ATTR, elementsOf, keepOriginal, LAYER_ID_AT
 import { isReorder, placedAt, type Change, type ChangeSet, type Place } from "./changeset";
 import { NOT_DRAWN, signOf } from "./layers";
 import { savedCanvas, type SavedCanvas } from "./page-elements";
+import { parseCanvas } from "./shadow-roots";
 
 /** The CSS properties a move may declare on the layer: what moving it back takes off. */
 export const MOVE_CSS = ["position", "left", "top", "right", "bottom", "width", "height"];
@@ -120,7 +121,8 @@ function kept(round: RoundOnCanvas, canvas: string, doc?: Document): RoundOnCanv
 /** Each round placed on its canvas, with the canvas as saved, read once it is needed. */
 const canvases = new WeakMap<RoundOnCanvas, { canvas: string; doc?: Document; read?: SavedCanvas }>();
 
-const parse = (canvas: string) => new DOMParser().parseFromString(canvas, "text/html");
+/** Its shadow roots as shadow roots, the layers in them found (ticket 137). */
+const parse = (canvas: string) => parseCanvas(canvas);
 
 /**
  * The canvas of `round`, as saved: what the page goes by to find a layer

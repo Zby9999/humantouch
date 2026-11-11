@@ -141,6 +141,73 @@ describe("claim", () => {
     expect(notes).toContain('- **Layer:** Stack, `<div id="root">` (Page › Stack)');
   });
 
+  test("a layer in a shadow root, located, says Location as any other, and that the change is to its component's own styles for the shadow root, not global CSS; the rule that sets it now is named as the component's (ticket 137)", async () => {
+    const title = {
+      ...cards,
+      loc: "src/HeroCard.tsx:21:11",
+      chain: [{ component: "HeroCard", usage: "src/App.tsx:12:7", thirdParty: false }, APP],
+      component: "HeroCard",
+      instances: 1,
+      shadowRoot: '<hero-card id="hero">',
+      context: { path: ["Page", "hero-card", "Title"], element: '<h2 class="title">' },
+    };
+    const source = { properties: ["background-color"], kind: "rule", selector: ".title", file: null, layer: null, important: false, className: "title", declaration: "background: rgb(0, 128, 0)", shadowRoot: "hero-card" };
+    saveRound({ ...redFill, target: title, sources: [source] });
+
+    const notes = (await cli("claim")).output;
+
+    expect(section(notes, 1)).toContain("- **Location:** `src/HeroCard.tsx:21:11`\n");
+    expect(section(notes, 1)).toContain(
+      "- **Shadow root:** the layer is in the shadow root of `<hero-card id=\"hero\">`, which the page's CSS does not reach: the change is to that component's own styles for its shadow root (see **Shadow roots**), not to global CSS.\n",
+    );
+    expect(section(notes, 1)).toContain("- **Currently set by:** class `title`: rule `.title` in no CSS layer, of the styles `<hero-card>` has in its shadow root, `background: rgb(0, 128, 0)`\n");
+    expect(notes).toContain("- **Shadow roots:** a layer in a shadow root");
+    expect(notes).not.toContain("- **Third-party Web Components:**");
+  });
+
+  test("a layer in a shadow root with no source marker, as a Lit template writes it, is not located, as any other such layer, and the page does not check it (ticket 137)", async () => {
+    const inLit = {
+      ...cards,
+      loc: null,
+      chain: [],
+      component: null,
+      instances: 1,
+      unlocated: true,
+      shadowRoot: "<lit-card>",
+      context: { path: ["Page", "lit-card", "Frame"], element: '<div class="card">' },
+    };
+    saveRound({ ...redFill, target: inLit });
+
+    const notes = (await cli("claim")).output;
+
+    expect(section(notes, 1)).toContain("- **Location:** **Not located.**");
+    expect(section(notes, 1)).toContain("- **Shadow root:** the layer is in the shadow root of `<lit-card>`");
+    expect(notes).toContain("a change to a layer the page cannot find");
+  });
+
+  test("a layer in the shadow root of a custom element a dependency defines is changed from its usage, by what it takes there, `::part()` among them; not the React third-party rule (ticket 137)", async () => {
+    const chip = {
+      ...cards,
+      loc: null,
+      chain: [{ component: "acme-chip", usage: "src/App.tsx:30:9", thirdParty: true }, APP],
+      component: "acme-chip",
+      instances: 1,
+      locked: true,
+      unlocated: true,
+      shadowRoot: "<acme-chip>",
+      context: { path: ["Page", "acme-chip", "acme-chip"], element: '<span part="label">' },
+    };
+    saveRound({ ...redFill, target: chip });
+
+    const notes = (await cli("claim")).output;
+
+    expect(section(notes, 1)).toContain("a custom element a dependency defines: change it from where `<acme-chip>` is used");
+    expect(notes).toContain("- **Third-party Web Components:**");
+    expect(notes).toContain("`::part()` rules for the parts it exposes");
+    expect(notes).not.toContain("- **Third-party components:**");
+    expect(notes).not.toContain("- **Shadow roots:**");
+  });
+
   test("a layer the outermost component writes is changed where it is written, with no other usages to spare", async () => {
     const inApp = { ...cards, loc: "src/App.tsx:27:9", chain: [APP], component: "App", instances: 1 };
     saveRound({ ...redFill, target: inApp });
