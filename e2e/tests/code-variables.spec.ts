@@ -110,3 +110,64 @@ test("on a Tailwind v4 project, a class writes its theme's Variable through `var
   await expect(chip(page, "Padding top")).toHaveText("2");
   await expect(changesOpener(page)).toHaveCount(0);
 });
+
+/**
+ * Ticket 139: a code's Variable, its name clicked, opens its Variables as one picked does, left of the Design panel and
+ * level with the name, which stays: the popover's search box, focused, is not the field typed into. `dialog`: the
+ * popover's name; `other`: a Variable picked in it, which the name then shows. Esc closes it, the focus back on the name.
+ */
+async function pickFromName(page: Page, field: string, shown: string, dialog: string, other: string) {
+  const name = chip(page, field);
+  await expect(name).toHaveText(shown);
+  await name.click();
+  const popover = page.getByRole("dialog", { name: dialog, exact: true });
+  const search = popover.getByRole("searchbox", { name: "Search variables" });
+  await expect(popover).toBeVisible();
+  const [box, at, panel] = [await steadyBox(popover), await steadyBox(name), await steadyBox(design(page))];
+  expect(box.x).toBeLessThan(panel.x);
+  expect(box.x + box.width).toBeLessThanOrEqual(at.x);
+  // Level with the name, unless that would take it, as tall as it can be (520px), past the window's foot: then it is moved up.
+  const high = await page.evaluate(() => window.innerHeight);
+  expect(Math.abs(box.y - Math.max(8, Math.min(at.y, high - Math.min(520, high - 16) - 8)))).toBeLessThanOrEqual(1);
+  expect(box.y).toBeGreaterThan(8);
+  // The name stays, no field in its place, and the search box keeps the focus.
+  await expect(name).toHaveText(shown);
+  await expect(search).toBeFocused();
+
+  await popover.getByRole("option", { name: other, exact: true }).click();
+  await expect(popover).toBeHidden();
+  await expect(name).toHaveText(other);
+
+  await name.click();
+  await expect(search).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(popover).toBeHidden();
+  await expect(name).toBeFocused();
+  await expect(name).toHaveText(other);
+}
+
+test("a code's Variable, its name clicked, opens its Variables left of the panel, level with it; the name stays, and one picked there takes its place: the button's Gap and Padding (ticket 139)", async ({ page }) => {
+  await enterEditMode(page, DEV_URL);
+  await pick(page, desktop(page), "[data-testid=hero] button");
+  await pickFromName(page, "Gap", "2", "Gap variables", "3");
+  await pickFromName(page, "Padding left", "4", "Padding left variables", "6");
+});
+
+test("a code's color Variable, its name clicked, opens the Variables tab left of the panel, level with it; the name stays, and one picked there takes its place: the button's Fill (ticket 139)", async ({ page }) => {
+  await enterEditMode(page);
+  await selectRow(page, "Button");
+
+  // The picker's own Hex field, focused, is not the field either: the code's name stays.
+  await design(page).getByRole("button", { name: "Fill color picker" }).click();
+  const picker = page.getByRole("dialog", { name: "Fill color", exact: true });
+  await picker.getByRole("tab", { name: "Custom" }).click();
+  const hex = picker.getByRole("textbox", { name: "Hex", exact: true });
+  await hex.click();
+  await expect(hex).toBeFocused();
+  await expect(chip(page, "Fill color")).toHaveText("brand-500");
+  await expect(design(page).getByRole("textbox", { name: "Fill color", exact: true })).toHaveCount(0);
+  await picker.getByRole("button", { name: "Close" }).click();
+  await expect(picker).toBeHidden();
+
+  await pickFromName(page, "Fill color", "brand-500", "Fill color", "ink");
+});
