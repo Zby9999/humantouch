@@ -5,7 +5,7 @@ import { CanvasDemo } from "@/components/demos/CanvasDemo";
 import { DesignPanelDemo } from "@/components/demos/DesignPanelDemo";
 import { ApplyDemo } from "@/components/demos/ApplyDemo";
 import { MiniVideo } from "@/components/demos/MiniVideo";
-import { BriefMini, OffCanvasMini } from "@/components/demos/Minis";
+import { OffCanvasMini } from "@/components/demos/Minis";
 import { installPrompt } from "@/lib/readme";
 import { UPDATES } from "@/lib/updates";
 
@@ -54,7 +54,7 @@ export default function Home() {
 
       <section className="grid w-full max-w-[800px] gap-5 min-[1100px]:max-w-[1200px] min-[1100px]:grid-cols-3">
         <Mini visual="top" title="Say what the panel can’t" body="Write on a layer what your Agent should achieve there.">
-          <BriefMini />
+          <MiniVideo src="/videos/brief.mp4" poster="/videos/brief.jpg" />
         </Mini>
         <Mini visual="bottom" fill="bg-[#23292D]" title="Set layers aside" body="Drag a layer off the canvas, and it waits there till you need it.">
           <OffCanvasMini />
