@@ -35,7 +35,7 @@ import type { Axis } from "./client/snap";
 import type { UsageLevel } from "./client/usage-chain";
 import { variablesLine } from "./variable-notes";
 import { writingRules } from "./writing-rules";
-import { changeTitle, kindTitle, layerName, listed, moveKind, ordinal, propertyName, quoted, stackSettings, usagePlace, usedAt, value } from "./design-values";
+import { changeTitle, breaksLines, inLines, kindTitle, layerName, listed, moveKind, ordinal, propertyName, quoted, quotedWords, stackSettings, usagePlace, usedAt, value } from "./design-values";
 import type { WhereToLook } from "./where-to-look";
 
 export interface NotesOptions {
@@ -213,10 +213,15 @@ function intent(change: Change, list: Change[], look?: WhereToLook): string {
       const { type, place, width, height, text } = change.after as Created;
       if (type === "frame") return `Add a Frame, Fixed ${width} × ${height}px, with no fill, ${placement(place, placeOnceApplied(change, list))}.`;
       const wide = width === null ? "" : `, ${width}px wide`;
-      return `Add text that reads ${quoted(text ?? "")}${wide}, ${placement(place, placeOnceApplied(change, list))}. Give it the page's body text style, as the reference style shows, from what the page already uses for body text${bodyText(look)}.`;
+      const lines = breaksLines(change) ? ` It reads ${inLines(text!)}, a line break where ↵ is.` : "";
+      return `Add text that reads ${quotedWords(text ?? "")}${wide}, ${placement(place, placeOnceApplied(change, list))}.${lines} Give it the page's body text style, as the reference style shows, from what the page already uses for body text${bodyText(look)}.`;
     }
-    case "text":
-      return `Change the text from ${quoted(change.before as string)} to ${quoted(change.after as string)}.`;
+    case "text": {
+      const [before, after] = [change.before as string, change.after as string];
+      // Only words with a line break, before or after, say so (ticket 144): every other round's notes stay as they were.
+      const lines = breaksLines(change) ? ` The new words are ${after.includes("\n") ? `${inLines(after)}, a line break where ↵ is` : "on one line, with no line break"}.` : "";
+      return `Change the text from ${quotedWords(before)} to ${quotedWords(after)}.${lines}`;
+    }
     case "brief":
       if (!change.after) return "Make this copy without what the brief it was copied with asks for: leave it a Frame as the designer drew it.";
       return (
@@ -712,7 +717,7 @@ function sketch(change: Change, list: Change[]): string[] {
   const items = drawnIn(change.layer, list).map((c) => {
     const place = placedAt(c)!;
     const made = c.kind === "create" ? (c.after as Created) : null;
-    const what = made ? (made.type === "text" ? `Text ${quoted(made.text ?? "")}` : "Frame") : `${layerName(c)} (${c.kind === "move" ? "moved in" : c.kind === "putBack" ? "put back" : "a copy"})`;
+    const what = made ? (made.type === "text" ? `Text ${quotedWords(made.text ?? "")}` : "Frame") : `${layerName(c)} (${c.kind === "move" ? "moved in" : c.kind === "putBack" ? "put back" : "a copy"})`;
     const at = laidOut.indexOf(c.layer);
     let where = `${ordinal(at === -1 ? place.nth : at + 1)} in its layout`;
     if (place.absolute) where = `X ${latest(c.layer, "x", place.absolute.x)}px, Y ${latest(c.layer, "y", place.absolute.y)}px`;
@@ -885,7 +890,7 @@ function aloneLine({ target: { instances }, instance }: Change): string {
 
 /** What a change to one of a loop's instances alone asks of the data the loop goes through. */
 function dataChange({ kind, target: { instances }, instance }: Change): string {
-  const which = instance ? `, the ${ordinal(instance.nth)} of them${instance.words ? `, which reads ${quoted(instance.words)}` : ""}` : "";
+  const which = instance ? `, the ${ordinal(instance.nth)} of them${instance.words ? `, which reads ${quotedWords(instance.words)}` : ""}` : "";
   const one = `**Data change:** the layer is one of the ${instances} instances a loop renders${which}`;
   const outside = "if the data comes from outside the code (an API, a CMS), say so in the report.";
   if (kind === "text") return `${one}, each with words of its own: they come from the data the loop goes through. Change them there; ${outside}`;
