@@ -28,9 +28,20 @@ const CAMERA = { x: 32, y: 72, k: (ROOM - 2 * SCREEN_GAP) / VIEWS_WIDTH };
 const VIEW_GAP = SCREEN_GAP / CAMERA.k;
 const FRAME_LEFT = VIEWS.map((_, i) => VIEWS.slice(0, i).reduce((x, v) => x + v.width + VIEW_GAP, 0));
 const STAGE_WIDTH = FRAME_LEFT.at(-1)! + VIEWS.at(-1)!.width;
-/** The hero's frame, as the product's toggle has one (toggle-styles.ts): a ground round it, a hairline, the editor raised in it. */
+/**
+ * The hero's frame, as the product's toggle has one (toggle-styles.ts): a ground round it, a hairline, the editor raised in
+ * it. These are its sizes at the hero's full width; narrower, they scale with the editor (designer, 2026-11-11: at a phone's
+ * width the corners looked too round), down to a floor, so the frame never goes square.
+ */
 const FRAME_PAD = 6;
 const EDITOR_RADIUS = 12;
+const FULL_SCALE = (1200 - 2 * FRAME_PAD) / W;
+function frame(scale: number) {
+  const k = Math.min(1, scale / FULL_SCALE);
+  const pad = Math.max(3, FRAME_PAD * k);
+  const radius = Math.max(4, EDITOR_RADIUS * k);
+  return { pad, radius, outer: pad + radius };
+}
 
 /** The product's timings for a level closed in the Layers (motion.ts). */
 const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
@@ -70,7 +81,8 @@ export function HeroEditor() {
   const inner = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const [shadow, setShadow] = useState<ShadowRoot | null>(null);
-  const [scale, setScale] = useState((1200 - 2 * FRAME_PAD) / W);
+  const [scale, setScale] = useState(FULL_SCALE);
+  const { pad, radius, outer } = frame(scale);
 
   useLayoutEffect(() => {
     const el = inner.current!;
@@ -88,11 +100,11 @@ export function HeroEditor() {
   }, []);
 
   return (
-    <section aria-label="Human Touch's editor, to try" className="relative w-full max-w-[1200px] rounded-[18px] bg-neutral-0 shadow-[0_0_0_0.5px_var(--color-neutral-250)] dark:bg-raised dark:shadow-[0_0_0_0.5px_var(--color-surface)]" style={{ padding: FRAME_PAD }}>
+    <section aria-label="Human Touch's editor, to try" className="relative w-full max-w-[1200px] bg-neutral-0 shadow-[0_0_0_0.5px_var(--color-neutral-250)] dark:bg-raised dark:shadow-[0_0_0_0.5px_var(--color-surface)]" style={{ padding: pad, borderRadius: outer }}>
       <div
         ref={inner}
         className="relative overflow-hidden bg-neutral-100 shadow-[0_1px_1px_rgb(0_0_0/0.15),0_0_0_0.5px_rgb(0_0_0/0.15)] dark:bg-transparent"
-        style={{ height: H * scale, borderRadius: EDITOR_RADIUS }}
+        style={{ height: H * scale, borderRadius: radius }}
       >
         <div className="absolute top-0 left-0 origin-top-left" style={{ width: W, height: H, transform: `scale(${scale})` }}>
           <div ref={host} />

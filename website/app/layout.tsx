@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Instrument_Serif, Inter, Rajdhani } from "next/font/
 import "./globals.css";
 import { HumanTouch } from "humantouch/react";
 import { Nav } from "@/components/Nav";
+import { SITE_URL } from "@/lib/site";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 /** Every weight Rajdhani has, for the labels to be tried at each (designer, 2026-11-11); all loaded, see globals.css. */
@@ -13,8 +14,9 @@ const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono"
 const instrumentSerif = Instrument_Serif({ subsets: ["latin"], weight: "400", style: ["normal", "italic"], variable: "--font-instrument-serif" });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "Human Touch",
-  description: "An Agent native design layer inside your project's local dev server. Edit the page itself, visually, on a canvas, then have your Agent write the changes into the code.",
+  description: "An Agent native design layer, under 4 MB. Step in anytime, the way you've always designed, then have your Agent write the changes into the code.",
 };
 
 /** Sets the theme picked in the footer before the page paints, so it does not flash. */

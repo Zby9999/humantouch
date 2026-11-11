@@ -2,6 +2,9 @@
   "name": "humantouch-website",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "editor-css": "node scripts/editor-css.mjs",
     "predev": "node scripts/editor-css.mjs",

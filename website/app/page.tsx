@@ -1,11 +1,10 @@
-import { CopyButton } from "@/components/CopyButton";
+import { InstallButton } from "@/components/InstallButton";
 import { ThemeSwitch } from "@/components/ThemeSwitch";
 import { HeroEditor } from "@/components/editor/HeroEditor";
 import { CanvasDemo } from "@/components/demos/CanvasDemo";
 import { DesignPanelDemo } from "@/components/demos/DesignPanelDemo";
 import { ApplyDemo } from "@/components/demos/ApplyDemo";
 import { MiniVideo } from "@/components/demos/MiniVideo";
-import { installPrompt } from "@/lib/readme";
 import { UPDATES } from "@/lib/updates";
 
 /**
@@ -17,7 +16,6 @@ const BUTTON_ACCENT =
   "rounded-lg bg-blue-500 text-neutral-50 shadow-[inset_0_0_0_0.5px_rgb(0_0_0/0.15),0_1px_1px_rgb(0_0_0/0.15)] hover:bg-blue-600";
 
 export default function Home() {
-  const prompt = installPrompt();
 
   return (
     <main className="flex flex-col items-center gap-20 px-4 pt-[120px] pb-12 max-xl:pb-3.5 md:pt-[160px]">
@@ -25,11 +23,12 @@ export default function Home() {
         <div className="flex flex-col gap-3 px-1.5">
           <h1 className="label font-sans font-medium text-ink-strong normal-case tracking-[-0.005em]">Human Touch</h1>
           <div className="text-[16px] leading-[1.4] font-[440] tracking-[-0.04px] text-ink-strong">
-            <p className="text-balance">An Agent native design layer inside your project&apos;s local dev server.</p>
-            <p className="text-balance">Edit the page itself, visually, on a canvas, then have your Agent write the changes into the code.</p>
+            <p className="text-balance">An Agent native design layer, under 4 MB.</p>
+            <p className="text-balance">Step in anytime, the way you&apos;ve always designed,</p>
+            <p className="text-balance">then have your Agent write the changes into the code.</p>
           </div>
         </div>
-        <CopyButton text={prompt} label="Copy prompt to install" size="h-8 px-4" font="text-sm" surface={BUTTON_ACCENT} className="self-start" />
+        <InstallButton surface={BUTTON_ACCENT} />
       </section>
 
       <HeroEditor />
@@ -99,7 +98,7 @@ export default function Home() {
               <p className="text-balance">Install and apply changes in seconds</p>
             </div>
           </div>
-          <CopyButton text={prompt} label="Copy prompt to install" size="h-8 px-4" font="text-sm" surface={BUTTON_ACCENT} />
+          <InstallButton surface={BUTTON_ACCENT} align="center" />
         </section>
 
         <footer className="flex w-full max-w-[800px] items-start justify-between">
@@ -134,12 +133,12 @@ function Feature({ side, backdrop, title, body, children }: { side: "left" | "ri
   );
 }
 
-/** One of the three small cards: a 300px visual at its top or bottom (`fill`, its color behind the demo), the words in the rest. One column below 1100px wide (designer, 2026-11-11): three would each be too narrow. */
+/** One of the three small cards: a 300px visual at its top or bottom (`fill`, its color behind the demo), the words in the rest. Framed as the features are (designer, 2026-11-11): 4px round the visual, its hairline, 8px corners outside and 4px inside. One column below 1100px wide (designer, 2026-11-11): three would each be too narrow. */
 function Mini({ visual, fill = "bg-sunk", title, body, children }: { visual: "top" | "bottom"; fill?: string; title: string; body: string; children: React.ReactNode }) {
   return (
-    <div className={`flex flex-col gap-3 rounded-[4px] bg-surface p-3 min-[1100px]:h-[500px] ${visual === "bottom" ? "min-[1100px]:flex-col-reverse min-[1100px]:justify-between" : ""}`}>
-      <div className={`relative h-[300px] shrink-0 overflow-hidden rounded-[4px] ${fill}`}>{children}</div>
-      <div className="flex flex-col gap-2 p-3">
+    <div className={`flex flex-col gap-3 rounded-lg bg-surface p-1 ${visual === "bottom" ? "min-[1100px]:flex-col-reverse min-[1100px]:justify-between" : ""}`}>
+      <div className={`relative h-[300px] shrink-0 overflow-hidden rounded-sm border border-neutral-0 dark:border-raised ${fill}`}>{children}</div>
+      <div className={`flex flex-col gap-2 px-4 pt-2 pb-5 ${visual === "bottom" ? "min-[1100px]:pt-5 min-[1100px]:pb-2" : ""}`}>
         <h3 className="text-[18px] leading-[1.3] font-[500] tracking-[-0.2px] text-ink">{title}</h3>
         <p className="text-[14px] leading-[1.5] font-[440] text-label">{body}</p>
       </div>
