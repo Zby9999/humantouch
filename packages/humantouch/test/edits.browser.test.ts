@@ -885,7 +885,7 @@ describe("text", () => {
     expect(style(p).fontWeight).toBe("300");
   });
 
-  test("the fonts offered are those the page has loaded, each with its loaded weights, and the first font of each stack the page uses that is there", async () => {
+  test("the fonts offered are the web fonts the page declares, each with its declared weights, and the first font of each stack the page uses that is there", async () => {
     const { doc } = openCanvas(FONT_PAGE);
     await doc.fonts.ready;
 
@@ -896,7 +896,35 @@ describe("text", () => {
       { family: "Courier New", weights: [400] },
       { family: "Georgia", weights: [400, 700] },
       { family: "Menlo", weights: [400] },
+      // Declared, though no text uses it yet: the browser loads it once one does (ticket 140).
+      { family: "Unused", weights: [400] },
     ]);
+  });
+
+  test("a web font's weights are those it declares, loaded or not yet, not those that failed to load; a weight in several unicode-range subsets is one (ticket 140)", async () => {
+    const { doc } = openCanvas(`<!DOCTYPE html>
+<style>
+  @font-face { font-family: Display; src: local("Arial"); font-weight: 600; unicode-range: U+0-FF }
+  @font-face { font-family: Display; src: url("/display-600-ext-140.woff2") format("woff2"); font-weight: 600; unicode-range: U+100-24F }
+  @font-face { font-family: Display; src: url("/display-300-140.woff2") format("woff2"); font-weight: 300; unicode-range: U+0-FF }
+  @font-face { font-family: Display; src: url("/display-300-ext-140.woff2") format("woff2"); font-weight: 300; unicode-range: U+100-24F }
+  @font-face { font-family: Display; src: url("/no-such-font-140.woff2") format("woff2"); font-weight: 800 }
+  @font-face { font-family: Broken; src: url("/no-such-font-140.woff2") format("woff2") }
+  body { margin: 0; font: 16px Georgia, serif }
+</style>
+<body><h1 style="font-family: Display, sans-serif; font-weight: 600">Display</h1></body>`);
+    await doc.fonts.ready;
+    const faces = [...(doc.fonts as unknown as Iterable<FontFace>)];
+    // The faces at 800 and Broken's, loaded: they fail.
+    await Promise.allSettled(faces.filter((face) => face.weight === "800" || face.family === "Broken").map((face) => face.load()));
+    const status = (weight: string, range: string) => faces.find((face) => face.family === "Display" && face.weight === weight && face.unicodeRange === range)?.status;
+
+    // The text's Latin subset is loaded; the rest, used by no text, not yet.
+    expect(status("600", "U+0-FF")).toBe("loaded");
+    expect(status("600", "U+100-24F")).toBe("unloaded");
+    expect(status("300", "U+0-FF")).toBe("unloaded");
+    expect(faces.filter((face) => face.status === "error")).toHaveLength(2);
+    expect(fontsOf(doc)).toEqual([{ family: "Display", weights: [300, 600] }]);
   });
 
   test("a text layer's font is the first of its stack that is there; changed, it takes the stack the page uses that font in", async () => {

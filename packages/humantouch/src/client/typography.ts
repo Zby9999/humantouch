@@ -257,10 +257,12 @@ export interface Font {
 }
 
 /**
- * The fonts the page has: its web fonts that are loaded, each in the weights
- * of its faces that are; and of each stack of fonts its text uses, the first
- * that is there (a font of the system), in the weights the text uses it in.
- * Not every font of the system: those the page uses only. By name.
+ * The fonts the page has: its web fonts, each in the weights of its faces the
+ * project declares (with `@font-face`), loaded or not yet, as the browser loads
+ * one as soon as text uses it (ticket 140), but not those that failed to load;
+ * and of each stack of fonts its text uses, the first that is there (a font of
+ * the system), in the weights the text uses it in. Not every font of the
+ * system: those the page uses only. By name.
  */
 export function fontsOf(doc: Document): Font[] {
   const fonts = new Map<string, { family: string; weights: Set<number> }>();
@@ -270,7 +272,8 @@ export function fontsOf(doc: Document): Font[] {
     for (const weight of weights) fonts.get(key)!.weights.add(weight);
   };
   doc.fonts.forEach((face) => {
-    if (face.status === "loaded") add(unquoted(face.family), weightsOf(face.weight));
+    // A weight split into subsets by `unicode-range` is one weight: listed once.
+    if (face.status !== "error") add(unquoted(face.family), weightsOf(face.weight));
   });
   for (const el of textOf(doc)) {
     const style = getComputedStyle(el);
