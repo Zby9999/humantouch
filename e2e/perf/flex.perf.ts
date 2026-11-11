@@ -566,15 +566,10 @@ function armFrames(shows: string) {
 async function dragFor(page: Page, from: { x: number; y: number }, shows: string, path: (elapsed: number) => [number, number]) {
   await page.mouse.move(from.x, from.y);
   await page.evaluate(armFrames, shows);
-  const trace153 = process.env.TRACE153 && !(globalThis as { traced153?: boolean }).traced153;
-  if (trace153) { (globalThis as { traced153?: boolean }).traced153 = true; await page.context().browser()!.startTracing(page, { path: process.env.TRACE153, screenshots: false, categories: process.env.TRACE153_LIGHT ? ["devtools.timeline", "disabled-by-default-devtools.timeline"] : ["devtools.timeline", "disabled-by-default-devtools.timeline", "disabled-by-default-devtools.timeline.stack", "disabled-by-default-devtools.timeline.frame", "v8.execute", "blink.user_timing", "disabled-by-default-v8.cpu_profiler"] }); }
   await page.mouse.down();
   // Sent straight to the browser every few ms, each without waiting for the last to be taken: as a mouse reports,
   // whether or not the page keeps up. (Playwright's own moves each wait for the page, so a busy page would get fewer.)
   const cdp = await page.context().newCDPSession(page);
-  await cdp.send("Performance.enable");
-  const m153 = async () => Object.fromEntries(((await cdp.send("Performance.getMetrics")) as { metrics: { name: string; value: number }[] }).metrics.map((m) => [m.name, m.value]));
-  const m0 = await m153();
   const sent: Promise<unknown>[] = [];
   const started = Date.now();
   await new Promise<void>((done) => {
@@ -589,9 +584,6 @@ async function dragFor(page: Page, from: { x: number; y: number }, shows: string
     }, POINTER_EVERY_MS);
   });
   await Promise.all(sent);
-  const m1 = await m153();
-  console.log("M153 " + JSON.stringify(Object.fromEntries(["TaskDuration", "ScriptDuration", "RecalcStyleDuration", "LayoutDuration", "RecalcStyleCount", "LayoutCount"].map((k) => [k, m1[k] - m0[k]]))));
-  if (trace153) await page.context().browser()!.stopTracing();
   await cdp.detach();
   const record = await page.evaluate(() => {
     const record = (window as unknown as { htFrames: FrameRecord }).htFrames;

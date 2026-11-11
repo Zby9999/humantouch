@@ -55,7 +55,7 @@ export default defineConfig([
     format: "esm",
     splitting: true,
     // What the page loads is what the toggle is held to (docs/goals.md).
-    minify: !process.env.HT153_NOMINIFY,
+    minify: true,
     esbuildPlugins: [compactCss],
     // No source map: one would carry all of the source in the published package.
     platform: "browser",
