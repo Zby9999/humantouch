@@ -31,6 +31,10 @@ const EDITOR_RADIUS = 12;
 
 /** The product's timings for a level closed in the Layers (motion.ts). */
 const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
+const EASE_IN_OUT = "cubic-bezier(0.77, 0, 0.175, 1)";
+/** The page shrinking into the canvas as edit mode starts, and growing back as it ends; with reduced motion, a fade. */
+const MODE_SWITCH_MS = 240;
+const MODE_FADE_MS = 150;
 const LAYERS_FOLD_MS = 200;
 const LAYERS_FOLD_RISE_PX = 8;
 
@@ -39,6 +43,8 @@ const SITE_CSS = `
 .ht-shell { position: absolute; }
 .ht-canvas { position: absolute; top: 0; pointer-events: auto; }
 .ht-panel { position: relative; }
+/* The panels' headers 16px from the top, as their buttons are from the side (designer, 2026-11-11); the product's are 12px. */
+.ht-panel-header { padding-top: 16px; }
 .ht-pop { position: absolute; z-index: 30; max-height: 260px; overflow: auto; padding: 4px; border-radius: 12px; background: var(--ht-panel); box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.06), 0 8px 24px -4px rgb(0 0 0 / 0.12); }
 .ht-pop button { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; height: 24px; padding: 0 8px; border-radius: 6px; cursor: default; }
 .ht-pop button:hover { background: var(--ht-field); }
@@ -136,7 +142,79 @@ function pick(path: Target[], selected: Selection): Target {
   return path[Math.max(d, 1)] ?? path[path.length - 1];
 }
 
+/** The way the page is going: into the canvas as edit mode starts, out over the window as it ends. */
+type Travel = "in" | "out" | null;
+
+/** A moment on the page as it is, before the toggle is pressed, on the first visit to the hero. */
+const INTRO_DELAY_MS = 1200;
+/** The toggle pressed, as the hero's intro presses it: as long as a click. */
+const PRESS_MS = 120;
+
+/**
+ * The editor and the page under it. The hero opens on Acme as it is, the toggle at its corner; a moment later the
+ * toggle is pressed and the page shrinks into its place on the canvas, the panels and the tools coming in with its
+ * edges, as the product switches into edit mode. The Design panel's × switches back, the page growing over the window
+ * again; the toggle, again into edit mode, as often as anyone likes.
+ */
 function Editor({ scale, root }: { scale: number; root: ShadowRoot }) {
+  const [editing, setEditing] = useState(false);
+  const [travel, setTravel] = useState<Travel>(null);
+  const toggleButton = useRef<HTMLButtonElement>(null);
+
+  const enter = () => {
+    if (travel) return;
+    setEditing(true);
+    setTravel("in");
+  };
+  const leave = () => {
+    if (travel) return;
+    setTravel("out");
+  };
+  const travelled = () => {
+    if (travel === "out") setEditing(false);
+    setTravel(null);
+  };
+
+  // The intro: the toggle pressed, as by a click, then edit mode.
+  useEffect(() => {
+    const press = window.setTimeout(() => {
+      toggleButton.current?.animate([{ scale: "1" }, { scale: "0.96" }, { scale: "1" }], { duration: PRESS_MS * 2, easing: "ease-out" });
+      window.setTimeout(enter, PRESS_MS);
+    }, INTRO_DELAY_MS);
+    return () => clearTimeout(press);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <>
+      {!editing && <Preview toggle={toggleButton} onEnter={enter} />}
+      <EditMode shown={editing} travel={travel} onTravelled={travelled} onLeave={leave} scale={scale} root={root} />
+    </>
+  );
+}
+
+/** The page as it is, at the window's width, the toggle at its corner: preview mode. */
+function Preview({ toggle, onEnter }: { toggle: React.RefObject<HTMLButtonElement | null>; onEnter: () => void }) {
+  return (
+    <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+      <div style={{ pointerEvents: "none" }}>
+        <DemoPage view="Desktop" width={W} onPick={() => {}} onHover={() => {}} />
+      </div>
+      <div className="ht-dock" data-corner="bottom-right">
+        <div className="ht-toggle-wrap">
+          <button ref={toggle} type="button" className="ht-toggle" aria-label="Human Touch: enter edit mode" onClick={onEnter}>
+            <svg width="13.5" height="13.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.24" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M13.05 5.15a.55.55 0 0 0-2.19-2.19L3.51 10.3a1.1 1.1 0 0 0-.27.46l-.73 2.39a.28.28 0 0 0 .34.34l2.39-.73a1.1 1.1 0 0 0 .46-.27zM9.65 4.15l2.2 2.2" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Edit mode: the shell. Kept while preview mode shows, hidden, so a layer selected or the Layers hidden stay so. */
+function EditMode({ shown, travel, onTravelled, onLeave, scale, root }: { shown: boolean; travel: Travel; onTravelled: () => void; onLeave: () => void; scale: number; root: ShadowRoot }) {
   const [selected, setSelected] = useState<Selection>({ key: "entry", index: 0 });
   const [hover, setHover] = useState<Selection>(null);
   const [view, setView] = useState<ViewName>("Desktop");
@@ -154,7 +232,11 @@ function Editor({ scale, root }: { scale: number; root: ShadowRoot }) {
   }, [layersShown]);
 
   return (
-    <div ref={setShell} className={`ht-shell${layersShown ? "" : " is-layers-hidden"}`} style={{ ["--ht-layers-width" as string]: `${PANEL}px`, ["--ht-design-width" as string]: `${PANEL}px` }}>
+    <div
+      ref={setShell}
+      className={`ht-shell${layersShown ? "" : " is-layers-hidden"}`}
+      style={{ ["--ht-layers-width" as string]: `${PANEL}px`, ["--ht-design-width" as string]: `${PANEL}px`, display: shown ? undefined : "none" }}
+    >
       {layersShown ? (
         <LayersPanel key="layers" toggle={toggle} onHide={() => showLayers(false)} selected={selected} onSelect={setSelected} onHover={setHover} />
       ) : (
@@ -168,6 +250,8 @@ function Editor({ scale, root }: { scale: number; root: ShadowRoot }) {
         selected={selected}
         hover={hover}
         view={view}
+        travel={travel}
+        onTravelled={onTravelled}
         onSelect={(t, v) => {
           setSelected(t);
           setView(v);
@@ -175,7 +259,7 @@ function Editor({ scale, root }: { scale: number; root: ShadowRoot }) {
         onHover={setHover}
       />
       <Tools />
-      <DesignPanel key={selected ? layerId(selected) : "none"} view={view} selected={selected} root={root} />
+      <DesignPanel key={selected ? layerId(selected) : "none"} view={view} selected={selected} root={root} onLeave={onLeave} />
       <Tips root={root} box={shell} scale={scale} />
     </div>
   );
@@ -420,9 +504,74 @@ function Tools() {
 type Boxes = { selected: (Box & { view: ViewName })[]; hover: (Box & { view: ViewName })[] };
 
 /** The canvas: the three views side by side, set out once (`CAMERA`), the selection drawn over them. A click on its empty space selects nothing. */
-function Viewport({ scale, root, selected, hover, view, onSelect, onHover }: { scale: number; root: ShadowRoot; selected: Selection; hover: Selection; view: ViewName; onSelect: (t: Selection, v: ViewName) => void; onHover: (t: Selection) => void }) {
+function Viewport({
+  scale,
+  root,
+  selected,
+  hover,
+  view,
+  travel,
+  onTravelled,
+  onSelect,
+  onHover,
+}: {
+  scale: number;
+  root: ShadowRoot;
+  selected: Selection;
+  hover: Selection;
+  view: ViewName;
+  travel: Travel;
+  onTravelled: () => void;
+  onSelect: (t: Selection, v: ViewName) => void;
+  onHover: (t: Selection) => void;
+}) {
   const el = useRef<HTMLDivElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
   const cam = CAMERA;
+  const travelling = travel !== null;
+  const done = useRef(onTravelled);
+  done.current = onTravelled;
+
+  /**
+   * The mode switch, as the product plays it (CanvasView.tsx): the Desktop view travels between the window, at 1:1, and
+   * its place on the canvas over 240ms, eased in and out; the panels and the tools go with its edges, each side pushed off
+   * the window as far as its edge goes, or just off it. The views beside it are hidden meanwhile, the selection too. With
+   * reduced motion, the editor only fades.
+   */
+  useLayoutEffect(() => {
+    if (!travel) return;
+    const viewport = el.current!;
+    const shell = viewport.parentElement!;
+    const out = travel === "out";
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const fade = shell.animate([{ opacity: out ? 1 : 0 }, { opacity: out ? 0 : 1 }], { duration: MODE_FADE_MS, easing: EASE_OUT, fill: out ? "forwards" : "none" });
+      fade.onfinish = () => done.current();
+      return () => fade.cancel();
+    }
+    const rest = `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})`;
+    const overPage = `translate(${-viewport.offsetLeft}px, ${-viewport.offsetTop}px) scale(1)`;
+    const timing = { duration: MODE_SWITCH_MS, easing: EASE_IN_OUT, fill: out ? ("forwards" as const) : ("none" as const) };
+    const page = stage.current!.animate([{ transform: out ? rest : overPage }, { transform: out ? overPage : rest }], timing);
+
+    const sideOf = (selector: string) => [...shell.querySelectorAll<HTMLElement>(`:scope > :is(${selector})`)];
+    const layersSide = sideOf(".ht-panel.is-layers, .ht-show-layers");
+    const designSide = sideOf(".ht-panel.is-design, .ht-tools");
+    const width = shell.clientWidth;
+    const layersRight = Math.max(0, ...layersSide.map((p) => p.offsetLeft + p.offsetWidth));
+    const designLeft = Math.min(width, ...designSide.map((p) => p.offsetLeft));
+    const restLeft = viewport.offsetLeft + cam.x;
+    const push = { left: -Math.max(restLeft, layersRight), right: Math.max(W - (restLeft + VIEWS[0].width * cam.k), width - designLeft) };
+    const chrome = [...layersSide, ...designSide].map((part, i) => {
+      const away = `translateX(${i < layersSide.length ? push.left : push.right}px)`;
+      return part.animate([{ transform: out ? "translateX(0px)" : away }, { transform: out ? away : "translateX(0px)" }], timing);
+    });
+    page.onfinish = () => done.current();
+    return () => {
+      page.cancel();
+      for (const move of chrome) move.cancel();
+    };
+  }, [travel]);
+
   const [boxes, setBoxes] = useState<Boxes>({ selected: [], hover: [] });
   /** Bumped as the viewport changes size (the Layers hidden or shown): the selection is measured again. */
   const [size, setSize] = useState(0);
@@ -447,7 +596,7 @@ function Viewport({ scale, root, selected, hover, view, onSelect, onHover }: { s
             }),
           );
     setBoxes({ selected: measure(selected), hover: sameTarget(hover, selected) ? [] : measure(hover) });
-  }, [root, selected, hover, scale, size]);
+  }, [root, selected, hover, scale, size, travelling]);
 
   const kind = (t: Selection) => (t && LAYERS[t.key].instance ? "instance" : undefined);
   const active = boxes.selected.find((b) => b.view === view);
@@ -455,56 +604,62 @@ function Viewport({ scale, root, selected, hover, view, onSelect, onHover }: { s
   return (
     <div
       ref={el}
-      className="ht-viewport"
+      className={`ht-viewport${travelling ? " is-travelling" : ""}`}
       role="region"
       aria-label="Canvas viewport"
       onPointerDown={(e) => e.button === 0 && onSelect(null, view)}
     >
-      <div className="ht-stage" style={{ transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})` }}>
+      <div ref={stage} className="ht-stage" style={{ transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})` }}>
         {VIEWS.map((v, i) => (
-          <div key={v.name} className={`ht-canvas${i ? " is-beside" : ""}`} data-view={v.name} style={{ left: FRAME_LEFT[i], width: v.width }}>
+          // Only the Desktop view travels between the window and the canvas.
+          <div key={v.name} className={`ht-canvas${i ? " is-beside" : ""}`} data-view={v.name} style={{ left: FRAME_LEFT[i], width: v.width, visibility: travelling && i ? "hidden" : undefined }}>
             <DemoPage view={v.name} width={v.width} onPick={(path, at) => onSelect(pick(path, selected), at)} onHover={(t) => onHover(t && pick(pathOf(t), selected))} />
           </div>
         ))}
       </div>
-      {boxes.hover.map((b, i) => (
-        <div key={`h${i}`} className="ht-hover" data-kind={kind(hover)} aria-hidden="true" style={{ left: b.left, top: b.top, width: b.width, height: b.height }} />
-      ))}
-      {boxes.selected.map((b, i) => (
-        <div
-          key={`s${i}`}
-          className="ht-selection"
-          data-kind={kind(selected)}
-          data-view={b.view}
-          data-away={b.view !== view ? "true" : undefined}
-          aria-hidden="true"
-          style={{ left: b.left, top: b.top, width: b.width, height: b.height }}
-        />
-      ))}
-      {active && <Handles box={active} kind={kind(selected)} />}
-      {VIEWS.map((v, i) => (
-        <div key={v.name} className="ht-view-label" role="group" aria-label={`${v.name} view`} style={{ left: cam.x + FRAME_LEFT[i] * cam.k, top: cam.y - 26, width: v.width * cam.k }}>
-          <button type="button" className="ht-view-title" aria-label={`Select ${v.name} view`}>
-            <span className="ht-view-name" style={{ color: v.name === view ? "var(--ht-text)" : undefined }}>
-              {v.name}
-            </span>
-            <span className="ht-view-range">{v.range}</span>
-          </button>
-          <button type="button" className="ht-icon-button ht-view-play" aria-label={`Full screen ${v.name} view`} data-tip="Full screen">
-            <Icon name="fullscreen" />
-          </button>
-          {i > 0 && (
-            <button type="button" className="ht-icon-button ht-view-delete" aria-label={`Delete ${v.name} view`} data-tip="Delete view">
-              <Icon name="close" />
+      {/* The selection and the views' labels, at rest only: gone while the page travels. */}
+      {!travelling && (
+        <>
+          {boxes.hover.map((b, i) => (
+            <div key={`h${i}`} className="ht-hover" data-kind={kind(hover)} aria-hidden="true" style={{ left: b.left, top: b.top, width: b.width, height: b.height }} />
+          ))}
+          {boxes.selected.map((b, i) => (
+            <div
+              key={`s${i}`}
+              className="ht-selection"
+              data-kind={kind(selected)}
+              data-view={b.view}
+              data-away={b.view !== view ? "true" : undefined}
+              aria-hidden="true"
+              style={{ left: b.left, top: b.top, width: b.width, height: b.height }}
+            />
+          ))}
+          {active && <Handles box={active} kind={kind(selected)} />}
+          {VIEWS.map((v, i) => (
+            <div key={v.name} className="ht-view-label" role="group" aria-label={`${v.name} view`} style={{ left: cam.x + FRAME_LEFT[i] * cam.k, top: cam.y - 26, width: v.width * cam.k }}>
+              <button type="button" className="ht-view-title" aria-label={`Select ${v.name} view`}>
+                <span className="ht-view-name" style={{ color: v.name === view ? "var(--ht-text)" : undefined }}>
+                  {v.name}
+                </span>
+                <span className="ht-view-range">{v.range}</span>
+              </button>
+              <button type="button" className="ht-icon-button ht-view-play" aria-label={`Full screen ${v.name} view`} data-tip="Full screen">
+                <Icon name="fullscreen" />
+              </button>
+              {i > 0 && (
+                <button type="button" className="ht-icon-button ht-view-delete" aria-label={`Delete ${v.name} view`} data-tip="Delete view">
+                  <Icon name="close" />
+                </button>
+              )}
+            </div>
+          ))}
+          <div className="ht-add-view" style={{ left: cam.x + STAGE_WIDTH * cam.k + 8, top: cam.y - 26 }}>
+            <button type="button" className="ht-icon-button" aria-label="Add view" data-tip="Add view">
+              <Icon name="plus" />
             </button>
-          )}
-        </div>
-      ))}
-      <div className="ht-add-view" style={{ left: cam.x + STAGE_WIDTH * cam.k + 8, top: cam.y - 26 }}>
-        <button type="button" className="ht-icon-button" aria-label="Add view" data-tip="Add view">
-          <Icon name="plus" />
-        </button>
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -535,7 +690,7 @@ function Handles({ box, kind }: { box: Box; kind?: string }) {
  * The Design panel, in the product's markup. Everything in it can be pointed at, opened, dragged and typed into, but it
  * keeps nothing: a number rolls back once let go, a choice stays as it was, a Variable picked leaves the one bound.
  */
-function DesignPanel({ view, selected, root }: { view: ViewName; selected: Selection; root: ShadowRoot }) {
+function DesignPanel({ view, selected, root, onLeave }: { view: ViewName; selected: Selection; root: ShadowRoot; onLeave: () => void }) {
   const [size, setSize] = useState<[number, number]>([0, 0]);
 
   useLayoutEffect(() => {
@@ -547,7 +702,7 @@ function DesignPanel({ view, selected, root }: { view: ViewName; selected: Selec
   const header = (
     <div className="ht-panel-header">
       <h2 className="ht-panel-title">{selected ? "Design" : "Variables"}</h2>
-      <button type="button" className="ht-icon-button" aria-label="Human Touch: back to preview mode" data-tip="Back to preview mode">
+      <button type="button" className="ht-icon-button" aria-label="Human Touch: back to preview mode" data-tip="Back to preview mode" onClick={onLeave}>
         <Icon name="close" />
       </button>
     </div>
