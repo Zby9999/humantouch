@@ -103,3 +103,8 @@
   - 1–4 接受，有人碰到再开票。风险 4 是单独改 Stack 间距时不去掉子元素的外边距。
   - 5：设计师要的是官网主题开关的三个按钮里只改一个，请官网线在合了 main 的官网上实际试一次 Edit alone。
   - 6：perf 看 main 的整套验证，和 main 同机对比。
+- 风险 5 已核对（官网线，2026-11-11 晚，main 84ae90b，headless）：
+  - 主题开关第 2 个按钮按 Edit alone，圆角改 2，三个视图都是 [full, 2px, full]。
+  - 再把第 1 个改成 6，三个视图都是 [6px, 2px, 6px]：别的按钮跟着变，第 2 个保持自己的值。
+  - 改动列表是「Corner radius · Button · 2nd alone」和「Corner radius · Button」。
+  - ⌘Z 逐步退回，⌘⇧Z 重做照常，没有页面报错。
