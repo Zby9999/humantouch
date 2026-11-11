@@ -23,8 +23,7 @@ import { Tips } from "./Tips";
 import { Toggle } from "./Toggle";
 import { readViewWidths } from "./ViewLabels";
 
-/** `leaving`: back in preview mode, while the canvas grows back over the page. */
-type Mode = "preview" | "edit" | "leaving";
+type Mode = "preview" | "edit";
 
 /** An undo made from the change list with no canvas up: the saved round before it, and after, and the layers off the canvas. */
 interface ListStep {
@@ -267,8 +266,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   // Claimed: the canvas is out of date as the code changes, so editing stops.
   useEffect(() => {
     if (!claimed || mode !== "edit") return;
-    setAnimate(true);
-    setMode(shellShown.current ? "leaving" : "preview");
+    leave();
   }, [claimed !== null, mode]);
 
   /** The round as saved last: what a reading that ends after the canvas has gone is saved into. */
@@ -358,18 +356,29 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   const discard = () => {
     discardRound();
     // The canvas goes with the round: back to the page, which edit mode freezes afresh.
-    if (mode === "edit") setMode(shellShown.current ? "leaving" : "preview");
+    if (mode === "edit") leave();
   };
 
   const listed = claimed ? pending : (live ?? changes);
 
   // A shell already up folds away once claimed; none starts while claimed.
   shellShown.current = mode !== "preview" && ready && (shellShown.current || !claimed);
-  /** Into edit mode, or back out of it: a click animates, a key press switches at once. A click while leaving turns back. */
+  /**
+   * Back to preview mode, at once, by a click as by a key: the canvas is gone and the page shows, with no animation
+   * (designer, 2026-11-11). What the shell holds is saved as it goes.
+   */
+  function leave() {
+    setMode("preview");
+    setLive(null);
+    // Edit mode next time starts where it starts, not where this canvas left the camera.
+    setStartAt(null);
+  }
+  /** Into edit mode, or back out of it: into it, a click animates, a key press switches at once; out of it, at once either way. */
   const switchMode = (animate: boolean) => {
+    if (mode === "edit") return leave();
     setAnimate(animate);
-    if (mode === "preview") performance.mark(ENTER_MARK);
-    setMode(mode === "edit" ? (animate ? "leaving" : "preview") : "edit");
+    performance.mark(ENTER_MARK);
+    setMode("edit");
   };
   // With no canvas up, the list stays open once its last change is undone: ⌘Z can bring it back. Claimed, it stays as its last
   // change is applied, to see it go, and then leaves by itself.
@@ -501,7 +510,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
         <Shell
           // Frozen afresh: a new canvas, in place of the last.
           key={freezes}
-          // Only while in edit mode: leaving, the toggle is back with its count.
+          // Only while in edit mode.
           controls={
             editing && (
               <>
@@ -541,14 +550,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
           notice={editing && <PageToast message={pageToast} changes={listed.length} onUpdate={updateCanvas} />}
           startAt={startAt}
           cameraNow={cameraNow}
-          leaving={mode === "leaving"}
           animate={animate}
-          onLeft={() => {
-            setMode("preview");
-            setLive(null);
-            // Edit mode next time starts where it starts, not where this canvas left the camera.
-            setStartAt(null);
-          }}
         />
       )}
       {!editing && (

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { freeze, restore, serializeCanvas } from "../src/client/freezer";
+import { boxOf, buildLayerTree, type Layer } from "../src/client/layers";
+import { sourcesOf } from "../src/client/style-source";
 import { createViews } from "../src/client/views";
 
 const made: HTMLIFrameElement[] = [];
@@ -287,6 +289,165 @@ describe("an open shadow root on the page (ticket 135)", () => {
     const canvas = await freeze(live, iframe());
     expect(made).toBe(1);
     expect(canvas.document.querySelector("made-here")!.shadowRoot!.querySelectorAll("hr")).toHaveLength(1);
+  });
+});
+
+/** The middle of `el`'s box, in its document's px. */
+function middleOf(el: Element): [number, number] {
+  const r = el.getBoundingClientRect();
+  return [r.left + r.width / 2, r.top + r.height / 2];
+}
+
+/** A layer and its parents, by name, the innermost first. */
+function namesUp(layer: Layer | null): string[] {
+  const names: string[] = [];
+  for (let l = layer; l; l = l.parent) names.push(l.name);
+  return names;
+}
+
+describe("the layers in an open shadow root (ticket 136)", () => {
+  test("are listed under their host, what the shadow root shows: its own layers, the host's content where it is slotted, a nested shadow root's", async () => {
+    const canvas = await freeze(livePage(SHADOW, withShadowRoots), iframe());
+    const doc = canvas.document;
+    const tree = buildLayerTree(doc);
+    const host = tree.layerOf(doc.getElementById("host")!)!;
+    expect(host.parent).toBe(tree.root);
+    expect(host.children.map((layer) => layer.el.id || layer.name)).toEqual(["title", "units", "slotted", "inner-host", "card"]);
+    expect(tree.layerOf(inShadow(doc, "title")!)!.name).toBe("In the shadow");
+    // What the nested shadow root shows is the words of its host: a layer of text.
+    expect(namesUp(tree.layerOf(inShadow(doc, "inner-host")!))).toEqual(["Deep", host.name, "Page"]);
+    // The closed one's host shows its own content alone.
+    expect(tree.layerOf(doc.getElementById("closed")!)!.name).toBe("Light of closed");
+  });
+
+  test("are hit at a point on the canvas and in a view, past what is skipped too, the deepest in a nested shadow root as well", async () => {
+    const canvas = await freeze(livePage(SHADOW, withShadowRoots), iframe());
+    const doc = canvas.document;
+    const tree = buildLayerTree(doc);
+    const title = inShadow(doc, "title")!;
+    const deep = inShadow(doc, "inner-host")!.shadowRoot!.getElementById("deep")!;
+    expect(tree.layerAt(...middleOf(title))!.el).toBe(title);
+    expect(tree.layerAt(...middleOf(deep))!.el).toBe(inShadow(doc, "inner-host"));
+    expect(tree.layerAt(...middleOf(doc.getElementById("slotted")!))!.el.id).toBe("slotted");
+    // Past the card: the host it is drawn on.
+    const card = inShadow(doc, "card")!;
+    expect(tree.layerAt(...middleOf(card), card)!.el.id).toBe("host");
+
+    const views = createViews(canvas);
+    const phone = await views.add(iframe(), 390);
+    const inPhone = (phone.document.getElementById("host")!.shadowRoot!.getElementById("card"))!;
+    expect(phone.layerAt(tree, ...middleOf(inPhone))!.el).toBe(card);
+    expect(phone.layerAt(tree, ...middleOf(inPhone), tree.layerOf(card)!)!.el.id).toBe("host");
+  });
+
+  test("are hit where the page lets clicks pass through, in the shadow root as elsewhere; the canvas's styles for it are not the page's, nor saved", async () => {
+    const live = livePage(SHADOW, (doc) => {
+      withShadowRoots(doc);
+      doc.getElementById("host")!.shadowRoot!.getElementById("title")!.style.pointerEvents = "none";
+    });
+    const canvas = await freeze(live, iframe());
+    const title = inShadow(canvas.document, "title")!;
+    expect(buildLayerTree(canvas.document).layerAt(...middleOf(title))!.el).toBe(title);
+    expect(sourcesOf(title, ["pointer-events"])[0].kind).toBe("inline");
+    expect(sourcesOf(title, ["transition-duration"])[0].kind).toBe("none");
+    const saved = serializeCanvas(canvas);
+    expect(saved.match(/pointer-events: auto/g)).toBeNull();
+    // Put back and shown in a view, given them again.
+    const again = await restore(saved, iframe());
+    const phone = await createViews(again).add(iframe(), 390);
+    const inPhone = phone.document.getElementById("host")!.shadowRoot!.getElementById("title")!;
+    expect(phone.layerAt(buildLayerTree(again.document), ...middleOf(inPhone))!.el).toBe(inShadow(again.document, "title"));
+  });
+
+  test("have their values' sources read from the shadow root's own stylesheets; the host's from the page's, over its shadow root's `:host`", async () => {
+    const page = `<!DOCTYPE html><style>body { margin: 0 } h2 { color: rgb(9, 9, 9) } #host { padding-top: 3px }</style><body><div id="host"></div></body>`;
+    const live = livePage(page, (doc) => {
+      const shadow = doc.getElementById("host")!.attachShadow({ mode: "open" });
+      shadow.innerHTML = `<style>:host { padding: 7px; margin-top: 2px !important } :host(.none) { margin-left: 1px } h2.big { color: var(--ink, red) } h2 { font-size: 30px }</style><h2 class="big">Title</h2>`;
+      const sheet = new (doc.defaultView as Window & typeof globalThis).CSSStyleSheet();
+      sheet.replaceSync("h2 { letter-spacing: 2px }");
+      shadow.adoptedStyleSheets = [sheet];
+      doc.getElementById("host")!.style.setProperty("margin-top", "5px");
+    });
+    const canvas = await freeze(live, iframe());
+    const host = canvas.document.getElementById("host")!;
+    const title = host.shadowRoot!.querySelector("h2")!;
+    const [color, size, spacing] = ["color", "font-size", "letter-spacing"].map((property) => sourcesOf(title, [property])[0]);
+    expect([color.selector, color.declaration]).toEqual(["h2.big", "color: var(--ink, red)"]);
+    expect(size.selector).toBe("h2");
+    expect(spacing.declaration).toBe("letter-spacing: 2px");
+    // The page's rule for the host beats its shadow root's `:host`; the `:host` rule's important one beats the page's style attribute.
+    const [top, bottom, margin, left] = ["padding-top", "padding-bottom", "margin-top", "margin-left"].map((property) => sourcesOf(host, [property])[0]);
+    expect([top.selector, top.declaration]).toEqual(["#host", "padding-top: 3px"]);
+    expect([bottom.selector, bottom.declaration]).toEqual([":host", "padding: 7px"]);
+    expect([margin.selector, margin.important]).toEqual([":host", true]);
+    expect(left.kind).toBe("none");
+    expect(getComputedStyle(host).marginTop).toBe("2px");
+  });
+
+  test("slotted, a layer's values come from the page's rules, over the shadow root's `::slotted()`; it is skipped with the layer it is slotted in", async () => {
+    const page = `<!DOCTYPE html><style>body { margin: 0 } p { color: rgb(9, 9, 9) }</style><body><div id="host"><p id="slotted">Slotted</p></div></body>`;
+    const live = livePage(page, (doc) => {
+      const shadow = doc.getElementById("host")!.attachShadow({ mode: "open" });
+      shadow.innerHTML = `<style>.box ::slotted(p) { color: red; font-size: 30px } slot[name=x]::slotted(p) { letter-spacing: 9px } div { display: flex; padding: 20px }</style><div class="box" id="box"><slot></slot></div>`;
+    });
+    const canvas = await freeze(live, iframe());
+    const doc = canvas.document;
+    const slotted = doc.getElementById("slotted")!;
+    const [color, size, spacing] = ["color", "font-size", "letter-spacing"].map((property) => sourcesOf(slotted, [property])[0]);
+    expect(color.selector).toBe("p");
+    expect([size.selector, size.declaration]).toEqual([".box ::slotted(p)", "font-size: 30px"]);
+    expect(spacing.kind).toBe("none");
+    // In the layers' tree it is in the box it is slotted in; past the box, what is hit is the host.
+    const tree = buildLayerTree(doc);
+    const box = inShadow(doc, "box")!;
+    expect(tree.layerOf(slotted)!.parent!.el).toBe(box);
+    expect(tree.layerAt(...middleOf(slotted), box)!.el.id).toBe("host");
+  });
+
+  test("a `:host(…)` rule weighs as a pseudo-class and what it is of: `:host([dark]) .title` beats a later `.panel .title`", async () => {
+    const live = livePage(`<!DOCTYPE html><body><div id="host" dark></div></body>`, (doc) => {
+      doc.getElementById("host")!.attachShadow({ mode: "open" }).innerHTML =
+        `<style>:host([dark]) .title { color: rgb(1, 1, 1) } .panel .title { color: rgb(2, 2, 2) }</style><div class="panel"><h2 class="title">Title</h2></div>`;
+    });
+    const canvas = await freeze(live, iframe());
+    const title = canvas.document.getElementById("host")!.shadowRoot!.querySelector(".title")!;
+    expect(getComputedStyle(title).color).toBe("rgb(1, 1, 1)");
+    expect(sourcesOf(title, ["color"])[0].selector).toBe(":host([dark]) .title");
+  });
+
+  test("text shown from two trees, a shadow root's and the one around its host, is a layer for each, each drawn and hit where it is", async () => {
+    const live = livePage(`<!DOCTYPE html><style>body { margin: 0; font: 20px/24px sans-serif }</style><body><p id="mixed">Hi <x-name id="name"></x-name></p></body>`, (doc) => {
+      doc.getElementById("name")!.attachShadow({ mode: "open" }).innerHTML = "<b>Ada Lovelace</b>";
+    });
+    const canvas = await freeze(live, iframe());
+    const doc = canvas.document;
+    const tree = buildLayerTree(doc);
+    const mixed = tree.layerOf(doc.getElementById("mixed")!)!;
+    expect(mixed.children.map((layer) => [layer.kind, layer.name])).toEqual([
+      ["text", "Hi"],
+      ["text", "Ada Lovelace"],
+    ]);
+    const [hi, name] = mixed.children;
+    for (const layer of [hi, name]) expect(boxOf(layer).width).toBeGreaterThan(0);
+    const bold = doc.getElementById("name")!.shadowRoot!.querySelector("b")!;
+    expect(tree.layerAt(...middleOf(bold))).toBe(name);
+    const box = boxOf(hi);
+    expect(tree.layerAt(box.left + box.width / 2, box.top + box.height / 2)).toBe(hi);
+  });
+
+  test("slotted on through a slot slotted in another shadow root, a layer's values come from either shadow root's `::slotted()` rules", async () => {
+    const live = livePage(`<!DOCTYPE html><body><div id="outer"><p id="note">Note</p></div></body>`, (doc) => {
+      const outer = doc.getElementById("outer")!.attachShadow({ mode: "open" });
+      outer.innerHTML = `<style>::slotted(p) { font-size: 31px }</style><div id="inner"><slot></slot></div>`;
+      outer.getElementById("inner")!.attachShadow({ mode: "open" }).innerHTML = `<style>::slotted(*) { letter-spacing: 3px }</style><slot></slot>`;
+    });
+    const canvas = await freeze(live, iframe());
+    const note = canvas.document.getElementById("note")!;
+    const [size, spacing] = ["font-size", "letter-spacing"].map((property) => sourcesOf(note, [property])[0]);
+    expect(getComputedStyle(note).letterSpacing).toBe("3px");
+    expect(size.declaration).toBe("font-size: 31px");
+    expect([spacing.selector, spacing.declaration]).toEqual(["::slotted(*)", "letter-spacing: 3px"]);
   });
 });
 

@@ -15,6 +15,7 @@ import { colorReader, fillApplies, fillSets, readFill, STROKE_SETS, writeFill, w
 import { startOffsetOf } from "./placed-from";
 import type { Axis } from "./snap";
 import { readWrittenStroke, strokeReference } from "./stroke-weight";
+import { flatParent } from "./shadow-roots";
 import { pinOffsetOf, sourcesOf, type StyleSource } from "./style-source";
 import { TYPOGRAPHY, type TypographyValues } from "./typography";
 
@@ -566,12 +567,23 @@ function gridGap(name: "row-gap" | "column-gap"): Definition<number> {
 /** Block-level displays a plain flow lays out top to bottom. */
 const FLOW = /^(block|flow-root|list-item)$/;
 
+/** The element `el` is laid out in: its parent, past those that lay out nothing of their own (`display: contents`), a slot too (ticket 136). */
+function layoutParent(el: Element): Element | null {
+  let parent = flatParent(el);
+  while (parent && getComputedStyle(parent).display === "contents") parent = flatParent(parent);
+  return parent;
+}
+
+/** The parent whose size and alignment `el`'s own go by: its parent, or, slotted in a shadow root, the element its slot is laid out in. */
+function boxParent(el: Element): Element | null {
+  return el.assignedSlot ? layoutParent(el) : flatParent(el);
+}
+
 /** The Stack `el` is laid out in, if it is: in its parent's flex layout, or down its plain flow. Absolute layers are in none. */
 function stackAround(el: Element): StackLayout | null {
   const style = getComputedStyle(el);
   if (absolute(el)) return null;
-  let parent = el.parentElement;
-  while (parent && getComputedStyle(parent).display === "contents") parent = parent.parentElement;
+  const parent = layoutParent(el);
   if (!parent) return null;
   const outer = getComputedStyle(parent);
   if (/flex$/.test(outer.display)) return stackOf(parent);
@@ -582,8 +594,7 @@ function stackAround(el: Element): StackLayout | null {
 /** Whether `el` is a cell of a Grid, laid out in its parent's grid. Absolute layers are not. */
 export function inGrid(el: Element): boolean {
   if (absolute(el)) return false;
-  let parent = el.parentElement;
-  while (parent && getComputedStyle(parent).display === "contents") parent = parent.parentElement;
+  const parent = layoutParent(el);
   return !!parent && /grid$/.test(getComputedStyle(parent).display);
 }
 
@@ -593,7 +604,7 @@ const SELF: Record<"width" | "height", "justify-self" | "align-self"> = { width:
 /** Whether a Grid cell's size along `axis`, left to the layout, stretches over its area: its column's width, its row's height. */
 function stretchesInGrid(el: Element, axis: "width" | "height"): boolean {
   const own = getComputedStyle(el).getPropertyValue(SELF[axis]);
-  const self = own === "auto" ? getComputedStyle(el.parentElement!).getPropertyValue(axis === "width" ? "justify-items" : "align-items") : own;
+  const self = own === "auto" ? getComputedStyle(boxParent(el)!).getPropertyValue(axis === "width" ? "justify-items" : "align-items") : own;
   // An image, a video and the like, aligned `normal`, keep their own size: they are placed at the start.
   if (self === "stretch") return true;
   return /^(normal|legacy)$/.test(self) && !/^(img|video|canvas|iframe|svg|embed|object)$/.test(el.localName);
@@ -664,7 +675,7 @@ function limit(name: string, axis: "width" | "height"): Definition<number | null
     read(el) {
       const value = getComputedStyle(el).getPropertyValue(name);
       if (value.endsWith("%")) {
-        const parent = el.parentElement;
+        const parent = boxParent(el);
         return parent ? round((parseFloat(value) / 100) * parseFloat(getComputedStyle(parent).getPropertyValue(axis)) + extra(el, axis)) : null;
       }
       // Of a minimum, 0 is none too.
@@ -689,7 +700,7 @@ function extra(el: Element, axis: "width" | "height"): number {
 function stretches(el: Element): boolean {
   const self = getComputedStyle(el).alignSelf;
   if (self !== "auto" && self !== "normal") return self === "stretch";
-  const items = getComputedStyle(el.parentElement!).alignItems;
+  const items = getComputedStyle(boxParent(el)!).alignItems;
   return items === "stretch" || items === "normal";
 }
 

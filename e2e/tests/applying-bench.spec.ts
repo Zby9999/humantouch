@@ -738,7 +738,7 @@ async function designTheRoundAcrossViews(page: Page) {
   ]);
 }
 
-/** Back to preview mode, the canvas gone: pressed while it grows back over the page, the toggle would turn back to it. */
+/** Back to preview mode, the canvas gone. */
 async function leaveEditMode(page: Page) {
   await page.getByRole("button", { name: EXIT_LABEL }).click();
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();

@@ -24,6 +24,9 @@ test.beforeAll(async () => {
     replaceIn(dir, "vite.config.ts", "humanTouch(), ");
     replaceIn(dir, "src/App.tsx", 'import { HumanTouch } from "humantouch/react";\n');
     replaceIn(dir, "src/App.tsx", "      <HumanTouch />\n");
+    // Its page of declared font weights mounts it too (ticket 140): `init` would see it mounted there, and leave App be.
+    replaceIn(dir, "src/fonts/FontsPage.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "src/fonts/FontsPage.tsx", "      <HumanTouch />\n");
   });
 });
 

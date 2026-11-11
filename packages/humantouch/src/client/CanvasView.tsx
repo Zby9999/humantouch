@@ -9,11 +9,11 @@ import { BRIEF_ATTR, LAYER_ID_ATTR } from "./canvas-style";
 import { canvasKey, drawsWith, type Tool } from "./canvas-keys";
 import { marksNow, resizeStep, type ResizePointer, type ResizeSession, type ResizeStep } from "./canvas-resize";
 import { boxFrom, DRAG_THRESHOLD, laidOut, moveWhole, restoreDragStyles, shift, SNAP_PX, startDragSession, type At, type DragSession, type Pointer } from "./canvas-drag";
-import { boundsOf, cameraIn, centredOn, currentCamera, fitCamera, initialCamera, place, scrolled, showsWhole, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
+import { boundsOf, cameraIn, centredOn, fitCamera, initialCamera, place, scrolled, showsWhole, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
 import type { Created } from "./changeset";
 import { findDrop, findPlace, type Drop } from "./drag";
 import type { Destination, Editor } from "./edit-commands";
-import { fitHeight, freeze, restore } from "./freezer";
+import { freeze, restore } from "./freezer";
 import { ENTER_MARK } from "./host";
 import { CHANGE_GLIDE_MS, chromePush, EASE_IN_OUT, EASE_OUT, easeInOut, MODE_FADE_MS, MODE_SWITCH_MS, ping, prefersReducedMotion } from "./motion";
 import { framedText, nodeOf, type Layer, type LayerTree } from "./layers";
@@ -26,7 +26,7 @@ import { distances } from "./snap";
 import { drawOnlyWhatShows, onceAtRest } from "./stage-redraw";
 import type { Handle } from "./resize";
 import { CAUGHT_UP_MS, createViews, type View, type Views } from "./views";
-import { keyOf, LABEL_OFFSET, layoutViews, placeOffCanvas, shownAt, viewsWidth, type Placed, type Shown } from "./view-layout";
+import { keyOf, LABEL_OFFSET, layoutViews, placeOffCanvas, shownAt, VIEW_GAP_WITH_BRIEFS, viewsWidth, type Placed, type Shown } from "./view-layout";
 import { AddView, desktopRange, readViewWidths, viewName, ViewLabel, withWidth, writeViewWidths } from "./ViewLabels";
 import { contains, type Breakpoint } from "./breakpoints";
 
@@ -118,6 +118,8 @@ interface Props {
   onSetBrief(layer: Layer, brief: string): Layer;
   /** Promote, from the selection toolbar: the layer's changes made changes to its component. */
   onPromote(layer: Layer): void;
+  /** Edit alone, from the selection toolbar (ticket 114): the instance of a loop the layer is, or is in, stops following the others, or follows them again. */
+  onEditAlone(layer: Layer, alone: boolean): void;
   /** Typing in a text layer begins: returns the layer with an element of its own to type in. */
   onBeginText(layer: Layer): Layer;
   /** Typing in a text layer ends, with these words. */
@@ -132,18 +134,18 @@ interface Props {
   onPlay(width: number | null, from: HTMLButtonElement): void;
   /** Esc, while playing. */
   onStopPlaying(): void;
-  /** Edit mode has ended: grow the canvas back over the page, then call `onLeft`. */
-  leaving: boolean;
-  /** False: switch modes instantly (the toggle was pressed from the keyboard). */
+  /** False: enter edit mode instantly (the toggle was pressed from the keyboard). */
   animate: boolean;
-  /** The canvas has changes the page does not: on leaving, it fades into the page instead of cutting to it. */
-  changed: boolean;
-  onLeft(): void;
+}
+
+/** The gap between the views for `doc`: wide once it has a brief, for each view's cards beside it (ticket 134); else as ever. */
+function gapFor(doc: Document): number | undefined {
+  return doc.querySelector(`[${BRIEF_ATTR}]`) ? VIEW_GAP_WITH_BRIEFS : undefined;
 }
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, rowHovered, rowHoveredRange, focus, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, rowHovered, rowHoveredRange, focus, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onEditAlone, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, animate } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -233,7 +235,7 @@ export function CanvasView(props: Props) {
   /** A press with the Brief tool, till it is let go: there, it writes the brief of the layer under it (ticket 121). */
   const briefPress = useRef<{ pointerId: number; release(): void } | null>(null);
   /** Where the cards of the briefs are on the stage, as last drawn: ⇧1 fits them in too. */
-  const cardsPlaced = useRef<Box[]>([]);
+  const cardsPlaced = useRef<() => Box[]>(() => []);
   /** The brief being written on its card: the layer, and the view (or the layer made in the blank space) its card is beside. */
   const [writing, setWriting] = useState<{ layer: Layer; in: Shown } | null>(null);
   /** Bumped as the words are typed: the blue outline grows with them. */
@@ -241,8 +243,37 @@ export function CanvasView(props: Props) {
   const modeSwitch = useRef<Animation | null>(null);
   /** The canvas is travelling between the page and its place in the viewport, unclipped. */
   const [travelling, setTravelling] = useState(false);
-  /** Every view of the canvas, side by side on the stage: the desktop view first, then the others, widest first. */
-  const placed: Placed[] = canvas ? layoutViews(canvas.width, desktop!, widths, beside) : [];
+  /** Every view of the canvas, side by side on the stage: the desktop view first, then the others, widest first; wider apart once the page has a brief. */
+  /** The gap between the views: looked for once a render, as the camera moves. */
+  const gap = canvas ? gapFor(canvas.document) : undefined;
+  const placed: Placed[] = canvas ? layoutViews(canvas.width, desktop!, widths, beside, gap) : [];
+  /** The view a brief was just written in, or taken off in: as the gaps between the views change, it stays where it is on the screen. */
+  const keepInPlace = useRef<string | null>(null);
+  /** The views as last laid out, how far apart, and the page they show. */
+  const lastLaidOut = useRef<{ gap: number | undefined; placed: Placed[]; doc: Document | null } | null>(null);
+  /**
+   * The page's first brief set, or its last taken off, the gaps between the views change (ticket 134): the camera moves
+   * with the view written in, or else the one in the middle of the viewport, so it stays where it is on the screen and
+   * the others move away from it or toward it; each layer off the canvas moves with the view nearest it on its left, so
+   * none comes to be under a view (designer, 2026-11-11).
+   */
+  useLayoutEffect(() => {
+    const was = lastLaidOut.current;
+    lastLaidOut.current = { gap, placed, doc: canvas?.document ?? null };
+    if (!was || was.gap === gap || !placed.length || !was.placed.length || was.doc !== canvas?.document) return;
+    const movedBy = (p: Placed) => (placed.find((q) => keyOf(q) === keyOf(p))?.x ?? p.x) - p.x;
+    for (const o of outside) {
+      const left = was.placed.filter((p) => p.x <= o.x).sort((a, b) => b.x - a.x)[0];
+      const dx = left ? movedBy(left) : 0;
+      if (dx) offCanvas!.place(o.offCanvasLayer!, o.x + dx, o.y);
+    }
+    const middle = (viewportSize.current.width / 2 - camera.x) / camera.zoom;
+    const distance = (p: Placed) => Math.abs(p.x + p.width / 2 - middle);
+    const anchor = was.placed.find((p) => keyOf(p) === keepInPlace.current) ?? [...was.placed].sort((a, b) => distance(a) - distance(b))[0];
+    keepInPlace.current = null;
+    const dx = anchor ? movedBy(anchor) : 0;
+    if (dx) setCamera((v) => ({ ...v, x: v.x - dx * v.zoom }));
+  });
   const bounds: Bounds | null = canvas && boundsOf(placed);
   /** The layers off the canvas, where they are on the stage. */
   const outside: Shown[] = canvas ? placeOffCanvas(offCanvas) : [];
@@ -299,7 +330,7 @@ export function CanvasView(props: Props) {
   const [atRest] = useState(() =>
     onceAtRest(
       () => stage.current && drawOnlyWhatShows(stage.current),
-      () => !!modeSwitch.current || wasLeaving.current || pointerHeld() || !!typing.current,
+      () => !!modeSwitch.current || pointerHeld() || !!typing.current,
       () => {
         const { camera, extent } = framing.current;
         return !!extent && showsWhole(camera, extent, viewportSize.current);
@@ -334,7 +365,7 @@ export function CanvasView(props: Props) {
         if (modeSwitch.current !== animation) return;
         modeSwitch.current = null;
         // Back where the camera has it, the views are drawn only as far as they show (`drawOnlyWhatShows`).
-        if (el === stage.current && !wasLeaving.current) atRest.moveEnded();
+        if (el === stage.current) atRest.moveEnded();
         setTravelling(false);
         done?.();
       },
@@ -348,17 +379,15 @@ export function CanvasView(props: Props) {
     return transformOf({ x: -area.left - scrollX, y: -area.top - scrollY, zoom: 1 });
   };
 
-  /** The panels and the tools moving out with the frame as edit mode is left, or in with it as it starts or a click turns it around. */
-  const chromeMoves = useRef<Animation[]>([]);
   /**
-   * The panels and the tools travel with the frame (the desktop view), each side's edge with the frame's edge on that
-   * side, at its speed and on its curve (designer, 2026-11-08: "跟着 Frame 一起走", "完全一致"): pushed off the window as
-   * the page grows over it (`out`), brought in as it shrinks into the canvas. The Layers side (the panel, or the button
-   * showing it, and its edge's grip) moves with the left edge; the Design side (the panel, its grip, the tools) with
-   * the right. From where they are now, so a click on the way turns them around with the frame; `fromOut`, from off
-   * the window, as edit mode starts. `atRest`: the camera with the canvas in place; `canvasWidth`: the desktop view's.
+   * As edit mode starts, the panels and the tools travel in with the frame (the desktop view), each side's edge with the
+   * frame's edge on that side, at its speed and on its curve (designer, 2026-11-08: "跟着 Frame 一起走", "完全一致"),
+   * from off the window as it shrinks into the canvas. The Layers side (the panel, or the button showing it, and its
+   * edge's grip) moves with the left edge; the Design side (the panel, its grip, the tools) with the right. Leaving edit
+   * mode is at once, with no animation (designer, 2026-11-11). `atRest`: the camera with the canvas in place;
+   * `canvasWidth`: the desktop view's.
    */
-  const moveChrome = (atRest: Camera, canvasWidth: number, out: boolean, fromOut = false) => {
+  const moveChromeIn = (atRest: Camera, canvasWidth: number) => {
     const shell = viewport.current!.parentElement!;
     const sideOf = (selector: string) => [...shell.querySelectorAll<HTMLElement>(`:scope > :is(${selector})`)];
     const layersSide = sideOf(".ht-panel.is-layers, .ht-show-layers, .ht-resizer.is-layers");
@@ -378,16 +407,7 @@ export function CanvasView(props: Props) {
     );
     const parts = [...layersSide, ...designSide];
     const away = (i: number) => `translateX(${i < layersSide.length ? push.left : push.right}px)`;
-    const now = parts.map((el, i) => (fromOut ? away(i) : `translateX(${new DOMMatrix(getComputedStyle(el).transform).e}px)`));
-    for (const move of chromeMoves.current) move.cancel();
-    chromeMoves.current = parts.map((el, i) =>
-      el.animate([{ transform: now[i] }, { transform: out ? away(i) : "translateX(0px)" }], {
-        duration: MODE_SWITCH_MS,
-        easing: EASE_IN_OUT,
-        // Out, they stay off the window until the shell is gone.
-        fill: out ? "forwards" : "none",
-      }),
-    );
+    parts.forEach((el, i) => el.animate([{ transform: away(i) }, { transform: "translateX(0px)" }], { duration: MODE_SWITCH_MS, easing: EASE_IN_OUT }));
   };
 
   // A layout effect, so freezing starts in the same task as the click.
@@ -407,7 +427,7 @@ export function CanvasView(props: Props) {
       const canvasViews = createViews(frozen);
       setViews(canvasViews);
       onCanvas(canvasViews, workspace.current!);
-      const start = startAt ?? initialCamera(frozen, { width: viewsWidth(frozen.width, widths), height: frozen.height }, viewport.current!.getBoundingClientRect());
+      const start = startAt ?? initialCamera(frozen, { width: viewsWidth(frozen.width, widths, gapFor(frozen.document)), height: frozen.height }, viewport.current!.getBoundingClientRect());
       setCamera(start);
       shell.style.opacity = "";
       if (startAt) {
@@ -420,7 +440,7 @@ export function CanvasView(props: Props) {
           duration: MODE_SWITCH_MS,
           easing: EASE_IN_OUT,
         });
-        moveChrome(start, frozen.width, false, true);
+        moveChromeIn(start, frozen.width);
       }
       // The task after the next frame: the canvas has been painted by then.
       requestAnimationFrame(() =>
@@ -551,55 +571,6 @@ export function CanvasView(props: Props) {
     }
   }, [playing]);
 
-  // Leaving grows the canvas back over the page; a click on the way turns it around.
-  const wasLeaving = useRef(false);
-  /** Leaving, the views held as tall as the page now is; turned around, let go, each as tall as what it shows. */
-  const heightsPinned = useRef<(() => void) | null>(null);
-  useLayoutEffect(() => {
-    if (leaving === wasLeaving.current) return;
-    wasLeaving.current = leaving;
-    const done = leaving ? onLeft : undefined;
-    if (!canvas) {
-      done?.(); // Nothing frozen yet, so nothing to grow.
-      return;
-    }
-    // Leaving holds its last frame until the shell is gone.
-    const options = { easing: EASE_OUT, fill: leaving ? "forwards" : "none" } as const;
-    if (prefersReducedMotion()) {
-      const shell = viewport.current!.parentElement!;
-      const from = getComputedStyle(shell).opacity;
-      // With reduced motion, nothing is pushed (designer, 2026-11-08): any push left from before goes, the shell alone fades.
-      for (const move of chromeMoves.current) move.cancel();
-      play(shell, [{ opacity: from }, { opacity: leaving ? 0 : 1 }], { ...options, duration: MODE_FADE_MS }, done);
-      return;
-    }
-    // The window resized since the page was frozen: leaving, the desktop view is laid out again as wide as the page now is,
-    // so it grows into the page as the page is, not as it was (designer, 2026-11-08); turned around, as frozen again.
-    // Playing sets its own width, and is left as it is.
-    const width = leaving ? document.documentElement.clientWidth : canvas.width;
-    if (!playing) {
-      heightsPinned.current?.();
-      heightsPinned.current = null;
-      iframe.current!.style.width = `${width}px`;
-      if (leaving) {
-        // No shorter than the window now is, either, so the page's foot is not the canvas's gray: held so as it grows.
-        fitHeight(canvas.document, iframe.current!, Math.max(canvas.windowHeight, innerHeight));
-        heightsPinned.current = views?.pinHeights() ?? null;
-      }
-    }
-    // Toward where the camera has the canvas, turned around: what the panels keep their gap to, either way.
-    moveChrome(camera, playing ? canvas.width : width, leaving);
-    const from = transformOf(currentCamera(stage.current!));
-    const to = leaving ? overPage() : transformOf(camera);
-    // Over the page, a changed canvas would cut to a page without the changes.
-    const fadeIntoPage = () => {
-      const shell = viewport.current!.parentElement!;
-      play(shell, [{ opacity: 1 }, { opacity: 0 }], { ...options, duration: MODE_FADE_MS }, done, true);
-    };
-    const grown = leaving && changed ? fadeIntoPage : done;
-    play(stage.current!, [{ transform: from }, { transform: to }], { ...options, duration: MODE_SWITCH_MS, easing: EASE_IN_OUT }, grown);
-  }, [leaving]);
-
   // Effects run after paint; a key pressed right after a click must still see that click's selection.
   const latest = useRef({
     played,
@@ -660,7 +631,7 @@ export function CanvasView(props: Props) {
       }
       else if (key.action === "select parents") onSelect(selectParents(selected));
       // The layers off the canvas too.
-      else if (key.action === "fit" && bounds) setCamera(fitCamera(boundsOf([...placed, ...latest.current.outside, ...cardsPlaced.current]), viewport.current!.getBoundingClientRect()));
+      else if (key.action === "fit" && bounds) setCamera(fitCamera(boundsOf([...placed, ...latest.current.outside, ...cardsPlaced.current()]), viewport.current!.getBoundingClientRect()));
     };
     const release = () => {
       setSpaceHeld(false);
@@ -1311,7 +1282,7 @@ export function CanvasView(props: Props) {
   /** The layer of the canvas selected alone, with the selection toolbar on its top right, in `toolbarIn`. */
   const toolbar =
     toolbarIn && editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && !travelling && !playing && !drag && !resize && !hideSelection && !typingLayer
-      ? { layer: primary, in: toolbarIn, promote: editor.canPromote(primary) }
+      ? { layer: primary, in: toolbarIn, promote: editor.canPromote(primary), alone: editor.canEditAlone(primary) ? editor.editsAlone(primary) : null }
       : null;
   /**
    * The layer selected alone that can be resized, with handles in every view that shows it: not the page,
@@ -1332,7 +1303,7 @@ export function CanvasView(props: Props) {
       ? primary
       : null);
   const cards = travelling || playing ? null : briefCards();
-  if (!cards?.list.length) cardsPlaced.current = [];
+  if (!cards?.list.length) cardsPlaced.current = () => [];
   /**
    * The cards of the briefs (ticket 121): one for each layer with a brief,
    * beside the view it was written in (the desktop view, if that view is gone,
@@ -1344,10 +1315,13 @@ export function CanvasView(props: Props) {
     if (!canvas || !tree || !shownViews.length) return null;
     const desktopView = shownViews[0];
     const last = placed.at(-1)!;
+    const wide = gap !== undefined;
     const list: { card: BriefCard; layer: Layer; in: Shown }[] = [];
     const add = (layer: Layer, shown: Shown, key: string, text: string) => {
       const r = shown.view.boxOf(layer);
-      const free = shown.offCanvasLayer ? { left: true, right: true } : { left: shown.desktop, right: keyOf(shown) === keyOf(last) };
+      // With the gaps wide, every view has its cards on the side nearer the layer, those of two views in a gap taking
+      // turns down it (ticket 134, designer, 2026-11-11).
+      const free = shown.offCanvasLayer || wide ? { left: true, right: true } : { left: shown.desktop, right: keyOf(shown) === keyOf(last) };
       const box = r && (r.width || r.height) ? { x: shown.x + r.left, y: shown.y + r.top, width: r.width, height: r.height } : null;
       const doc = layer.el.ownerDocument;
       const selectedHere = selected.some((s) => s.el.ownerDocument === doc && (s === layer || (key !== "new" && cardKeyOf(s) === key)));
@@ -1405,6 +1379,8 @@ export function CanvasView(props: Props) {
     if (text === before) return;
     if (!text && had && !was.in.offCanvasLayer) briefViews.forget(had);
     const own = onSetBrief(layer, text);
+    // The page's first brief, or its last: the gaps change, and the view written in stays where it is on the screen.
+    if (!was.in.offCanvasLayer && canvas && gapFor(canvas.document) !== gap) keepInPlace.current = keyOf(was.in);
     const key = text && cardKeyOf(own);
     if (key && !was.in.offCanvasLayer) briefViews.write(key, keyOf(was.in));
   }
@@ -1545,6 +1521,8 @@ export function CanvasView(props: Props) {
           camera={cameraIn(camera, toolbar.in)}
           promote={toolbar.promote}
           onPromote={onPromote}
+          alone={toolbar.alone}
+          onEditAlone={onEditAlone}
         />
       )}
       {!travelling &&

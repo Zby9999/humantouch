@@ -10,7 +10,7 @@ import { Icon } from "./icons";
 import { FIELD_SETTLE_MS, ping, prefersReducedMotion, TIP_DELAY_MS, TIP_GRACE_MS } from "./motion";
 import { pointerHeld, watchHolds } from "./pointer-held";
 import { createChangeSet, withDependents, type Change, type ChangeSet, type Created, type Place, type PutBack, type RangePart } from "./changeset";
-import { DELETED_ATTR, LAYER_ID_ATTR } from "./canvas-style";
+import { DELETED_ATTR, elementsOf, LAYER_ID_ATTR } from "./canvas-style";
 import { createClipboard } from "./clipboard";
 import { copyStyle, pasteStyle, type CopiedStyle } from "./style-copy";
 import type { Destination, Editor } from "./edit-commands";
@@ -80,11 +80,8 @@ interface Props {
   startAt?: Camera | null;
   /** Kept up to date with where the camera is, for a canvas frozen afresh in this one's place. */
   cameraNow?: { current: Camera | null };
-  /** Edit mode has ended; the shell goes once the canvas is back over the page. */
-  leaving: boolean;
-  /** False: switch modes instantly (the toggle was pressed from the keyboard). */
+  /** False: enter edit mode instantly (the toggle was pressed from the keyboard). */
   animate: boolean;
-  onLeft(): void;
 }
 
 /** How long after the last edit the round is saved. */
@@ -95,7 +92,7 @@ const NUDGE_RUN_MS = 1000;
 const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
-export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints, onSave, onSaveOffCanvas, onChanges, control, notice, startAt, cameraNow, leaving, animate, onLeft }: Props) {
+export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints, onSave, onSaveOffCanvas, onChanges, control, notice, startAt, cameraNow, animate }: Props) {
   /**
    * Hidden at first: the editor often opens in a browser built into another app, where room is short. Hidden on every
    * entry, whether it was shown or hidden the last time; shown, it stays so until edit mode is left (designer,
@@ -292,10 +289,6 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
       }
     });
   };
-  // Leaving edit mode saves at once, while the canvas is still there to save.
-  useEffect(() => {
-    if (leaving) flush();
-  }, [leaving]);
   /** Edit mode is over: nothing is saved from here on. */
   const left = useRef(false);
   useEffect(
@@ -397,7 +390,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   /** The layer a change is of, as the canvas has it now: one deleted, the layer it was in; one moved off the canvas, there. */
   const layerOfChange = (change: Change): Layer | null => {
     if (!tree || !offCanvas) return null;
-    const byId = (doc: Document, id: string) => doc.querySelector(`[${LAYER_ID_ATTR}="${CSS.escape(id)}"]:not([${DELETED_ATTR}])`);
+    // Made on one instance alone (ticket 114): its layer in that instance.
+    const byId = (doc: Document, id: string) => elementsOf(doc, id).find((el) => !el.hasAttribute(DELETED_ATTR)) ?? null;
     const moved = change.offCanvas ? offCanvas.list().find((outside) => outside.id === change.offCanvas)?.layer() : null;
     if (moved) return moved;
     const id = change.kind === "delete" ? (change.before as Place).container.layer : change.layer;
@@ -961,6 +955,11 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           editor.promote(layer);
           onEdit();
         }}
+        onEditAlone={(layer, alone) => {
+          if (!editor?.canEditAlone(layer)) return;
+          editor.editAlone(layer, alone);
+          onEdit();
+        }}
         onBeginText={(layer) => {
           const own = editorOf(layer)!.typedIn(layer);
           // Loose text got an element of its own: the layers are built anew (those off the canvas are read as they are).
@@ -988,10 +987,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         playedWidth={played?.width ?? null}
         onPlay={play}
         onStopPlaying={stopPlaying}
-        leaving={leaving}
         animate={animate}
-        changed={!!round.current?.changeSet.list().length}
-        onLeft={onLeft}
       />
       <Tools tool={tool} onTool={setTool} />
       <Toast message={toast} />
