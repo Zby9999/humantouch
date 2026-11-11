@@ -35,7 +35,7 @@
 
 **Blocked by:** None。发布前做（设计师 2026-11-11 定）。
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 单元测试（`palette`）：用官网这三条 ramp（neutral 0、50、100、150、200、250、300、400 … 950；blue 50–700；purple 100、200、400–700），得到一组 Tailwind 的 11 列。各 ramp 的每一档在对应的列，缺的是空。neutral 另有第二行，是 0、150、250。只有 Tailwind 档的项目和改前相同，Radix 1–12 的例子也照旧。
 - [x] e2e：示例里加一条带 0、150、250 的 ramp，或用已有示例改出这种情况。在 Variables 面板和 Variable 弹出框里：
@@ -135,3 +135,14 @@
 5. 没在 Safari、Firefox 上看过 `grid-template-rows` 的动画和 `inert`。两者都支持，但动画手感没确认。
 6. 弹出框里的箭头按钮在 `role="listbox"` 里面，不是 option，读屏软件可能不按列表的规矩读它。现在有 `aria-expanded` 和 `aria-controls`。要彻底解决，得把列表改成每条 ramp 一个 group，和 `h4` 小标题一起改。
 7. 收起时移焦点只在焦点确实在那一行里时才做。Chrome 点按钮本来就会把焦点给按钮，所以这一步主要是给 Safari 用的，但 Safari 上没试过。
+
+**规划会话，2026-11-12**
+
+线上合并到 main 9114ad7，测试照轻量规矩跑过。`--dry`、claim-out、`--scripted` 和整套 e2e 跟下一批 main 一起跑。
+
+代定 1–10 都确认。
+- 第 4 条：第二行永远只有一行，放不下的 ramp 照旧单独成组。
+- 第 5、6 条：展开不记住，自动展开只触发一次。这样最少打扰。
+- 视觉照设计师选的方案 A。设计师看过以后要是还想调，放进前端调整的下一轮。
+
+风险 1–7 接受。Safari、Firefox 留到发布后看反馈。
