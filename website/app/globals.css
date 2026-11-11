@@ -151,6 +151,29 @@ body {
     translate: 0 2px;
   }
 }
+/*
+ * The home page's opening words and button, rising in from a blur, one after the other (page.tsx). A CSS animation,
+ * so it runs as the page paints, off the main thread while the scripts come in; "backwards" holds the start through
+ * the delay and leaves nothing behind after (no filter left on the button's hover card).
+ */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(4px);
+  }
+}
+.rise-in {
+  animation: rise-in 700ms cubic-bezier(0.23, 1, 0.32, 1) var(--rise-delay, 0ms) backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* A fade alone, no rise or blur. */
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+    }
+  }
+}
 html {
   background: var(--page);
 }
