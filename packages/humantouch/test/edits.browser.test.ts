@@ -5981,6 +5981,23 @@ describe("breakpoints", () => {
     expect(again.widths).toEqual([]);
   });
 
+  test("a layer deleted in the desktop view that is still on the page at a view's width is not shown, not adapted there: deleted in the desktop view, it is deleted at every width (ADR 0008, ticket 148)", async () => {
+    const { editor, changes, desktop, layer } = await open(MOVES.replace(/ data-ht-chain='[^']*'/g, ""));
+    editor.at(desktop);
+    editor.remove(layer("b"));
+    const [change] = changes.list();
+    expect(change.kind).toBe("delete");
+    // The code hides it as wide as the window, not below 640px.
+    const page = livePage(1000, "#b { display: none } @media (width < 640px) { #b { display: block } }");
+    const { at, widths } = copiesOf(page);
+
+    expect(checkAcross(page, change, onCanvas(changes.list()), [768, 390], at)).toMatchObject({ outcome: "not shown", actual: "there" });
+    expect(widths).toEqual([768, 390]);
+    // Gone at every width: shown.
+    const gone = livePage(1000, "#b { display: none }");
+    expect(checkAcross(gone, change, onCanvas(changes.list()), [768, 390], copiesOf(gone).at)).toEqual({ outcome: "shown" });
+  });
+
   test("the project's media queries are read from the page's stylesheets: each width one starts or stops holding at, named by the first there", () => {
     const { doc } = openCanvas(`<!DOCTYPE html><style>
       @media (max-width: 767px) { p { color: red } }

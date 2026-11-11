@@ -267,3 +267,27 @@ test("late notes, ticket 78's way: noted as wide as the window as the code began
   await expect.poll(() => last(width.id)?.outcome).toBe("shown");
   checks.stop();
 });
+
+test("ticket 147's risk 3, for ticket 148's report: a change shown, adapted at the phone's width, then broken there by a later edit: the checks as the code changes look again as wide as the window only, but `done` and `finish` ask, and the page looks at every width again: not shown, the break said", async () => {
+  const page = pageOf(PAGE(), 1000);
+  const width = style(BOX, "width", { before: { type: "fixed", value: 100 }, after: { type: "fixed", value: 500 }, style: { width: "500px" } });
+  const reports: CheckReport[] = [];
+  const { checks, noted } = watch(page, [width], { viewWidths: () => [390], report: (r) => reports.push(r) });
+  const last = () => reports.filter((r) => r.id === width.id && !r.answers).at(-1);
+  await expect.poll(() => noted.get(width.id)?.breaks?.map((note) => note.width).sort()).toEqual([1000, 390]);
+  const css = page.createElement("style");
+  // 500px from 640px up, the column's width below it: adapted at the phone's.
+  css.textContent = "main #box { width: 500px } @media (width < 640px) { main #box { width: 100% } }";
+  page.head.append(css);
+  await expect.poll(() => last()).toMatchObject({ outcome: "shown", adapted: [{ width: 390, drawn: 342 }] });
+
+  // A later edit: 500px at every width, wider than the phone's column.
+  css.textContent = "main #box { width: 500px }";
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  // Looked at again as wide as the window alone, it shows there still: nothing new said.
+  expect(last()?.outcome).toBe("shown");
+
+  checks.ask({ ids: [width.id], at: new Date().toISOString(), key: "done" });
+  await expect.poll(() => reports.find((r) => r.answers === "done"), { timeout: 8000 }).toMatchObject({ outcome: "not shown", breaks: [{ width: 390, kind: "page" }, { width: 390, kind: "wider" }] });
+  checks.stop();
+});

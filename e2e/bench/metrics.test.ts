@@ -362,6 +362,26 @@ test("a report with every change under ⚠️ and no ✓ section is in the form"
   assert.deepEqual(checkReport(report, [1]), { compliant: true, applied: [], notApplied: [1], problems: [] });
 });
 
+test("a report in three sections (ticket 148): the changes under ↪, done differently, each with its why, apart from ✓ and ⚠️; one under ↪ with no why is not in the form; ↪ alone is a report too", () => {
+  const report = [
+    "✓ Applied",
+    "- 1. Fill: the cards, red",
+    "",
+    "↪ Done differently",
+    "- 2. Fill: the hero, neutral-250",
+    "  Why: the designer asked for neutral-250 instead",
+    "- 3. Width: the button",
+    "",
+    "⚠️ Not shown",
+    "- 4. Corner radius: the badge",
+    "  Why: the library sets it",
+    "  Instead: left as it was",
+  ].join("\n");
+
+  assert.deepEqual(checkReport(report, [1, 2, 3, 4]), { compliant: false, applied: [1], notApplied: [4], differently: [2, 3], problems: ["change 3 under ↪ without why"] });
+  assert.deepEqual(checkReport(["↪ 有意不同", "- 1. 填充", "  原因：设计师改了主意"].join("\n"), [1]), { compliant: true, applied: [], notApplied: [], differently: [1], problems: [] });
+});
+
 test("a run is measured from claim to finish: per change, against the page's checks and what the page shows, by its longest wait between two bits of progress, and by its longest time with no progress and no edit", () => {
   const run = measureRun({
     changes: [

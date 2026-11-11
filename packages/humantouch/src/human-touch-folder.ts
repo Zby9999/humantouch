@@ -59,13 +59,17 @@ export interface RoundState {
   closing?: CheckAsk;
   claimedAt?: string;
   code?: CodeSnapshot | null;
+  /** The changes the Agent said it did differently on purpose (`done <number> --differently "<why>"`, ticket 148), by id: why, in its own words. */
+  differently?: Record<string, string>;
 }
 
 /**
  * The changes that count as applied (ADR 0013): those the page shows, done or
  * not, and those the Agent reported done that it does not say it does not
- * show (it cannot check them, or no page is open). Of `results`, only this
- * round's count: an earlier round's may have been written back after it ended.
+ * show (it cannot check them, or no page is open), and those it said it did
+ * differently on purpose (ticket 148): done, not left for the next round. Of
+ * `results`, only this round's count: an earlier round's may have been
+ * written back after it ended.
  */
 export function appliedOf(state: RoundState, results: Checks["results"] = {}): number[] {
   const own = (id: string | number) => {
@@ -73,7 +77,7 @@ export function appliedOf(state: RoundState, results: Checks["results"] = {}): n
     return result && (!state.claimedAt || result.at >= state.claimedAt) ? result : undefined;
   };
   const shown = Object.keys(results).map(Number).filter((id) => own(id)?.outcome === "shown");
-  const done = state.done.filter((id) => own(id)?.outcome !== "not shown");
+  const done = state.done.filter((id) => own(id)?.outcome !== "not shown" || state.differently?.[id] !== undefined);
   return [...new Set([...shown, ...done])].sort((a, b) => a - b);
 }
 
@@ -138,6 +142,8 @@ export interface RoundResult {
   done: number[];
   /** The changes applied, as the page shows them (`appliedOf`); the others were not. Missing in rounds archived before ticket 64: `done` then. */
   applied?: number[];
+  /** The changes the Agent said it did differently on purpose, by id: why (`RoundState.differently`, ticket 148). */
+  differently?: Record<string, string>;
   /** When, as an ISO date. */
   at: string;
   /** How the page answered the last check of each change. */
@@ -183,7 +189,7 @@ export async function archiveRound(folder: HumanTouchFolder, ended: RoundResult[
   // Only this round's checks: an earlier round's could have been written back after it ended.
   const results = Object.entries((await readChecks(folder))?.results ?? {}).filter(([, r]) => !state.claimedAt || r.at >= state.claimedAt);
   const checks = Object.fromEntries(results);
-  const result: RoundResult = { ended, done: state.done, applied: appliedOf(state, checks), at: new Date().toISOString(), checks, code };
+  const result: RoundResult = { ended, done: state.done, applied: appliedOf(state, checks), ...(state.differently && { differently: state.differently }), at: new Date().toISOString(), checks, code };
   const archive = join(folder.history, result.at.replace(/[:.]/g, "-"));
   await mkdir(archive, { recursive: true });
   // The round's own changes: what the rounds before applied, carried along with it for the canvas, is theirs.

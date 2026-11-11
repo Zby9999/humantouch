@@ -707,7 +707,7 @@ test.describe("done checks the change on the page", () => {
     await drawnWith(page.getByTestId("from-md"), "md:top-[40px]", "md:left-[60px]");
     await drawnWith(page.getByTestId("everywhere"), "md:absolute", "md:top-[90px]", "md:left-[60px]");
     for (const id of [x, y]) expect(await npxHumanTouch("done", id)).toContain("Checked on the page: it shows the change.");
-    expect(await npxHumanTouch("done", other)).toContain("Checked on the page: it shows the change. At Phone (390px) the layer is drawn elsewhere than on the canvas: if you adapted it there on purpose, say so in the report.");
+    expect(await npxHumanTouch("done", other)).toContain("Checked on the page: it shows the change. At Phone (390px) the layer is drawn elsewhere than on the canvas: done differently there, it goes under ↪ in the report, where you say why.");
   });
 
   test("a layer the canvas places relative on phones, absolute from `md` up: its X moves it on phones too, so the phone's width is looked at, and its `left` written from `md` up only is adapted there (ticket 83, review; ADR 0016)", async ({ page }) => {
@@ -735,7 +735,7 @@ test.describe("done checks the change on the page", () => {
     // Written from `md` up only: on phones, the page does not move it.
     editSource(APP, "md:top-[30px] md:left-[40px]", "md:top-[30px] md:left-[60px]");
     await drawnWith(page.getByTestId("relative-below-md"), "md:left-[60px]");
-    expect(await npxHumanTouch("done", String(change.id))).toContain("Checked on the page: it shows the change. At Phone (390px) the layer is drawn elsewhere than on the canvas: if you adapted it there on purpose, say so in the report.");
+    expect(await npxHumanTouch("done", String(change.id))).toContain("Checked on the page: it shows the change. At Phone (390px) the layer is drawn elsewhere than on the canvas: done differently there, it goes under ↪ in the report, where you say why.");
   });
 
   /** A change's ranges as the changeset records them: where the canvas places the layer otherwise, and where it moves it in its container's layout (ticket 84). */
@@ -772,7 +772,7 @@ test.describe("done checks the change on the page", () => {
     editSource(APP, "md:top-[30px] md:left-[40px]", "md:top-[30px] md:left-[60px]");
     await drawnWith(page.getByTestId("relative-below-md"), "md:left-[60px]");
     expect(await npxHumanTouch("done", id)).toBe(
-      "Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change. At Phone (390px) the layer is drawn elsewhere than on the canvas: if you adapted it there on purpose, say so in the report.\n",
+      "Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change. At Phone (390px) the layer is drawn elsewhere than on the canvas: done differently there, it goes under ↪ in the report, where you say why.\n",
     );
     // Written at every width, as the notes say.
     editSource(APP, "md:left-[60px]", "left-[60px]");
@@ -781,7 +781,7 @@ test.describe("done checks the change on the page", () => {
     expect(await npxHumanTouch("finish")).toContain("Round finished: 1 of 1 change applied.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n✓ Applied\n- 1. X: <the layer, and what you changed>\n```\n");
   });
 
-  test("a layer the canvas places relative on phones, from the right from `md` up, moved: at the phone's width its `right` moves it too, as it has no `left`, so done compares it there; written from `md` up only, it is adapted there, applied, and listed under ✓ (ticket 84; ADR 0016)", async ({ page }) => {
+  test("a layer the canvas places relative on phones, from the right from `md` up, moved: at the phone's width its `right` moves it too, as it has no `left`, so done compares it there; written from `md` up only, it is adapted there, applied, and listed under ↪ (ticket 84; ADR 0016; ticket 148)", async ({ page }) => {
     editSource(
       APP,
       '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
@@ -808,10 +808,11 @@ test.describe("done checks the change on the page", () => {
     editSource(APP, "md:right-[40px]", "md:right-[20px]");
     await drawnWith(page.getByTestId("right-from-md"), "md:right-[20px]");
     expect(await npxHumanTouch("done", id)).toBe(
-      "Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change. At Phone (390px) the layer is drawn elsewhere than on the canvas: if you adapted it there on purpose, say so in the report.\n",
+      "Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change. At Phone (390px) the layer is drawn elsewhere than on the canvas: done differently there, it goes under ↪ in the report, where you say why.\n",
     );
+    // Adapted at the phone's width: under ↪, what is drawn there, for the reason (ticket 148).
     expect(await npxHumanTouch("finish")).toContain(
-      "Round finished: 1 of 1 change applied.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n✓ Applied\n- 1. Right: <the layer, and what you changed>\n```\n",
+      "Round finished: 1 of 1 change applied. Done differently: 1.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n↪ Done differently\n- 1. Right: <the layer>\n  Why: at Phone (390px) the layer is drawn elsewhere than on the canvas: <why you did it so>\n```\n",
     );
   });
 
@@ -842,7 +843,7 @@ test.describe("done checks the change on the page", () => {
     editSource(APP, "md:right-[40px]", "md:right-[20px]");
     await drawnWith(page.getByTestId("both-sides"), "md:right-[20px]");
     expect(await npxHumanTouch("done", id)).toBe(
-      "Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change. At Phone (390px) the layer is drawn elsewhere than on the canvas: if you adapted it there on purpose, say so in the report.\n",
+      "Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change. At Phone (390px) the layer is drawn elsewhere than on the canvas: done differently there, it goes under ↪ in the report, where you say why.\n",
     );
     // Written at every width, as the notes say: its `left` there moves it nothing, right to left.
     editSource(APP, "right-[40px] h-[40px]", "right-[20px] h-[40px]");
@@ -1007,7 +1008,7 @@ test.describe("done checks the change on the page", () => {
     const grid = page.locator("main").locator('[class~="pb-16"]');
     editSource(APP, "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3", "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2");
     await drawnWith(grid, "sm:grid-cols-2");
-    expect(await npxHumanTouch("done", "1")).toContain("Checked on the page: it shows the change. At Phone (390px) its number of columns is 1, not 2: if you adapted it there on purpose, say so in the report.");
+    expect(await npxHumanTouch("done", "1")).toContain("Checked on the page: it shows the change. At Phone (390px) its number of columns is 1, not 2: done differently there, it goes under ↪ in the report, where you say why.");
     await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
 
     editSource(APP, "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2", "grid grid-cols-2 gap-4 pb-16");
