@@ -38,8 +38,7 @@ import { drawsAlike, movedAsNoted, type Moved, type Restyled } from "./draws-ali
  * does not, nor one it writes wrong for one it does. Some draw nothing, and
  * only compare otherwise than value for value: with a part of the value no
  * CSS carries left out. Past these, a value that does not compare is looked
- * at by what it draws (`lookStyle`): 0 letter spacing in any unit (ticket
- * 142) draws as `normal` does, so needs nothing here any more.
+ * at by what it draws (`lookStyle`).
  */
 const AS_WRITTEN: Partial<Record<Property, { draw(doc: Document, value: unknown): unknown; shows(el: Element, value: unknown, drawn: unknown): boolean }>> = {
   // A border is drawn a whole number of physical pixels wide: 1.5px is 1px on a 1x screen, as 1px is.
@@ -450,26 +449,44 @@ export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas,
   }
   const apart = ownValues(change, round);
   let checked = false;
+  /** The first width it does not show at. Past it, the page looks on only at the widths it has noted nothing at yet: what the change's style moves there is noted before the change is applied (ADR 0016). */
+  let failed: CheckResult | null = null;
+  const unnoted = (width: number) => !!notes && change.kind === "style" && !notes.has(`${change.id}@${width}`);
+  // Looked at, a width is noted, if only as nothing to go by: a style looked at otherwise than by `lookStyle` (an X, a Grid's columns) notes nothing.
+  const looked = (width: number) => notes && !notes.has(`${change.id}@${width}`) && notes.set(`${change.id}@${width}`, []);
   if (own) {
     const result = lookAt(doc, change, round, apart, page, sources);
-    if (result.outcome !== "shown") return result;
+    looked(page.width);
+    if (result.outcome !== "shown") {
+      if (!others.some(unnoted)) return result;
+      failed = result;
+    }
     checked = true;
   }
   for (const width of others) {
+    if (failed && !unnoted(width)) continue;
     const copy = at(width);
     if (!copy) {
+      if (failed) continue;
       const where = change.breakpoint ? `it applies ${breakpointName(change.breakpoint)} only, and` : "it applies at every width, but";
       return { outcome: "unchecked", reason: `${where} the page could not be shown ${width}px wide to check it` };
     }
     if (change.breakpoint && !copy.doc.defaultView?.matchMedia(mediaOf(change.breakpoint)).matches) {
+      if (failed) continue;
       return { outcome: "unchecked", reason: `it applies ${breakpointName(change.breakpoint)} only, and the page could not be shown ${width}px wide to check it` };
     }
     const result = lookAt(doc, change, round, apart, notes ? { ...copy, notes } : copy, sources);
+    looked(width);
+    if (failed) continue;
     // Not there at this width at all: nothing to show there.
     if (result.outcome === "unchecked") continue;
-    if (result.outcome === "not shown") return result;
+    if (result.outcome === "not shown") {
+      if (!others.some((other) => other !== width && unnoted(other))) return result;
+      failed = result;
+    }
     checked = true;
   }
+  if (failed) return failed;
   return checked ? { outcome: "shown" } : { outcome: "unchecked", reason: "the layer is not on the page now" };
 }
 

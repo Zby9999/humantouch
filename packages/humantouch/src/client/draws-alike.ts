@@ -146,7 +146,9 @@ export function drawsAlike(restyled: Restyled[], noting: Element[] = [], look = 
   const winsOver = (source: StyleSource) => source.important && (source.kind === "inline" || source.layer !== null || (source.selector ?? "").includes("#"));
   if (restyled.some(({ el }, i) => sourcesOf(el, longhands[i]).some(winsOver))) return drawing;
 
-  const els = [...new Set(restyled.flatMap(({ el }) => around(el)))].slice(0, MAX_ELEMENTS);
+  const els = [...new Set(restyled.flatMap(({ el }) => around(el)))];
+  // Past as many as are looked at, what is not looked at may move; a field's words have no node of their own to see them move by.
+  if (els.length > MAX_ELEMENTS || els.some((el) => UNSEEN_WORDS.has(el.localName))) return drawing;
   const texts = [...new Set(restyled.flatMap(({ el }) => textsIn(el)))].slice(0, MAX_TEXTS);
   const before = look ? drawnOf(els, texts, win) : null;
   const laidOut = noting.map(layoutOf);
@@ -155,6 +157,8 @@ export function drawsAlike(restyled: Restyled[], noting: Element[] = [], look = 
   const held = restyled.map(({ el }) => `${pathOf(el)}, ${pathOf(el)} * { transition: none !important; }`);
   if (transitions) for (const rule of held) sheet.insertRule(rule, sheet.cssRules.length);
   const scroll = [win.scrollX, win.scrollY];
+  // What scrolls round the layers, where it is scrolled: a style that makes what is in it shorter would scroll it back.
+  const scrolled = [...new Set(restyled.flatMap(({ el }) => scrollersOf(el)))].map((box) => [box, box.scrollLeft, box.scrollTop] as const);
   doc.adoptedStyleSheets = [...doc.adoptedStyleSheets, sheet];
   try {
     if (!restyled.some(({ el, style }, i) => inertOn(el, longhands[i]) || heldBack(el, style))) {
@@ -169,8 +173,21 @@ export function drawsAlike(restyled: Restyled[], noting: Element[] = [], look = 
     }
     doc.adoptedStyleSheets = doc.adoptedStyleSheets.filter((one) => one !== sheet);
     if (win.scrollX !== scroll[0] || win.scrollY !== scroll[1]) win.scrollTo(scroll[0], scroll[1]);
+    for (const [box, left, top] of scrolled) if (box.scrollLeft !== left || box.scrollTop !== top) box.scrollTo(left, top);
   }
   return drawing;
+}
+
+/** Elements whose words are drawn with no text node to measure: a field's. */
+const UNSEEN_WORDS = new Set(["input", "textarea", "select"]);
+
+/** The elements round `el`, and `el`, scrolled away from their start: those a style that moves what is in them may scroll back. */
+function scrollersOf(el: Element): Element[] {
+  const out: Element[] = [];
+  for (let at: Element | null = el; at && at !== el.ownerDocument.documentElement && at !== el.ownerDocument.body; at = at.parentElement) {
+    if (at.scrollTop || at.scrollLeft) out.push(at);
+  }
+  return out;
 }
 
 /**
@@ -288,7 +305,7 @@ function around(el: Element): Element[] {
   }
   els.add(el);
   const walker = el.ownerDocument.createTreeWalker(el, NodeFilter.SHOW_ELEMENT);
-  for (let node = walker.nextNode(); node && els.size < MAX_ELEMENTS; node = walker.nextNode()) {
+  for (let node = walker.nextNode(); node && els.size <= MAX_ELEMENTS; node = walker.nextNode()) {
     if (!NOT_DRAWN.has((node as Element).localName)) els.add(node as Element);
   }
   return [...els];
