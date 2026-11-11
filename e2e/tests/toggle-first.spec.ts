@@ -10,7 +10,7 @@ import { gzipped, scripts, settle, TOGGLE_BUDGET } from "./loading";
  */
 function packageFile(url: string): string | null {
   const { pathname } = new URL(url);
-  if (!pathname.startsWith("/@fs/") || !pathname.includes("/packages/03kind/dist/")) return null;
+  if (!pathname.startsWith("/@fs/") || !pathname.includes("/packages/humantouch/dist/")) return null;
   return decodeURIComponent(pathname.slice("/@fs".length));
 }
 
@@ -66,7 +66,7 @@ test("on a Next.js page too, the rest of the editor layer loads only as edit mod
 test("while the rest of the editor layer loads, the toggle is busy, and pressing it again does not turn back", async ({ page }) => {
   let release!: () => void;
   const held = new Promise<void>((resolve) => (release = resolve));
-  await page.route(/\/packages\/03kind\/dist\/editor\.dev\.js/, async (route) => {
+  await page.route(/\/packages\/humantouch\/dist\/editor\.dev\.js/, async (route) => {
     await held;
     await route.continue();
   });

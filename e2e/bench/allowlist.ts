@@ -13,13 +13,13 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
  * 101): the rule below turns away its writing a file (any redirect but to
  * /dev/null or a stream; `tee` is not on the list) and what bash fills in.
  */
-export const SHELL = ["npx 03kind", "git diff", "git status", "git log", "git show", "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "npx tsc", "echo"];
+export const SHELL = ["npx humantouch", "git diff", "git status", "git log", "git show", "ls", "cat", "head", "tail", "wc", "grep", "rg", "find", "npx tsc", "echo"];
 
 /** Commands Claude's list leaves out (ticket 101): Claude Code runs `echo` as a read-only command already, and a `Bash(echo:*)` rule would allow the command, not where a redirect writes. */
 export const NOT_FOR_CLAUDE = ["echo"];
 
 /** How a tool result turned away by the bench starts: what the transcript is counted by. */
-export const DENIED = "Not run: the 03Kind bench allows";
+export const DENIED = "Not run: the Human Touch bench allows";
 
 /**
  * The reason a turned-away command is given, for the Agent to read; `allowed`
@@ -58,8 +58,8 @@ export function backgroundServer(command: string, servers: readonly string[], in
  * (ticket 91 re-review): `npx`, `bunx`, `pnpm exec` and the like, by an
  * allowlist, as no list of what to turn away closes them (a runner inside a
  * runner, `nice`, `nohup`, any program on PATH). `runners` names, for each
- * runner, the programs it may run: by name, or a version of it (`03kind@latest`);
- * and for `03kind`, a packed file of it (`file:…/03kind-x.tgz`) too. Between
+ * runner, the programs it may run: by name, or a version of it (`humantouch@latest`);
+ * and for `humantouch`, a packed file of it (`file:…/humantouch-x.tgz`) too. Between
  * the runner and its program only `flags` may come, options that take no
  * value (so no `-c`, `--call`, `-p <package>`). No word anywhere is one of
  * `options` (`--open`, which opens a window). Commands of no runner pass.
@@ -72,7 +72,7 @@ export function runsAllowed(words: readonly string[], runners: Readonly<Record<s
   while (at < words.length && flags.includes(words[at])) at++;
   const program = words[at];
   if (program === undefined || program.startsWith("-")) return program === undefined;
-  return runners[runner].some((name) => program === name || program.startsWith(`${name}@`) || (name === "03kind" && /^file:\S+\.tgz$/.test(program)));
+  return runners[runner].some((name) => program === name || program.startsWith(`${name}@`) || (name === "humantouch" && /^file:\S+\.tgz$/.test(program)));
 }
 
 /**
@@ -103,7 +103,7 @@ interface Word {
  * written in full with no pattern or braces bash would fill in, is by its real
  * path `project` or one in it, not in its `.git`, the rest of the command held
  * to the rule as usual; and `git -C <that folder> apply`, with nothing after
- * it, goes ahead (the patch on its input, as `npx 03kind last` prints it).
+ * it, goes ahead (the patch on its input, as `npx humantouch last` prints it).
  * There is no bare `git apply`: where it applies depends on the folder a `cd`
  * left it in, `.git` or a link to it among them. None sets a variable first or uses an
  * option that runs another program or writes a file. Each is matched by the
@@ -126,7 +126,7 @@ export function shellAllowed(command: string, allowed: readonly string[] = SHELL
 
 /**
  * The words after `git -C <folder>` when the folder is written in full and is,
- * by its real path, `project` or a folder in it: as `npx 03kind last` writes
+ * by its real path, `project` or a folder in it: as `npx humantouch last` writes
  * its commands (`git rev-parse --show-toplevel`, on macOS the real path).
  * Null for any other, left for the rule to turn away. The fence is not a
  * sandbox (ticket 85): pi's own write or edit may still write `.git/config`

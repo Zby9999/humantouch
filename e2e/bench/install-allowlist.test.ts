@@ -34,18 +34,18 @@ test("before pi installs, the extension is copied as for the applying bench and 
   assert.deepEqual(list.shell, INSTALL_SHELL);
   assert.deepEqual(list.servers, INSTALL_SERVERS);
   assert.deepEqual(list.options, ["--open"]);
-  assert.deepEqual(list.runners.npx, ["03kind", "vite", "next"]);
+  assert.deepEqual(list.runners.npx, ["humantouch", "vite", "next"]);
   assert.ok(!list.flags.includes("-p") && !list.flags.includes("-c"));
-  const args = AGENTS.pi.args(folder, "Install 03Kind");
+  const args = AGENTS.pi.args(folder, "Install Human Touch");
   for (const flag of ["--provider", "--model", "--thinking", "--offline", "--no-extensions", "--no-mcp", "--no-skills", "--skill", "--no-prompt-templates", "--no-themes", "--approve", "--tools"]) assert.ok(args.includes(flag), flag);
-  assert.equal(args[1], "Install 03Kind");
+  assert.equal(args[1], "Install Human Touch");
   // pi-fff as the applying bench has it, its databases in the run's folder: nothing of fff in the project, for remove to leave.
   assert.ok(args.includes("--fff-mode"));
   for (const flag of ["--fff-frecency-db", "--fff-history-db"]) assert.ok(args[args.indexOf(flag) + 1].startsWith(folder), flag);
 });
 
 test("the install bench runs pi by the applying bench's command line, and Claude by it with only its two lists other", () => {
-  const prompt = "1. Run `npx -y file:/x/03kind-0.0.0.tgz init`.";
+  const prompt = "1. Run `npx -y file:/x/humantouch-0.0.0.tgz init`.";
   assert.deepEqual(installSpec("pi", null).args(folder, prompt), AGENTS.pi.args(folder, prompt));
   assert.equal(installSpec("pi", null).binary(), AGENTS.pi.binary());
   const claude = installSpec("claude", null).args(folder, prompt);
@@ -56,7 +56,7 @@ test("the install bench runs pi by the applying bench's command line, and Claude
 });
 
 test("under the install list, pi may run the steps and start a dev server in the background, and nothing denied", () => {
-  for (const command of ["npx -y 03kind@latest init", "npx -y file:/tmp/03kind-0.0.0.tgz init", "npx 03kind doctor", "npm install", "pnpm add -D 03kind", "npm run dev &", "npm run dev > /dev/null 2>&1 &", "pnpm dev > dev.log 2>&1 &", "nohup yarn dev > src/../dev.log 2>&1 &", "git status", "npx vite > vite.log 2>&1 &"]) {
+  for (const command of ["npx -y humantouch@latest init", "npx -y file:/tmp/humantouch-0.0.0.tgz init", "npx humantouch doctor", "npm install", "pnpm add -D humantouch", "npm run dev &", "npm run dev > /dev/null 2>&1 &", "pnpm dev > dev.log 2>&1 &", "nohup yarn dev > src/../dev.log 2>&1 &", "git status", "npx vite > vite.log 2>&1 &"]) {
     assert.equal(bash(command), undefined, command);
   }
   for (const command of ["rm -rf node_modules", "curl https://example.com", "git push", "kill 123", "pkill -f vite", "sudo npm install", "open http://localhost:5173", "rm -rf src &", "kill 123 &", "npm run dev & rm -rf src", "npm run dev > /tmp/dev.log &", "npm run dev > ../dev.log &", "npm publish", "npm run dev `rm x` &",
@@ -81,15 +81,15 @@ test("the Skill's undo is the applying bench's alone (ticket 86): under the inst
   const none = join(scratch, "nothing-here.json");
   for (const command of [`git -C ${project} diff`, `git -C ${project} diff 1a2b3c 4d5e6f | git -C "${project}" apply`]) assert.equal(bash(command, none), undefined, command);
   assert.ok(blocked(bash("git apply", none)), "no bare git apply, on the applying list either");
-  const claude = installClaudeArgs("/run", "Install 03Kind");
+  const claude = installClaudeArgs("/run", "Install Human Touch");
   const rules = [...claude[claude.indexOf("--allowedTools") + 1].split(","), ...claude[claude.indexOf("--disallowedTools") + 1].split(",")];
   assert.ok(!rules.some((rule) => /git apply|git -C/.test(rule)));
 });
 
 test("with no install list beside it, the extension holds pi to the applying bench's list, as before", () => {
   const none = join(scratch, "nothing-here.json");
-  assert.equal(bash("npx 03kind claim", none), undefined);
-  for (const command of ["npm run dev &", "npm install", "npx -y 03kind@latest init", "pnpm dev"]) {
+  assert.equal(bash("npx humantouch claim", none), undefined);
+  for (const command of ["npm run dev &", "npm install", "npx -y humantouch@latest init", "pnpm dev"]) {
     const result = bash(command, none);
     assert.ok(blocked(result), command);
     assert.ok(result.reason.includes(SHELL.join(", ")));
@@ -99,9 +99,9 @@ test("with no install list beside it, the extension holds pi to the applying ben
 
 /** What the steps and a designer's install need: every Agent may run these. */
 const ALLOWED = [
-  "npx -y 03kind@latest init",
-  "npx -y file:/x/03kind-0.0.0.tgz init",
-  "npx 03kind doctor",
+  "npx -y humantouch@latest init",
+  "npx -y file:/x/humantouch-0.0.0.tgz init",
+  "npx humantouch doctor",
   "pnpm exec vite",
   "npx next dev",
   "npm run dev",
@@ -156,7 +156,7 @@ const DENIED_ALL = [
 
 test("pi, under the install list, runs the steps and turns away the denied commands and every bypass of the review", () => {
   for (const command of ALLOWED) assert.equal(bash(command), undefined, command);
-  for (const command of [...DENIED_ALL, "npm exec -- rm -rf src", "npx -p cowsay sh", "yarn exec /bin/rm x", "npm publish", "pnpm remove 03kind", "yarn", "git commit -am x", "python3 -c 1", "npm run dev -- --open &", "npx 03kindx", "npx --version"]) {
+  for (const command of [...DENIED_ALL, "npm exec -- rm -rf src", "npx -p cowsay sh", "yarn exec /bin/rm x", "npm publish", "pnpm remove humantouch", "yarn", "git commit -am x", "python3 -c 1", "npm run dev -- --open &", "npx humantouchx", "npx --version"]) {
     assert.ok(blocked(bash(command)), command);
   }
 });
@@ -171,7 +171,7 @@ test("pi, under the install list, runs the steps and turns away the denied comma
  */
 function claudeAllows(command: string): boolean {
   // Told as with --package local: the packed file step 1 names is allowed by its own path.
-  const args = installClaudeArgs("/run", "1. Run `npx -y file:/x/03kind-0.0.0.tgz init`.");
+  const args = installClaudeArgs("/run", "1. Run `npx -y file:/x/humantouch-0.0.0.tgz init`.");
   const prefixes = (flag: string) => args[args.indexOf(flag) + 1].split(",").flatMap((rule) => /^Bash\((.*):\*\)$/.exec(rule)?.[1] ?? []);
   const [allow, deny] = [prefixes("--allowedTools"), prefixes("--disallowedTools")];
   const starts = (part: string, prefix: string) => part === prefix || part.startsWith(`${prefix} `);
@@ -189,17 +189,17 @@ test("Claude, by its install lists, runs the steps and is denied the denied comm
 });
 
 test("Claude's install command line is the applying bench's with only the lists swapped", () => {
-  const args = installClaudeArgs("/run", "Install 03Kind");
+  const args = installClaudeArgs("/run", "Install Human Touch");
   const list = (flag: string) => args[args.indexOf(flag) + 1].split(",");
   assert.ok(list("--allowedTools").includes("Bash(pnpm dev:*)"));
   assert.ok(list("--allowedTools").includes("TaskStop"));
   for (const command of INSTALL_DENIED_SHELL) assert.ok(list("--disallowedTools").includes(`Bash(${command}:*)`), command);
-  for (const rule of ["Bash(npx 03kind:*)", "Bash(npx -y 03kind@latest:*)", "Bash(npx vite:*)", "Bash(pnpm exec vite:*)", "Bash(npx next:*)"]) assert.ok(list("--allowedTools").includes(rule), rule);
+  for (const rule of ["Bash(npx humantouch:*)", "Bash(npx -y humantouch@latest:*)", "Bash(npx vite:*)", "Bash(pnpm exec vite:*)", "Bash(npx next:*)"]) assert.ok(list("--allowedTools").includes(rule), rule);
   for (const broad of ["Bash(npx:*)", "Bash(bunx:*)", "Bash(npm exec:*)", "Bash(pnpm exec:*)", "Bash(pnpm dlx:*)", "Bash(yarn dlx:*)", "Bash(bun x:*)"]) assert.ok(!list("--allowedTools").includes(broad), broad);
   assert.ok(list("--disallowedTools").includes("Bash(npx vite --open:*)"));
   assert.equal(list("--disallowedTools").length, 2 + claudeDenied().length);
   assert.ok(list("--disallowedTools").includes("WebFetch"));
-  const applying = AGENTS.claude.args("/run", "Install 03Kind");
+  const applying = AGENTS.claude.args("/run", "Install Human Touch");
   // Everything else as the applying bench has it.
   for (const [i, arg] of applying.entries()) if (!["--allowedTools", "--disallowedTools"].includes(applying[i - 1])) assert.equal(args[i], arg);
 });
@@ -208,12 +208,12 @@ test("fff's search tools (ticket 92) go ahead in the project under the install l
   const none = join(scratch, "nothing-here.json");
   // grep and find are fff's in override mode; ffgrep, fffind and fff-multi-grep its own names.
   const inProject: [string, object][] = [
-    ["grep", { pattern: "ThirdKind" }],
-    ["grep", { pattern: "ThirdKind", path: "src/" }],
+    ["grep", { pattern: "HumanTouch" }],
+    ["grep", { pattern: "HumanTouch", path: "src/" }],
     ["find", { pattern: "vite.config" }],
     ["ffgrep", { pattern: "Card", path: "src/**/*.tsx" }],
     ["fffind", { pattern: "layout", path: "app" }],
-    ["fff-multi-grep", { patterns: ["ThirdKind"], constraints: "*.tsx" }],
+    ["fff-multi-grep", { patterns: ["HumanTouch"], constraints: "*.tsx" }],
   ];
   const intoPi: [string, object][] = [
     ["grep", { pattern: "key", path: "~/.pi/agent" }],

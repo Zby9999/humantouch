@@ -24,7 +24,7 @@ const execFileAsync = promisify(execFile);
 /** What the designer says to the Agent: the Skill's own trigger. */
 export const PROMPT = "落地我的设计改动";
 /** What the Agent is told in a project with no Skill (ticket 65): only to run `claim` and apply as it says. */
-export const NO_SKILL_PROMPT = "运行 `npx 03kind claim`，照输出落地";
+export const NO_SKILL_PROMPT = "运行 `npx humantouch claim`，照输出落地";
 
 /** All the PATH the Agent's shell gets: Cursor's install, Node's (for `npx`), then the system's. */
 const PATH = [join(homedir(), ".local/bin"), dirname(process.execPath), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
@@ -203,7 +203,7 @@ export const PROJECT = "<project>";
 
 /**
  * Claude's rules for the Skill's own undo and its viewing command, as
- * `npx 03kind last` prints them (`git -C "<repo>" diff …`, `… | git -C
+ * `npx humantouch last` prints them (`git -C "<repo>" diff …`, `… | git -C
  * "<repo>" apply`, the repository by its real path), for the run's own
  * project only: by that path and as the bench names it, quoted and not;
  * `apply` as it is, the patch on its input, not by prefix. No bare `git
@@ -356,7 +356,7 @@ export const AGENTS: Record<AgentName, AgentSpec> = {
       "--no-mcp",
       "--no-skills",
       "--skill",
-      ".agents/skills/03kind",
+      ".agents/skills/humantouch",
       "--no-prompt-templates",
       "--no-themes",
       // Trusts the project, as it would be once the designer has opened it in pi.

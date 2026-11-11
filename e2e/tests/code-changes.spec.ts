@@ -1,9 +1,9 @@
 import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
-import { STALL_MS } from "../../packages/03kind/src/client/agent-stall";
+import { STALL_MS } from "../../packages/humantouch/src/client/agent-stall";
 import { canvasUpdatedNotice, canvasUpdatedNoticesShown, pageChangedNotice, pageChangedNoticesShown, recordNotices, stalledNotice } from "../bench/notices";
 import { canvasInPlace, expect, test, type Page } from "./fixtures";
-import { clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind, servesAsWritten } from "./project-files";
+import { clearHumanTouchFolder, EXAMPLE, forTheLoopAlone, readHumanTouchFile, HUMAN_TOUCH_FOLDER, npxHumanTouch, servesAsWritten } from "./project-files";
 
 /**
  * The code changing while the designer is in edit mode, with no Agent having
@@ -17,7 +17,7 @@ import { clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIR
  * `applying-bench.spec.ts` measure the four cases.
  */
 
-/** These tests save into the example project's `.03kind/` for real, and edit its source. */
+/** These tests save into the example project's `.humantouch/` for real, and edit its source. */
 test.use({ keepRoundInMemory: false });
 
 const CARD = `${EXAMPLE}src/components/Card.tsx`;
@@ -25,19 +25,19 @@ const original = readFileSync(CARD, "utf8");
 /** Files the page does not use, put in the project and taken out again. */
 const UNUSED = [`${EXAMPLE}notes.md`, `${EXAMPLE}src/unused.ts`];
 
-test.beforeEach(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
+test.beforeEach(() => clearHumanTouchFolder(HUMAN_TOUCH_FOLDER));
 test.afterEach(async () => {
   for (const file of UNUSED) rmSync(file, { force: true });
   if (readFileSync(CARD, "utf8") !== original) writeFileSync(CARD, original);
   // The next test's page must open on the Card as it was.
   await expect.poll(async () => servesAsWritten(await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text(), original)).toBe(true);
 });
-test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
+test.afterAll(() => clearHumanTouchFolder(HUMAN_TOUCH_FOLDER));
 
 const canvas = (page: Page) => page.locator('iframe[title="Canvas"]').contentFrame();
 const design = (page: Page) => page.getByRole("complementary", { name: "Design" });
 const layer = (page: Page, name: string) => page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name, exact: true }).first();
-const savedChanges = () => readThirdKindFile("changeset.json")?.changes.length ?? 0;
+const savedChanges = () => readHumanTouchFile("changeset.json")?.changes.length ?? 0;
 /** The first card's title on the canvas. The canvas is frozen afresh as the code changes: wait on its size with `toHaveCSS`, which reads it again in the new frame, where a read in `expect.poll` fails on the old one going away. */
 const canvasTitleOf = (page: Page) => canvas(page).locator("article h3").first();
 /** The first card's title size on the canvas: 18px as the code is, 20px once `titleUp` is in and the canvas frozen afresh. */
@@ -85,20 +85,20 @@ test("the Agent landing a change with no claim: the round is claimed as if it ha
 
   await expect(ring(page)).toHaveAttribute("aria-valuenow", "1");
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
-  expect(readThirdKindFile("state.json")).toMatchObject({ status: "claimed", done: [] });
+  expect(readHumanTouchFile("state.json")).toMatchObject({ status: "claimed", done: [] });
   // The Agent, told nothing by the Skill, runs claim at last: claimed already, with all of it applied, as the page shows.
-  expect(await npx03kind("claim")).toMatch(/^This round is claimed already, and all 1 of its changes are applied/);
+  expect(await npxHumanTouch("claim")).toMatch(/^This round is claimed already, and all 1 of its changes are applied/);
   await expect.poll(() => told(page)).toEqual({ updated: 0, changed: 0 });
 
   // It stops: the toggle says so, as after any claim (ticket 67); the designer ends the round by holding the toggle.
   await page.clock.fastForward(STALL_MS + 1000);
   await expect(stalledNotice(page)).toBeVisible();
-  await page.getByRole("button", { name: /^03Kind: applying design changes/ }).hover();
+  await page.getByRole("button", { name: /^Human Touch: applying design changes/ }).hover();
   await page.mouse.down();
   await page.waitForTimeout(1200);
   await page.mouse.up();
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
-  const history = `${THIRD_KIND_FOLDER}history/`;
+  const history = `${HUMAN_TOUCH_FOLDER}history/`;
   await expect.poll(() => readdirSync(history).length).toBe(1);
   expect(JSON.parse(readFileSync(`${history}${readdirSync(history)[0]}/result.json`, "utf8"))).toMatchObject({ ended: "unlocked", applied: [1] });
 });
@@ -133,7 +133,7 @@ test("the editor layer's own saves tell nothing: the round, the layers off the c
     await page.waitForTimeout(700);
   }
   await expect.poll(savedChanges).toBe(3);
-  // Off the canvas: saved apart, in `.03kind/off-canvas.json`.
+  // Off the canvas: saved apart, in `.humantouch/off-canvas.json`.
   const view = (await page.locator('iframe[title="Canvas"]').boundingBox())!;
   const title = (await canvas(page).locator("h1").boundingBox())!;
   await layer(page, "Third Kind").click();
@@ -142,7 +142,7 @@ test("the editor layer's own saves tell nothing: the round, the layers off the c
   await page.mouse.move(view.x - 200, title.y, { steps: 10 });
   await page.mouse.up();
   await expect.poll(savedChanges).toBe(4);
-  await expect.poll(() => readThirdKindFile("off-canvas.json")?.layers.length).toBe(1);
+  await expect.poll(() => readHumanTouchFile("off-canvas.json")?.layers.length).toBe(1);
   // Back to preview mode saves the canvas at once; in again, the round comes back.
   await page.getByRole("button", { name: EXIT_LABEL }).click();
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
@@ -151,7 +151,7 @@ test("the editor layer's own saves tell nothing: the round, the layers off the c
   await page.waitForTimeout(2000);
 
   await expect.poll(() => told(page)).toEqual({ updated: 0, changed: 0 });
-  expect(readThirdKindFile("state.json")).toBeNull();
+  expect(readHumanTouchFile("state.json")).toBeNull();
 });
 
 test("the Agent claiming and editing at once tells nothing, even with the page never told of the claim: it asks the local service", async ({ page }) => {
@@ -169,17 +169,17 @@ test("the Agent claiming and editing at once tells nothing, even with the page n
   );
   await page.goto(DEV_URL);
   await designARound(page);
-  await npx03kind("claim");
-  const claimed = readFileSync(`${THIRD_KIND_FOLDER}state.json`, "utf8");
+  await npxHumanTouch("claim");
+  const claimed = readFileSync(`${HUMAN_TOUCH_FOLDER}state.json`, "utf8");
 
   await titleUp(page);
   await page.waitForTimeout(2500);
 
   await expect.poll(() => told(page)).toEqual({ updated: 0, changed: 0 });
   // The claim is the command line's, as it made it.
-  expect(readFileSync(`${THIRD_KIND_FOLDER}state.json`, "utf8")).toBe(claimed);
+  expect(readFileSync(`${HUMAN_TOUCH_FOLDER}state.json`, "utf8")).toBe(claimed);
   await page.unroute((url) => url.hostname === "127.0.0.1" && url.pathname === "/events");
-  await npx03kind("finish");
+  await npxHumanTouch("finish");
 });
 
 test("a press held as the page changes ends first, as the designer meant it; then the page is told of", async ({ page }) => {

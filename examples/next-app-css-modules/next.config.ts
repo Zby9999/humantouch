@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
-import { withThirdKind } from "03kind/next";
+import { withHumanTouch } from "humantouch/next";
 
 const nextConfig: NextConfig = {};
 
-export default withThirdKind(nextConfig);
+export default withHumanTouch(nextConfig);

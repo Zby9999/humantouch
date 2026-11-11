@@ -1,6 +1,6 @@
 import { expect as baseExpect, test as base, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { showLayersOnEntry } from "../layers-on-entry.ts";
-import { LAYERS_FOLD_MS, LAYERS_FOLD_RISE_PX } from "../../packages/03kind/src/client/motion";
+import { LAYERS_FOLD_MS, LAYERS_FOLD_RISE_PX } from "../../packages/humantouch/src/client/motion";
 
 /**
  * Playwright's, and `toReadAs`: the change list's rows read as `patterns`, in order, each row its name and then its
@@ -22,7 +22,7 @@ export const expect = baseExpect.extend({
 export type { CDPSession, Frame, Locator, Page } from "@playwright/test";
 
 /**
- * Tests share one dev server, and so one `.03kind/` folder. Unless a test
+ * Tests share one dev server, and so one `.humantouch/` folder. Unless a test
  * opts out with `keepRoundInMemory: false`, the round it saves stays in its
  * own browser context, so tests running side by side never see each other's.
  *

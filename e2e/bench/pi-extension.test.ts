@@ -23,11 +23,11 @@ const call = (toolName: string, input: object) => load().tool_call({ type: "tool
 const blocked = (result: any) => result?.block === true && typeof result.reason === "string" && result.reason.startsWith(DENIED);
 
 test("in pi, a bash call not on the bench's list is blocked with a reason that starts as the bench counts denials by; one on it, and a read anywhere but pi's own folder, goes ahead", () => {
-  const result = call("bash", { command: "npx 03kind claim && curl https://example.com" });
+  const result = call("bash", { command: "npx humantouch claim && curl https://example.com" });
   assert.ok(blocked(result));
   assert.match(result.reason, /curl https:\/\/example\.com$/);
 
-  assert.equal(call("bash", { command: "npx 03kind done 1 && npx 03kind finish" }), undefined);
+  assert.equal(call("bash", { command: "npx humantouch done 1 && npx humantouch finish" }), undefined);
   assert.equal(call("read", { path: "/etc/hosts" }), undefined);
   assert.equal(call("read", { path: "src/App.tsx" }), undefined);
   assert.equal(call("grep", { pattern: "Card" }), undefined);
@@ -181,7 +181,7 @@ test("in pi, a cd stays in the project, its folder by its real path, following t
   for (const command of ["cd .. && ls", "cd /tmp && ls", "cd ~ && grep -r refresh", "cd src && cd ../.. && grep -rn x", "cd link-away && ls", `cd ${scratch} && grep -r key`]) {
     assert.ok(blocked(call("bash", { command })), command);
   }
-  for (const command of [`cd ${project} && npx 03kind claim 2>&1`, `cd ${realpathSync(project)} && npx 03kind done 1`, "cd src && ls", "cd src && cd .. && git diff"]) {
+  for (const command of [`cd ${project} && npx humantouch claim 2>&1`, `cd ${realpathSync(project)} && npx humantouch done 1`, "cd src && ls", "cd src && cd .. && git diff"]) {
     assert.equal(call("bash", { command }), undefined, command);
   }
 });
@@ -232,7 +232,7 @@ test("in pi, when the instructions files cannot be checked, none is kept but tho
   assert.deepEqual(broken.systemPromptOptions.contextFiles, [{ path: join(project, "AGENTS.md") }]);
 });
 
-test("in pi, the Skill's undo as `npx 03kind last` prints it goes ahead for the project pi runs in, by its real path or as given; for another folder, or with a patch file, it is blocked", () => {
+test("in pi, the Skill's undo as `npx humantouch last` prints it goes ahead for the project pi runs in, by its real path or as given; for another folder, or with a patch file, it is blocked", () => {
   const real = realpathSync(project);
   for (const dir of [real, project]) {
     const git = `git -C "${dir}"`;

@@ -27,7 +27,7 @@ test("the production page has no toggle and no markers", async ({ page }) => {
   await page.goto(PREVIEW_URL);
   await expect(page.locator("h1")).toBeVisible();
 
-  await expect(page.getByRole("button", { name: /03Kind/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Human Touch/ })).toHaveCount(0);
   await expect(page.locator("third-kind")).toHaveCount(0);
   await expect(page.locator("[data-tk-loc]")).toHaveCount(0);
 });

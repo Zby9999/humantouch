@@ -1590,15 +1590,15 @@ test.describe("a claimed round", () => {
   test.use({ keepRoundInMemory: false });
   const REACT18 = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
   const PARTS = `${REACT18}src/big/parts.tsx`;
-  const THIRD_KIND_FOLDER = `${REACT18}.03kind`;
-  const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
+  const HUMAN_TOUCH_FOLDER = `${REACT18}.humantouch`;
+  const CLI = fileURLToPath(new URL("../../packages/humantouch/dist/cli.js", import.meta.url));
   const original = readFileSync(PARTS, "utf8");
-  const npx03kind = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
+  const npxHumanTouch = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
   const served = async () => (await (await fetch(new URL("/src/big/parts.tsx", BIG_URL))).text()).includes("Made in small batches");
-  test.beforeEach(() => rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true }));
+  test.beforeEach(() => rmSync(HUMAN_TOUCH_FOLDER, { recursive: true, force: true }));
   test.afterEach(async () => {
     writeFileSync(PARTS, original);
-    rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true });
+    rmSync(HUMAN_TOUCH_FOLDER, { recursive: true, force: true });
     await expect.poll(served).toBe(true);
   });
 
@@ -1662,21 +1662,21 @@ test.describe("a claimed round", () => {
     const gap = (await fieldOf(page, "Gap"));
     await gap.fill("10");
     await gap.press("Enter");
-    await expect.poll(() => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes.length : 0)).toBe(3);
+    await expect.poll(() => (existsSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`, "utf8")).changes.length : 0)).toBe(3);
     // The claim too: the page looks at every change once, and makes its copies at the views' widths.
     await page.evaluate(armTasks, CHECKS);
-    await npx03kind("claim");
+    await npxHumanTouch("claim");
     const ring = page.getByRole("progressbar", { name: "Applying design changes" });
     await expect(ring).toHaveAttribute("aria-valuenow", "0");
     await settle(page, 2000);
     const { long: atClaimLong, measures: atClaimChecks } = await takenTasks(page);
 
     let answered = "";
-    const claimed = [{ name: "claim", long: atClaimLong, checks: atClaimChecks }, ...(await hotUpdates(page, async () => (answered = await npx03kind("done", "1", "2", "3"))))];
+    const claimed = [{ name: "claim", long: atClaimLong, checks: atClaimChecks }, ...(await hotUpdates(page, async () => (answered = await npxHumanTouch("done", "1", "2", "3"))))];
     // None applied by that first update: done waited for it, and says so for each.
     expect(answered).toContain("Changes 1, 2 and 3 done: 0 of 3 changes applied.");
     await expect(ring).toHaveAttribute("aria-valuenow", "3");
-    await npx03kind("finish");
+    await npxHumanTouch("finish");
     await expect(ring).toHaveCount(0);
 
     // The same hot updates with no round claimed: the page's own long tasks.
@@ -1712,17 +1712,17 @@ test.describe("a claimed round", () => {
     const gap = (await fieldOf(page, "Gap"));
     await gap.fill("10");
     await gap.press("Enter");
-    const saved = () => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes : []) as { breakpoint?: object; parts?: unknown[] }[];
+    const saved = () => (existsSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`, "utf8")).changes : []) as { breakpoint?: object; parts?: unknown[] }[];
     // The example's own `sm` is 560px: the phone's range (below 560px) is one part, with none to read.
     await expect.poll(() => saved().map((change) => !!change.breakpoint), { timeout: 20_000 }).toEqual([true, true, true]);
     await page.evaluate(armTasks, CHECKS);
-    await npx03kind("claim");
+    await npxHumanTouch("claim");
     const ring = page.getByRole("progressbar", { name: "Applying design changes" });
     await expect(ring).toHaveAttribute("aria-valuenow", "0");
     await settle(page, 2000);
     const { long: atClaimLong, measures: atClaimChecks } = await takenTasks(page);
-    const claimed = [{ name: "claim", long: atClaimLong, checks: atClaimChecks }, ...(await hotUpdates(page, () => npx03kind("done", "1", "2", "3")))];
-    await npx03kind("finish");
+    const claimed = [{ name: "claim", long: atClaimLong, checks: atClaimChecks }, ...(await hotUpdates(page, () => npxHumanTouch("done", "1", "2", "3")))];
+    await npxHumanTouch("finish");
     await expect(ring).toHaveCount(0);
 
     writeFileSync(PARTS, original);
@@ -1753,10 +1753,10 @@ test.describe("a claimed round", () => {
     const size = (await fieldOf(page, "Font size"));
     await size.fill("20");
     await size.press("Enter");
-    const saved = () => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes : []);
+    const saved = () => (existsSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`, "utf8")).changes : []);
     await expect.poll(() => saved().map((change: { kind: string; property: string }) => `${change.kind} ${change.property}`)).toEqual(["create new", "style fontSize"]);
     await page.evaluate(armTasks, CHECKS);
-    await npx03kind("claim");
+    await npxHumanTouch("claim");
     const ring = page.getByRole("progressbar", { name: "Applying design changes" });
     await expect(ring).toHaveAttribute("aria-valuenow", "0");
     await settle(page, 2000);
@@ -1769,7 +1769,7 @@ test.describe("a claimed round", () => {
     ];
     const claimed = [{ name: "claim", long: atClaimLong, checks: atClaimChecks }, ...(await hotUpdates(page, undefined, updates))];
     await expect(ring).toHaveAttribute("aria-valuenow", "2");
-    await npx03kind("finish");
+    await npxHumanTouch("finish");
     await expect(ring).toHaveCount(0);
 
     writeFileSync(PARTS, original);
@@ -1802,21 +1802,21 @@ test.describe("a claimed round", () => {
       const gap = (await fieldOf(page, "Gap"));
       await gap.fill("10");
       await gap.press("Enter");
-      const saved = () => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes : []);
+      const saved = () => (existsSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`, "utf8")).changes : []);
       await expect.poll(() => saved().length).toBe(3);
       // One usage of the card, with one instance; the loop's 95 its other usage.
       expect(saved().map((change: { scope: string; target: { instances: number } }) => `${change.scope} ${change.target.instances}`)).toEqual(["usage 1", "usage 1", "usage 1"]);
       await page.evaluate(armTasks, CHECKS);
-      await npx03kind("claim");
+      await npxHumanTouch("claim");
       const ring = page.getByRole("progressbar", { name: "Applying design changes" });
       await expect(ring).toHaveAttribute("aria-valuenow", "0");
       await settle(page, 2000);
       const { long: atClaimLong, measures: atClaimChecks } = await takenTasks(page);
       let answered = "";
-      const claimed = [{ name: "claim", long: atClaimLong, checks: atClaimChecks }, ...(await hotUpdates(page, async () => (answered = await npx03kind("done", "1", "2", "3"))))];
+      const claimed = [{ name: "claim", long: atClaimLong, checks: atClaimChecks }, ...(await hotUpdates(page, async () => (answered = await npxHumanTouch("done", "1", "2", "3"))))];
       expect(answered).toContain("Changes 1, 2 and 3 done: 0 of 3 changes applied.");
       const ringAtEnd = await ring.getAttribute("aria-valuenow");
-      await npx03kind("finish");
+      await npxHumanTouch("finish");
       await expect(ring).toHaveCount(0);
       console.log(`ticket 77, other usages: the ring at the end ${ringAtEnd} of 3`);
 
@@ -1833,7 +1833,7 @@ test.describe("a claimed round", () => {
   /**
    * Ticket 82: the same round, claimed, then the page reloaded. What the page
    * noted of the 95 cards of the other usage at the claim is kept in
-   * `.03kind/` and comes with the round: the reloaded page finds those cards
+   * `.humantouch/` and comes with the round: the reloaded page finds those cards
    * again by their usage, rather than noting them afresh (before 82). The
    * reload's own checking, from the page's first script on, then the same hot
    * updates as above.
@@ -1853,9 +1853,9 @@ test.describe("a claimed round", () => {
       const gap = (await fieldOf(page, "Gap"));
       await gap.fill("10");
       await gap.press("Enter");
-      const saved = () => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes : []);
+      const saved = () => (existsSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`, "utf8")).changes : []);
       await expect.poll(() => saved().length).toBe(3);
-      await npx03kind("claim");
+      await npxHumanTouch("claim");
       const ring = page.getByRole("progressbar", { name: "Applying design changes" });
       await expect(ring).toHaveAttribute("aria-valuenow", "0");
       await settle(page, 2000);
@@ -1867,15 +1867,15 @@ test.describe("a claimed round", () => {
       await settle(page, 2000);
       const { long: atReloadLong, measures: atReloadChecks } = await takenTasks(page);
       // The file holds the notes with the claim they belong to (after the line's review); before that, the notes alone.
-      const file = existsSync(`${THIRD_KIND_FOLDER}/other-usages.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/other-usages.json`, "utf8")) : {};
+      const file = existsSync(`${HUMAN_TOUCH_FOLDER}/other-usages.json`) ? JSON.parse(readFileSync(`${HUMAN_TOUCH_FOLDER}/other-usages.json`, "utf8")) : {};
       const kept = Object.keys(file.otherUsages ?? file).length;
       let answered = "";
-      const claimed = [{ name: "reload", long: atReloadLong, checks: atReloadChecks }, ...(await hotUpdates(page, async () => (answered = await npx03kind("done", "1", "2", "3"))))];
+      const claimed = [{ name: "reload", long: atReloadLong, checks: atReloadChecks }, ...(await hotUpdates(page, async () => (answered = await npxHumanTouch("done", "1", "2", "3"))))];
       expect(answered).toContain("Changes 1, 2 and 3 done: 0 of 3 changes applied.");
       const ringAtEnd = await ring.getAttribute("aria-valuenow");
-      await npx03kind("finish");
+      await npxHumanTouch("finish");
       await expect(ring).toHaveCount(0);
-      console.log(`ticket 82, reloaded: changes noted in .03kind/ ${kept}; the ring at the end ${ringAtEnd} of 3`);
+      console.log(`ticket 82, reloaded: changes noted in .humantouch/ ${kept}; the ring at the end ${ringAtEnd} of 3`);
 
       writeFileSync(PARTS, original);
       await expect.poll(served).toBe(true);
@@ -1946,13 +1946,13 @@ test.describe("the code changing in edit mode, with no claim", () => {
   test.use({ keepRoundInMemory: false });
   const REACT18 = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
   const PARTS = `${REACT18}src/big/parts.tsx`;
-  const THIRD_KIND_FOLDER = `${REACT18}.03kind`;
+  const HUMAN_TOUCH_FOLDER = `${REACT18}.humantouch`;
   const original = readFileSync(PARTS, "utf8");
   const served = async () => (await (await fetch(new URL("/src/big/parts.tsx", BIG_URL))).text()).includes("Made in small batches");
-  test.beforeEach(() => rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true }));
+  test.beforeEach(() => rmSync(HUMAN_TOUCH_FOLDER, { recursive: true, force: true }));
   test.afterEach(async () => {
     writeFileSync(PARTS, original);
-    rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true });
+    rmSync(HUMAN_TOUCH_FOLDER, { recursive: true, force: true });
     await expect.poll(served).toBe(true);
   });
 
@@ -1969,7 +1969,7 @@ test.describe("the code changing in edit mode, with no claim", () => {
       await box.fill(value);
       await box.press("Enter");
     }
-    await expect.poll(() => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes.length : 0)).toBe(2);
+    await expect.poll(() => (existsSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`, "utf8")).changes.length : 0)).toBe(2);
     await settle(page, 1000);
     const locAtStart = await page.evaluate(productLoc);
     const updates = [
@@ -2034,7 +2034,7 @@ test.describe("the code changing in edit mode, with no claim", () => {
       await box.fill(value);
       await box.press("Enter");
     }
-    await expect.poll(() => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes.length : 0)).toBe(2);
+    await expect.poll(() => (existsSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`, "utf8")).changes.length : 0)).toBe(2);
     await settle(page, 1000);
     const locAtStart = await page.evaluate(productLoc);
     const updates = [
@@ -2109,14 +2109,14 @@ test.describe("the code changing in edit mode, with no claim", () => {
  */
 test.describe("a change at a breakpoint", () => {
   test.use({ keepRoundInMemory: false });
-  const THIRD_KIND_FOLDER = fileURLToPath(new URL("../../examples/vite-react18-tw3/.03kind", import.meta.url));
-  test.beforeEach(() => rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true }));
-  test.afterEach(() => rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true }));
+  const HUMAN_TOUCH_FOLDER = fileURLToPath(new URL("../../examples/vite-react18-tw3/.humantouch", import.meta.url));
+  test.beforeEach(() => rmSync(HUMAN_TOUCH_FOLDER, { recursive: true, force: true }));
+  test.afterEach(() => rmSync(HUMAN_TOUCH_FOLDER, { recursive: true, force: true }));
 
   const HERO = "[data-testid=big-hero]";
   const HERO_PICTURE = `${HERO} img`;
   const tablet = (page: Page) => page.locator('iframe[title="Tablet 768"]').contentFrame();
-  const changes = (): { id: number; parts?: unknown[] | null }[] => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")).changes : []);
+  const changes = (): { id: number; parts?: unknown[] | null }[] => (existsSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`, "utf8")).changes : []);
 
   const PARTS_MEASURE = "03kind:parts";
 
@@ -2207,17 +2207,17 @@ test.describe("the same canvas again", () => {
   test.use({ keepRoundInMemory: false });
   const REACT18 = fileURLToPath(new URL("../../examples/vite-react18-tw3/", import.meta.url));
   const PARTS = `${REACT18}src/big/parts.tsx`;
-  const THIRD_KIND_FOLDER = `${REACT18}.03kind`;
-  const CLI = fileURLToPath(new URL("../../packages/03kind/dist/cli.js", import.meta.url));
+  const HUMAN_TOUCH_FOLDER = `${REACT18}.humantouch`;
+  const CLI = fileURLToPath(new URL("../../packages/humantouch/dist/cli.js", import.meta.url));
   const original = readFileSync(PARTS, "utf8");
-  const npx03kind = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
+  const npxHumanTouch = async (...args: string[]) => (await promisify(execFile)(process.execPath, [CLI, ...args], { cwd: REACT18 })).stdout;
   const served = async () => (await (await fetch(new URL("/src/big/parts.tsx", BIG_URL))).text()).includes("rounded-card border");
   const CARD = `<article className="flex flex-col overflow-hidden rounded-card border border-brand-100 bg-white shadow-card" data-testid="product">`;
-  const changesSaved = () => (existsSync(`${THIRD_KIND_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${THIRD_KIND_FOLDER}/changeset.json`, "utf8")) : null);
-  test.beforeEach(() => rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true }));
+  const changesSaved = () => (existsSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`) ? JSON.parse(readFileSync(`${HUMAN_TOUCH_FOLDER}/changeset.json`, "utf8")) : null);
+  test.beforeEach(() => rmSync(HUMAN_TOUCH_FOLDER, { recursive: true, force: true }));
   test.afterEach(async () => {
     writeFileSync(PARTS, original);
-    rmSync(THIRD_KIND_FOLDER, { recursive: true, force: true });
+    rmSync(HUMAN_TOUCH_FOLDER, { recursive: true, force: true });
     await expect.poll(served).toBe(true);
   });
 
@@ -2267,11 +2267,11 @@ test.describe("the same canvas again", () => {
     expect(changesSaved()?.changes.length).toBe(3);
 
     // The Agent applies the corners, and finishes: the fill and the gap are left (ticket 68).
-    await npx03kind("claim");
+    await npxHumanTouch("claim");
     writeFileSync(PARTS, readFileSync(PARTS, "utf8").replace(CARD, CARD.replace("rounded-card", "rounded-[20px]")));
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector("[data-testid=product]")!).borderTopLeftRadius), { timeout: 20_000 }).toBe("20px");
-    await npx03kind("done", "1");
-    await npx03kind("finish");
+    await npxHumanTouch("done", "1");
+    await npxHumanTouch("finish");
     const carriedOver = changesSaved();
     const carried = carriedOver?.applied?.length ? await entries(page) : null;
     if (carried) expect(changesSaved()).toEqual(carriedOver);

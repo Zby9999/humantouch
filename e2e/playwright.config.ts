@@ -14,7 +14,7 @@ const react18Example = fileURLToPath(new URL("../examples/vite-react18-tw3", imp
 const PORT = Number(process.env.TK_E2E_PORT ?? 5310);
 export const DEV_URL = `http://localhost:${PORT}`;
 export const PREVIEW_URL = `http://localhost:${PORT + 1}`;
-/** Where `install.spec.ts` serves the copy of the example it installs 03Kind into. */
+/** Where `install.spec.ts` serves the copy of the example it installs Human Touch into. */
 export const INSTALL_PORT = PORT + 2;
 /** The Next.js example's dev server, with Turbopack. */
 export const NEXT_URL = `http://localhost:${PORT + 3}`;
@@ -22,10 +22,10 @@ export const NEXT_URL = `http://localhost:${PORT + 3}`;
 export const NEXT_INSTALL_PORT = PORT + 4;
 /** The React 18 + Tailwind v3 example's dev server. */
 export const REACT18_URL = `http://localhost:${PORT + 5}`;
-export const TOGGLE_LABEL = "03Kind: enter edit mode";
-export const EXIT_LABEL = "03Kind: back to preview mode";
+export const TOGGLE_LABEL = "Human Touch: enter edit mode";
+export const EXIT_LABEL = "Human Touch: back to preview mode";
 
-/** Tests that work with the example project's real `.03kind/` folder: one at a time, across files too. */
+/** Tests that work with the example project's real `.humantouch/` folder: one at a time, across files too. */
 const PROJECT_FILES = /(autosave|claim|round|applying-bench|bench-scenarios|code-changes)\.spec\.ts$/;
 
 export default defineConfig({

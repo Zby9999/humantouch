@@ -1,6 +1,6 @@
 /**
- * What an Agent may do while it installs 03Kind (ticket 91): the applying
- * bench's allowlist turns away `npx -y 03kind@latest init` and starting a dev
+ * What an Agent may do while it installs Human Touch (ticket 91): the applying
+ * bench's allowlist turns away `npx -y humantouch@latest init` and starting a dev
  * server, so installing has a list of its own. Data first, so Claude's
  * command line and pi's extension (ticket 85) are made from the same list;
  * then how each runs, made from the applying bench's own with only the lists
@@ -25,7 +25,7 @@ const INSTALL_TOOLS = ["Read", "Edit", "MultiEdit", "Write", "Glob", "Grep", "To
 /**
  * The shell commands an installing Agent may run, each a prefix of a command
  * line. Reading: the same as the applying bench. `npx`, whole: step 1 is
- * `npx -y 03kind@latest init`, step 4 `npx 03kind doctor`, and a dev server
+ * `npx -y humantouch@latest init`, step 4 `npx humantouch doctor`, and a dev server
  * may be started by `npx vite` or `npx next dev`. Of each package manager,
  * only installing (what `init` does, and what an Agent does when a dependency
  * is missing), running a script (`dev`, and `build` to check one) and running
@@ -65,9 +65,9 @@ const INSTALL_DENIED_TOOLS = ["WebFetch", "WebSearch"];
  * The commands of the list that run a package's program, and the programs
  * each may run (ticket 91 re-review, 代定): an allowlist, as a list of what to
  * turn away leaks (a runner inside a runner, `nice`, `nohup`, any program on
- * PATH). The runners that fetch a package may run 03Kind (by a version, or
+ * PATH). The runners that fetch a package may run Human Touch (by a version, or
  * the packed file step 1 names with `--package local`) and the two dev
- * servers; those that run the project's own binaries, 03Kind and the servers.
+ * servers; those that run the project's own binaries, Human Touch and the servers.
  *
  * What no allowlist closes: with Write or Edit and a run-script form, an
  * Agent can write a script, or a `scripts` entry in package.json, that does
@@ -76,7 +76,7 @@ const INSTALL_DENIED_TOOLS = ["WebFetch", "WebSearch"];
  */
 const FETCHING_RUNNERS = ["npx", "bunx", "pnpm dlx", "yarn dlx", "bun x"];
 const EXEC_RUNNERS = ["npm exec", "pnpm exec", "yarn exec"];
-const RUNNABLE = ["03kind", "vite", "next"];
+const RUNNABLE = ["humantouch", "vite", "next"];
 const INSTALL_RUNNERS: Record<string, string[]> = Object.fromEntries([...FETCHING_RUNNERS, ...EXEC_RUNNERS].map((runner) => [runner, RUNNABLE]));
 
 /** Options a runner may have before its program: those that take no value, and none that runs a command line of its own (`-c`, `--call`, `--shell-mode`). */
@@ -113,13 +113,13 @@ export function prepareInstallPi(dir: string, folder: string): void {
 /**
  * Claude's runner rules, in place of the list's bare runners: each program a
  * runner may run, as its own `Bash(<prefix>:*)`. Claude Code matches a prefix
- * by whole words (`npx 03kind` is not `npx 03kind@latest`), so the versions
+ * by whole words (`npx humantouch` is not `npx humantouch@latest`), so the versions
  * step 1 and a designer's install use are named too, after `-y` and `--yes`
  * as well; and the packed file step 1 names with `--package local`, read from
  * what the Agent is told.
  */
 function claudeRunners(prompt: string): string[] {
-  const fetched = FETCHING_RUNNERS.flatMap((runner) => ["", "-y ", "--yes "].flatMap((flag) => [...RUNNABLE, "03kind@latest"].map((program) => `${runner} ${flag}${program}`)));
+  const fetched = FETCHING_RUNNERS.flatMap((runner) => ["", "-y ", "--yes "].flatMap((flag) => [...RUNNABLE, "humantouch@latest"].map((program) => `${runner} ${flag}${program}`)));
   const exec = EXEC_RUNNERS.flatMap((runner) => RUNNABLE.map((program) => `${runner} ${program}`));
   const packed = /`(npx -y file:\S+\.tgz) init`/.exec(prompt)?.[1];
   return [...fetched, ...exec, ...(packed ? [packed] : [])];

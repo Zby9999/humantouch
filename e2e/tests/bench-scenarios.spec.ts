@@ -4,7 +4,7 @@ import { designProblems, exampleOf, held, openObservers, shown, type Example } f
 import { STANDARD_SCENARIOS } from "../bench/scenarios-other-examples.ts";
 import { DEV_URL, NEXT_URL, REACT18_URL } from "../playwright.config";
 import { expect, test } from "./fixtures";
-import { clearThirdKindFolder, npx03kindIn } from "./project-files";
+import { clearHumanTouchFolder, npxHumanTouchIn } from "./project-files";
 
 /**
  * The applying bench's standard scenarios (`e2e/bench/scenarios.ts`, and on
@@ -14,7 +14,7 @@ import { clearThirdKindFolder, npx03kindIn } from "./project-files";
  * Agent. Each runs on its own example's dev server.
  */
 
-/** These tests save into the example projects' `.03kind/` for real; some scenarios edit the source, as a round before them. */
+/** These tests save into the example projects' `.humantouch/` for real; some scenarios edit the source, as a round before them. */
 test.use({ keepRoundInMemory: false });
 // The Next.js dev server compiles the page as it is first asked for.
 test.setTimeout(120_000);
@@ -53,22 +53,22 @@ test.afterEach(async () => {
   originals.clear();
 });
 test.afterAll(() => {
-  for (const example of Object.keys(SERVED) as Example[]) clearThirdKindFolder(`${folderOf(example)}.03kind/`);
+  for (const example of Object.keys(SERVED) as Example[]) clearHumanTouchFolder(`${folderOf(example)}.humantouch/`);
 });
 
 for (const scenario of STANDARD_SCENARIOS) {
   const example = exampleOf(scenario);
   const dir = folderOf(example);
-  const thirdKindFolder = `${dir}.03kind/`;
-  const changeSet = () => (existsSync(`${thirdKindFolder}changeset.json`) ? JSON.parse(readFileSync(`${thirdKindFolder}changeset.json`, "utf8")) : null);
+  const humanTouchFolder = `${dir}.humantouch/`;
+  const changeSet = () => (existsSync(`${humanTouchFolder}changeset.json`) ? JSON.parse(readFileSync(`${humanTouchFolder}changeset.json`, "utf8")) : null);
 
   test(`scenario ${scenario.id} makes the changes it names, none shown on the page yet`, async ({ page, browser }) => {
-    clearThirdKindFolder(thirdKindFolder);
+    clearHumanTouchFolder(humanTouchFolder);
     await page.goto(SERVED[example]);
     await page.locator("main").waitFor();
     await scenario.design({
       page,
-      cli: npx03kindIn(dir),
+      cli: npxHumanTouchIn(dir),
       edit: async (file, from, to) => {
         const path = `${dir}${file}`;
         const text = readFileSync(path, "utf8");

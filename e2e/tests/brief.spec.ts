@@ -324,7 +324,7 @@ test("taken back one by one from the change list, in edit mode and in preview mo
   await page.keyboard.press("Escape");
 
   // In preview mode: the saved round, and no cards.
-  await page.getByRole("button", { name: "03Kind: back to preview mode" }).click();
+  await page.getByRole("button", { name: "Human Touch: back to preview mode" }).click();
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   await expect(cards(page)).toHaveCount(0);
   await badge(page).click();

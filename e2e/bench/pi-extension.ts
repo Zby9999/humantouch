@@ -292,7 +292,7 @@ export function shellDenied(command: string, cwd: string, list: ShellList = APPL
   if (checked === null) return denied;
   if (!(shellWords(checked) ?? []).every((words) => runsAllowed(words, list.runners, list.flags, list.options))) {
     const runners = Object.entries(list.runners).map(([runner, programs]) => `${runner} ${programs.join("|")}`);
-    return `${DENIED} npx and the like to run only these (${runners.join("; ")}), 03kind by a version or a packed file too, with no option before the program but ${list.flags.join(" ")}, and no ${list.options.join(", ")} anywhere. Turned away: ${command}`;
+    return `${DENIED} npx and the like to run only these (${runners.join("; ")}), humantouch by a version or a packed file too, with no option before the program but ${list.flags.join(" ")}, and no ${list.options.join(", ")} anywhere. Turned away: ${command}`;
   }
   const reaches = shellReaches(checked, cwd);
   if (reaches === "out") return denied;

@@ -1,5 +1,5 @@
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
-import { DOUBLE_CLICK_MS } from "../../packages/03kind/src/client/selection";
+import { DOUBLE_CLICK_MS } from "../../packages/humantouch/src/client/selection";
 import { canvasInPlace, expect, steadyBox, test, type Locator, type Page } from "./fixtures";
 
 function canvas(page: Page) {

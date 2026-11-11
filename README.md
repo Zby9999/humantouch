@@ -1,8 +1,8 @@
-# 03Kind
+# Human Touch
 
 An editor layer for your project's local dev server: edit the page itself, visually, on a canvas, then have your Agent write the changes into the code.
 
-03Kind (say "Third Kind") is for designers. You give your Agent the short install steps under [For Agents](#for-agents) below, and a round button appears at the bottom right of your page: the toggle. Click it, and the page freezes into a canvas, where you move, resize and restyle what is on it by hand, without touching the code. Every change is saved into the project as you make it. When you are done, tell your Agent "Apply my design changes": it writes them into the source code, the page checks that each one shows, and the Agent reports any it could not apply 1:1.
+Human Touch is for designers. You give your Agent the short install steps under [For Agents](#for-agents) below, and a round button appears at the bottom right of your page: the toggle. Click it, and the page freezes into a canvas, where you move, resize and restyle what is on it by hand, without touching the code. Every change is saved into the project as you make it. When you are done, tell your Agent "Apply my design changes": it writes them into the source code, the page checks that each one shows, and the Agent reports any it could not apply 1:1.
 
 There is no send button, nothing to copy and paste, and nothing to set up in your Agent. Any coding Agent that can read files, run commands and edit code can apply your changes, such as Claude Code, Cursor or Codex.
 
@@ -12,22 +12,22 @@ There is no send button, nothing to copy and paste, and nothing to set up in you
 - Styles in Tailwind CSS v3 or v4, plain CSS, or CSS Modules.
 - Your project's own colors, spacing and type sizes, offered as Variables in the Design panel, from its CSS variables, Tailwind v4 theme or Tailwind v3 config.
 
-03Kind runs only on your local dev server. It needs no account, and a production build has none of it in it: `npx 03kind doctor` checks that.
+Human Touch runs only on your local dev server. It needs no account, and a production build has none of it in it: `npx humantouch doctor` checks that.
 
 ## For Agents
 
 Copy this to your Agent, in the project you want to edit:
 
 ```text
-Install 03Kind, an editor layer for this project's dev server, so I can edit the page and hand you the changes:
+Install Human Touch, an editor layer for this project's dev server, so I can edit the page and hand you the changes:
 
-1. In the project's root folder, run `npx -y 03kind@latest init`. If it prints "Finish by hand", make those edits. If it stops with an error instead, do what the error says; if you cannot, tell me why.
+1. In the project's root folder, run `npx -y humantouch@latest init`. If it prints "Finish by hand", make those edits. If it stops with an error instead, do what the error says; if you cannot, tell me why.
 2. Start the dev server with the command `init` printed (if it printed none, the project's own `dev` script) and leave it running.
-3. If you can open a browser, open the page it serves and confirm the 03Kind toggle is at its bottom right: a round button named "03Kind: enter edit mode". If you cannot, do not stop or wait for me: go on, and when you are done, tell me that the next time I open the page there should be a round button at its bottom right, and to tell you if it is not there.
-4. Run `npx 03kind doctor`. Fix whatever it marks ✗ and run it again, until it says "All good."
+3. If you can open a browser, open the page it serves and confirm the Human Touch toggle is at its bottom right: a round button named "Human Touch: enter edit mode". If you cannot, do not stop or wait for me: go on, and when you are done, tell me that the next time I open the page there should be a round button at its bottom right, and to tell you if it is not there.
+4. Run `npx humantouch doctor`. Fix whatever it marks ✗ and run it again, until it says "All good."
 ```
 
-`init` edits two files of your project's source, an import and a line in each: the build config (such as `vite.config.ts` or `next.config.ts`), and the file that renders the app (such as `src/main.tsx` or `app/layout.tsx`), which puts the toggle on the page. It also installs `03kind` as a dev dependency, adds a Skill for your Agent in `.agents/skills/03kind/` and `.claude/skills/03kind/`, a line in `AGENTS.md` pointing to it, and a line in `.gitignore` for `.03kind/`, the folder your changes are saved in.
+`init` edits two files of your project's source, an import and a line in each: the build config (such as `vite.config.ts` or `next.config.ts`), and the file that renders the app (such as `src/main.tsx` or `app/layout.tsx`), which puts the toggle on the page. It also installs `humantouch` as a dev dependency, adds a Skill for your Agent in `.agents/skills/humantouch/` and `.claude/skills/humantouch/`, a line in `AGENTS.md` pointing to it, and a line in `.gitignore` for `.humantouch/`, the folder your changes are saved in.
 
 ## One round
 
@@ -75,24 +75,24 @@ The Agent ends its reply with a report of the round. Under ✓ are the changes a
 
 To undo the last round, tell your Agent "Undo the last round of design changes".
 
-## Remove 03Kind
+## Remove Human Touch
 
-Tell your Agent to remove 03Kind, or run this in the project's root folder:
+Tell your Agent to remove Human Touch, or run this in the project's root folder:
 
 ```sh
-npx 03kind remove
+npx humantouch remove
 ```
 
-It takes back out everything `init` added, uninstalls the package and deletes `.03kind/`, with any off-canvas layers, leaving `git diff` empty. In a project that uses npm and has no off-canvas layers, it prints:
+It takes back out everything `init` added, uninstalls the package and deletes `.humantouch/`, with any off-canvas layers, leaving `git diff` empty. In a project that uses npm and has no off-canvas layers, it prints:
 
 ```text
-03Kind removed:
-- Took the plugin, <ThirdKind />, the Skill and its lines in AGENTS.md and .gitignore back out
-- Deleted .03kind/
-- Uninstalled 03kind (`npm uninstall 03kind`)
+Human Touch removed:
+- Took the plugin, <HumanTouch />, the Skill and its lines in AGENTS.md and .gitignore back out
+- Deleted .humantouch/
+- Uninstalled humantouch (`npm uninstall humantouch`)
 ```
 
-With two off-canvas layers, the second item reads "Deleted .03kind/, with the 2 layers the designer had moved off the canvas" instead.
+With two off-canvas layers, the second item reads "Deleted .humantouch/, with the 2 layers the designer had moved off the canvas" instead.
 
 If the lines `init` added have been changed since, it leaves them as they are and prints "Finish by hand" with what to take out. It does not remove anything while you have design changes not applied yet, or while your Agent is applying a round: apply them or discard them first.
 

@@ -14,8 +14,8 @@
  * with the helpers here.
  */
 import type { Browser, BrowserContext, Locator, Page } from "@playwright/test";
-import type { Bindings, Change } from "../../packages/03kind/src/client/changeset.ts";
-import { checkable as pageChecks, PLACING } from "../../packages/03kind/src/client/checkable.ts";
+import type { Bindings, Change } from "../../packages/humantouch/src/client/changeset.ts";
+import { checkable as pageChecks, PLACING } from "../../packages/humantouch/src/client/checkable.ts";
 import { TOGGLE_LABEL } from "../playwright.config.ts";
 import type { VariableNames } from "./metrics.ts";
 
@@ -23,13 +23,13 @@ import type { VariableNames } from "./metrics.ts";
 export interface Desk {
   /** The page, at 1280 × 720, with the editor layer and its Layers panel shown. */
   page: Page;
-  /** Runs `npx 03kind …` in the project, as an Agent would. */
+  /** Runs `npx humantouch …` in the project, as an Agent would. */
   cli(...args: string[]): Promise<string>;
   /** Replaces `from` with `to` in a file of the project (path from its root), as an Agent would; throws when `from` is not there. */
   edit(file: string, from: string, to: string): Promise<void>;
   /** Makes what is in the project now the code a round starts from (a commit, in the bench's copy). */
   settle(message: string): Promise<void>;
-  /** The round's ChangeSet as saved in `.03kind/`, or null. */
+  /** The round's ChangeSet as saved in `.humantouch/`, or null. */
   changeSet(): { changes: SavedChange[] } | null;
   /** Runs a shell command line in the project, as an Agent would: the bench's copy only (the e2e test has none), for `apply`. */
   shell?(command: string): Promise<string>;
@@ -105,7 +105,7 @@ export interface ScenarioExpectation {
   /** Whether the page shows it: run in the page as a change's `shows` is, self-contained. */
   shows?: (arg: { width: number }) => boolean;
   /**
-   * Whether the project's source, `.03kind/` aside, is as at the commit the
+   * Whether the project's source, `.humantouch/` aside, is as at the commit the
    * round starts from (`git diff` shows nothing, and no file is new). The
    * bench's copy only: the e2e test checks the page alone.
    */
@@ -270,7 +270,7 @@ async function pickHero(page: Page) {
  * archived as applied; the rest is left to the next round.
  */
 async function endTheRound(page: Page) {
-  await page.getByRole("button", { name: /^03Kind: applying design changes/ }).hover();
+  await page.getByRole("button", { name: /^Human Touch: applying design changes/ }).hover();
   await page.mouse.down();
   await page.waitForTimeout(1200);
   await page.mouse.up();
@@ -1300,7 +1300,7 @@ export const SCENARIOS: Scenario[] = [
   {
     id: "flow-undo-last",
     title:
-      "Set up by a round before, applied and finished, not committed: the title 48px and the header's gap 20px. Now the designer asks the Agent to undo that round (`npx 03kind last`).",
+      "Set up by a round before, applied and finished, not committed: the title 48px and the header's gap 20px. Now the designer asks the Agent to undo that round (`npx humantouch last`).",
     async design(desk) {
       const { page } = desk;
       await enterEditMode(page);
@@ -1327,7 +1327,7 @@ export const SCENARIOS: Scenario[] = [
         shows: () => getComputedStyle(document.querySelector("h1")!).fontSize === "36px" && getComputedStyle(document.querySelector('[data-testid="hero"] header')!).columnGap === "12px",
       },
       {
-        expect: "The project's source is as before the round: `git diff` shows nothing of it (`.03kind/` aside).",
+        expect: "The project's source is as before the round: `git diff` shows nothing of it (`.humantouch/` aside).",
         sourceAsAtStart: true,
       },
     ],

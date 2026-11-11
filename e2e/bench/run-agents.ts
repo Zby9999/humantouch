@@ -308,7 +308,7 @@ async function withScenario<T>(
     try {
       await observers?.close().catch(() => {});
       await context?.close().catch(() => {});
-      // Stopped, and gone: else its service may write into the project as it is being removed (`.03kind/checks.json.<pid>.tmp`).
+      // Stopped, and gone: else its service may write into the project as it is being removed (`.humantouch/checks.json.<pid>.tmp`).
       await server?.stop();
     } finally {
       project.remove();
@@ -349,13 +349,13 @@ async function expectationsHold(observers: Map<number, Page>, scenario: Scenario
 
 /**
  * Whether the source in `dir` is as at commit `head`: no file changed, gone or
- * new. Not the source: `.03kind/`, and what the bench itself puts in the
+ * new. Not the source: `.humantouch/`, and what the bench itself puts in the
  * project for an Agent (`BENCH_FILES`: Cursor's permissions in `.cursor/`, and
  * whatever another Agent's `prepare` names). Stages nothing, so the Agent sees
  * the project as it left it.
  */
 async function sourceAsAt(dir: string, head: string): Promise<boolean> {
-  const outside = ["--", ".", ":(exclude).03kind", ...BENCH_FILES.map((path) => `:(exclude)${path}`)];
+  const outside = ["--", ".", ":(exclude).humantouch", ...BENCH_FILES.map((path) => `:(exclude)${path}`)];
   const changed = await sh("git", ["diff", "--name-only", head, ...outside], dir);
   const added = await sh("git", ["ls-files", "--others", "--exclude-standard", ...outside], dir);
   return !changed.trim() && !added.trim();
@@ -410,7 +410,7 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
       const problems = await setUpProblems(scenario, saved, observers, designer, project);
       if (problems.length) return problems;
       const head = await project.head();
-      const history = join(project.dir, ".03kind/history");
+      const history = join(project.dir, ".humantouch/history");
       const rounds = () => (existsSync(history) ? readdirSync(history).sort() : []);
       const roundsBefore = rounds().length;
 
@@ -572,15 +572,15 @@ async function runOnce({
 
     // While the Agent works: the claim, each done and the finish from the round's files; each source edit; each change newly shown on the page.
     const times: RawRun["times"] = { claim: null, dones: [], finish: null, shown: [], edits: [] };
-    const thirdKind = join(project.dir, ".03kind");
+    const humanTouch = join(project.dir, ".humantouch");
     const readJson = (file: string) => {
       try {
-        return JSON.parse(readFileSync(join(thirdKind, file), "utf8"));
+        return JSON.parse(readFileSync(join(humanTouch, file), "utf8"));
       } catch {
         return null; // Not there, or being written.
       }
     };
-    const rounds = () => (existsSync(join(thirdKind, "history")) ? readdirSync(join(thirdKind, "history")).sort() : []);
+    const rounds = () => (existsSync(join(humanTouch, "history")) ? readdirSync(join(humanTouch, "history")).sort() : []);
     // The put-back scenario archived a round before the Agent started.
     const roundsBefore = rounds().length;
     /** This round's result, once archived in full: `finish` writes it last into its folder. */
@@ -824,7 +824,7 @@ const METRICS: [string, (m: Measures) => number | null][] = [
   ["Agent 总用时（秒）", (m) => m.agentMs / 1000],
   ["每条平均工具调用", (m) => m.toolCallsPerChange],
   ["全仓搜索次数", (m) => m.repoWideSearches],
-  ["读 node_modules/03kind（次）", (m) => m.packageReads],
+  ["读 node_modules/humantouch（次）", (m) => m.packageReads],
   ["读入字数：Skill", (m) => m.charsRead.skill],
   ["读入字数：claim 输出", (m) => (m.changes ? m.charsRead.claim : null)],
   ["读入字数：全部工具输出", (m) => m.charsRead.total],

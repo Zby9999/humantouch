@@ -1,5 +1,5 @@
 import { REACT18_URL, TOGGLE_LABEL } from "../playwright.config";
-import { POPOVER_EXIT_MS, TIP_DELAY_MS, TIP_GRACE_MS } from "../../packages/03kind/src/client/motion";
+import { POPOVER_EXIT_MS, TIP_DELAY_MS, TIP_GRACE_MS } from "../../packages/humantouch/src/client/motion";
 import { canvasInPlace, expect, steadyBox, test, type Locator, type Page } from "./fixtures";
 
 /** Popovers opening at once and leaving, closed with the pointer, by fading and moving down; the toolbar's tips (designer, 2026-11-08). */

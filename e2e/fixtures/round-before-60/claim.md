@@ -1,6 +1,6 @@
 # Design changes to apply
 
-4 changes, made by the designer in 03Kind. Apply each one to the source as the project already writes styles, and run `npx 03kind done <number>` after each. When you are through them, run `npx 03kind finish`.
+4 changes, made by the designer in Human Touch. Apply each one to the source as the project already writes styles, and run `npx humantouch done <number>` after each. When you are through them, run `npx humantouch finish`.
 
 ## 1. Fill
 

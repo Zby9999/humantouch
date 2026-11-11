@@ -1,6 +1,6 @@
 import { Badge, Surface } from "acme-ui";
 import { useState } from "react";
-import { ThirdKind } from "03kind/react";
+import { HumanTouch } from "humantouch/react";
 import { Card } from "./components/Card";
 import { Dialog } from "./components/Dialog";
 
@@ -42,7 +42,7 @@ export function App() {
         <Card title="Your turn" body="Open the editor and try it." />
       </Surface>
       {dialogOpen && <Dialog onClose={() => setDialogOpen(false)} />}
-      <ThirdKind />
+      <HumanTouch />
     </main>
   );
 }

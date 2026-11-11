@@ -1,4 +1,4 @@
-import { OFF_CANVAS_PATH, ROUND_PATH, SERVICE_GLOBAL, TOKEN_HEADER } from "../../packages/03kind/src/service-protocol";
+import { OFF_CANVAS_PATH, ROUND_PATH, SERVICE_GLOBAL, TOKEN_HEADER } from "../../packages/humantouch/src/service-protocol";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 import { canvasInPlace, expect, steadyBox, test, type Locator, type Page } from "./fixtures";
 

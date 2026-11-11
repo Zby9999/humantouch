@@ -5,10 +5,10 @@ test-results/
 playwright-report/
 playground/
 .vitest/
-.03kind/
+.humantouch/
 bench-results/
 e2e/perf/results/
 
 # Copied in from the repository root while the package is packed (`prepack`), and deleted after (`postpack`).
-packages/03kind/README.md
-packages/03kind/LICENSE
+packages/humantouch/README.md
+packages/humantouch/LICENSE
