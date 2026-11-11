@@ -3324,6 +3324,20 @@ describe("editing text", () => {
     expect(doc.getElementById("u")!.innerHTML).toBe("One Two");
   });
 
+  test("words with a line break, the round saved, open with the <br> again; taken back from the saved round, the words before (ticket 144)", () => {
+    const { doc, editor, changes, layer } = open(`<!DOCTYPE html><h1 id="t" ${at("3:3")}>Third Kind</h1><p id="u" ${at("4:3")}>Other</p>`);
+    editor.setText(layer("t"), "Third\nKind");
+    // Another change, so the round is left once the first is taken back.
+    editor.setText(layer("u"), "Changed");
+    const saved = { canvas: serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 }), changeSet: changes.save() };
+
+    const reopened = new DOMParser().parseFromString(saved.canvas, "text/html");
+    expect(reopened.getElementById("t")!.innerHTML).toBe("Third<br>Kind");
+    expect(saved.changeSet.changes[0]).toMatchObject({ before: "Third Kind", after: "Third\nKind" });
+    const reverted = new DOMParser().parseFromString(revertSaved(saved, saved.changeSet.changes[0].id)!.canvas, "text/html");
+    expect(reverted.getElementById("t")!.innerHTML).toBe("Third Kind");
+  });
+
   test("a new text layer's words keep their line breaks (ticket 144)", () => {
     const { editor, changes, layer } = open();
     const text = editor.create("text", { parent: layer("list"), index: 0 });

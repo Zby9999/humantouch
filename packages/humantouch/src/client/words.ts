@@ -27,10 +27,26 @@ export function wordsOf(el: Element, lines = true): string {
 /** A text's white space as one space each run, but for its new lines where `parent` keeps them, as it is drawn. */
 function spacedOut(data: string, parent: Element): string {
   if (!data.includes("\n")) return data.replace(/\s+/g, " ");
-  const view = parent.ownerDocument.defaultView;
-  const style = view && parent.isConnected ? view.getComputedStyle(parent) : null;
-  const keeps = !!style && /^(pre|pre-wrap|pre-line|break-spaces)$/.test(style.whiteSpace);
-  return keeps ? data.replace(/[^\S\n]+/g, " ") : data.replace(/\s+/g, " ");
+  return keepsNewLines(parent) ? data.replace(/[^\S\n]+/g, " ") : data.replace(/\s+/g, " ");
+}
+
+/** Whether `el`'s white space keeps new lines, as `pre-line` does, drawing each as a line break. */
+function keepsNewLines(el: Element): boolean {
+  const view = el.ownerDocument.defaultView;
+  const style = view && el.isConnected ? view.getComputedStyle(el) : null;
+  return !!style && /^(pre|pre-wrap|pre-line|break-spaces)$/.test(style.whiteSpace);
+}
+
+/**
+ * Makes each new line in `el`'s words that is drawn as a space a space, with
+ * the white space around it: before it is typed in, as typing keeps new lines
+ * (`pre-wrap`), and they would show, and be read, as line breaks.
+ */
+export function spaceOutNewLines(el: Element) {
+  const walker = el.ownerDocument.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let text = walker.nextNode() as Text | null; text; text = walker.nextNode() as Text | null) {
+    if (text.data.includes("\n") && !keepsNewLines(text.parentElement!)) text.data = text.data.replace(/\s*\n\s*/g, " ");
+  }
 }
 
 /**

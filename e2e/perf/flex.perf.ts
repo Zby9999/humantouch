@@ -1748,7 +1748,7 @@ test.describe("a claimed round", () => {
     await page.mouse.move(body.x + 120, body.y + body.height + 8, { steps: 6 });
     await page.mouse.up();
     await page.keyboard.type("Ships in a day");
-    await page.keyboard.press("Enter");
+    await page.keyboard.press("Escape");
     // The new text, selected.
     const size = (await fieldOf(page, "Font size"));
     await size.fill("20");

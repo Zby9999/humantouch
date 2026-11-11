@@ -17,7 +17,7 @@ import { fitHeight, freeze, restore } from "./freezer";
 import { ENTER_MARK } from "./host";
 import { CHANGE_GLIDE_MS, chromePush, EASE_IN_OUT, EASE_OUT, easeInOut, MODE_FADE_MS, MODE_SWITCH_MS, ping, prefersReducedMotion } from "./motion";
 import { framedText, nodeOf, type Layer, type LayerTree } from "./layers";
-import { wordsOf } from "./words";
+import { spaceOutNewLines, wordsOf } from "./words";
 import { createLater } from "./later";
 import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
 import { GradientHandles } from "./GradientHandles";
@@ -741,7 +741,9 @@ export function CanvasView(props: Props) {
       if (!dx && !dy) return;
       el.scrollLeft = 0;
       el.scrollTop = 0;
-      setCamera((v) => ({ ...v, x: v.x - dx, y: v.y - dy }));
+      // Playing, the camera keeps to the page played, as the wheel and the keys keep it.
+      const played = playingRef.current ? latest.current.played : null;
+      setCamera((v) => (played ? scrolled({ ...v, x: v.x - dx, y: v.y - dy }, played, el.getBoundingClientRect()) : { ...v, x: v.x - dx, y: v.y - dy }));
     };
     el.addEventListener("scroll", onScroll);
     return () => el.removeEventListener("scroll", onScroll);
@@ -846,6 +848,19 @@ export function CanvasView(props: Props) {
     return !!typed && !!over && over.at.view === typed.view && within(typed.el.getBoundingClientRect(), over);
   };
 
+  /** Whether a point of the window, `x`, `y`, is in the text typed in, looked at in the frame it is typed in, as that frame is scaled on the stage now. */
+  const pointsAtTyped = (x: number, y: number): boolean => {
+    const el = typing.current?.el;
+    const frame = el?.ownerDocument.defaultView?.frameElement as HTMLIFrameElement | null | undefined;
+    if (!el || !frame?.offsetWidth) return false;
+    const box = frame.getBoundingClientRect();
+    const scale = box.width / frame.offsetWidth;
+    // Within a screen px of it: text made where clicked starts there, its frame placed to a part of a px off.
+    const near = el.getBoundingClientRect();
+    const slack = 1 / scale;
+    return within(new DOMRect(near.x - slack, near.y - slack, near.width + 2 * slack, near.height + 2 * slack), { x: (x - box.left) / scale, y: (y - box.top) / scale });
+  };
+
   const onPointerMove = (event: TargetedPointerEvent<HTMLDivElement>) => {
     if (playing) return;
     const selecting = typedPress.current;
@@ -922,7 +937,9 @@ export function CanvasView(props: Props) {
       if (event.type === "pointerup" && type && editor) {
         draw(type, shown, start, boxFrom(start, toIn(event, shown)));
         // New text, typed in at once: under the pointer, the I-beam.
-        setOverTyped(inTyped(viewAt(event)));
+        // A layer off the canvas just made is not among those laid out yet: the element typed in is looked at in its own frame, once placed.
+        const { clientX: x, clientY: y } = event;
+        requestAnimationFrame(() => setOverTyped(pointsAtTyped(x, y)));
       }
       return;
     }
@@ -1189,6 +1206,8 @@ export function CanvasView(props: Props) {
     typing.current = { layer: own, html, view, el };
     typedPress.current = null;
     setTypingLayer(own);
+    // Typed in, the words keep their new lines (`pre-wrap`): one drawn as a space is made a space first, or it would be read as a line break.
+    spaceOutNewLines(el);
     el.contentEditable = "plaintext-only";
     el.focus({ preventScroll: true });
     el.ownerDocument.getSelection()?.selectAllChildren(el);

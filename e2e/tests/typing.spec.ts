@@ -258,3 +258,36 @@ test("⌘Return ends typing, as does a press elsewhere; the line breaks typed ar
   await expect.poll(() => headings(page)).toEqual(["Third Kind\nStudio\nWorks", "Third Kind\nStudio\nWorks", "Third Kind\nStudio\nWorks"]);
   await expect(await changeRows(page)).toReadAs([/Text.*“Third Kind” → “Third Kind↵Studio↵Works”/]);
 });
+
+test("a new line in the words that the page draws as a space is no line break: typed in and left as it was, there is no change", async ({ page }) => {
+  // As `{item.description}` with "One\nTwo" in it would be: the words' text has a new line, `white-space: normal` draws it as a space.
+  await desktop(page)
+    .contentFrame()
+    .locator("h1")
+    .evaluate((h1) => ((h1.firstChild as Text).data = "Third\n   Kind"));
+  await expect.poll(() => headings(page)).toEqual(["Third Kind", "Third Kind", "Third Kind"]);
+
+  for (const view of [desktop, phone]) {
+    const h1 = await typeInHeading(page, view(page));
+    await expect.poll(() => h1.evaluate((el) => (el as HTMLElement).innerText)).toBe("Third Kind");
+    await page.keyboard.press("Escape");
+    await expect(h1).not.toHaveAttribute("contenteditable");
+    await page.waitForTimeout(DOUBLE_CLICK_MS);
+  }
+
+  await expect.poll(() => headings(page)).toEqual(["Third Kind", "Third Kind", "Third Kind"]);
+  await expect(page.getByRole("button", { name: /not applied yet/ })).toHaveCount(0);
+});
+
+test("text made with T in the blank space off the canvas, there where clicked, is typed in at once under an I-beam, the pointer not moved since", async ({ page }) => {
+  // The blank space, left of the views moved right.
+  const area = (await viewportArea(page).boundingBox())!;
+  await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
+  await page.mouse.wheel(-500, 0);
+  const view = await steadyBox(desktop(page));
+  expect(view.x - area.x).toBeGreaterThan(340);
+  await page.keyboard.press("t");
+  await page.mouse.click(area.x + 40, view.y + 40);
+  await expect(page.locator('iframe[title="Off canvas"]').contentFrame().locator('[contenteditable="plaintext-only"]')).toHaveCount(1);
+  await expect.poll(() => cursor(page)).toBe("text");
+});
