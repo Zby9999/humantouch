@@ -280,6 +280,14 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   position: fixed;
   inset: 0;
   z-index: 2147483646;
+  /*
+   * A wheel or a swipe where nothing of the editor scrolls (the Show layers button, the tools) ends here, not at the
+   * page under the editor: the page scrolled behind it, and on a Mac its rubber band took the editor along, the page's
+   * own background showing in the gap at the window's edge (designer, 2026-11-11). A scroller for that, with nothing
+   * past its edges to scroll to.
+   */
+  overflow: hidden;
+  overscroll-behavior: none;
   display: grid;
   grid-template-columns: var(--ht-layers-width) minmax(0, 1fr) var(--ht-design-width);
   /* The canvas's gray under the panels: as they move out with the frame on leaving, and in as it starts, the canvas shows where they were, not the page under the editor (designer, 2026-11-08). */
