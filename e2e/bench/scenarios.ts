@@ -998,6 +998,29 @@ export const SCENARIOS: Scenario[] = [
       await desk.edit("src/App.tsx", '<section className="flex h-screen flex-col justify-center" data-testid="hero">', '<section className="flex h-screen flex-col justify-between" data-testid="hero">');
     },
   },
+  // Ticket 146 (ADR 0016): the fixed width written another way, as a maximum the hero is wide enough for: drawn the same, so shown.
+  {
+    id: "panel-width-as-maximum",
+    title: "The Get started button made Fixed, 200px wide.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "Button").click();
+      await setField(page, "Width", "200");
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The Get started button is 200px wide.",
+        checkable: true,
+        shows: () => Math.abs(document.querySelector('[data-testid="hero"] button')!.getBoundingClientRect().width - 200) <= 0.5,
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", "self-start px-4 py-2 text-white", "w-full max-w-[200px] self-start px-4 py-2 text-white");
+    },
+  },
   {
     id: "panel-size",
     title: "The Get started button made Fixed, 200px wide and 40px tall; the intro paragraph's width made Hug (it fills the hero's width now).",
