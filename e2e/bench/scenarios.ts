@@ -942,6 +942,34 @@ export const SCENARIOS: Scenario[] = [
       await desk.edit("src/App.tsx", '<p className="mt-4 text-stone-600">', '<p className="mt-4 tracking-[0px] text-stone-600">');
     },
   },
+  // Ticket 145: spread evenly, the hero is written space-between, which carries no point along it: bottom left spread evenly is shown all the same.
+  {
+    id: "panel-spread-evenly",
+    title: "The hero's alignment set to bottom left, its gap Auto (spread evenly).",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await pickHero(page);
+      const layout = design(page).getByRole("region", { name: "Layout" });
+      await layout.getByRole("radiogroup", { name: "Alignment" }).getByRole("radio", { name: "Bottom left" }).click();
+      await layout.getByRole("combobox", { name: "Gap sizing" }).selectOption("auto");
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The hero's layers are spread evenly down it, at its left (justify-content: space-between).",
+        checkable: true,
+        shows: () => {
+          const style = getComputedStyle(document.querySelector('[data-testid="hero"]')!);
+          return style.justifyContent === "space-between" && /^(normal|stretch|flex-start|start)$/.test(style.alignItems);
+        },
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", '<section className="flex h-screen flex-col justify-center" data-testid="hero">', '<section className="flex h-screen flex-col justify-between" data-testid="hero">');
+    },
+  },
   {
     id: "panel-size",
     title: "The Get started button made Fixed, 200px wide and 40px tall; the intro paragraph's width made Hug (it fills the hero's width now).",
