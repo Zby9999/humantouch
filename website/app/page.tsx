@@ -103,14 +103,14 @@ export default function Home() {
 
 /**
  * One of the three features: an 800×500 card, the demo on its backdrop on one side, the words on the other; below 768px
- * wide, one above the other. At every width (designer, 2026-11-11, for all three): the demo 500px wide (no wider than
- * the card), flush with the card's edges on its side, its corners round only there; the words from the top, the body
- * 240px above the foot.
+ * wide, one above the other. At every width (designer, 2026-11-11, for all three): the card's corners 8px; the demo
+ * 500px wide (no wider than the card), 4px in from the card's edges on its side, its corners round only there; the
+ * words from the top, as far from it as from the side, the body 240px above the foot.
  */
 function Feature({ side, backdrop, title, body, children }: { side: "left" | "right"; backdrop: string; title: string; body: string; children: React.ReactNode }) {
   const right = side === "right";
   return (
-    <section className={`flex w-full max-w-[800px] flex-col gap-3 rounded-[4px] bg-surface md:h-[500px] ${right ? "pl-3 md:flex-row-reverse" : "pr-3 md:flex-row"}`}>
+    <section className={`flex w-full max-w-[800px] flex-col gap-3 rounded-lg bg-surface py-1 md:h-[500px] ${right ? "pr-1 pl-3 md:flex-row-reverse" : "pr-3 pl-1 md:flex-row"}`}>
       <div className={`relative aspect-square w-[500px] max-w-full shrink-0 overflow-hidden rounded-[4px] bg-neutral-900 md:aspect-auto md:h-full ${right ? "rounded-l-none" : "rounded-r-none"}`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={backdrop} alt="" className="absolute inset-0 size-full object-cover" />
