@@ -104,8 +104,8 @@ export default function Home() {
 /**
  * One of the three features (designer, 2026-11-11, for all three), its corners 8px. From 768px wide, an 800×500 card:
  * the demo 500px wide on one side, 4px in from the card's edges there, its corners round only there; the words on the
- * other, from the top, as far from it as from the side, the body 240px above the foot. Below, one above the other: the
- * demo 4px in all round, its corners all round; the words 24px from the card's edges, as before.
+ * other, 16px in, from the top, the body 240px above the foot. Below, one above the other: the demo 4px in all round,
+ * its corners all round; the words 16px in, 8px under the demo, 28px above the card's foot.
  */
 function Feature({ side, backdrop, title, body, children }: { side: "left" | "right"; backdrop: string; title: string; body: string; children: React.ReactNode }) {
   const right = side === "right";
@@ -116,7 +116,7 @@ function Feature({ side, backdrop, title, body, children }: { side: "left" | "ri
         <img src={backdrop} alt="" className="absolute inset-0 size-full object-cover" />
         <div className="absolute inset-0">{children}</div>
       </div>
-      <div className="flex flex-col justify-between gap-2 px-5 pt-3 pb-5 md:pt-6 md:pb-60">
+      <div className="flex flex-col justify-between gap-2 px-4 pt-2 pb-7 md:pt-6 md:pb-60">
         <h2 className="text-lg leading-[1.3] font-[500] tracking-[-0.2px] text-ink">{title}</h2>
         <p className="text-[14px] leading-[1.5] font-[440] text-label">{body}</p>
       </div>
