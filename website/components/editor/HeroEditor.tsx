@@ -4,27 +4,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DemoPage, layerId, type Selection, type Target } from "./DemoPage";
 import { EDITOR_CSS } from "./editor-css.generated";
+import { NumberField, Tips } from "./fields";
 import { Icon } from "./Icon";
 import type { IconName } from "./icon-paths";
-import {
-  COLOR_VARIABLES,
-  LAYERS,
-  NO_EDITS,
-  PROP_TITLES,
-  RADIUS_VARIABLES,
-  SPACING_VARIABLES,
-  TEXT_VARIABLES,
-  TREE,
-  VIEWS,
-  changedIn,
-  listChanges,
-  styleIn,
-  type Edits,
-  type Key,
-  type Prop,
-  type Value,
-  type ViewName,
-} from "./model";
+import { COLOR_VARIABLES, LAYERS, RADIUS_VARIABLES, SPACING_VARIABLES, TEXT_VARIABLES, TREE, VIEWS, styleOf, type Key, type ViewName } from "./model";
 
 /** The editor is laid out at a laptop's size, then scaled to the hero's width. */
 const W = 1440;
@@ -35,13 +18,20 @@ const FRAME_LEFT = VIEWS.map((_, i) => VIEWS.slice(0, i).reduce((x, v) => x + v.
 const STAGE_WIDTH = FRAME_LEFT.at(-1)! + VIEWS.at(-1)!.width;
 // Fitted between the panels, clear of the toolbar on the canvas's right edge.
 const FIT: Camera = { x: 32, y: 72, k: (W - 2 * PANEL - 32 - 64) / STAGE_WIDTH };
+/** The hero's frame, as the product's toggle has one (toggle-styles.ts): a ground round it, a hairline, the editor raised in it. */
+const FRAME_PAD = 6;
+const EDITOR_RADIUS = 12;
+
+/** The product's timings for a level closed in the Layers (motion.ts). */
+const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
+const LAYERS_FOLD_MS = 200;
+const LAYERS_FOLD_RISE_PX = 8;
 
 /** What the site adds to the product's styles: the editor inside the hero, not over the window, and its popovers. */
 const SITE_CSS = `
 .ht-shell { position: absolute; }
 .ht-canvas { position: absolute; top: 0; pointer-events: auto; }
 .ht-panel { position: relative; }
-.ht-changes.is-site { position: absolute; top: 44px; right: 16px; z-index: 30; }
 .ht-pop { position: absolute; z-index: 30; max-height: 260px; overflow: auto; padding: 4px; border-radius: 12px; background: var(--ht-panel); box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.06), 0 8px 24px -4px rgb(0 0 0 / 0.12); }
 .ht-pop button { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; height: 24px; padding: 0 8px; border-radius: 6px; cursor: default; }
 .ht-pop button:hover { background: var(--ht-field); }
@@ -57,18 +47,18 @@ type Box = { left: number; top: number; width: number; height: number };
 
 /**
  * The hero: Human Touch's editor, as the product draws it (its own styles, built in from the product's source), with a
- * page on the canvas to edit. Select a layer on a view or in Layers, change it in the Design panel, and the views follow;
- * made in the Tablet or Phone view, a change holds only at that view's breakpoint. Its bottom fades out under a
- * progressive blur.
+ * page on the canvas to look through. Select a layer on a view or in Layers and the Design panel shows its design; its
+ * fields can be dragged and typed into, but keep nothing, so the canvas, which does not change, never disagrees with them
+ * (designer, 2026-11-11). Framed as the product's toggle is, its bottom under a progressive blur.
  */
 export function HeroEditor() {
-  const outer = useRef<HTMLDivElement>(null);
+  const inner = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const [shadow, setShadow] = useState<ShadowRoot | null>(null);
-  const [scale, setScale] = useState(1200 / W);
+  const [scale, setScale] = useState((1200 - 2 * FRAME_PAD) / W);
 
   useLayoutEffect(() => {
-    const el = outer.current!;
+    const el = inner.current!;
     const fit = () => setScale(el.clientWidth / W);
     fit();
     const observer = new ResizeObserver(fit);
@@ -82,9 +72,15 @@ export function HeroEditor() {
   }, []);
 
   return (
-    <section ref={outer} aria-label="Human Touch's editor, to try" className="relative w-full max-w-[1200px] overflow-hidden" style={{ height: H * scale }}>
-      <div className="absolute top-0 left-0 origin-top-left" style={{ width: W, height: H, transform: `scale(${scale})` }}>
-        <div ref={host} />
+    <section aria-label="Human Touch's editor, to try" className="relative w-full max-w-[1200px] rounded-[18px] bg-raised shadow-[0_0_0_0.5px_var(--color-surface)]" style={{ padding: FRAME_PAD }}>
+      <div
+        ref={inner}
+        className="relative overflow-hidden shadow-[0_1px_1px_rgb(0_0_0/0.15),0_0_0_0.5px_rgb(0_0_0/0.15)]"
+        style={{ height: H * scale, borderRadius: EDITOR_RADIUS }}
+      >
+        <div className="absolute top-0 left-0 origin-top-left" style={{ width: W, height: H, transform: `scale(${scale})` }}>
+          <div ref={host} />
+        </div>
       </div>
       <ProgressiveBlur />
       {shadow &&
@@ -99,11 +95,11 @@ export function HeroEditor() {
   );
 }
 
-/** The bottom of the hero, blurred more and more toward the page, and faded into it. */
+/** The bottom of the hero, frame and all, blurred more and more toward the page, and faded into it. */
 function ProgressiveBlur() {
   const steps = [1, 2, 4, 8, 16, 32];
   return (
-    <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-[38%]">
+    <div aria-hidden="true" className="pointer-events-none absolute -inset-x-px -bottom-px h-[20%]">
       {steps.map((blur, i) => {
         const from = (i / steps.length) * 100;
         const mid = ((i + 1) / steps.length) * 100;
@@ -111,7 +107,7 @@ function ProgressiveBlur() {
         const mask = `linear-gradient(to bottom, transparent ${from}%, #000 ${mid}%, #000 ${Math.min(to, 100)}%, ${to > 100 ? "#000" : "transparent"} ${Math.min(to + 1, 100)}%)`;
         return <div key={blur} className="absolute inset-0" style={{ backdropFilter: `blur(${blur}px)`, WebkitBackdropFilter: `blur(${blur}px)`, maskImage: mask, WebkitMaskImage: mask }} />;
       })}
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent from-30% to-page" />
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent from-20% to-page" />
     </div>
   );
 }
@@ -135,30 +131,34 @@ function pick(path: Target[], selected: Selection): Target {
 }
 
 function Editor({ scale, root }: { scale: number; root: ShadowRoot }) {
-  const [edits, setEdits] = useState<Edits>(NO_EDITS);
   const [selected, setSelected] = useState<Selection>({ key: "card", index: 0 });
   const [hover, setHover] = useState<Selection>(null);
   const [view, setView] = useState<ViewName>("Desktop");
-  const [detached, setDetached] = useState<Set<string>>(new Set());
-
-  function set(key: Key, prop: Prop, value: Value) {
-    setEdits((all) => ({ ...all, [view]: { ...all[view], [key]: { ...all[view][key], [prop]: value } } }));
-  }
-  function undo(v: ViewName, key: Key, prop: Prop) {
-    setEdits((all) => {
-      const style = { ...all[v][key] };
-      delete style[prop];
-      return { ...all, [v]: { ...all[v], [key]: style } };
-    });
-  }
+  const [layersShown, setLayersShown] = useState(true);
+  const [shell, setShell] = useState<HTMLDivElement | null>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const toggled = useRef(false);
+  const showLayers = (shown: boolean) => {
+    toggled.current = true;
+    setLayersShown(shown);
+  };
+  // The button pressed goes with the panel: focus moves to the one that brings it back, as in the product.
+  useEffect(() => {
+    if (toggled.current) toggle.current?.focus({ preventScroll: true });
+  }, [layersShown]);
 
   return (
-    <div className="ht-shell" style={{ ["--ht-layers-width" as string]: `${PANEL}px`, ["--ht-design-width" as string]: `${PANEL}px` }}>
-      <LayersPanel selected={selected} hover={hover} onSelect={setSelected} onHover={setHover} />
+    <div ref={setShell} className={`ht-shell${layersShown ? "" : " is-layers-hidden"}`} style={{ ["--ht-layers-width" as string]: `${PANEL}px`, ["--ht-design-width" as string]: `${PANEL}px` }}>
+      {layersShown ? (
+        <LayersPanel key="layers" toggle={toggle} onHide={() => showLayers(false)} selected={selected} onSelect={setSelected} onHover={setHover} />
+      ) : (
+        <button key="show-layers" ref={toggle} type="button" className="ht-show-layers" aria-label="Show layers" aria-expanded="false" onClick={() => showLayers(true)}>
+          <Icon name="sidebar" />
+        </button>
+      )}
       <Viewport
         scale={scale}
         root={root}
-        edits={edits}
         selected={selected}
         hover={hover}
         view={view}
@@ -169,27 +169,8 @@ function Editor({ scale, root }: { scale: number; root: ShadowRoot }) {
         onHover={setHover}
       />
       <Tools />
-      <DesignPanel
-        edits={edits}
-        view={view}
-        selected={selected}
-        root={root}
-        detached={detached}
-        onDetach={(id) => setDetached((s) => new Set(s).add(id))}
-        onAttach={(id) =>
-          setDetached((s) => {
-            const n = new Set(s);
-            n.delete(id);
-            return n;
-          })
-        }
-        onSet={set}
-        onUndo={undo}
-        onDiscard={() => {
-          setEdits(NO_EDITS);
-          setDetached(new Set());
-        }}
-      />
+      <DesignPanel key={selected ? layerId(selected) : "none"} view={view} selected={selected} root={root} />
+      <Tips root={root} box={shell} scale={scale} />
     </div>
   );
 }
@@ -199,27 +180,104 @@ const CARD_TEXT = {
   cardBody: ["Pin places, add dates, share the list.", "Everyone picks what they want to see.", "Offline maps and tickets in one place."],
 };
 
-function LayersPanel({ selected, hover, onSelect, onHover }: { selected: Selection; hover: Selection; onSelect: (t: Target) => void; onHover: (t: Selection) => void }) {
+type LayersProps = {
+  toggle: React.RefObject<HTMLButtonElement | null>;
+  onHide: () => void;
+  selected: Selection;
+  onSelect: (t: Target) => void;
+  onHover: (t: Selection) => void;
+};
+
+/**
+ * The Layers, as the product's (LayerTreeView.tsx): rows 28px high, a level 26px in, guides down to each level. A level
+ * closed: its rows go up a little and fade, clipped at their foot, while the rows after rise into their places.
+ */
+function LayersPanel({ toggle, onHide, selected, onSelect, onHover }: LayersProps) {
   const [closed, setClosed] = useState<Set<number>>(new Set());
+  const list = useRef<HTMLDivElement>(null);
+  const fold = useRef<{ at: number; hidden: number; tops: number[] } | null>(null);
+  const folding = useRef<{ copies: HTMLElement; motion: Animation[] } | null>(null);
   const hasLater = (i: number) => TREE.some((r, j) => j > i && r.parent === TREE[i].parent);
   const hasChildren = (i: number) => TREE.some((r) => r.parent === i);
   const hidden = (i: number): boolean => {
     for (let p = TREE[i].parent; p !== null; p = TREE[p].parent) if (closed.has(p)) return true;
     return false;
   };
+  const rows = TREE.map((row, i) => ({ row, i })).filter(({ i }) => !hidden(i));
+
+  const settleFold = () => {
+    if (!folding.current) return;
+    for (const m of folding.current.motion) m.finish();
+    folding.current.copies.remove();
+    folding.current = null;
+  };
+
+  /** Row `at` (its place in the list) closed: copies of its rows rise and fade over the rows after, which rise with them. */
+  const foldUp = (at: number) => {
+    const box = list.current;
+    const shown = box?.querySelector(".ht-tree-rows")?.children;
+    let count = 0;
+    while (rows[at + 1 + count] && rows[at + 1 + count].row.depth > rows[at].row.depth) count++;
+    if (!box || !shown || !count) return;
+    const all = [...shown] as HTMLElement[];
+    const els = all.slice(at + 1, at + 1 + count);
+    const first = els[0];
+    const last = els[count - 1];
+    const copies = document.createElement("div");
+    copies.className = "ht-tree-fold";
+    copies.setAttribute("aria-hidden", "true");
+    copies.inert = true;
+    Object.assign(copies.style, { top: `${first.offsetTop}px`, height: `${last.offsetTop + last.offsetHeight - first.offsetTop}px`, width: `${first.offsetWidth}px` });
+    const inner = copies.appendChild(document.createElement("div"));
+    inner.className = "ht-tree-rows";
+    for (const el of els) {
+      const copy = el.cloneNode(true) as HTMLElement;
+      for (const name of copy.getAttributeNames()) if (name === "role" || name.startsWith("aria-")) copy.removeAttribute(name);
+      inner.append(copy);
+    }
+    box.append(copies);
+    const timing = { duration: LAYERS_FOLD_MS, easing: EASE_OUT };
+    const rise = inner.animate([{ transform: "none", opacity: 1 }, { transform: `translateY(${-LAYERS_FOLD_RISE_PX}px)`, opacity: 0 }], { ...timing, fill: "forwards" });
+    const clip = copies.animate([{ clipPath: "inset(0 0 0 0)" }, { clipPath: "inset(0 0 100% 0)" }], { ...timing, fill: "forwards" });
+    clip.onfinish = () => copies.remove();
+    folding.current = { copies, motion: [rise, clip] };
+    fold.current = { at, hidden: count, tops: all.map((el) => el.getBoundingClientRect().top) };
+  };
+
+  // The rows after a level closed rise from where they were, in step with its rows' copies: a row now `i` was `i + hidden`.
+  useLayoutEffect(() => {
+    const was = fold.current;
+    const box = list.current;
+    fold.current = null;
+    if (!was || !box || !folding.current) return;
+    const shown = [...(box.querySelector(".ht-tree-rows")?.children ?? [])] as HTMLElement[];
+    for (let i = was.at + 1; i < shown.length; i++) {
+      const from = was.tops[i + was.hidden] - shown[i].getBoundingClientRect().top;
+      if (from) folding.current.motion.push(shown[i].animate([{ transform: `translateY(${from}px)` }, { transform: "none" }], { duration: LAYERS_FOLD_MS, easing: EASE_OUT }));
+    }
+  });
+
+  const toggleFold = (i: number, at: number) => {
+    settleFold();
+    const next = new Set(closed);
+    if (!next.delete(i)) {
+      next.add(i);
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches) foldUp(at);
+    }
+    setClosed(next);
+  };
 
   return (
     <aside className="ht-panel is-layers" aria-label="Layers">
       <div className="ht-panel-header">
-        <button type="button" className="ht-icon-button" aria-label="Hide layers" aria-expanded="true">
+        <button ref={toggle} type="button" className="ht-icon-button" aria-label="Hide layers" aria-expanded="true" onClick={onHide}>
           <Icon name="sidebar" />
         </button>
         <h2 className="ht-panel-title">Layers</h2>
       </div>
-      <div className="ht-tree" role="tree" aria-label="Layers" onPointerLeave={() => onHover(null)}>
+      <div ref={list} className="ht-tree" role="tree" aria-label="Layers">
         <div className="ht-tree-rows">
-          {TREE.map((row, i) => {
-            if (hidden(i)) return null;
+          {rows.map(({ row, i }, at) => {
             const layer = LAYERS[row.key];
             const target = { key: row.key, index: row.index };
             const isSelected = sameTarget(target, selected);
@@ -229,14 +287,15 @@ function LayersPanel({ selected, hover, onSelect, onHover }: { selected: Selecti
             const name = row.key === "cardTitle" || row.key === "cardBody" ? CARD_TEXT[row.key][row.index!] : layer.name;
             return (
               <div
-                key={i}
+                key={at}
                 className={`ht-tree-row${isSelected ? " is-selected" : ""}${layer.instance ? " is-instance" : ""}`}
                 role="treeitem"
                 aria-level={row.depth + 1}
                 aria-selected={isSelected}
-                style={{ paddingLeft: pad, background: !isSelected && sameTarget(target, hover) ? "rgb(237 237 236 / 0.6)" : undefined }}
+                style={{ paddingLeft: pad }}
                 onPointerDown={() => onSelect(target)}
                 onPointerEnter={() => onHover(target)}
+                onPointerLeave={() => onHover(null)}
               >
                 {row.depth > 0 && <span className={`ht-tree-guide is-in${hasChildren(i) ? "" : " is-leaf"}`} style={{ left: pad - 15 }} />}
                 {row.depth > 0 && hasLater(i) && <span className="ht-tree-guide is-past" style={{ left: pad - 15 }} />}
@@ -250,12 +309,7 @@ function LayersPanel({ selected, hover, onSelect, onHover }: { selected: Selecti
                   onPointerDown={(e) => {
                     if (!hasChildren(i)) return;
                     e.stopPropagation();
-                    setClosed((s) => {
-                      const n = new Set(s);
-                      if (n.has(i)) n.delete(i);
-                      else n.add(i);
-                      return n;
-                    });
+                    toggleFold(i, at);
                   }}
                 >
                   {hasChildren(i) && <Icon name="chevron-down" />}
@@ -271,29 +325,93 @@ function LayersPanel({ selected, hover, onSelect, onHover }: { selected: Selecti
   );
 }
 
-function iconOf(key: Key, direction?: Value): IconName {
+function iconOf(key: Key): IconName {
   const layer = LAYERS[key];
   if (layer.instance) return "instance";
-  if (layer.kind === "stack") return (direction ?? styleIn(NO_EDITS, "Desktop", key).direction) === "row" ? "stack-horizontal" : "stack-vertical";
+  if (layer.kind === "stack") return styleOf(key).direction === "row" ? "stack-horizontal" : "stack-vertical";
   return layer.kind;
 }
 
+const TOOLS: { label: string; icon: IconName; key: string }[] = [
+  { label: "Select", icon: "pointer", key: "V" },
+  { label: "Frame", icon: "frame", key: "F" },
+  { label: "Text", icon: "text", key: "T" },
+  { label: "Brief", icon: "brief-add", key: "B" },
+];
+
+/**
+ * The tools, as the product's (Shell.tsx): the chosen one's backing slides to a tool clicked; a tool pointed at for
+ * 500ms tells its name and key beside the toolbar, and once one has, the others tell at once till the toolbar is left.
+ */
 function Tools() {
   const [tool, setTool] = useState(0);
-  const tools: { label: string; icon: IconName; key: string }[] = [
-    { label: "Select", icon: "pointer", key: "V" },
-    { label: "Frame", icon: "frame", key: "F" },
-    { label: "Text", icon: "text", key: "T" },
-    { label: "Brief", icon: "brief", key: "B" },
-  ];
+  const [sliding, setSliding] = useState(false);
+  const [tip, setTip] = useState<{ text: string; middle: number; easing: boolean } | null>(null);
+  const waiting = useRef<number | undefined>(undefined);
+  const cooling = useRef<number | undefined>(undefined);
+  const warm = useRef(false);
+  useEffect(
+    () => () => {
+      clearTimeout(waiting.current);
+      clearTimeout(cooling.current);
+    },
+    [],
+  );
+  const tipOf = (t: (typeof TOOLS)[number], button: HTMLElement, easing: boolean) => ({ text: `${t.label} (${t.key})`, middle: button.offsetTop + button.offsetHeight / 2, easing });
   return (
-    <div className="ht-tools" role="toolbar" aria-label="Tools">
-      <div className="ht-tools-backing" aria-hidden="true" style={{ ["--ht-tool-index" as string]: tool }} />
-      {tools.map((t, i) => (
-        <button key={t.label} type="button" className="ht-icon-button" aria-label={t.label} aria-pressed={tool === i} aria-keyshortcuts={t.key} data-tip={t.label} onClick={() => setTool(i)}>
+    <div
+      className="ht-tools"
+      role="toolbar"
+      aria-label="Tools"
+      onPointerEnter={() => clearTimeout(cooling.current)}
+      onPointerLeave={() => {
+        clearTimeout(waiting.current);
+        setTip(null);
+        if (!warm.current) return;
+        clearTimeout(cooling.current);
+        cooling.current = window.setTimeout(() => (warm.current = false), 300);
+      }}
+    >
+      <div className={sliding ? "ht-tools-backing is-sliding" : "ht-tools-backing"} aria-hidden="true" style={{ ["--ht-tool-index" as string]: tool }} />
+      {TOOLS.map((t, i) => (
+        <button
+          key={t.label}
+          type="button"
+          className="ht-icon-button"
+          aria-label={t.label}
+          aria-pressed={tool === i}
+          aria-keyshortcuts={t.key}
+          onPointerEnter={(e) => {
+            if (e.pointerType === "touch") return;
+            clearTimeout(waiting.current);
+            const button = e.currentTarget;
+            if (warm.current || tip) {
+              clearTimeout(cooling.current);
+              warm.current = true;
+              setTip(tipOf(t, button, false));
+              return;
+            }
+            waiting.current = window.setTimeout(() => {
+              warm.current = true;
+              setTip(tipOf(t, button, true));
+            }, 500);
+          }}
+          onPointerLeave={() => clearTimeout(waiting.current)}
+          onClick={() => {
+            clearTimeout(waiting.current);
+            setTip(null);
+            setSliding(true);
+            setTool(i);
+          }}
+        >
           <Icon name={t.icon} />
         </button>
       ))}
+      {tip && (
+        <div className={tip.easing ? "ht-variants-tip ht-tools-tip is-easing" : "ht-variants-tip ht-tools-tip"} role="tooltip" style={{ top: tip.middle }}>
+          {tip.text}
+        </div>
+      )}
     </div>
   );
 }
@@ -304,13 +422,15 @@ type Boxes = { selected: (Box & { view: ViewName })[]; hover: (Box & { view: Vie
  * The canvas: the three views side by side, the selection drawn over them. Drag its empty space to pan; pinch, or scroll
  * with ⌘ or Ctrl held, to zoom round the pointer; double-click it to fit. Plain scrolling is left to the page.
  */
-function Viewport({ scale, root, edits, selected, hover, view, onSelect, onHover }: { scale: number; root: ShadowRoot; edits: Edits; selected: Selection; hover: Selection; view: ViewName; onSelect: (t: Selection, v: ViewName) => void; onHover: (t: Selection) => void }) {
+function Viewport({ scale, root, selected, hover, view, onSelect, onHover }: { scale: number; root: ShadowRoot; selected: Selection; hover: Selection; view: ViewName; onSelect: (t: Selection, v: ViewName) => void; onHover: (t: Selection) => void }) {
   const el = useRef<HTMLDivElement>(null);
   const [cam, setCam] = useState<Camera>(FIT);
   const drag = useRef<{ x: number; y: number; cam: Camera; moved: boolean } | null>(null);
   const scaleRef = useRef(scale);
   scaleRef.current = scale;
   const [boxes, setBoxes] = useState<Boxes>({ selected: [], hover: [] });
+  /** Bumped as the viewport changes size (the Layers hidden or shown): the selection is measured again. */
+  const [size, setSize] = useState(0);
 
   useEffect(() => {
     const node = el.current!;
@@ -326,7 +446,12 @@ function Viewport({ scale, root, edits, selected, hover, view, onSelect, onHover
       });
     };
     node.addEventListener("wheel", onWheel, { passive: false });
-    return () => node.removeEventListener("wheel", onWheel);
+    const observer = new ResizeObserver(() => setSize((n) => n + 1));
+    observer.observe(node);
+    return () => {
+      node.removeEventListener("wheel", onWheel);
+      observer.disconnect();
+    };
   }, []);
 
   // Where the selected and hovered layers are on each view, in the viewport's own pixels.
@@ -343,7 +468,7 @@ function Viewport({ scale, root, edits, selected, hover, view, onSelect, onHover
             }),
           );
     setBoxes({ selected: measure(selected), hover: sameTarget(hover, selected) ? [] : measure(hover) });
-  }, [root, selected, hover, edits, cam, scale]);
+  }, [root, selected, hover, cam, scale, size]);
 
   const kind = (t: Selection) => (t && LAYERS[t.key].instance ? "instance" : undefined);
   const active = boxes.selected.find((b) => b.view === view);
@@ -378,7 +503,7 @@ function Viewport({ scale, root, edits, selected, hover, view, onSelect, onHover
       <div className="ht-stage" style={{ transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.k})` }}>
         {VIEWS.map((v, i) => (
           <div key={v.name} className={`ht-canvas${i ? " is-beside" : ""}`} data-view={v.name} style={{ left: FRAME_LEFT[i], width: v.width }}>
-            <DemoPage view={v.name} width={v.width} edits={edits} onPick={(path, at) => onSelect(pick(path, selected), at)} onHover={(t) => onHover(t && pick(pathOf(t), selected))} />
+            <DemoPage view={v.name} width={v.width} onPick={(path, at) => onSelect(pick(path, selected), at)} onHover={(t) => onHover(t && pick(pathOf(t), selected))} />
           </div>
         ))}
       </div>
@@ -446,47 +571,25 @@ function Handles({ box, kind }: { box: Box; kind?: string }) {
   );
 }
 
-type PanelProps = {
-  edits: Edits;
-  view: ViewName;
-  selected: Selection;
-  root: ShadowRoot;
-  detached: Set<string>;
-  onDetach: (id: string) => void;
-  onAttach: (id: string) => void;
-  onSet: (key: Key, prop: Prop, value: Value) => void;
-  onUndo: (view: ViewName, key: Key, prop: Prop) => void;
-  onDiscard: () => void;
-};
-
-function DesignPanel({ edits, view, selected, root, detached, onDetach, onAttach, onSet, onUndo, onDiscard }: PanelProps) {
-  const [listOpen, setListOpen] = useState(false);
+/**
+ * The Design panel, in the product's markup. Everything in it can be pointed at, opened, dragged and typed into, but it
+ * keeps nothing: a number rolls back once let go, a choice stays as it was, a Variable picked leaves the one bound.
+ */
+function DesignPanel({ view, selected, root }: { view: ViewName; selected: Selection; root: ShadowRoot }) {
   const [size, setSize] = useState<[number, number]>([0, 0]);
-  const changes = listChanges(edits);
-  const attach = { detached, onDetach, onAttach };
 
   useLayoutEffect(() => {
     if (!selected) return;
     const found = root.querySelector(`[data-view="${view}"] [data-ht="${layerId(selected)}"]`) as HTMLElement | null;
     if (found) setSize([found.offsetWidth, found.offsetHeight]);
-  }, [root, selected, view, edits]);
-
-  useEffect(() => {
-    if (!changes.length) setListOpen(false);
-  }, [changes.length]);
+  }, [root, selected, view]);
 
   const header = (
     <div className="ht-panel-header">
       <h2 className="ht-panel-title">{selected ? "Design" : "Variables"}</h2>
-      {changes.length > 0 && (
-        <button type="button" className="ht-count" aria-label={`${changes.length} changes not applied yet`} aria-haspopup="dialog" aria-expanded={listOpen} onClick={() => setListOpen((o) => !o)}>
-          {changes.length}
-        </button>
-      )}
       <button type="button" className="ht-icon-button" aria-label="Human Touch: back to preview mode" data-tip="Back to preview mode">
         <Icon name="close" />
       </button>
-      {listOpen && <ChangeList changes={changes} onUndo={onUndo} onDiscard={onDiscard} />}
     </div>
   );
 
@@ -528,12 +631,11 @@ function DesignPanel({ edits, view, selected, root, detached, onDetach, onAttach
 
   const key = selected.key;
   const layer = LAYERS[key];
-  const style = styleIn(edits, view, key);
-  const changed = (prop: Prop) => changedIn(edits, view, key, prop);
-  const vid = (prop: string) => `${view}:${key}:${prop}`;
+  const style = styleOf(key);
   const isText = layer.kind === "text";
   const inCard = key === "cardTitle" || key === "cardBody";
   const type = layer.kind === "stack" ? (style.direction === "row" ? "Horizontal Stack" : "Vertical Stack") : { grid: "Grid", frame: "Frame", text: "Text" }[layer.kind];
+  const padding = style.padding as number[] | undefined;
 
   return (
     <aside className="ht-panel is-design" aria-label="Design">
@@ -541,7 +643,7 @@ function DesignPanel({ edits, view, selected, root, detached, onDetach, onAttach
       <section className="ht-layer-info" aria-label="Selected layer">
         <div className="ht-layer-head">
           <h3 className={`ht-layer-name${layer.instance ? " is-instance" : ""}`}>
-            <Icon name={iconOf(key, style.direction)} />
+            <Icon name={iconOf(key)} />
             <span>{inCard ? "Text" : layer.name}</span>
           </h3>
           {view !== "Desktop" && (
@@ -587,18 +689,19 @@ function DesignPanel({ edits, view, selected, root, detached, onDetach, onAttach
         {(["Width", "Height"] as const).map((dim, i) => (
           <div key={dim} className="ht-row ht-size-row">
             <div className="ht-variable-slot">
-              <label className="ht-field" data-tip={dim}>
-                <span className="ht-scrub" aria-hidden="true">
-                  <span className="ht-glyph">{dim}</span>
-                </span>
-                <input type="text" className="ht-input ht-number" aria-label={dim} readOnly value={size[i]} />
-                <button type="button" className="ht-icon-button ht-field-action" aria-label={`Add min or max ${dim.toLowerCase()}`}>
-                  <Icon name="plus" />
-                </button>
-              </label>
+              <NumberField
+                tip={dim}
+                glyph={dim}
+                value={size[i]}
+                after={
+                  <button type="button" className="ht-icon-button ht-field-action" aria-label={`Add min or max ${dim.toLowerCase()}`} aria-haspopup="listbox" aria-expanded="false">
+                    <Icon name="plus" />
+                  </button>
+                }
+              />
             </div>
             <span className="ht-select-field">
-              <select className="ht-select" aria-label={`${dim} sizing`} defaultValue={layer.sizing[i].toLowerCase()} key={`${key}${dim}`}>
+              <select className="ht-select" aria-label={`${dim} sizing`} value={layer.sizing[i].toLowerCase()} onChange={() => {}}>
                 <option value="fixed">Fixed</option>
                 <option value="hug">Hug</option>
                 <option value="fill">Fill</option>
@@ -625,7 +728,18 @@ function DesignPanel({ edits, view, selected, root, detached, onDetach, onAttach
               ))}
             </div>
             <div className="ht-align-options">
-              <ValueField {...attach} id={vid("gap")} tip="Gap" icon="gap" value={Number(style.gap)} variables={SPACING_VARIABLES} changed={changed("gap")} onChange={(v) => onSet(key, "gap", v)} />
+              <ValueField
+                tip="Gap"
+                icon="gap"
+                value={Number(style.gap)}
+                variables={SPACING_VARIABLES}
+                after={
+                  <select className="ht-select ht-gap-mode" aria-label="Gap sizing" value="fixed" onChange={() => {}}>
+                    <option value="fixed">Fixed</option>
+                    <option value="auto">Auto</option>
+                  </select>
+                }
+              />
               <div className="ht-row">
                 <div className="ht-segmented-field" role="radiogroup" aria-label="Direction">
                   {(
@@ -634,23 +748,19 @@ function DesignPanel({ edits, view, selected, root, detached, onDetach, onAttach
                       ["Vertical", "stack-vertical", "column"],
                       ["Grid", "grid", "grid"],
                     ] as const
-                  ).map(([label, icon, dir]) => {
-                    const checked = layer.kind === "grid" ? dir === "grid" : style.direction === dir;
-                    return (
-                      <button
-                        key={label}
-                        type="button"
-                        role="radio"
-                        className="ht-icon-button"
-                        aria-checked={checked}
-                        aria-label={label}
-                        data-tip={label}
-                        onClick={() => dir !== "grid" && layer.props.includes("direction") && onSet(key, "direction", dir)}
-                      >
-                        <Icon name={icon} />
-                      </button>
-                    );
-                  })}
+                  ).map(([label, icon, dir]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      role="radio"
+                      className="ht-icon-button"
+                      aria-checked={layer.kind === "grid" ? dir === "grid" : style.direction === dir}
+                      aria-label={label}
+                      data-tip={label}
+                    >
+                      <Icon name={icon} />
+                    </button>
+                  ))}
                 </div>
                 <button type="button" className="ht-icon-button" aria-label="Wrap" data-tip="Wrap" aria-pressed="false">
                   <Icon name="wrap" />
@@ -658,16 +768,16 @@ function DesignPanel({ edits, view, selected, root, detached, onDetach, onAttach
               </div>
             </div>
           </div>
-          {layer.props.includes("padding") && <PaddingFields {...attach} id={vid("padding")} value={style.padding as number[]} initial={changed("padding")} onChange={(v) => onSet(key, "padding", v)} />}
+          {padding && <PaddingFields value={padding} />}
         </section>
       )}
 
-      {layer.kind === "frame" && layer.props.includes("padding") && (
+      {layer.kind === "frame" && padding && (
         <section className="ht-section" aria-label="Padding">
           <div className="ht-section-header">
             <h3 className="ht-section-title">Padding</h3>
           </div>
-          <PaddingFields {...attach} id={vid("padding")} value={style.padding as number[]} initial={changed("padding")} onChange={(v) => onSet(key, "padding", v)} />
+          <PaddingFields value={padding} />
         </section>
       )}
 
@@ -678,24 +788,22 @@ function DesignPanel({ edits, view, selected, root, detached, onDetach, onAttach
           </h3>
         </div>
         <div className="ht-grid-2">
-          <NumberField tip="Opacity" icon="opacity" value={Number(style.opacity)} suffix="%" max={100} changed={changed("opacity")} onChange={(v) => onSet(key, "opacity", v)} />
-          {layer.props.includes("radius") ? (
+          <NumberField tip="Opacity" icon="opacity" value={Number(style.opacity)} unit="%" max={100} />
+          {!isText && (
             <div className="ht-row">
-              <ValueField {...attach} id={vid("radius")} tip="Corner radius" icon="radius" value={Number(style.radius)} variables={RADIUS_VARIABLES} changed={changed("radius")} onChange={(v) => onSet(key, "radius", v)} />
+              <ValueField tip="Corner radius" icon="radius" value={Number(style.radius ?? 0)} variables={RADIUS_VARIABLES} />
               <button type="button" className="ht-icon-button" aria-label="Independent corners" data-tip="Independent corners" aria-pressed="false">
                 <Icon name="corners" />
               </button>
             </div>
-          ) : (
-            <span />
           )}
           <label className="ht-check">
-            <input type="checkbox" defaultChecked />
+            <input type="checkbox" checked readOnly />
             Visible
           </label>
           {!isText && (
             <label className="ht-check">
-              <input type="checkbox" />
+              <input type="checkbox" checked={false} readOnly />
               Clip content
             </label>
           )}
@@ -711,30 +819,59 @@ function DesignPanel({ edits, view, selected, root, detached, onDetach, onAttach
             <span className="ht-font-sample" aria-hidden="true" style={{ fontFamily: "var(--font-inter)" }}>
               Aa
             </span>
-            <select className="ht-select ht-font" aria-label="Font" defaultValue="Inter">
+            <select className="ht-select ht-font" aria-label="Font" value="Inter" onChange={() => {}}>
               <option>Inter</option>
             </select>
           </span>
           <div className="ht-grid-2">
             <span className="ht-select-field ht-wide">
-              <select className="ht-select" aria-label="Font weight" defaultValue={layer.weight} key={key}>
+              <select className="ht-select" aria-label="Font weight" value={layer.weight} onChange={() => {}}>
                 <option>Regular</option>
                 <option>Semi Bold</option>
                 <option>Bold</option>
               </select>
             </span>
-            <ValueField {...attach} id={vid("fontSize")} tip="Font size" icon="font-size" value={Number(style.fontSize)} variables={TEXT_VARIABLES} changed={changed("fontSize")} onChange={(v) => onSet(key, "fontSize", v)} />
+            <ValueField tip="Font size" icon="font-size" value={Number(style.fontSize)} variables={TEXT_VARIABLES} />
           </div>
           <div className="ht-grid-2">
-            <NumberField tip="Line height" icon="line-height" value={135} suffix="%" onChange={() => {}} />
-            <NumberField tip="Letter spacing" icon="letter-spacing" value={0} suffix="%" onChange={() => {}} />
+            <NumberField tip="Line height" icon="line-height" value={135} unit="%" />
+            <NumberField tip="Letter spacing" icon="letter-spacing" value={0} unit="%" />
           </div>
           <div className="ht-segmented-field ht-hug" role="radiogroup" aria-label="Text alignment">
-            {(["align-left", "align-center", "align-right", "align-justify"] as IconName[]).map((icon, i) => (
-              <button key={icon} type="button" role="radio" className="ht-icon-button" aria-checked={i === 0} aria-label={icon}>
-                <Icon name={icon} />
+            {(["Align left", "Align center", "Align right", "Justify"] as const).map((label, i) => (
+              <button key={label} type="button" role="radio" className="ht-icon-button" aria-checked={i === 0} aria-label={label} data-tip={label}>
+                <Icon name={(["align-left", "align-center", "align-right", "align-justify"] as IconName[])[i]} />
               </button>
             ))}
+          </div>
+          <div className="ht-row">
+            <div className="ht-segmented-field" role="radiogroup" aria-label="Case">
+              {(
+                [
+                  ["As typed", "—"],
+                  ["Upper case", "AG"],
+                  ["Lower case", "ag"],
+                  ["Title case", "Ag"],
+                ] as const
+              ).map(([label, glyph], i) => (
+                <button key={label} type="button" role="radio" className="ht-icon-button" aria-checked={i === 0} aria-label={label} data-tip={label}>
+                  <span className="ht-text-glyph">{glyph}</span>
+                </button>
+              ))}
+            </div>
+            <div className="ht-segmented-field" role="radiogroup" aria-label="Decoration">
+              {(
+                [
+                  ["No decoration", "—", "ht-none"],
+                  ["Underline", "U", "ht-underline"],
+                  ["Strikethrough", "S", "ht-strikethrough"],
+                ] as const
+              ).map(([label, glyph, cls], i) => (
+                <button key={label} type="button" role="radio" className="ht-icon-button" aria-checked={i === 0} aria-label={label} data-tip={label}>
+                  <span className={`ht-text-glyph ${cls}`}>{glyph}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </section>
       )}
@@ -744,15 +881,7 @@ function DesignPanel({ edits, view, selected, root, detached, onDetach, onAttach
           <div className="ht-section-header">
             <h3 className="ht-section-title">Fill</h3>
           </div>
-          <ColorField
-            {...attach}
-            id={vid(isText ? "color" : "fill")}
-            name="Fill"
-            value={String(style[isText ? "color" : "fill"])}
-            changed={changed(isText ? "color" : "fill")}
-            removable={!isText}
-            onChange={(v) => onSet(key, isText ? "color" : "fill", v)}
-          />
+          <ColorField name="Fill" value={String(style[isText ? "color" : "fill"])} removable={!isText} />
         </section>
       )}
 
@@ -761,24 +890,24 @@ function DesignPanel({ edits, view, selected, root, detached, onDetach, onAttach
           <div className="ht-section-header">
             <h3 className="ht-section-title">Stroke</h3>
             {key !== "card" && (
-              <button type="button" className="ht-icon-button" aria-label="Add stroke">
+              <button type="button" className="ht-icon-button" aria-label="Add stroke" data-tip="Add stroke">
                 <Icon name="plus" />
               </button>
             )}
           </div>
           {key === "card" && (
             <>
-              <ColorField {...attach} id={vid("stroke")} name="Stroke" value="#E5E5E4" removable onChange={() => {}} />
+              <ColorField name="Stroke" value="#E5E5E4" removable />
               <div className="ht-row ht-joined">
-                <NumberField tip="Stroke weight" icon="stroke-weight" value={1} onChange={() => {}} />
+                <NumberField tip="Stroke weight" icon="stroke-weight" value={1} />
                 <span className="ht-select-field">
-                  <select className="ht-select" aria-label="Stroke style" defaultValue="solid">
+                  <select className="ht-select" aria-label="Stroke style" value="solid" onChange={() => {}}>
                     <option value="solid">Solid</option>
                     <option value="dashed">Dashed</option>
                   </select>
                 </span>
                 <span className="ht-select-field">
-                  <select className="ht-select" aria-label="Stroke sides" defaultValue="all">
+                  <select className="ht-select" aria-label="Stroke sides" value="all" onChange={() => {}}>
                     <option value="all">All</option>
                   </select>
                 </span>
@@ -791,7 +920,7 @@ function DesignPanel({ edits, view, selected, root, detached, onDetach, onAttach
       <section className="ht-section" role="group" aria-label="Effects">
         <div className="ht-section-header">
           <h3 className="ht-section-title">Effects</h3>
-          <button type="button" className="ht-icon-button" aria-label="Add effect">
+          <button type="button" className="ht-icon-button" aria-label="Add effect" aria-haspopup="listbox" aria-expanded="false">
             <Icon name="plus" />
           </button>
         </div>
@@ -799,7 +928,7 @@ function DesignPanel({ edits, view, selected, root, detached, onDetach, onAttach
           <div className="ht-variable-slot">
             <div className="ht-field ht-variable-chip">
               <Icon name="variable" />
-              <button type="button" className="ht-variable-chip-name" aria-label="Shadow variable">
+              <button type="button" className="ht-variable-chip-name" aria-label="Shadow variable" data-tip="sm: 0 1px 3px, 0 1px 2px">
                 sm
               </button>
               <button type="button" className="ht-icon-button" aria-label="Detach shadow variable" data-tip="Detach variable">
@@ -813,138 +942,45 @@ function DesignPanel({ edits, view, selected, root, detached, onDetach, onAttach
   );
 }
 
-function ChangeList({ changes, onUndo, onDiscard }: { changes: { view: ViewName; key: Key; prop: Prop }[]; onUndo: PanelProps["onUndo"]; onDiscard: () => void }) {
-  const [confirming, setConfirming] = useState(false);
-  return (
-    <div className="ht-changes is-site" role="dialog" aria-label="Changes">
-      <h2 className="ht-changes-title">{changes.length} not applied yet</h2>
-      <ul className="ht-changes-list">
-        {changes.map((c) => (
-          <li key={`${c.view}${c.key}${c.prop}`} className="ht-change">
-            <span>
-              {PROP_TITLES[c.prop]} · {LAYERS[c.key].name}
-              {c.view !== "Desktop" ? ` · ${c.view}` : ""}
-            </span>
-            <button type="button" className="ht-icon-button" aria-label="Undo this change" data-tip="Undo this change" onClick={() => onUndo(c.view, c.key, c.prop)}>
-              <Icon name="undo" />
-            </button>
-          </li>
-        ))}
-      </ul>
-      {confirming ? (
-        <div className="ht-changes-confirm">
-          <p>Discard all {changes.length}?</p>
-          <div className="ht-changes-actions">
-            <button type="button" className="ht-button" onClick={() => setConfirming(false)}>
-              Cancel
-            </button>
-            <button type="button" className="ht-button is-danger" onClick={onDiscard}>
-              Discard
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="ht-changes-actions">
-          <button type="button" className="ht-button" onClick={() => setConfirming(true)}>
-            Discard all
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-type Attachable = { id: string; detached: Set<string>; onDetach: (id: string) => void; onAttach: (id: string) => void };
-
-/** A number: type it, press ↑ or ↓ (with ⇧, by 10), or drag its icon sideways, 1 per 2px. */
-function NumberField({ tip, icon, value, suffix = "", max, changed, onChange }: { tip: string; icon: IconName; value: number; suffix?: string; max?: number; changed?: boolean; onChange: (v: number) => void }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const scrub = useRef<{ x: number; value: number } | null>(null);
-  const clamp = (n: number) => Math.max(0, max === undefined ? n : Math.min(max, n));
-  return (
-    <label className={`ht-field${changed ? " is-changed" : ""}`} data-tip={tip}>
-      <span
-        className="ht-scrub"
-        aria-hidden="true"
-        onPointerDown={(e) => {
-          e.preventDefault();
-          e.currentTarget.setPointerCapture(e.pointerId);
-          scrub.current = { x: e.clientX, value };
-        }}
-        onPointerMove={(e) => scrub.current && onChange(clamp(Math.round(scrub.current.value + (e.clientX - scrub.current.x) / 2)))}
-        onPointerUp={() => (scrub.current = null)}
-      >
-        <Icon name={icon} />
-      </span>
-      <input
-        type="text"
-        className="ht-input ht-number"
-        aria-label={tip}
-        spellCheck={false}
-        value={draft ?? `${value}${suffix}`}
-        onChange={(e) => setDraft(e.target.value)}
-        onFocus={(e) => e.target.select()}
-        onBlur={() => {
-          if (draft !== null) {
-            const n = parseFloat(draft);
-            if (Number.isFinite(n)) onChange(clamp(n));
-          }
-          setDraft(null);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-          if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-            e.preventDefault();
-            setDraft(null);
-            onChange(clamp(value + (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 10 : 1)));
-          }
-        }}
-      />
-      <span className="ht-scrub-grip" aria-hidden="true">
-        <span className="ht-grip" />
-      </span>
-    </label>
-  );
-}
-
-/** A value with Variables: the Variable it equals, by name, to pick another or detach it; detached, a number. */
-function ValueField({
-  tip,
-  icon,
-  value,
-  variables,
-  changed,
-  onChange,
-  ...attach
-}: Attachable & { tip: string; icon: IconName; value: number; variables: { name: string; value: number }[]; changed?: boolean; onChange: (v: number) => void }) {
+/** Opens a list on the panel; anything picked in it, or a click outside, closes it, and nothing changes. */
+function usePopover() {
   const [open, setOpen] = useState(false);
-  const bound = !attach.detached.has(attach.id) ? variables.find((v) => v.value === value) : undefined;
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const root = ref.current?.getRootNode() as ShadowRoot | undefined;
+    const close = (e: Event) => !ref.current?.contains(e.composedPath()[0] as Node) && setOpen(false);
+    root?.addEventListener("pointerdown", close, true);
+    return () => root?.removeEventListener("pointerdown", close, true);
+  }, [open]);
+  return { open, setOpen, ref };
+}
+
+/** A value bound to a Variable, by name: click it for the others; detached, a number. Neither is kept. */
+function ValueField({ tip, icon, value, variables, after }: { tip: string; icon: IconName; value: number; variables: { name: string; value: number }[]; after?: React.ReactNode }) {
+  const pop = usePopover();
+  const bound = variables.find((v) => v.value === value);
+  if (!bound)
+    return (
+      <div className="ht-variable-slot">
+        <NumberField tip={tip} icon={icon} value={value} after={after} />
+      </div>
+    );
   return (
-    <div className="ht-variable-slot" style={{ position: "relative" }}>
-      {bound ? (
-        <div className={`ht-field ht-variable-chip${changed ? " is-changed" : ""}`}>
-          <Icon name={icon} />
-          <button type="button" className="ht-variable-chip-name" aria-label={`${tip} variable`} aria-haspopup="dialog" data-tip={`${bound.name}: ${bound.value}px`} onClick={() => setOpen((o) => !o)}>
-            {bound.name}
-          </button>
-          <button type="button" className="ht-icon-button" aria-label={`Detach ${tip.toLowerCase()} variable`} data-tip="Detach variable" onClick={() => attach.onDetach(attach.id)}>
-            <Icon name="detach" />
-          </button>
-        </div>
-      ) : (
-        <NumberField tip={tip} icon={icon} value={value} changed={changed} onChange={onChange} />
-      )}
-      {open && (
+    <div ref={pop.ref} className="ht-variable-slot" style={{ position: "relative" }}>
+      <div className="ht-field ht-variable-chip">
+        <Icon name={icon} />
+        <button type="button" className="ht-variable-chip-name" aria-label={`${tip} variable`} aria-haspopup="dialog" aria-expanded={pop.open} data-tip={`${bound.name}: ${bound.value}px`} onClick={() => pop.setOpen((o) => !o)}>
+          {bound.name}
+        </button>
+        <button type="button" className="ht-icon-button" aria-label={`Detach ${tip.toLowerCase()} variable`} data-tip="Detach variable">
+          <Icon name="detach" />
+        </button>
+      </div>
+      {pop.open && (
         <div className="ht-pop" style={{ top: 28, left: 0, width: 160 }}>
           {variables.map((v) => (
-            <button
-              key={v.name}
-              type="button"
-              onClick={() => {
-                onChange(v.value);
-                setOpen(false);
-              }}
-            >
+            <button key={v.name} type="button" aria-current={v.name === bound.name} onClick={() => pop.setOpen(false)}>
               {v.name}
               <span className="ht-pop-value">{v.value}</span>
             </button>
@@ -955,7 +991,7 @@ function ValueField({
   );
 }
 
-function PaddingFields({ value, initial, onChange, ...attach }: Attachable & { value: number[]; initial: boolean; onChange: (v: number[]) => void }) {
+function PaddingFields({ value }: { value: number[] }) {
   const sides: [string, IconName][] = [
     ["Padding top", "padding-top"],
     ["Padding right", "padding-right"],
@@ -965,77 +1001,73 @@ function PaddingFields({ value, initial, onChange, ...attach }: Attachable & { v
   return (
     <div className="ht-grid-2" role="group" aria-label="Padding">
       {sides.map(([tip, icon], i) => (
-        <ValueField key={tip} {...attach} id={`${attach.id}${i}`} tip={tip} icon={icon} value={value[i]} variables={SPACING_VARIABLES} changed={initial} onChange={(v) => onChange(value.map((n, j) => (j === i ? v : n)))} />
+        <ValueField key={tip} tip={tip} icon={icon} value={value[i]} variables={SPACING_VARIABLES} />
       ))}
     </div>
   );
 }
 
-/** A color: its swatch opens the project's colors; its value is the Variable it equals, or its hex, typed. */
-function ColorField({ name, value, changed, removable, onChange, ...attach }: Attachable & { name: string; value: string; changed?: boolean; removable?: boolean; onChange: (v: string) => void }) {
-  const [open, setOpen] = useState(false);
+/** A color: its swatch opens the project's colors; its value is the Variable it equals, or its hex, typed in and taken back. */
+function ColorField({ name, value, removable }: { name: string; value: string; removable?: boolean }) {
+  const pop = usePopover();
   const [draft, setDraft] = useState<string | null>(null);
-  const bound = !attach.detached.has(attach.id) ? COLOR_VARIABLES.find((v) => v.value.toUpperCase() === value.toUpperCase()) : undefined;
-  return (
-    <div className="ht-row ht-paint-row" style={{ position: "relative" }}>
-      <div className="ht-color-row">
-        <div className={`ht-field ht-color-field${bound ? "" : " is-joined"}${changed ? " is-changed" : ""}`}>
-          <button type="button" className="ht-swatch ht-swatch-button" aria-label={`${name} color picker`} aria-haspopup="dialog" style={{ ["--ht-swatch" as string]: value }} onClick={() => setOpen((o) => !o)} />
-          {bound ? (
-            <>
-              <button type="button" className="ht-variable-chip-name" aria-label={`${name} color variable`} aria-haspopup="dialog" data-tip={`${bound.name}: ${bound.value}`} onClick={() => setOpen((o) => !o)}>
-                {bound.name}
-              </button>
-              <button type="button" className="ht-icon-button" aria-label={`Detach ${name.toLowerCase()} color variable`} data-tip="Detach variable" onClick={() => attach.onDetach(attach.id)}>
-                <Icon name="detach" />
-              </button>
-            </>
-          ) : (
-            <input
-              type="text"
-              className="ht-input"
-              aria-label={`${name} hex`}
-              spellCheck={false}
-              value={draft ?? value.replace("#", "").toUpperCase()}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={() => {
-                if (draft !== null && /^[0-9a-f]{6}$/i.test(draft)) onChange(`#${draft.toUpperCase()}`);
-                setDraft(null);
-              }}
-              onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-            />
-          )}
-        </div>
-        {!bound && (
-          <label className={`ht-field ht-color-opacity${changed ? " is-changed" : ""}`}>
-            <input type="text" className="ht-input ht-number" aria-label={`${name} opacity`} readOnly value="100%" />
-          </label>
+  const bound = COLOR_VARIABLES.find((v) => v.value.toUpperCase() === value.toUpperCase());
+  const row = (
+    <div className="ht-color-row">
+      <div className={`ht-field ht-color-field${bound ? "" : " is-joined"}`}>
+        <button type="button" className="ht-swatch ht-swatch-button" aria-label={`${name} color picker`} aria-haspopup="dialog" aria-expanded={pop.open} style={{ ["--ht-swatch" as string]: value }} onClick={() => pop.setOpen((o) => !o)} />
+        {bound ? (
+          <>
+            <button type="button" className="ht-variable-chip-name" aria-label={`${name} color variable`} aria-haspopup="dialog" data-tip={`${bound.name}: ${bound.value}`} onClick={() => pop.setOpen((o) => !o)}>
+              {bound.name}
+            </button>
+            <button type="button" className="ht-icon-button" aria-label={`Detach ${name.toLowerCase()} color variable`} data-tip="Detach variable">
+              <Icon name="detach" />
+            </button>
+          </>
+        ) : (
+          <input
+            type="text"
+            className="ht-input"
+            aria-label={`${name} hex`}
+            spellCheck={false}
+            value={draft ?? value.replace("#", "").toUpperCase()}
+            onFocus={(e) => e.currentTarget.select()}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => setDraft(null)}
+            onKeyDown={(e) => (e.key === "Enter" || e.key === "Escape") && e.currentTarget.blur()}
+          />
         )}
       </div>
-      {removable && (
-        <button type="button" className="ht-icon-button" aria-label={`Remove ${name.toLowerCase()}`} data-tip={`Remove ${name.toLowerCase()}`}>
-          <Icon name="minus" />
+      {!bound && <NumberField tip={`${name} opacity`} className="ht-color-opacity" value={100} unit="%" max={100} rolls={false} />}
+    </div>
+  );
+  const picker = pop.open && (
+    <div className="ht-pop" style={{ top: 28, left: 0, right: 0 }}>
+      {COLOR_VARIABLES.map((v) => (
+        <button key={v.name} type="button" aria-current={v.value.toUpperCase() === value.toUpperCase()} onClick={() => pop.setOpen(false)}>
+          <span className="ht-pop-swatch" style={{ background: v.value }} />
+          {v.name}
+          <span className="ht-pop-value">{v.value}</span>
         </button>
-      )}
-      {open && (
-        <div className="ht-pop" style={{ top: 28, left: 0, right: 0 }}>
-          {COLOR_VARIABLES.map((v) => (
-            <button
-              key={v.name}
-              type="button"
-              onClick={() => {
-                attach.onAttach(attach.id);
-                onChange(v.value);
-                setOpen(false);
-              }}
-            >
-              <span className="ht-pop-swatch" style={{ background: v.value }} />
-              {v.name}
-              <span className="ht-pop-value">{v.value}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      ))}
+    </div>
+  );
+  // A text's fill is its color row alone; a frame's paint has a remove button after it.
+  if (!removable)
+    return (
+      <div ref={pop.ref} style={{ position: "relative" }}>
+        {row}
+        {picker}
+      </div>
+    );
+  return (
+    <div ref={pop.ref} className="ht-row ht-paint-row" style={{ position: "relative" }}>
+      {row}
+      <button type="button" className="ht-icon-button" aria-label={`Remove ${name.toLowerCase()}`} data-tip={`Remove ${name.toLowerCase()}`}>
+        <Icon name="minus" />
+      </button>
+      {picker}
     </div>
   );
 }

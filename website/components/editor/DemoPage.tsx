@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { CARDS, styleIn, type Edits, type Key, type ViewName } from "./model";
+import { CARDS, styleOf, type Key, type ViewName } from "./model";
 
 export type Target = { key: Key; index?: number };
 export type Selection = Target | null;
@@ -12,17 +12,16 @@ export const layerId = (t: Target) => `${t.key}${t.index === undefined ? "" : `-
 type Props = {
   view: ViewName;
   width: number;
-  edits: Edits;
   onPick: (path: Target[], view: ViewName) => void;
   onHover: (target: Target | null) => void;
 };
 
 /**
- * The page on one view of the canvas, at the view's width, drawn as the layers' styles in that view say. A pointer
+ * The page on one view of the canvas, at the view's width, drawn as the layers' styles say. A pointer
  * down reports the layers under it, outermost first, for the editor to pick from as Figma does.
  */
-export function DemoPage({ view, width, edits, onPick, onHover }: Props) {
-  const s = (key: Key) => styleIn(edits, view, key);
+export function DemoPage({ view, width, onPick, onHover }: Props) {
+  const s = styleOf;
   const phone = width < 768;
   const narrow = width < 1280;
   const pad = (key: Key, factor = 1) => (s(key).padding as number[]).map((n) => `${Math.round(n * factor)}px`).join(" ");

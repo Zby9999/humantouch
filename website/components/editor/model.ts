@@ -1,6 +1,6 @@
 /**
  * The page on the hero's canvas, as layers: a small made-up landing page. The three cards are instances of one Card
- * component, so a change to one is a change to all three, as in Human Touch.
+ * component. In the hero it is only looked at: the Design panel takes nothing (designer, 2026-11-11).
  */
 
 export type Kind = "stack" | "grid" | "frame" | "text";
@@ -123,42 +123,5 @@ export const TEXT_VARIABLES = [
   { name: "5xl", value: 48 },
 ];
 
-/** Edits: made in the Desktop view they hold at every width; in the Tablet or Phone view, only at its breakpoint. */
-export type Edits = Record<ViewName, Partial<Record<Key, Style>>>;
-
-export const NO_EDITS: Edits = { Desktop: {}, Tablet: {}, Phone: {} };
-
-export function styleIn(edits: Edits, view: ViewName, key: Key): Style {
-  return { ...INITIAL[key], ...edits.Desktop[key], ...(view === "Desktop" ? {} : edits[view][key]) };
-}
-
-const same = (a: Value | undefined, b: Value | undefined) => JSON.stringify(a).toUpperCase() === JSON.stringify(b).toUpperCase();
-
-/** The changes, one per property changed in a view, as the change list names them. */
-export function listChanges(edits: Edits): { view: ViewName; key: Key; prop: Prop }[] {
-  const list: { view: ViewName; key: Key; prop: Prop }[] = [];
-  for (const view of Object.keys(edits) as ViewName[]) {
-    for (const key of Object.keys(edits[view]) as Key[]) {
-      for (const [prop, value] of Object.entries(edits[view][key] ?? {})) {
-        const before = view === "Desktop" ? INITIAL[key][prop as Prop] : { ...INITIAL[key], ...edits.Desktop[key] }[prop as Prop];
-        if (!same(value, before)) list.push({ view, key, prop: prop as Prop });
-      }
-    }
-  }
-  return list;
-}
-
-export function changedIn(edits: Edits, view: ViewName, key: Key, prop: Prop): boolean {
-  return !same(styleIn(edits, view, key)[prop], INITIAL[key][prop]);
-}
-
-export const PROP_TITLES: Record<Prop, string> = {
-  fill: "Fill",
-  radius: "Corner radius",
-  gap: "Gap",
-  padding: "Padding",
-  fontSize: "Font size",
-  color: "Fill",
-  opacity: "Opacity",
-  direction: "Direction",
-};
+/** A layer's style: the same in every view, as nothing on the site's canvas is changed. */
+export const styleOf = (key: Key): Style => INITIAL[key];
