@@ -6,7 +6,7 @@
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import { asPage, DELETED_ATTR, hiddenByEdit, LAYER_ID_ATTR, MADE_ATTR, ORIGINAL_TEXT_ATTR, WRAP_ATTR } from "./canvas-style";
 import { FROZEN } from "./freezer";
-import { containsWithin, elementAt, elementsAt, flatParent, mayHoldShadowRoots, shownChildren } from "./shadow-roots";
+import { flatParent, hitAt, mayHoldShadowRoots, shownChildren } from "./shadow-roots";
 import { CHAIN_ATTR, type UsageLevel } from "./usage-chain";
 
 export type LayerKind = "stack" | "grid" | "frame" | "text" | "image" | "still" | "locked";
@@ -136,7 +136,7 @@ export function buildLayerTree(doc: Document): LayerTree {
     } else if (LEAVES.has(el.localName)) {
       set({ name: "Frame" });
     } else if (isText(el, view, shadows) && !drawsBoxAsPage(el, style)) {
-      set({ kind: "text", name: textName(shadows && showsOtherNodes(el) ? wordsOf(textIn(el, view, shadows)) : el.textContent!) });
+      set({ kind: "text", name: textName(shadows && showsOtherNodes(el) ? runWords(textIn(el, view, shadows)) : el.textContent!) });
     } else {
       const text = isText(el, view, shadows);
       // Text that draws a box around it, as a button does, is a Frame (or a Stack, a Grid) of one text layer: all its words, its inline fragments with them.
@@ -187,14 +187,7 @@ export function buildLayerTree(doc: Document): LayerTree {
     root,
     layerAt(x, y, skip) {
       let layer: Layer | undefined;
-      const hit = shadows
-        ? skip
-          ? elementsAt(doc, x, y).find((e) => !containsWithin(skip, e))
-          : elementAt(doc, x, y)
-        : skip
-          ? doc.elementsFromPoint(x, y).find((e) => !skip.contains(e))
-          : doc.elementFromPoint(x, y);
-      for (let e = hit ?? null; e && !layer; e = up(e)) layer = layers.get(e);
+      for (let e = hitAt(doc, x, y, skip); e && !layer; e = up(e)) layer = layers.get(e);
       return layer ? runAt(layer, x, y, rangeOf) : null;
     },
     layerOf(node) {
@@ -487,7 +480,7 @@ function showsOtherNodes(el: Element): boolean {
 }
 
 /** The words of a run of text. */
-function wordsOf(run: Text[]): string {
+function runWords(run: Text[]): string {
   return run.map((node) => node.data).join("");
 }
 

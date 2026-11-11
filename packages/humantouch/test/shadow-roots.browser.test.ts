@@ -384,6 +384,26 @@ describe("the layers in an open shadow root (ticket 136)", () => {
     expect(left.kind).toBe("none");
     expect(getComputedStyle(host).marginTop).toBe("2px");
   });
+
+  test("slotted, a layer's values come from the page's rules, over the shadow root's `::slotted()`; it is skipped with the layer it is slotted in", async () => {
+    const page = `<!DOCTYPE html><style>body { margin: 0 } p { color: rgb(9, 9, 9) }</style><body><div id="host"><p id="slotted">Slotted</p></div></body>`;
+    const live = livePage(page, (doc) => {
+      const shadow = doc.getElementById("host")!.attachShadow({ mode: "open" });
+      shadow.innerHTML = `<style>.box ::slotted(p) { color: red; font-size: 30px } slot[name=x]::slotted(p) { letter-spacing: 9px } div { display: flex; padding: 20px }</style><div class="box" id="box"><slot></slot></div>`;
+    });
+    const canvas = await freeze(live, iframe());
+    const doc = canvas.document;
+    const slotted = doc.getElementById("slotted")!;
+    const [color, size, spacing] = ["color", "font-size", "letter-spacing"].map((property) => sourcesOf(slotted, [property])[0]);
+    expect(color.selector).toBe("p");
+    expect([size.selector, size.declaration]).toEqual([".box ::slotted(p)", "font-size: 30px"]);
+    expect(spacing.kind).toBe("none");
+    // In the layers' tree it is in the box it is slotted in; past the box, what is hit is the host.
+    const tree = buildLayerTree(doc);
+    const box = inShadow(doc, "box")!;
+    expect(tree.layerOf(slotted)!.parent!.el).toBe(box);
+    expect(tree.layerAt(...middleOf(slotted), box)!.el.id).toBe("host");
+  });
 });
 
 describe("a page with no shadow root", () => {

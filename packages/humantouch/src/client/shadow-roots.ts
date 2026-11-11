@@ -7,6 +7,12 @@
  * (`<template shadowrootmode="open">`), which the parser makes a shadow root
  * again when the canvas is put back. A closed shadow root cannot be read: its
  * host shows on the canvas as one with none would.
+ *
+ * The layers in an open shadow root are layers as any other (ticket 136): the
+ * layers' tree reads what each host shows, its shadow root's nodes and those
+ * slotted in them (`shownChildren`, `flatParent`), a point is hit into shadow
+ * roots (`hitAt`), and each shadow root on the canvas is given the canvas's
+ * own styles, which the document's do not reach (`styleShadowRoots`).
  */
 
 /**
@@ -79,21 +85,30 @@ export function flatParent(node: Node): Element | null {
   return node.parentElement ?? (node.parentNode as ShadowRoot | null)?.host ?? null;
 }
 
-/** Whether `node` is `el`, or in it: in an open shadow root in it, or one in that, too. */
-export function containsWithin(el: Node, node: Node): boolean {
-  for (let at: Node | null = node; at; at = (at.getRootNode() as ShadowRoot).host ?? null) if (el.contains(at)) return true;
+/** Whether `node` is `el`, or what it shows: in it, slotted in a shadow root in it, in an open shadow root in it, or one in that. */
+function showsIn(el: Node, node: Node): boolean {
+  for (let at: Node | null = node; at; at = flatParent(at)) if (at === el) return true;
   return false;
 }
 
 /**
- * The topmost element at a point of `doc` (its viewport's px), as
- * `elementFromPoint` finds it, then on into the open shadow roots it hosts: the
- * deepest one there, which `elementFromPoint` gives as the host (ticket 136).
- * In a document that holds none, what `elementFromPoint` finds.
+ * The topmost element at a point of `doc` (its viewport's px), the deepest in
+ * the open shadow roots there (ticket 136); with `skip`, past it and what it
+ * shows. In a document that holds none, what `elementFromPoint` finds, or with
+ * `skip`, the first `elementsFromPoint` lists that is not in it.
  */
-export function elementAt(doc: Document, x: number, y: number): Element | null {
+export function hitAt(doc: Document, x: number, y: number, skip?: Node | null): Element | null {
+  if (!mayHoldShadowRoots(doc)) return skip ? (doc.elementsFromPoint(x, y).find((e) => !skip.contains(e)) ?? null) : doc.elementFromPoint(x, y);
+  return skip ? (elementsAt(doc, x, y).find((e) => !showsIn(skip, e)) ?? null) : elementAt(doc, x, y);
+}
+
+/**
+ * The topmost element at a point of `doc`, as `elementFromPoint` finds it,
+ * then on into the open shadow roots it hosts: the deepest one there, which
+ * `elementFromPoint` gives as the host.
+ */
+function elementAt(doc: Document, x: number, y: number): Element | null {
   let el = doc.elementFromPoint(x, y);
-  if (!mayHoldShadowRoots(doc)) return el;
   while (el?.shadowRoot) {
     const inner = el.shadowRoot.elementFromPoint(x, y);
     if (!inner || inner === el || inner.getRootNode() !== el.shadowRoot) break;
@@ -105,10 +120,9 @@ export function elementAt(doc: Document, x: number, y: number): Element | null {
 /**
  * Every element at a point of `doc`, topmost first, as `elementsFromPoint`
  * lists them, with those in the open shadow roots among them each just above
- * its host. In a document that holds none, what `elementsFromPoint` lists.
+ * its host.
  */
-export function elementsAt(doc: Document, x: number, y: number): Element[] {
-  if (!mayHoldShadowRoots(doc)) return doc.elementsFromPoint(x, y);
+function elementsAt(doc: Document, x: number, y: number): Element[] {
   const listed = new Set<Element>();
   const visit = (root: Document | ShadowRoot) => {
     for (const el of root.elementsFromPoint(x, y)) {
@@ -147,13 +161,18 @@ export function isCanvasSheet(sheet: CSSStyleSheet): boolean {
 }
 
 /**
- * Gives every open shadow root in `doc` that has none yet `css`, the canvas's
- * own styles, which the document's do not reach (ticket 136): as an adopted
- * stylesheet, last, so no node is added among the page's, and none is copied
- * or written out with the canvas. In a document that holds none, nothing.
+ * Gives every open shadow root in `root`, a document or an element of one,
+ * that has none yet `css`, the canvas's own styles, which the document's do
+ * not reach (ticket 136): as an adopted stylesheet, last, so no node is added
+ * among the page's, and none is copied or written out with the canvas, which
+ * is why one copied in has to be given them again. In a document that holds
+ * none, nothing.
  */
-export function styleShadowRoots(doc: Document, css: string) {
-  const shadows = shadowRootsIn(doc).filter((shadow) => !shadow.adoptedStyleSheets.some(isCanvasSheet));
+export function styleShadowRoots(root: Document | Element, css: string) {
+  const doc = root.ownerDocument ?? (root as Document);
+  if (!mayHoldShadowRoots(doc)) return;
+  const within = elementsWithin(root.nodeType === Node.DOCUMENT_NODE ? doc.documentElement : (root as Element));
+  const shadows = within.flatMap((el) => (el.shadowRoot && !el.shadowRoot.adoptedStyleSheets.some(isCanvasSheet) ? [el.shadowRoot] : []));
   if (!shadows.length) return;
   const sheet = new doc.defaultView!.CSSStyleSheet();
   sheet.replaceSync(css);

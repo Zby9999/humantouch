@@ -296,8 +296,13 @@ export function editable(doc: Document) {
   styles.setAttribute(CANVAS_STYLES_ATTR, "");
   doc.head.append(styles);
   // The canvas's styles do not reach into shadow roots: each of them is given them too (ticket 136).
-  styleShadowRoots(doc, CANVAS_STYLES);
+  editableShadowRoots(doc);
   orderEditStyles(doc);
+}
+
+/** Gives the shadow roots in `root`, of a document made `editable`, the canvas's styles, which a copy of them leaves out (`styleShadowRoots`). */
+export function editableShadowRoots(root: Document | Element) {
+  styleShadowRoots(root, CANVAS_STYLES);
 }
 
 /** `doc`, made `editable`, as an HTML document: what `editable` added left out. */
@@ -328,7 +333,7 @@ export function copyCanvas(canvas: Canvas, iframe: HTMLIFrameElement, width: num
   syncEditStyles(copy);
   doc.replaceChild(copy, doc.documentElement);
   // Its shadow roots come without the canvas's styles they were given (`editable`): given them again.
-  styleShadowRoots(doc, CANVAS_STYLES);
+  editableShadowRoots(doc);
   // What lives outside the markup: the pixels of stills, the options chosen.
   const froms = elementsWithin(from.documentElement);
   const copies = elementsWithin(copy);
