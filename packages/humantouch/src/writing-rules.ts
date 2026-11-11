@@ -74,7 +74,8 @@ const HOW_TO_WRITE: HowToWrite[] = [
   },
   {
     name: "A rule in no CSS layer",
-    calledFor: (change) => !!change.sources?.some((source) => source.kind === "rule" && source.layer === null),
+    // Not for a shadow root's own rule (ticket 137): no utility class of the page's reaches in to be beaten by it.
+    calledFor: (change) => !!change.sources?.some((source) => source.kind === "rule" && source.layer === null && !source.shadowRoot),
     text:
       "it beats every class in a CSS layer, whatever their specificity. Tailwind v4 puts its utilities in one, so a utility class added over the rule does not show: " +
       "one that overrides it for this layer only takes its important form (`bg-[#2563EB]!`, `rounded-lg!`).",
