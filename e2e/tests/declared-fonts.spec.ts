@@ -35,6 +35,8 @@ test("the weight menu lists every weight the project declares for a web font, no
 
   await expect(font).toHaveValue("Space Grotesk");
   await expect(weight).toHaveValue("500");
+  // The project's fonts: not next/font's fallback for Space Grotesk, the system's Arial under another name (ticket 149).
+  await expect(font.getByRole("option")).toHaveText(["Georgia", "Space Grotesk"]);
   // Light and Bold, declared but used by no text, are not loaded on the canvas: still in the menu, and can be chosen.
   for (const view of views(page)) await expect.poll(() => title(view, "300")).toEqual({ weight: "500", face: "unloaded" });
   await expect(weight.getByRole("option")).toHaveText(["Light", "Medium", "Bold"]);
