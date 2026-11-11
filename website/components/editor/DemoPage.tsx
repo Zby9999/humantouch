@@ -23,6 +23,8 @@ type Props = {
    * `open` goes from 0 to 1, the layers under it moving down out of its way.
    */
   inserted?: { node: ReactNode; height: number; open: number };
+  /** More room under the hero's button, at Desktop: in the site's hero, so the cover starts below the window's edge. */
+  roomBelow?: number;
 };
 
 const SERIF = "var(--font-instrument-serif), Georgia, serif";
@@ -37,7 +39,7 @@ const INSERTED_GAP = 32;
  * Tablet and Phone widths, as its breakpoints say. A pointer down reports the layers under it, outermost first, for the
  * editor to pick from as Figma does.
  */
-export function DemoPage({ view, width, onPick, onHover, styles, hug = false, inserted }: Props) {
+export function DemoPage({ view, width, onPick, onHover, styles, hug = false, inserted, roomBelow = 0 }: Props) {
   const s = (key: Key): Style => ({ ...styleOf(key), ...styles?.[key] });
   const phone = width < 768;
   const tablet = !phone && width < 1280;
@@ -97,7 +99,7 @@ export function DemoPage({ view, width, onPick, onHover, styles, hug = false, in
           {layer(
             HE,
             [P],
-            { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: at(32, 28, 20), padding: `${at(160, 112, 72)}px 0 ${at(120, 88, 56)}px` },
+            { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: at(32, 28, 20), padding: `${at(160, 112, 72)}px 0 ${at(120 + roomBelow, 88, 56)}px` },
             <>
               {layer({ key: "issue" }, [P, HE], { fontSize: 12, fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase", color: color("issue") }, "Issue 12 — Spring 2026", "p")}
               {layer(
