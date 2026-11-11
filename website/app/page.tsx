@@ -5,7 +5,6 @@ import { CanvasDemo } from "@/components/demos/CanvasDemo";
 import { DesignPanelDemo } from "@/components/demos/DesignPanelDemo";
 import { ApplyDemo } from "@/components/demos/ApplyDemo";
 import { MiniVideo } from "@/components/demos/MiniVideo";
-import { OffCanvasMini } from "@/components/demos/Minis";
 import { installPrompt } from "@/lib/readme";
 import { UPDATES } from "@/lib/updates";
 
@@ -64,8 +63,8 @@ export default function Home() {
         <Mini visual="top" title="Say what the panel can’t" body="Write on a layer what your Agent should achieve there.">
           <MiniVideo src="/videos/brief.mp4" poster="/videos/brief.jpg" />
         </Mini>
-        <Mini visual="bottom" fill="bg-[#23292D]" title="Set layers aside" body="Drag a layer off the canvas, and it waits there till you need it.">
-          <OffCanvasMini />
+        <Mini visual="bottom" title="Set layers aside" body="Drag a layer off the canvas, and it waits there till you need it.">
+          <MiniVideo src="/videos/off-canvas.mp4" poster="/videos/off-canvas.jpg" />
         </Mini>
         <Mini visual="top" title="Your project’s values" body="Your CSS variables and Tailwind theme, right in the Design panel.">
           <MiniVideo src="/videos/variables.mp4" poster="/videos/variables.jpg" />

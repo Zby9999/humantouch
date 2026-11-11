@@ -1,4 +1,3 @@
-import { loadFont } from "@remotion/google-fonts/Geist";
 import { CameraMotionBlur } from "@remotion/motion-blur";
 import type React from "react";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -6,6 +5,7 @@ import { AbsoluteFill, continueRender, delayRender, Easing, interpolate, useCurr
 import { DemoPage } from "@/components/editor/DemoPage";
 import { EDITOR_CSS } from "@/components/editor/editor-css.generated";
 import { Icon } from "@/components/editor/Icon";
+import { FONT_VARS, geist as fontFamily } from "./fonts";
 
 /*
  * The Brief card's video (designer, 2026-11-11, option B): a 3D close-up of the canvas. On Acme's Phone view the button
@@ -14,8 +14,6 @@ import { Icon } from "@/components/editor/Icon";
  * Shallow depth of field (sharp round the middle, where the camera looks) and motion blur.
  * Render from website/: `npx remotion render Brief public/videos/brief.mp4`.
  */
-
-const { fontFamily } = loadFont("normal", { weights: ["400", "500", "600"], subsets: ["latin"] });
 
 const BACKDROP = "#a0a19f";
 const EASE_IN_OUT = Easing.bezier(0.65, 0, 0.35, 1);
@@ -132,7 +130,7 @@ const Stage: React.FC<{ frame: number }> = ({ frame }) => {
           transform: `translate(${width / 2}px, ${height / 2}px) rotateX(30deg) rotateZ(${interpolate(frame, [0, 210], [-9, -6])}deg) scale(${zoom / CLOSEST})`,
           ["--ht-icon-size" as string]: "13.5px",
           ["--ht-icon-stroke" as string]: "1.05px",
-          ["--font-geist" as string]: fontFamily,
+          ...FONT_VARS,
         }}
       >
         <div style={{ position: "absolute", left: -look.x, top: -look.y, zoom: CLOSEST }}>
