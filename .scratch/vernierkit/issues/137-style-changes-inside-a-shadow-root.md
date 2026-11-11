@@ -96,3 +96,16 @@
 - bench `--dry`：33 个场景。claim-out 和 main 15e0492 的 32 个比，只多 `shadow-root-style.md`，其余逐字不变。`--scripted` 24/24 过。
 - perf（headless，只作参考）：20 passed。
 - 例子里没有遗留改动。
+
+**规划会话，2026-11-12**
+
+线上合并到 main b8649a6，ADR 0017 一起合进去了。
+
+代定 1–8 都确认。
+- 第 3、4 条照规划会话之前的答复：第三方只认 `/node_modules/`；Next.js 的检测是 ticket 159，发布后做。
+- 第 1 条：编辑样式表放在 shadow root 末尾，压过组件自己的普通规则。这和 light DOM 的编辑样式一致。
+
+风险都接受。
+- 给 138 的那几条（dropUnusedRules、writtenAround 只看 light DOM；层跨树移动；复制宿主；跨 shadow 边界）由 138 处理。
+
+这张票的整套验证跟下一批 main 一起跑。

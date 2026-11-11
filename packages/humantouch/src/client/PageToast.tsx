@@ -6,10 +6,12 @@ import { TOAST_MS, useToastTime } from "./Toast";
  * What the page did as the code changed in edit mode, with no claim (ticket
  * 78): `updated`, the canvas, with no changes on it, was frozen afresh;
  * `changed`, the page changed since the canvas, with changes on it, was
- * frozen. `key` tells a new one from the last.
+ * frozen. `since`: edit mode came back to a round's canvas, and the page's
+ * structure changed since the page it reflects (ticket 141). `key` tells a
+ * new one from the last.
  */
 export interface PageToastMessage {
-  kind: "updated" | "changed";
+  kind: "updated" | "changed" | "since";
   key: number;
 }
 
@@ -17,7 +19,7 @@ export interface PageToastMessage {
 export const PAGE_CHANGED_TOAST_MS = 8000;
 
 /** What the bench and the tests find each toast by (`data-ht-notice`), whatever its words. */
-export const PAGE_TOAST_NOTICES = { updated: "canvas-updated", changed: "page-changed" } as const;
+export const PAGE_TOAST_NOTICES = { updated: "canvas-updated", changed: "page-changed", since: "page-changed-since-round" } as const;
 
 interface Props {
   message: PageToastMessage | null;
@@ -38,7 +40,7 @@ export function PageToast({ message, changes, onUpdate }: Props) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const { shown, fading } = useToastTime(message, message?.kind === "changed" ? PAGE_CHANGED_TOAST_MS : TOAST_MS, hovered || focused || confirming);
+  const { shown, fading } = useToastTime(message, message?.kind === "updated" ? TOAST_MS : PAGE_CHANGED_TOAST_MS, hovered || focused || confirming);
   // A new one asks nothing yet; one gone takes what it held with it, as the pointer leaves nothing that is gone.
   useEffect(() => setConfirming(false), [message]);
   useEffect(() => {
@@ -86,7 +88,14 @@ export function PageToast({ message, changes, onUpdate }: Props) {
             </>
           ) : (
             <>
-              <span key={shown.key}>The page has changed since this canvas was frozen</span>
+              {shown.kind === "since" ? (
+                // Wrapped: three things to say (ticket 141).
+                <span key={shown.key} class="is-wrapped">
+                  The page changed after this round began. The canvas still shows it as it was then: to see the new code, have the Agent apply your changes, or discard them.
+                </span>
+              ) : (
+                <span key={shown.key}>The page has changed since this canvas was frozen</span>
+              )}
               <button ref={update} type="button" class="ht-button" onClick={() => ask(true)}>
                 Update canvas
               </button>

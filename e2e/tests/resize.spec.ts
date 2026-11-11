@@ -112,6 +112,9 @@ test("a corner dragged resizes both ways: Hug becomes Fixed, the panel says so, 
   // Its Stack, centered down the hero, places it: taller, it is laid out a little higher.
   expect(during).toMatchObject({ x: before.x, width: Math.round(before.width + 40), height: Math.round(before.height + 10) });
   await expect(sizeLabel(page)).toHaveText(`${Math.round(before.width + 40)} × ${Math.round(before.height + 10)}`);
+  // The Design panel follows each step as it is dragged, though the rest of the editor waits for it to be let go (ticket 153).
+  await expect(field(page, "Width")).toHaveValue(String(Math.round(before.width + 40)));
+  await expect(field(page, "Height")).toHaveValue(String(Math.round(before.height + 10)));
   // The selection stays on it, its handles with it.
   await expect(page.locator('.ht-selection[data-view="Desktop"]')).not.toHaveAttribute("data-hidden");
   await page.mouse.up();

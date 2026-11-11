@@ -4,6 +4,7 @@
  * the layers off the canvas, which belong to no round (ADR 0009).
  * The local service and the command line both work through this module.
  */
+import type { PagePrint } from "./client/page-print";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -29,6 +30,8 @@ export interface HumanTouchFolder {
   offCanvas: string;
   /** What a page noted of the other usages of the claimed round's changes for one usage alone (ticket 82): the claimed round's, gone as it ends. */
   otherUsages: string;
+  /** The page the canvas reflects, printed (ticket 141): gone as a round ends, the code then the Agent's. */
+  page: string;
 }
 
 /** What `checks.json` holds. */
@@ -91,7 +94,7 @@ export async function roundStatus(folder: HumanTouchFolder): Promise<RoundStatus
 
 export function humanTouchFolder(root: string): HumanTouchFolder {
   const dir = join(root, HUMAN_TOUCH_DIR);
-  return { dir, canvas: join(dir, "canvas.html"), changeSet: join(dir, "changeset.json"), state: join(dir, "state.json"), history: join(dir, "history"), checks: join(dir, "checks.json"), offCanvas: join(dir, "off-canvas.json"), otherUsages: join(dir, "other-usages.json") };
+  return { dir, canvas: join(dir, "canvas.html"), changeSet: join(dir, "changeset.json"), state: join(dir, "state.json"), history: join(dir, "history"), checks: join(dir, "checks.json"), offCanvas: join(dir, "off-canvas.json"), otherUsages: join(dir, "other-usages.json"), page: join(dir, "page.json") };
 }
 
 /** The project a command runs for: the nearest folder up from `cwd` with a `.humantouch/`, else `cwd` itself. */
@@ -144,6 +147,28 @@ export interface RoundResult {
 }
 
 /**
+ * What `page.json` holds (ticket 141): the page the canvas reflects, printed,
+ * and the code it was printed on, as a git tree (`snapshotCode`); null
+ * outside a git repository.
+ */
+export interface PageKept extends PagePrint {
+  code: string | null;
+}
+
+/** The page the canvas reflects, as kept; null when none is, or what is there cannot be read: the round goes on without it. */
+export async function readPage(folder: HumanTouchFolder): Promise<PageKept | null> {
+  const text = await readIfThere(folder.page);
+  if (text === null) return null;
+  try {
+    const kept = JSON.parse(text) as Partial<PageKept> | null;
+    if (!kept || typeof kept.path !== "string" || typeof kept.structure !== "string" || typeof kept.styles !== "string") return null;
+    return { path: kept.path, structure: kept.structure, styles: kept.styles, code: typeof kept.code === "string" ? kept.code : null };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Ends the claimed round: its ChangeSet and result go to the history. With
  * every change applied, the canvas is dropped and the folder is left with no
  * round: edit mode freezes the page afresh. With changes not applied, they
@@ -180,6 +205,8 @@ export async function archiveRound(folder: HumanTouchFolder, ended: RoundResult[
   }
   // What was noted of the other usages is this round's alone (ticket 82).
   await rm(folder.otherUsages, { force: true });
+  // The page the canvas reflects is the page with the Agent's code in now: printed afresh as edit mode comes back to it (ticket 141).
+  await rm(folder.page, { force: true });
   await rm(folder.state, { force: true });
   return result;
 }

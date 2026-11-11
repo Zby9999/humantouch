@@ -24,7 +24,7 @@ import { checkable, foundByMarker, isEndOffset, textMovedInPlace, madeLayer, pxI
 import { absolute, ARRANGED, ordersOf, placementOf, readValue, roomBetween, round as rounded, sourcesFor, stackOf, type Align, type Arrangement, type MarginBetween, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, mayBeOf, savedCanvas as savedCanvasOf, usageKeyOf, type SavedCanvas } from "./page-elements";
-import { htmlOf, parseCanvas } from "./shadow-roots";
+import { containsAcross, holderOf as treeHolderOf, htmlOf, parentOf, parseCanvas, queryWithin } from "./shadow-roots";
 import { aloneOfKey, MADE_ATTR } from "./canvas-style";
 import { tidyWords, wordsOf } from "./words";
 import { LOC_ATTR } from "../markers";
@@ -346,7 +346,7 @@ function mayChange(property: string, other: string): boolean {
 export function changedAround(doc: Document, change: Change, round: RoundOnCanvas, width: number): boolean {
   if (!SIZES.has(change.property) && !TEXT.has(change.property)) return false;
   const own = elementsOf(doc, change.target, savedCanvas(round));
-  const around = (target: Change["target"]) => foundByMarker(target) && elementsOf(doc, target, savedCanvas(round)).some((el) => own.some((mine) => el.contains(mine)));
+  const around = (target: Change["target"]) => foundByMarker(target) && elementsOf(doc, target, savedCanvas(round)).some((el) => own.some((mine) => containsAcross(el, mine)));
   return round.some((other) => {
     if (other.id === change.id || (other.breakpoint && !within(other.breakpoint, width))) return false;
     if (other.kind === "style" && !mayChange(change.property, other.property)) return false;
@@ -399,7 +399,7 @@ function findMade(doc: Document, id: string, round: RoundOnCanvas): Found {
   const range: [number, number] | null = place.absolute ? null : among ? [among.before, among.before + among.maybe] : [place.nth - 1, place.nth - 1];
   const els: Element[] = [];
   for (const container of outer.els) {
-    const layers = [...container.children].filter((el) => !NOT_DRAWN.has(el.localName));
+    const layers = [...treeHolderOf(container).children].filter((el) => !NOT_DRAWN.has(el.localName));
     // Not a layer the container had before this round: of the elements that look so, as many as it had are its own (tag and words, `signOf`).
     const counts = new Map<string, number>();
     for (const el of layers) counts.set(signOf(el), (counts.get(signOf(el)) ?? 0) + 1);
@@ -856,7 +856,7 @@ function lookDeleted(doc: Document, change: Change, round: RoundOnCanvas, at: Pa
   if (!containers.length) return { outcome: "unchecked", reason: "its container is not on the page now" };
   // Moved off the canvas into a layer off it that the round puts back (ticket 108): its code moves into that layer's, so it is gone from where it was, and only from there.
   const movedIn = change.offCanvas !== undefined && round.some((other) => other.kind === "putBack" && keptIn((other.after as PutBack).layer).some((kept) => kept.id === change.offCanvas));
-  const where = (els: Element[]) => (movedIn ? els.filter((el) => containers.includes(el.parentElement!)) : els);
+  const where = (els: Element[]) => (movedIn ? els.filter((el) => containers.includes(parentOf(el)!)) : els);
   const own = usageKey(target.loc!, target.chain);
   const tag = /^<([\w-]+)/.exec(target.context.element)?.[1];
   const same = (el: Element) =>
@@ -883,7 +883,7 @@ function lookOrder(doc: Document, change: Change, round: RoundOnCanvas): CheckRe
   const { signs, self, others } = change.order!;
   const kept = signs.filter((_, i) => !others.includes(i));
   for (const container of containers) {
-    const page = [...container.children].map(signOf);
+    const page = [...treeHolderOf(container).children].map(signOf);
     if (!page.includes(signs[self])) return { outcome: "unchecked", reason: "the layer cannot be told apart in its container on the page now" };
     const expected = kept.filter((sign) => page.includes(sign));
     const actual = page.filter((sign) => kept.includes(sign));
@@ -1030,7 +1030,7 @@ function writtenAround(round: RoundOnCanvas, change: Change): () => SavedCanvas 
     const file = locs[0]?.file;
     const line = Math.min(...locs.filter((loc) => loc.file === file).map((loc) => loc.line));
     const doc = saved && file ? parseCanvas(htmlOf(saved.doc().documentElement)) : null;
-    const el = doc?.querySelector(`[${MADE_ATTR}="${CSS.escape(change.layer)}"]`);
+    const el = doc && queryWithin(doc, `[${MADE_ATTR}="${CSS.escape(change.layer)}"]`)[0];
     // Marked as written in the source, not as made on the canvas, which the markers followed leave out.
     if (doc && el) {
       el.setAttribute(LOC_ATTR, `${file}:${line}:0`);
@@ -1053,8 +1053,8 @@ function laidOutIn(el: Element): Element[] {
 
 /** The element an element is laid out in: its parent, past any not drawn (`display: contents`). */
 function holderOf(el: Element): Element | null {
-  let parent = el.parentElement;
-  while (parent && getComputedStyle(parent).display === "contents") parent = parent.parentElement;
+  let parent = parentOf(el);
+  while (parent && getComputedStyle(parent).display === "contents") parent = parentOf(parent);
   return parent;
 }
 
@@ -1072,7 +1072,7 @@ function placedThere(els: Element[], { x, y, placed = {} }: NonNullable<Place["a
     const style = getComputedStyle(el);
     if (!/^(absolute|fixed)$/.test(style.position)) return { outcome: "not shown", actual: null };
     // Placed from its container, or from somewhere else.
-    if (style.position === "absolute" && (el as HTMLElement).offsetParent !== el.parentElement) return { outcome: "not shown", actual: "no reference" };
+    if (style.position === "absolute" && (el as HTMLElement).offsetParent !== parentOf(el)) return { outcome: "not shown", actual: "no reference" };
     const at = placedOn(el);
     // Centered, its translate gone or turned over: drawn half its size aside, whatever its side gives it.
     if ((["x", "y"] as const).some((axis) => placed[axis]?.centered && !placed[axis]!.margins && !centeredByTranslate(el, axis, placed[axis]!.edge))) return { outcome: "not shown", actual: { ...at, centered: false } };

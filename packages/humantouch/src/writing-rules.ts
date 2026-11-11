@@ -41,7 +41,8 @@ const HOW_TO_WRITE: HowToWrite[] = [
   {
     // Said only for a layer in an open shadow root (ticket 137, ADR 0017): no rounds before had one.
     name: "Shadow roots",
-    calledFor: (change) => layersStyled(change).some((target) => !!target.shadowRoot && !inThirdPartyWebComponent(target)),
+    // Not for a change to the structure alone (ticket 138), which writes no style there.
+    calledFor: (change) => !structureOnly(change) && layersStyled(change).some((target) => !!target.shadowRoot && !inThirdPartyWebComponent(target)),
     text:
       "a layer in a shadow root (its **Shadow root** line) is styled by the styles of the component that renders into that shadow root, not by the page's CSS: no global stylesheet, Tailwind class on an element around it, or CSS Module of the page reaches into it. " +
       "Change the rule **Currently set by** names where the component writes it: the `<style>` it renders into its shadow root, or the styles it adopts there (a `static styles`, a constructed stylesheet); with no rule to change, add one there for the layer, " +
@@ -323,6 +324,12 @@ const drawnByThirdParty = (target: Target) => !!target.chain[0]?.thirdParty;
 
 /** Whether the layer is in the shadow root of a custom element a dependency defines (ticket 137): not a third-party React component's, though in a shadow root. */
 const inThirdPartyWebComponent = (target: Target) => !!target.chain[0]?.webComponent;
+
+/** A change to the structure alone, which writes no style (ticket 138): a reorder or a move into a layout, new words, a copy into a layout, a deletion. */
+export function structureOnly(change: Change): boolean {
+  if (change.kind === "move") return !(change.after as Place).absolute && !Object.keys(change.style).length;
+  return change.kind === "text" || change.kind === "delete" || (change.kind === "duplicate" && !Object.keys(change.style).length);
+}
 
 /**
  * The layers a change styles (ticket 120): its own, and those it gives styles
