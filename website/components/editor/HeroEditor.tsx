@@ -100,7 +100,7 @@ export function HeroEditor() {
   }, []);
 
   return (
-    <section aria-label="Human Touch's editor, to try" className="relative w-full max-w-[1200px] bg-neutral-0 shadow-[0_0_0_0.5px_var(--color-neutral-250)] dark:bg-raised dark:shadow-[0_0_0_0.5px_var(--color-surface)]" style={{ padding: pad, borderRadius: outer }}>
+    <section aria-label="Human Touch's editor, to try" className="relative isolate w-full max-w-[1200px] bg-neutral-0 shadow-[0_0_0_0.5px_var(--color-neutral-250)] dark:bg-raised dark:shadow-[0_0_0_0.5px_var(--color-surface)]" style={{ padding: pad, borderRadius: outer }}>
       <div
         ref={inner}
         className="relative overflow-hidden bg-neutral-100 shadow-[0_1px_1px_rgb(0_0_0/0.15),0_0_0_0.5px_rgb(0_0_0/0.15)] dark:bg-transparent"
@@ -110,6 +110,7 @@ export function HeroEditor() {
           <div ref={host} />
         </div>
       </div>
+      <HeroShadow radius={outer} />
       <ProgressiveBlur />
       {shadow &&
         createPortal(
@@ -120,6 +121,29 @@ export function HeroEditor() {
           shadow as unknown as Element,
         )}
     </section>
+  );
+}
+
+/**
+ * A soft shadow round the hero, for it to stand out on the page (designer, 2026-11-12): layered, from a close, light one
+ * to a wide, faint one, cast down. Behind the frame, and gone by where its foot starts to blur and fade into the page: a
+ * shadow left beside the faded foot showed its edge as a line. The fade is a mask on a box round the frame, wider than
+ * the shadow reaches and ending there, as a mask on the frame itself would cut the shadow off at its edges.
+ */
+const SHADOW_REACH = 120;
+function HeroShadow({ radius }: { radius: number }) {
+  const mask = "linear-gradient(to bottom, #000 30%, transparent 100%)";
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute -z-10"
+      style={{ top: -SHADOW_REACH, left: -SHADOW_REACH, right: -SHADOW_REACH, bottom: "20%", maskImage: mask, WebkitMaskImage: mask }}
+    >
+      <div
+        className="absolute shadow-[0_1px_2px_rgb(0_0_0/0.04),0_10px_28px_-8px_rgb(0_0_0/0.10),0_36px_80px_-24px_rgb(0_0_0/0.14)] dark:shadow-[0_1px_2px_rgb(0_0_0/0.3),0_10px_28px_-8px_rgb(0_0_0/0.45),0_36px_80px_-24px_rgb(0_0_0/0.5)]"
+        style={{ top: SHADOW_REACH, left: SHADOW_REACH, right: SHADOW_REACH, bottom: -SHADOW_REACH, borderRadius: radius }}
+      />
+    </div>
   );
 }
 

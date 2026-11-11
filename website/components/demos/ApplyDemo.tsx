@@ -10,21 +10,24 @@ import { usePhases } from "./usePhases";
 
 /*
  * The Apply card (designer, 2026-11-11: the idea as it was, in the product's own parts). The designer tells the Agent
- * "Apply my design changes" in a terminal; Acme, in the browser below, has Human Touch's toggle in its corner. The
- * toggle locks, its ring fills as the Agent is done with each change, and the change list, opened by itself, lets each
- * go as the page shows it. Then the Agent's report, in the form `finish` gives: what applied, and what not 1:1.
+ * "Apply my design changes" in a chat, plain, no terminal (designer, 2026-11-12); Acme, in the browser below, has Human
+ * Touch's toggle in its corner. The Agent's steps come in one under the other as it works; the toggle locks, its ring
+ * fills as the Agent is done with each change, and the change list, opened by itself, lets each go as the page shows
+ * it. Then the Agent's answer, in the form `finish` gives: what applied, and what not 1:1.
  */
 
 const SCENE_W = 640;
 const SCENE_H = 667;
 /** The browser: Acme at 1280 wide, its Desktop layout, drawn at this zoom. */
 const PAGE_W = 1280;
-const BROWSER = { left: 20, top: 200, width: 440, height: 420 };
+/** The browser: as far from the card's left as from its foot (designer, 2026-11-12); its height is what that leaves. */
+const BROWSER = { left: 20, top: 200, width: 440 };
+const BROWSER_GAP = 20;
 const K = BROWSER.width / PAGE_W;
 const CHROME_H = 26;
 /** The toggle and its list, at three quarters of their size: drawn to the page's zoom they would be too small to read. */
 const DOCK_SCALE = 0.75;
-const TERMINAL = { left: 250, top: 20, width: 370, height: 300 };
+const CHAT = { left: 250, top: 20, width: 370, height: 300 };
 const PROMPT = "Apply my design changes";
 
 const STONE = String(styleOf("cover").fill);
@@ -50,29 +53,12 @@ const STEPS = [
 ];
 const LAST = STEPS.length - 1;
 
-/** The terminal's lines, and the step each comes in at. */
-type Line = { at: number; kind: "cmd" | "out" | "report" | "head" | "gap"; text: string };
-const LINES: Line[] = [
-  { at: 2, kind: "cmd", text: "npx humantouch claim" },
-  { at: 2, kind: "out", text: "3 changes, made by the designer in Human Touch." },
-  { at: 3, kind: "cmd", text: "Edit app/page.tsx" },
-  { at: 3, kind: "out", text: "bg-stone → bg-muted, rounded-3xl" },
-  { at: 4, kind: "cmd", text: "npx humantouch done 1 2" },
-  { at: 4, kind: "out", text: "Checked on the page: it shows the change." },
-  { at: 5, kind: "cmd", text: "Edit app/page.tsx" },
-  { at: 5, kind: "out", text: "text-xl → text-lg" },
-  { at: 5, kind: "cmd", text: "npx humantouch done 3" },
-  { at: 5, kind: "out", text: "The page shows 18px, not 19px." },
-  { at: 6, kind: "cmd", text: "npx humantouch finish" },
-  { at: 6, kind: "out", text: "Round finished: 2 of 3 changes applied." },
-  { at: 7, kind: "gap", text: "" },
-  { at: 7, kind: "head", text: "✓ Applied" },
-  { at: 7, kind: "report", text: "1. Fill: the cover, stone → muted" },
-  { at: 7, kind: "report", text: "2. Corner radius: the cover, 0 → 24" },
-  { at: 7, kind: "head", text: "⚠️ Not applied 1:1" },
-  { at: 7, kind: "report", text: "3. Font size: the lede" },
-  { at: 7, kind: "report", text: "   Why: the type scale has no 19px" },
-  { at: 7, kind: "report", text: "   Instead: text-lg, 18px, the nearest" },
+/** The Agent's steps in the chat: each comes in at its step, working, and is done at the next. */
+const WORK: { at: number; doing: string; done: string }[] = [
+  { at: 2, doing: "Reading your changes in Human Touch", done: "Read 3 changes in Human Touch" },
+  { at: 3, doing: "Editing app/page.tsx", done: "Edited app/page.tsx" },
+  { at: 4, doing: "Checking the cover on the page", done: "Checked the cover: it shows both changes" },
+  { at: 5, doing: "Checking the text on the page", done: "Checked the text: 18px, not 19px" },
 ];
 
 const APPLY_CSS = `
@@ -85,27 +71,46 @@ const APPLY_CSS = `
 .demo-viewport { position: absolute; left: 0; right: 0; top: ${CHROME_H}px; bottom: 0; overflow: hidden; background: #FAF9F6; }
 .demo-viewport > .demo-page { position: absolute; left: 0; top: 0; transform-origin: top left; }
 .demo-viewport .ht-dock { position: absolute; z-index: 2; transform: scale(${DOCK_SCALE}); transform-origin: bottom right; --ht-gap: ${16 / DOCK_SCALE}px; }
-/* The terminal light, as the browser: dark on the dark backdrop, it did not show (designer, 2026-11-11). */
-.demo-terminal { background: #fff; color: #1e1e1e; }
-.demo-terminal .demo-chrome { color: #737472; background: #f5f5f5; }
-.demo-lines { position: absolute; left: 0; right: 0; top: ${CHROME_H}px; bottom: 0; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px 14px 12px; overflow: hidden; mask-image: linear-gradient(to bottom, transparent 4px, #000 28px); font: 400 10.5px/16px var(--font-geist-mono), ui-monospace, monospace; white-space: pre; }
-.demo-line { animation: demo-line-in 200ms ${EASE_OUT} both; }
-.demo-line.is-cmd::before { content: "● "; color: #0d99ff; }
-.demo-line.is-out { color: #737472; padding-left: 12px; }
-.demo-line.is-head { font-family: var(--font-geist), system-ui, sans-serif; font-weight: 500; }
-.demo-line.is-report { font-family: var(--font-geist), system-ui, sans-serif; color: #525351; padding-left: 10px; }
-.demo-prompt { margin-top: 6px; padding: 6px 8px; border-radius: 6px; box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.16); }
-.demo-prompt::before { content: "› "; color: #737472; }
-.demo-caret { display: inline-block; width: 6px; height: 12px; margin-left: 1px; vertical-align: -2px; background: #1e1e1e; animation: demo-blink 1s steps(1) infinite; }
+/* The chat, light as the browser. */
+.demo-chat { background: #fff; color: #1e1e1e; border-radius: 12px; font-family: var(--font-geist), system-ui, sans-serif; }
+.demo-chat .demo-chrome { color: #737472; background: #fff; box-shadow: inset 0 -0.5px 0 #ededec; }
+.demo-thread { position: absolute; left: 0; right: 0; top: ${CHROME_H}px; bottom: 50px; display: flex; flex-direction: column; justify-content: flex-end; gap: 7px; padding: 10px 14px 6px; overflow: hidden; mask-image: linear-gradient(to bottom, transparent 4px, #000 28px); font-size: 11px; line-height: 16px; }
+.demo-line { animation: demo-line-in 240ms ${EASE_OUT} both; }
+.demo-you { align-self: flex-end; max-width: 75%; padding: 6px 10px; border-radius: 12px 12px 4px 12px; background: #f0f0ef; }
+.demo-step { display: flex; align-items: center; gap: 7px; color: #737472; font-size: 10.5px; line-height: 14px; }
+.demo-step svg { flex: none; width: 10px; height: 10px; }
+.demo-spinner { flex: none; box-sizing: border-box; width: 10px; height: 10px; border-radius: 50%; border: 1.25px solid #d4d4d3; border-top-color: #737472; animation: demo-spin 700ms linear infinite; }
+.demo-answer { display: flex; flex-direction: column; gap: 4px; padding-top: 3px; }
+.demo-answer p { margin: 0; }
+.demo-answer ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+.demo-answer li { display: flex; gap: 6px; color: #525351; }
+.demo-answer li > span:first-child { flex: none; width: 12px; text-align: center; }
+.demo-composer { position: absolute; left: 10px; right: 10px; bottom: 10px; height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 5px 0 10px; border-radius: 10px; box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.16), 0 1px 2px rgb(0 0 0 / 0.04); font-size: 11px; }
+.demo-composer-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; }
+.demo-composer-text.is-empty { color: #a3a3a2; }
+.demo-send { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; color: #fff; background: #d4d4d3; transition: background-color 150ms ${EASE_OUT}; }
+.demo-send.is-ready { background: #1e1e1e; }
+.demo-caret { display: inline-block; width: 1px; height: 13px; margin-left: 1px; vertical-align: -2px; background: #1e1e1e; animation: demo-blink 1s steps(1) infinite; }
 @keyframes demo-line-in { from { opacity: 0; transform: translateY(4px); } }
 @keyframes demo-blink { 50% { opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .demo-line, .demo-caret { animation: none; } }
+@keyframes demo-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .demo-line, .demo-caret, .demo-spinner { animation: none; } }
 `;
 
 export function ApplyDemo() {
   const { ref, phase } = usePhases(STEPS, LAST);
   const { host, shadow } = useShadow();
   const scale = useFit(ref, SCENE_W);
+  // What shows of the scene, in its own units: the card is as tall as wide below 768px, 500px tall above.
+  const [shownH, setShownH] = useState(SCENE_H);
+  useEffect(() => {
+    const el = ref.current!;
+    const measure = () => setShownH(el.clientHeight / (el.clientWidth / SCENE_W));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref]);
   return (
     <div ref={ref} className="absolute inset-0" aria-hidden="true" inert>
       <div ref={host} className="absolute inset-0" />
@@ -113,7 +118,7 @@ export function ApplyDemo() {
         createPortal(
           <>
             <style>{EDITOR_CSS + SCENE_CSS + APPLY_CSS}</style>
-            <Scene phase={phase} scale={scale} />
+            <Scene phase={phase} scale={scale} browserH={Math.round(Math.min(SCENE_H, shownH) - BROWSER_GAP - BROWSER.top)} />
           </>,
           shadow as unknown as Element,
         )}
@@ -125,7 +130,7 @@ export function ApplyDemo() {
 const Page = memo(DemoPage);
 const none = () => {};
 
-function Scene({ phase, scale }: { phase: number; scale: number }) {
+function Scene({ phase, scale, browserH }: { phase: number; scale: number; browserH: number }) {
   // The prompt, typed a letter at a time.
   const [typed, setTyped] = useState(0);
   useEffect(() => {
@@ -150,7 +155,7 @@ function Scene({ phase, scale }: { phase: number; scale: number }) {
   return (
     <div className="demo-scene" style={{ transform: `scale(${scale})` }}>
       {/* The browser, Acme in it, Human Touch's toggle in its corner. */}
-      <div className="demo-window demo-browser" style={{ left: BROWSER.left, top: BROWSER.top, width: BROWSER.width, height: BROWSER.height }}>
+      <div className="demo-window demo-browser" style={{ left: BROWSER.left, top: BROWSER.top, width: BROWSER.width, height: browserH }}>
         <div className="demo-chrome">
           <span className="demo-dot" />
           <span className="demo-dot" />
@@ -165,32 +170,63 @@ function Scene({ phase, scale }: { phase: number; scale: number }) {
         </div>
       </div>
 
-      {/* The terminal: the designer's words, and the Agent at work. */}
-      <div className="demo-window demo-terminal" style={{ left: TERMINAL.left, top: TERMINAL.top, width: TERMINAL.width, height: TERMINAL.height }}>
+      {/* The chat: the designer's words, the Agent's steps as it works, and its answer. */}
+      <div className="demo-window demo-chat" style={{ left: CHAT.left, top: CHAT.top, width: CHAT.width, height: CHAT.height }}>
         <div className="demo-chrome">
           <span className="demo-dot" />
           <span className="demo-dot" />
           <span className="demo-dot" />
-          <span style={{ marginLeft: 10 }}>Terminal</span>
+          <span style={{ marginLeft: 10 }}>Agent</span>
         </div>
-        <div className="demo-lines">
-          {phase >= 2 && <div className="demo-line">{`› ${PROMPT}`}</div>}
-          {LINES.filter((l) => l.at <= phase).map((l, i) =>
-            l.kind === "gap" ? <div key={i} style={{ height: 6 }} /> : (
-              <div key={i} className={`demo-line is-${l.kind}`}>
-                {l.text}
+        <div className="demo-thread">
+          {phase >= 2 && <div className="demo-line demo-you">{PROMPT}</div>}
+          {WORK.filter((w) => w.at <= phase).map((w) => {
+            const working = phase === w.at;
+            return (
+              <div key={w.at} className="demo-line demo-step">
+                {working ? <span className="demo-spinner" /> : <Check />}
+                {working ? w.doing : w.done}
               </div>
-            ),
-          )}
-          {phase < 2 && (
-            <div className="demo-prompt">
-              {PROMPT.slice(0, typed)}
-              <span className="demo-caret" />
+            );
+          })}
+          {phase >= 7 && (
+            <div className="demo-line demo-answer">
+              <p>Applied 2 of your 3 changes.</p>
+              <ul>
+                <li>
+                  <span>✓</span>
+                  <span>The cover: fill stone → muted, corners 0 → 24</span>
+                </li>
+                <li>
+                  <span>⚠️</span>
+                  <span>The text: 18px, not 19px. The type scale has no 19px, so text-lg, the nearest.</span>
+                </li>
+              </ul>
             </div>
           )}
         </div>
+        <div className="demo-composer">
+          <span className={`demo-composer-text${phase === 1 && typed ? "" : " is-empty"}`}>
+            {phase === 1 && typed ? PROMPT.slice(0, typed) : "Ask your Agent"}
+            {phase === 1 && typed > 0 && <span className="demo-caret" />}
+          </span>
+          <span className={`demo-send${phase === 1 && typed === PROMPT.length ? " is-ready" : ""}`}>
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 8.5v-7M2 4.5l3-3 3 3" />
+            </svg>
+          </span>
+        </div>
       </div>
     </div>
+  );
+}
+
+/** A step done. */
+function Check() {
+  return (
+    <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 5.2l2 2 4-4.4" />
+    </svg>
   );
 }
 
