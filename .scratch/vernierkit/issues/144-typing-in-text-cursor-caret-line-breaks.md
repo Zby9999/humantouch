@@ -72,6 +72,7 @@
 - `e2e/tests/made-off-canvas.spec.ts`：「T clicked in the blank space makes text there …」、Brief 之后用 T 在 Frame 里打 "Launch" 的那步。
 - `e2e/tests/applying-bench.spec.ts`：新文字 "Fresh"、"Fresh line" 两条（ticket 76），和 1761 行那条（打字后 `toHaveText(words)`）。
 - `e2e/bench/scenarios.ts`：`data-and-text`（"Third Kind Studio"）、`put-back-and-new-text`（"Works with any Agent."）。`e2e/bench/scenarios-other-examples.ts`：`next-server-usage-text`（"bytes shipped to production"）。改动单内容一样，`claim-out` 逐字不变（见下）。
+- `e2e/perf/flex.perf.ts`：用 T 画出新文字、打 "Ships in a day" 后结束编辑的那步（第二次审查发现的）。
 - 原来按 Enter 后接着按 Esc 的（applying-bench 两条、put-back-and-new-text），现在是 Esc 结束编辑，再一个 Esc 照旧选上一层。Brief 卡片、面板字段里的 Enter 没动。
 
 ### 新测试
@@ -89,17 +90,41 @@
 - 修改前失败：把视口 scroll → 相机那段临时去掉、重新构建，4 条点准（当时还只有桌面、手机）全失败。光标应在 1 / 3，实际在 0 或 61。恢复后通过。
 - 单元测试：`edits.browser.test.ts` 2 条（带换行的字画成 `<br>`、读回来、撤销；源码里已有 `<br>` 的读成换行，合成一行是改动；新建文字的换行）；`cli.test.ts` 2 条（有换行的说明逐行写清、Line breaks 规则、核对一句；没有换行时说明里没有任何 "line break" 字样）。
 
-### 结果（同步 main f7780b49，分支 HEAD 见下面的提交）
+### 第一次审查后的修正（f366c4f）
 
+- Brief 里的换行照旧原样引用：只有图层的字用 ↵（`quotedWords`），`quoted` 不变。
+- 读字的函数移到 `client/words.ts`；`check.ts` 的 `wordsOn` 改由它读，去掉重复的遍历。"有没有换行"统一用 `breaksLines`（`design-values.ts`）。
+- 组件其他使用处、图层名、`typography.ts` 列出的片段也读到换行（片段和图层名里换行当空格）。
+- 用 T 画出文字后立刻是竖光标；点准测试加了双击、三击和平板视图。
+
+### 第二次审查后的修正（d59ff15，2026-11-12）
+
+- **必须修：凭空多出的换行改动。** 文字节点里本来就有 "\n"（例如 `{item.description}` 的数据里有换行、多行的模板字符串），页面上 `white-space: normal` 把它画成空格。Chromium 一进入 `plaintext-only` 编辑，就把 `white-space` 换成 `pre-wrap`（`nowrap` 换成 `pre`），那个 "\n" 就显示成换行，结束时被读成换行。结果双击后什么都不改、按 Esc，也会记一条 “One Two” → “One↵Two”，并叫 Agent 加 `<br>`。
+  - 修法：开始编辑前（`beginTyping`，设 `contentEditable` 之前），把元素里那些 "\n" 被画成空格的文字节点（看节点父元素的 `white-space`）里的换行连同两边的空白换成一个空格（`words.ts` 的 `spaceOutNewLines`）。结束时画布照旧用开始前的 `innerHTML` 还原。
+  - 新 e2e：画布标题的文字改成 "Third\n   Kind"，在桌面、手机视图各双击一次再按 Esc：编辑中读到 "Third Kind"，结束后没有改动。修改前这条失败（读到两行），修改后通过。
+- **播放时的滚动**：视口 scroll 变成相机移动时，播放中照滚轮、键那样用 `scrolled(...)` 限在播放的页面里。
+- **画布外新建文字的竖光标**：在空白处用 T 点出文字时，新图层这一帧还不在 `outside` 列表里，所以下一帧直接拿被编辑元素在它自己 iframe 里的框来比（`pointsAtTyped`）。这个框允许差 1 屏幕 px，因为 iframe 放的位置比点的地方偏了零点几 px（实测 0.07px）。新 e2e：空白处 T 点一下，鼠标不动，就是竖光标。
+- `e2e/perf/flex.perf.ts` 里 T 画出文字后的 Enter 改成 Esc。
+- 新单元测试：
+  - `edits.browser.test.ts`：存下的一轮有换行，重新打开还是 `<br>`，从存下的一轮撤回这条后回到原来的字。
+  - `promote.browser.test.ts`：`done` 按行核对。三个实例都是 `<br>` 时显示了；少一个换行、多一个换行都判为没显示；`white-space: pre-line` 加 "\n" 判为显示了，`normal` 加 "\n" 判为没显示。
+- 编辑中别的视图什么时候显示换行，实测见代定 10。
+
+### 结果（合并 main 15e0492 后，分支 76fca7f 之上）
+
+- 合并 main 有三处冲突：`check.ts` 的 import、`layers.ts` 文字图层名（main 的 shadow DOM 分支加上我的 `wordsOf(el, false)`）、`design-values.ts` 其他使用处的字（main 的 `nth` 加上我的 `quotedWords`）。都两边保留。
 - typecheck 过。
-- `pnpm test`：vitest 1224 passed / 1 skipped（50 个文件），node 129/129。
-- 整套 e2e（`HT_E2E_PORT=6800`）：621 passed、1 skipped、0 失败，12.8 分钟，一次过；跑完 `examples/` 没有残留改动。
-  - 中途单跑 `typing.spec` 时，「⌘Return ends typing …」有一次在手机视图（26% 缩放）双击后没进入编辑；单跑 `--workers=1 --repeat-each=3` 3/3 过，记为机器忙。
+- `pnpm test`：vitest 1267 passed / 1 skipped，node 132/132。
+- 整套 e2e（`HT_E2E_PORT=6800`）：628 passed、1 skipped、1 失败，13.3 分钟；跑完 `examples/` 没有残留改动。
+  - 失败的是 `applying-bench.spec.ts:1527`「the loop's cards filled red, promoted to the Card itself …」：`changesNow()[0].scope` 是 `usage`，不是 `component`，也就是 Promote 那一步没落到改动单里就读了。和打字无关。
+  - 单跑 `--workers=1 --repeat-each=5`：本分支 2/5 过。在 main 15e0492 上同样跑：3/5 过。main 上也会失败，不是这张票带来的。
+  - 上一遍（合并前）失败过的 `code-changes.spec.ts:253`「the toasts …」这次整套里过了，单跑 3/3 过，记为机器忙。
 - bench（`HT_BENCH_PORT=6820`）：
-  - `--dry` 32/32（main 31 个 + 新的 `text-line-break`）。
-  - `--dry --claim-out` 和 main f7780b49 的同一版本（scratchpad 里的 detached worktree）`diff -r`：已有 31 份逐字相同，只多出 `text-line-break.md`。
-  - `--scripted` 23/23，含 `text-line-break`。
-- perf（`HT_PERF_HEADLESS=1 HT_PERF_PORT=6840`）：20/20，8.6 分钟。
+  - `--dry` 33/33（main 32 个 + `text-line-break`）。
+  - `--dry --claim-out` 和 main 15e0492（scratchpad 里临时的 detached worktree，同一次持锁里跑）`diff -r`：已有 32 份逐字相同，只多出 `text-line-break.md`。
+  - `--scripted` 24/24，含 `text-line-break`。
+- perf（`HT_PERF_HEADLESS=1 HT_PERF_PORT=6840`）：20/20，8.1 分钟。
+- 合并前（同步 f7780b49）那一遍的数字：vitest 1224、node 129、e2e 621 过 0 失败、`--dry` 32/32、`--scripted` 23/23、perf 20/20。
 
 ## 代定
 
@@ -112,6 +137,11 @@
 7. 源码里已经有 `<br>` 的文字，现在读成带换行的字。设计师只改了其中一个字时，说明里也会出现换行的那句和 Line breaks 规则，`done` 也按行核对。示例项目里没有 `<br>`，所以 bench 不受影响。
 8. 说明的措辞（Design intent 后的那句、Line breaks 规则、核对那句），见上面"改动说明"。
 9. `done` 按行核对只认 `<br>` 和 `white-space` 保留的 "\n"。用块级元素（两个 `display: block` 的 span）分行的不算换行，会判为没显示。
+10. 编辑中别的视图什么时候显示换行（实测）：
+    - 在桌面视图里打字时，三个视图都马上显示换行。行里连续的空格编辑中也照样显示，结束后才合成一个。原因是桌面视图就是画布本身，别的视图连 `contenteditable` 属性一起跟着它，所以也是 `pre-wrap`。
+    - 在平板或手机视图里打字时，只有那个视图马上显示换行；画布和别的视图把 "\n" 画成空格，按 Esc 后才显示。
+    - 两种情况结束后都一样。要不要让别的视图在编辑中也一律显示（或者一律不显示），请设计师定。
+11. 页面上被画成空格的 "\n"（数据、多行字符串里的），开始编辑时先变成一个空格，所以编辑中也显示成空格，不会变成换行。只编辑不改字，就没有改动。改了字，新字里这个位置就是空格。
 
 ## 风险
 
@@ -120,3 +150,6 @@
 3. 核对按行时用的是 `getComputedStyle(white-space)`，只对含 "\n" 的文字节点调用。文字节点很多、又都含换行的页面上会慢一点。
 4. bench 场景的 `shows` 用 `innerText`，依赖标题没有 `text-transform`。示例里没有。
 5. 改动说明的新措辞没有用真实 Agent 跑过（这张票不跑真实 Agent）。`<br />` 写法、项目自己的写法（比如数组里的字符串加 `whitespace-pre-line`）是否都能被 Agent 照做，要等下一次真实跑。
+6. `spaceOutNewLines` 靠的是 Chromium 进入 `plaintext-only` 时把 `white-space` 换成 `pre-wrap` / `pre`。别的浏览器如果不换，这一步没有坏处，只是多做了一次。如果哪个浏览器换成了别的值，判断会落空。
+7. 画布外新建文字的竖光标是在下一帧判断的，允许差 1 屏幕 px。缩放很小的时候，1 屏幕 px 在画布上很宽（26% 时约 4 画布 px），文字框外边一点点也会是竖光标，但点下去不会放光标（按下的判断没有这 1px 的余量）。
+8. `applying-bench.spec.ts:1527`（Promote 后马上读改动单）在 main 上也时好时坏（3/5），和这张票无关，可能要另开一张。
