@@ -55,6 +55,12 @@
 - `--scripted` 20/20。
 - perf（`HT_PERF_HEADLESS=1`）：19 过，`flex.perf.ts:904`（圆角 ⌘Z，旁边视图 18/20 帧跟上）失败，单独 `--repeat-each=3` 3/3 过，算负载。
 
+合进 main 46258d9e（142、145）后重跑（`declared-fonts.spec` 选字重前三个视图的状态改成 `expect.poll`）：
+
+- `pnpm typecheck` 过；`pnpm test`：vitest 1221 过、1 跳过（50 个文件），node 129 过。
+- 整套 e2e：page 组 458 条，456 过，`undo.spec:248`、`variables.spec:290` 失败，连同 `declared-fonts` 单独 `--workers=1 --repeat-each=3` 9/9 过，算负载；project files 组 152 过、1 跳过，`code-changes.spec:77` 失败，单独重跑 3/3 过，算负载。
+- `--dry` 31/31（main 现在 31 个场景），`--claim-out` 和 46258d9e 导出目录的输出 `diff -r` 逐字相同；`--scripted` 22/22；perf（headless）20/20。dry、scripted、perf 在共用锁下跑。
+
 代定：
 
 1. 声明了但从没加载过的字重，就算它的地址是坏的，也照样列出（状态是 unloaded，只有加载失败过一次才变成 error）；选了它只会一直显示后备字体。照 ticket 字面做，没有先试着加载。
