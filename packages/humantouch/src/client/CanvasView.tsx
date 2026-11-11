@@ -26,7 +26,7 @@ import { distances } from "./snap";
 import { drawOnlyWhatShows, onceAtRest } from "./stage-redraw";
 import type { Handle } from "./resize";
 import { CAUGHT_UP_MS, createViews, type View, type Views } from "./views";
-import { keyOf, LABEL_OFFSET, layoutViews, placeOffCanvas, shownAt, viewsWidth, type Placed, type Shown } from "./view-layout";
+import { keyOf, LABEL_OFFSET, layoutViews, placeOffCanvas, shownAt, VIEW_GAP_WITH_BRIEFS, viewsWidth, type Placed, type Shown } from "./view-layout";
 import { AddView, desktopRange, readViewWidths, viewName, ViewLabel, withWidth, writeViewWidths } from "./ViewLabels";
 import { contains, type Breakpoint } from "./breakpoints";
 
@@ -142,6 +142,11 @@ interface Props {
 }
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
+/** The gap between the views for `doc`: wide once it has a brief, for each view's cards beside it (ticket 134); else as ever. */
+function gapFor(doc: Document): number | undefined {
+  return doc.querySelector(`[${BRIEF_ATTR}]`) ? VIEW_GAP_WITH_BRIEFS : undefined;
+}
+
 export function CanvasView(props: Props) {
   const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, rowHovered, rowHoveredRange, focus, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
@@ -241,8 +246,30 @@ export function CanvasView(props: Props) {
   const modeSwitch = useRef<Animation | null>(null);
   /** The canvas is travelling between the page and its place in the viewport, unclipped. */
   const [travelling, setTravelling] = useState(false);
-  /** Every view of the canvas, side by side on the stage: the desktop view first, then the others, widest first. */
-  const placed: Placed[] = canvas ? layoutViews(canvas.width, desktop!, widths, beside) : [];
+  /** Every view of the canvas, side by side on the stage: the desktop view first, then the others, widest first; wider apart once the page has a brief. */
+  const placed: Placed[] = canvas ? layoutViews(canvas.width, desktop!, widths, beside, gapFor(canvas.document)) : [];
+  /** The view a brief was just written in, or taken off in: as the gaps between the views change, it stays where it is on the screen. */
+  const keepInPlace = useRef<string | null>(null);
+  /** The views as last laid out, and how far apart. */
+  const lastLaidOut = useRef<{ gap: number | undefined; placed: Placed[] } | null>(null);
+  /**
+   * The page's first brief set, or its last taken off, the gaps between the views change (ticket 134): the camera moves
+   * with the view written in, or else the one in the middle of the viewport, so it stays where it is on the screen and
+   * the others move away from it or toward it (designer, 2026-11-11).
+   */
+  useLayoutEffect(() => {
+    const was = lastLaidOut.current;
+    const gap = canvas ? gapFor(canvas.document) : undefined;
+    lastLaidOut.current = { gap, placed };
+    if (!was || was.gap === gap || !placed.length) return;
+    const middle = (viewportSize.current.width / 2 - camera.x) / camera.zoom;
+    const distance = (p: Placed) => Math.abs(p.x + p.width / 2 - middle);
+    const anchor = was.placed.find((p) => keyOf(p) === keepInPlace.current) ?? [...was.placed].sort((a, b) => distance(a) - distance(b))[0];
+    keepInPlace.current = null;
+    const now = anchor && placed.find((p) => keyOf(p) === keyOf(anchor));
+    const dx = now ? now.x - anchor.x : 0;
+    if (dx) setCamera((v) => ({ ...v, x: v.x - dx * v.zoom }));
+  });
   const bounds: Bounds | null = canvas && boundsOf(placed);
   /** The layers off the canvas, where they are on the stage. */
   const outside: Shown[] = canvas ? placeOffCanvas(offCanvas) : [];
@@ -407,7 +434,7 @@ export function CanvasView(props: Props) {
       const canvasViews = createViews(frozen);
       setViews(canvasViews);
       onCanvas(canvasViews, workspace.current!);
-      const start = startAt ?? initialCamera(frozen, { width: viewsWidth(frozen.width, widths), height: frozen.height }, viewport.current!.getBoundingClientRect());
+      const start = startAt ?? initialCamera(frozen, { width: viewsWidth(frozen.width, widths, gapFor(frozen.document)), height: frozen.height }, viewport.current!.getBoundingClientRect());
       setCamera(start);
       shell.style.opacity = "";
       if (startAt) {
@@ -1344,10 +1371,13 @@ export function CanvasView(props: Props) {
     if (!canvas || !tree || !shownViews.length) return null;
     const desktopView = shownViews[0];
     const last = placed.at(-1)!;
+    const wide = gapFor(canvas.document) !== undefined;
     const list: { card: BriefCard; layer: Layer; in: Shown }[] = [];
     const add = (layer: Layer, shown: Shown, key: string, text: string) => {
       const r = shown.view.boxOf(layer);
-      const free = shown.offCanvasLayer ? { left: true, right: true } : { left: shown.desktop, right: keyOf(shown) === keyOf(last) };
+      // With the gaps wide, every view has its cards on the side nearer the layer, those of two views in a gap taking
+      // turns down it (ticket 134, designer, 2026-11-11).
+      const free = shown.offCanvasLayer || wide ? { left: true, right: true } : { left: shown.desktop, right: keyOf(shown) === keyOf(last) };
       const box = r && (r.width || r.height) ? { x: shown.x + r.left, y: shown.y + r.top, width: r.width, height: r.height } : null;
       const doc = layer.el.ownerDocument;
       const selectedHere = selected.some((s) => s.el.ownerDocument === doc && (s === layer || (key !== "new" && cardKeyOf(s) === key)));
@@ -1404,6 +1434,7 @@ export function CanvasView(props: Props) {
     const before = had ? (editorOf(layer)?.brief(layer) ?? "") : "";
     if (text === before) return;
     if (!text && had && !was.in.offCanvasLayer) briefViews.forget(had);
+    if (!was.in.offCanvasLayer) keepInPlace.current = keyOf(was.in);
     const own = onSetBrief(layer, text);
     const key = text && cardKeyOf(own);
     if (key && !was.in.offCanvasLayer) briefViews.write(key, keyOf(was.in));

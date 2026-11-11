@@ -2,15 +2,16 @@
 /**
  * The briefs on the canvas (ticket 121): each a card in the blank space
  * beside the view it was written in, with a dashed line to the middle of the
- * side of its layer nearest it (`brief-cards.ts`). On the stage, as a note
- * on the canvas is: they pan and zoom with it. A card is written in, and
+ * side of its layer nearest it (`brief-cards.ts`). Where they are follows the
+ * canvas as it pans and zooms; how large they are does not, from
+ * `FULL_SIZE_FROM` up, as Figma's comments (ticket 134). A card is written in, and
  * changed, in place: what is typed is set once it is left, on Enter (⇧Enter
  * for a new line) or by its arrow; Esc leaves it as it was; left empty, it is taken off. Typed, ⌘Z there is the field's own.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { BRIEF_ATTR, LAYER_ID_ATTR } from "./canvas-style";
-import { CARD_WIDTH, pathOf, placeCards, type Box } from "./brief-cards";
-import { transformOf, type Camera } from "./camera";
+import { CARD_WIDTH, pathOf, placeCards, type Box, type PlacedCard } from "./brief-cards";
+import type { Camera } from "./camera";
 import { Icon } from "./icons";
 import { CHANGE_GLIDE_MS, EASE_IN_OUT, prefersReducedMotion } from "./motion";
 import type { Layer, LayerTree } from "./layers";
@@ -157,6 +158,8 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
     obstacles,
     // Only a new brief is written beside its layer; one set before is changed where its card is, so it does not jump (designer, 2026-11-10).
     writing === "new" ? writing : null,
+    // Opened, a card is full size however far the canvas is zoomed out (designer, 2026-11-11).
+    { zoom: camera.zoom, open: writing !== "new" ? writing : null },
   );
   placedNow.current = placed;
   // Written, the card goes from beside its layer back out beside its view (designer, 2026-11-10): it glides there, its
@@ -190,8 +193,9 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
     const el = layer.current?.querySelector<HTMLElement>(`.ht-brief-card[data-key="${key}"]`);
     const line = layer.current?.querySelector<SVGGElement>(`.ht-brief-lines g[data-key="${key}"]`);
     const to = placed[i];
-    const dx = was.box.x - to.x;
-    const dy = was.box.y - to.y;
+    // On the screen; and as the card is drawn, scaled.
+    const dx = ((was.box.x - to.x) * camera.zoom) / to.scale;
+    const dy = ((was.box.y - to.y) * camera.zoom) / to.scale;
     if (!el || (!dx && !dy) || prefersReducedMotion()) return;
     el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: CHANGE_GLIDE_MS, easing: EASE_IN_OUT });
     line?.animate([{ opacity: 0 }, { opacity: 0, offset: 0.7 }, { opacity: 1 }], { duration: CHANGE_GLIDE_MS + 120, easing: "linear" });
@@ -212,24 +216,28 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
     const dy = shift(camera.y + at.y * camera.zoom, at.height * camera.zoom, viewport.clientHeight);
     if (dx || dy) onReveal(dx, dy);
   }, [writing]);
+  // On the screen: the cards are drawn there, not on the stage, so they are as large at any zoom.
+  const onScreen = ({ x, y }: { x: number; y: number }) => ({ x: camera.x + x * camera.zoom, y: camera.y + y * camera.zoom });
   return (
-    <div ref={layer} class="ht-brief-cards" style={{ transform: transformOf(camera) }}>
+    <div ref={layer} class="ht-brief-cards">
       <svg class="ht-brief-lines" width="1" height="1" aria-hidden="true">
-        {placed.map(
-          (p, i) =>
-            p.line && (
-              <g key={p.key} data-key={p.key} data-selected={cards[i].selected || undefined}>
-                <path d={pathOf(p.line.path)} />
-                <circle cx={p.line.to.x} cy={p.line.to.y} r={3 / camera.zoom} />
-              </g>
-            ),
-        )}
+        {placed.map((p, i) => {
+          if (!p.line) return null;
+          const to = onScreen(p.line.to);
+          return (
+            <g key={p.key} data-key={p.key} data-selected={cards[i].selected || undefined}>
+              <path d={pathOf(p.line.path.map(onScreen))} />
+              <circle cx={to.x} cy={to.y} r={3} />
+            </g>
+          );
+        })}
       </svg>
       {placed.map((p, i) => (
         <Card
           key={cards[i].key}
           card={cards[i]}
           box={p}
+          at={onScreen(p)}
           writing={writing === cards[i].key}
           onWrite={() => onWrite(cards[i].key)}
           onWritten={(text) => onWritten(cards[i].key, text)}
@@ -242,7 +250,9 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
 
 interface CardProps {
   card: BriefCard;
-  box: Box;
+  box: PlacedCard;
+  /** Its top left on the screen, in the viewport. */
+  at: { x: number; y: number };
   writing: boolean;
   onWrite(): void;
   onWritten(text: string | null): void;
@@ -255,7 +265,7 @@ interface CardProps {
  * fields do; written in, the accent's arrow under it on the right sets it, as the count of changes is drawn. Its
  * layer's name is its label, not shown. Left empty, the brief is taken off.
  */
-function Card({ card, box, writing, onWrite, onWritten, onResize }: CardProps) {
+function Card({ card, box, at, writing, onWrite, onWritten, onResize }: CardProps) {
   return (
     <div
       class="ht-brief-card"
@@ -264,7 +274,8 @@ function Card({ card, box, writing, onWrite, onWritten, onResize }: CardProps) {
       data-key={card.key}
       data-selected={card.selected || undefined}
       data-writing={writing || undefined}
-      style={{ left: `${box.x}px`, top: `${box.y}px`, width: `${CARD_WIDTH}px` }}
+      // Moved by `translate`, so a frame of a pan or zoom moves it without laying it out again; `transform` is the glide's.
+      style={{ width: `${CARD_WIDTH}px`, translate: `${at.x}px ${at.y}px`, scale: box.scale === 1 ? undefined : String(box.scale) }}
       // A press here is not on the canvas: it writes in the card.
       onPointerDown={(event) => {
         event.stopPropagation();

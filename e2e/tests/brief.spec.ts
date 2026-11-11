@@ -66,6 +66,31 @@ async function lineEnd(page: Page, nth = 0) {
   });
 }
 
+/** How far the canvas is zoomed. */
+const zoomOf = (page: Page) => page.locator(".ht-stage").evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a);
+
+/** Zooms the canvas, Control held and the wheel turned in the middle of the window, clear of the panels, till it is between `min` and `max`; then pans the card of `layer` into the middle. */
+async function zoomTo(page: Page, layer: string, min: number, max: number) {
+  const middle = { x: 720, y: 360 };
+  await page.mouse.move(middle.x, middle.y);
+  await page.keyboard.down("Control");
+  for (let i = 0; i < 60; i++) {
+    const zoom = await zoomOf(page);
+    if (zoom >= min && zoom <= max) break;
+    await page.mouse.wheel(0, zoom < min ? -20 : 20);
+  }
+  await page.keyboard.up("Control");
+  const zoom = await zoomOf(page);
+  expect(zoom).toBeGreaterThanOrEqual(min);
+  expect(zoom).toBeLessThanOrEqual(max);
+  const box = await steadyBox(card(page, layer));
+  await page.mouse.wheel(box.x + box.width / 2 - middle.x, box.y + box.height / 2 - middle.y);
+  await expect.poll(async () => Math.abs((await steadyBox(card(page, layer))).x + box.width / 2 - middle.x)).toBeLessThan(2);
+}
+
+/** Zooms in till the cards are full size (ticket 134), the card of `layer` in the middle. */
+const zoomInOn = (page: Page, layer: string) => zoomTo(page, layer, 0.6, 1.2);
+
 const overlap = (a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) =>
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
@@ -224,16 +249,17 @@ test("a Brief press let go off the canvas writes nothing, and puts the tool down
   await expect(cards(page)).toHaveCount(0);
 });
 
-test("written in the phone view, the card is right of it, and stays there after a reload; a deleted layer's card goes, and comes back with ⌘Z", async ({ page }) => {
+test("written in the phone view, the card is beside it on the side nearer its layer, and stays there after a reload; a deleted layer's card goes, and comes back with ⌘Z", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Button");
   const saved = page.waitForResponse((response) => new URL(response.url()).pathname === "/round" && response.request().method() === "PUT");
   await writeBrief(page, phone(page).getByRole("button", { name: "Get started" }), "Press in a little");
   await saved;
   await page.keyboard.press("Escape");
+  // The button is at the left of the phone view: its card is left of it, in the gap between it and the tablet view (ticket 134).
   const right = async () => {
-    const [view, written] = await Promise.all([steadyBox(page.locator('iframe[title^="Phone"]')), steadyBox(card(page, "Button"))]);
-    return written.x > view.x + view.width;
+    const [view, tablet, written] = await Promise.all([steadyBox(page.locator('iframe[title^="Phone"]')), steadyBox(page.locator('iframe[title^="Tablet"]')), steadyBox(card(page, "Button"))]);
+    return written.x + written.width < view.x && written.x > tablet.x + tablet.width;
   };
   await expect.poll(right).toBe(true);
 
@@ -360,10 +386,14 @@ test("a new brief is written on a card beside its layer, in its view; set, the c
   const set = await steadyBox(card(page, "Button"));
   expect(set.x + set.width).toBeLessThan(view.x);
 
-  // Where it is on the canvas, in canvas px: the canvas may pan to bring it in sight, the card does not move on it.
-  const onCanvas = () => card(page, "Button").evaluate((el) => [(el as HTMLElement).style.left, (el as HTMLElement).style.top]);
-  const before = await onCanvas();
+  // Where it is on the canvas, from the desktop view's top left: the canvas may pan to bring it in sight, the card does not move on it.
   await page.keyboard.press("Escape");
+  await zoomInOn(page, "Button");
+  const onCanvas = async () => {
+    const [at, from] = await Promise.all([steadyBox(card(page, "Button")), steadyBox(page.locator('iframe[title="Canvas"]'))]);
+    return [Math.round(at.x - from.x), Math.round(at.y - from.y)];
+  };
+  const before = await onCanvas();
   await pressCard(page, "Button");
   await expect(field(page)).toBeFocused();
   expect(await onCanvas()).toEqual(before);
@@ -375,6 +405,7 @@ test("a card set before, opened again, grows down where it is, and the cards bel
   await writeBrief(page, canvas(page).locator("h1"), "A larger title, ".repeat(40));
   await writeBrief(page, canvas(page).getByRole("button", { name: "Get started" }), "Press in a little");
   await page.keyboard.press("Escape");
+  await zoomInOn(page, "Third Kind");
   const [above, below] = await Promise.all([steadyBox(card(page, "Third Kind")), steadyBox(card(page, "Button"))]);
   expect(below.y - (above.y + above.height)).toBeLessThan(above.height / 4);
 
@@ -394,6 +425,7 @@ test.describe("with motion", () => {
     await enterEditMode(page);
     await writeBrief(page, canvas(page).locator("h1"), "A larger title, please, as it reads too small. ".repeat(4));
     await page.keyboard.press("Escape");
+    await zoomInOn(page, "Third Kind");
     for (const close of ["Enter", "Escape"]) {
       await pressCard(page, "Third Kind");
       await expect(field(page)).toBeFocused();
@@ -416,5 +448,83 @@ test.describe("with motion", () => {
       const seen = (await tops).filter((y) => !Number.isNaN(y));
       for (const y of seen) expect(Math.abs(y - seen[0])).toBeLessThan(1);
     }
+  });
+});
+
+test.describe("beside every view, the same size at any zoom (ticket 134)", () => {
+  /** The live page made long before it is frozen: the cards of the loop far down it, under a tall space. */
+  async function longPage(page: Page) {
+    await page.evaluate(() => {
+      const first = document.querySelector("article")!.parentElement!;
+      const space = document.createElement("div");
+      space.style.height = "3000px";
+      first.before(space);
+    });
+  }
+  const tablet = (page: Page) => page.locator('iframe[title^="Tablet"]').contentFrame();
+  /** The gaps between the views, on the screen, in canvas px. */
+  async function gaps(page: Page) {
+    const zoom = await zoomOf(page);
+    const views = await Promise.all((await page.locator("iframe.ht-canvas").all()).map((view) => steadyBox(view)));
+    views.sort((a, b) => a.x - b.x);
+    return views.slice(1).map((v, i) => Math.round((v.x - (views[i].x + views[i].width)) / zoom));
+  }
+
+  test("on a long page, a card of a layer far down the tablet view, between two others, is beside it level with its layer, not above the view; the gaps between the views are wide with a brief, as ever with none, the view written in staying where it is", async ({ page }) => {
+    await longPage(page);
+    await enterEditMode(page);
+    expect(await gaps(page)).toEqual([80, 80]);
+    const layer = tablet(page).locator("article").last();
+    // Far down the page: the canvas panned to it, the wheel turned in the middle of the window.
+    const far = await steadyBox(layer);
+    await page.mouse.move(720, 360);
+    await page.mouse.wheel(0, far.y + far.height / 2 - 360);
+    await expect.poll(async () => Math.abs((await steadyBox(layer)).y + far.height / 2 - 360)).toBeLessThan(2);
+    await openBrief(page, layer);
+    const viewBefore = await steadyBox(page.locator('iframe[title^="Tablet"]'));
+    await page.keyboard.type("Lift on hover");
+    await page.keyboard.press("Enter");
+    await expect(field(page)).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect.poll(() => gaps(page)).toEqual([600, 600]);
+    const [view, written, at] = await Promise.all([steadyBox(page.locator('iframe[title^="Tablet"]')), steadyBox(cards(page).first()), steadyBox(layer)]);
+    // The view written in has not moved on the screen.
+    expect(Math.abs(view.x - viewBefore.x)).toBeLessThanOrEqual(1);
+    expect(written.x + written.width <= view.x || written.x >= view.x + view.width).toBe(true);
+    expect(written.y).toBeGreaterThan(view.y);
+    expect(Math.abs(written.y + written.height / 2 - (at.y + at.height / 2))).toBeLessThanOrEqual(2);
+    for (const other of await Promise.all((await page.locator("iframe.ht-canvas").all()).map((v) => steadyBox(v)))) expect(overlap(written, other)).toBe(false);
+
+    // The last brief taken off: the gaps as ever.
+    await pressCard(page, "Card");
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.press("Backspace");
+    await page.keyboard.press("Enter");
+    await expect(cards(page)).toHaveCount(0);
+    await expect.poll(() => gaps(page)).toEqual([80, 80]);
+  });
+
+  test("a card is 220px wide in 11px type on the screen at any zoom from 50% up; below, it shrinks with the canvas, full size again as it is opened (designer, 2026-11-11)", async ({ page }) => {
+    await enterEditMode(page);
+    await writeBrief(page, canvas(page).locator("h1"), "A larger title");
+    await page.keyboard.press("Escape");
+    const size = () =>
+      card(page, "Third Kind").evaluate((el) => {
+        const text = el.querySelector(".ht-brief-card-text")!;
+        return { width: Math.round(el.getBoundingClientRect().width), font: getComputedStyle(text).fontSize, line: Math.round(text.getBoundingClientRect().height) };
+      });
+    await zoomTo(page, "Third Kind", 0.55, 0.7);
+    const zoomedOut = await size();
+    await zoomTo(page, "Third Kind", 1.1, 1.6);
+    const zoomedIn = await size();
+    expect(zoomedOut).toEqual(zoomedIn);
+    expect(zoomedIn).toMatchObject({ width: 220, font: "11px" });
+
+    await zoomTo(page, "Third Kind", 0.2, 0.3);
+    const zoom = await zoomOf(page);
+    expect((await size()).width).toBeCloseTo((220 * zoom) / 0.5, -1);
+    await pressCard(page, "Third Kind");
+    await expect(field(page)).toBeFocused();
+    expect(Math.round((await steadyBox(card(page, "Third Kind"))).width)).toBe(220);
   });
 });
