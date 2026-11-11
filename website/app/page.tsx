@@ -4,7 +4,8 @@ import { HeroEditor } from "@/components/editor/HeroEditor";
 import { CanvasDemo } from "@/components/demos/CanvasDemo";
 import { DesignPanelDemo } from "@/components/demos/DesignPanelDemo";
 import { ApplyDemo } from "@/components/demos/ApplyDemo";
-import { BriefMini, OffCanvasMini, VariablesMini } from "@/components/demos/Minis";
+import { MiniVideo } from "@/components/demos/MiniVideo";
+import { BriefMini, OffCanvasMini } from "@/components/demos/Minis";
 import { installPrompt } from "@/lib/readme";
 import { UPDATES } from "@/lib/updates";
 
@@ -59,7 +60,7 @@ export default function Home() {
           <OffCanvasMini />
         </Mini>
         <Mini visual="top" title="Your project’s values" body="Your CSS variables and Tailwind theme, right in the Design panel.">
-          <VariablesMini />
+          <MiniVideo src="/videos/variables.mp4" poster="/videos/variables.jpg" />
         </Mini>
       </section>
 
@@ -102,16 +103,16 @@ export default function Home() {
 }
 
 /**
- * One of the three features (designer, 2026-11-11, for all three), its corners 8px. From 768px wide, an 800×500 card:
- * the demo 500px wide on one side, 4px in from the card's edges there, its corners round only there; the words on the
- * other, 16px in, from the top, the body 240px above the foot. Below, one above the other: the demo 4px in all round,
- * its corners all round; the words 16px in, 8px under the demo, 28px above the card's foot.
+ * One of the three features (designer, 2026-11-11, for all three), its corners 8px; the demo's corners 4px, in a 1px
+ * white edge (the raised color in dark mode). From 768px wide, an 800×500 card: the demo 500px wide on one side, 4px in
+ * from the card's edges there; the words on the other, 16px in, from the top, the body 240px above the foot. Below, one
+ * above the other: the demo 4px in all round; the words 16px in, 8px under the demo, 28px above the card's foot.
  */
 function Feature({ side, backdrop, title, body, children }: { side: "left" | "right"; backdrop: string; title: string; body: string; children: React.ReactNode }) {
   const right = side === "right";
   return (
     <section className={`flex w-full max-w-[800px] flex-col gap-3 rounded-lg bg-surface p-1 md:h-[500px] ${right ? "md:flex-row-reverse md:pl-3" : "md:flex-row md:pr-3"}`}>
-      <div className={`relative aspect-square w-[500px] max-w-full shrink-0 overflow-hidden rounded-[4px] bg-neutral-900 md:aspect-auto md:h-full ${right ? "md:rounded-l-none" : "md:rounded-r-none"}`}>
+      <div className="relative aspect-square w-[500px] max-w-full shrink-0 overflow-hidden rounded-sm border border-neutral-0 bg-neutral-900 md:aspect-auto md:h-full dark:border-raised">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={backdrop} alt="" className="absolute inset-0 size-full object-cover" />
         <div className="absolute inset-0">{children}</div>
