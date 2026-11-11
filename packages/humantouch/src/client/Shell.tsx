@@ -10,7 +10,7 @@ import { Icon } from "./icons";
 import { FIELD_SETTLE_MS, ping, prefersReducedMotion, TIP_DELAY_MS, TIP_GRACE_MS } from "./motion";
 import { pointerHeld, watchHolds } from "./pointer-held";
 import { createChangeSet, withDependents, type Change, type ChangeSet, type Created, type Place, type PutBack, type RangePart } from "./changeset";
-import { DELETED_ATTR, LAYER_ID_ATTR } from "./canvas-style";
+import { DELETED_ATTR, elementsOf, LAYER_ID_ATTR } from "./canvas-style";
 import { createClipboard } from "./clipboard";
 import { copyStyle, pasteStyle, type CopiedStyle } from "./style-copy";
 import type { Destination, Editor } from "./edit-commands";
@@ -20,7 +20,6 @@ import { cameInto, createOffCanvas, type OffCanvasLayer, type OffCanvas } from "
 import { carry as carryOff, moveInto as moveIntoOff, partOff as partOffCanvas, takenBackOff, type Desk } from "./off-canvas-moves";
 import { serializeCanvas, type Canvas } from "./freezer";
 import { takeInApplied } from "./saved-round";
-import { queryWithin } from "./shadow-roots";
 import { framedText, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
 import { PanelResizer } from "./PanelResizer";
@@ -391,8 +390,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   /** The layer a change is of, as the canvas has it now: one deleted, the layer it was in; one moved off the canvas, there. */
   const layerOfChange = (change: Change): Layer | null => {
     if (!tree || !offCanvas) return null;
-    // In a shadow root too (ticket 137).
-    const byId = (doc: Document, id: string) => queryWithin(doc, `[${LAYER_ID_ATTR}="${CSS.escape(id)}"]:not([${DELETED_ATTR}])`)[0] ?? null;
+    // Made on one instance alone (ticket 114): its layer in that instance. In a shadow root too (ticket 137, `elementsOf`).
+    const byId = (doc: Document, id: string) => elementsOf(doc, id).find((el) => !el.hasAttribute(DELETED_ATTR)) ?? null;
     const moved = change.offCanvas ? offCanvas.list().find((outside) => outside.id === change.offCanvas)?.layer() : null;
     if (moved) return moved;
     const id = change.kind === "delete" ? (change.before as Place).container.layer : change.layer;
@@ -954,6 +953,11 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           if (!editor?.canPromote(layer)) return;
           // No toast: the change list tells which went to the component ("· Card itself") and which stay (designer, 2026-11-10).
           editor.promote(layer);
+          onEdit();
+        }}
+        onEditAlone={(layer, alone) => {
+          if (!editor?.canEditAlone(layer)) return;
+          editor.editAlone(layer, alone);
           onEdit();
         }}
         onBeginText={(layer) => {

@@ -4,7 +4,7 @@
  */
 import type { SavedRound } from "../service-protocol";
 import { createChangeSet, placedAt, withDependents, type Change, type SavedChangeSet, type Composed, type Created, type Dissolved, type Place, type PutBack, type RangePart } from "./changeset";
-import { BRIEF_ATTR, changesOn, DELETED_ATTR, elementsOf, LAYER_ID_ATTR, MOVE_ATTR, ORIGINAL_TEXT_ATTR, REFERENCE_ATTR, restoreStyle, takeInEdits, TEXT_ATTR, upgradeEditStyles } from "./canvas-style";
+import { ALONE_ATTR, aloneKey, BRIEF_ATTR, changesOn, DELETED_ATTR, elementsOf, LAYER_ID_ATTR, MOVE_ATTR, ORIGINAL_TEXT_ATTR, REFERENCE_ATTR, restoreFor, restoreStyle, takeInEdits, TEXT_ATTR, upgradeEditStyles } from "./canvas-style";
 import { cssOf, type Property } from "./property-table";
 import { removeMade, unhide, writeText } from "./layer-changes";
 import { relocate, syncOrders } from "./moves";
@@ -57,7 +57,7 @@ export function revertSaved(round: SavedRound, id: number): SavedRound | null {
       }
     }
     else {
-      restoreStyle(elementsOf(doc, change.layer), cssOf(change.property as Property), changesOn(change.layer, rest), change.breakpoint ?? null);
+      restoreFor(change.layer, elementsOf(doc, change.layer), cssOf(change.property as Property), changesOn(change.layer, rest), change.breakpoint ?? null);
       // Placed freely at a breakpoint no more: its container is no positioning reference there for it.
       if (change.within) restoreStyle(elementsOf(doc, change.within), ["position"], changesOn(change.within, rest), change.breakpoint ?? null);
       // A gap that took over its layers' margins between them (ticket 122): theirs again.
@@ -108,8 +108,17 @@ export function takeInApplied(doc: Document, changeSet: SavedChangeSet) {
     }
   }
   const appliedOn = on(applied);
-  const touched = new Set(queryWithin(doc, `[${LAYER_ID_ATTR}]`).filter((el) => appliedOn(el).length || written.get(el)?.applied.length));
-  takeInEdits(touched, appliedOn, on(left), (el) => written.get(el) ?? { applied: [], left: [] });
+  // Made on one instance alone (ticket 114): on the elements of its layer in it.
+  const aloneOn = (el: Element) => {
+    const id = el.getAttribute(LAYER_ID_ATTR);
+    const mark = el.closest(`[${ALONE_ATTR}]`)?.getAttribute(ALONE_ATTR);
+    const key = id && mark ? aloneKey(id, mark) : null;
+    const of = (changes: Change[]) => (key ? changes.filter((change) => change.layer === key && change.kind === "style") : []);
+    return { applied: of(applied), left: of(left) };
+  };
+  // Those in its shadow roots too (ticket 137).
+  const touched = new Set(queryWithin(doc, `[${LAYER_ID_ATTR}]`).filter((el) => appliedOn(el).length || written.get(el)?.applied.length || aloneOn(el).applied.length));
+  takeInEdits(touched, appliedOn, on(left), (el) => written.get(el) ?? { applied: [], left: [] }, aloneOn);
   for (const change of applied) {
     if (change.kind !== "text") continue;
     for (const el of elementsOf(doc, change.layer)) {

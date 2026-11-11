@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { watchScrolled } from "./panel-scrolled";
 import { role, typeLabel, type Layer, type LayerTree } from "./layers";
-import { BRIEF_ATTR } from "./canvas-style";
+import { ALONE_ATTR, BRIEF_ATTR } from "./canvas-style";
 import { closedOutside, type Folds } from "./layer-folds";
 import { Icon, LayerIcon } from "./icons";
 import { EASE_OUT, LAYERS_FOLD_MS, LAYERS_FOLD_RISE_PX, prefersReducedMotion } from "./motion";
@@ -194,7 +194,7 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
             aria-level={level}
             aria-selected={selected.includes(layer)}
             aria-expanded={open}
-            aria-description={outside && level === 1 ? `${typeLabel(layer)} · Off canvas` : typeLabel(layer)}
+            aria-description={`${typeLabel(layer)}${outside && level === 1 ? " · Off canvas" : ""}${editsAlone(layer) ? " · Edits alone" : ""}`}
             data-off-canvas={outside || undefined}
             style={{ paddingLeft: `${16 + (level - 1) * LEVEL_INDENT}px` }}
             onPointerDown={(event) => {
@@ -228,6 +228,12 @@ export function LayerTreeView({ tree, offCanvas, selected, folds, broughtBack, o
             {!layer.text && layer.el.hasAttribute(BRIEF_ATTR) && (
               <span class="ht-tree-brief" data-ht-tip={`Brief: ${layer.el.getAttribute(BRIEF_ATTR)}`} aria-hidden="true">
                 <Icon name="brief" />
+              </span>
+            )}
+            {/* One of the instances a loop renders that no longer follows the others (ticket 114). */}
+            {editsAlone(layer) && (
+              <span class="ht-tree-alone" data-ht-tip="Edits alone: changes made here are made to this instance alone" aria-hidden="true">
+                <Icon name="alone" />
               </span>
             )}
           </div>
@@ -302,4 +308,9 @@ function initiallyCollapsed(root: Layer): Set<Layer> {
 function isAncestor(ancestor: Layer, layer: Layer): boolean {
   for (let p = layer.parent; p; p = p.parent) if (p === ancestor) return true;
   return false;
+}
+
+/** One of the instances a loop renders that edits alone, no longer following the others (ticket 114). */
+function editsAlone(layer: Layer): boolean {
+  return !layer.text && layer.el.hasAttribute(ALONE_ATTR);
 }

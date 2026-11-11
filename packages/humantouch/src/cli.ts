@@ -319,7 +319,9 @@ function shownAtOtherUsages(change: Change, usages: OtherUsageChanged[]): string
   const one = usages.length === 1;
   return (
     `Checked on the page: it shows the change, but on ${otherUsagesWord(change, usages)} too: ${otherUsagesWords(change.property, usages)} since the round was claimed. ` +
-    `The change is for this usage only (Scope): make it at the usage, put the other ${one ? "usage back as it was" : "usages back as they were"}, and run \`npx humantouch done ${change.id}\` again.`
+    (change.alone
+      ? `The change is for one instance alone (**One instance alone**): give it to that instance by a field of its item in the data, not by its index, put the ${one ? "other back as it was" : "others back as they were"}, and run \`npx humantouch done ${change.id}\` again.`
+      : `The change is for this usage only (Scope): make it at the usage, put the other ${one ? "usage back as it was" : "usages back as they were"}, and run \`npx humantouch done ${change.id}\` again.`)
   );
 }
 

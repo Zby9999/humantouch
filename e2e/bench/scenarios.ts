@@ -1705,6 +1705,48 @@ export const SCENARIOS: Scenario[] = [
       await desk.edit("src/App.tsx", `sm:grid-cols-3 ${AREAS}">`, `sm:grid-cols-3 ${AREAS} max-md:flex max-md:flex-col">`);
     },
   },
+  {
+    id: "card-alone",
+    title: "The Arrange card, the second the features loop renders, set to edit alone and filled red; then the loop's cards given 4px corners from the first, the Arrange card's too (ticket 114).",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "Card", 1).click();
+      await page.getByRole("toolbar", { name: "Selection" }).getByRole("button", { name: "Edit alone" }).click();
+      await setField(page, "Fill color", "ff0000");
+      await layer(page, "Card", 0).click();
+      await setField(page, "Corner radius", "4");
+      await saved(desk, 2);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The Arrange card is red; Freeze, Apply and Your turn stay white.",
+        checkable: true,
+        shows: () => {
+          const fills = [...document.querySelectorAll("article")].map((card) => getComputedStyle(card).backgroundColor);
+          return fills.join() === ["rgb(255, 255, 255)", "rgb(255, 0, 0)", "rgb(255, 255, 255)", "rgb(255, 255, 255)"].join();
+        },
+      },
+      {
+        kind: "style",
+        expect: "The three cards of the loop have 4px corners, the Arrange card's too; the fourth keeps 12px.",
+        checkable: true,
+        variable: ["rounded-sm", "--radius-sm"],
+        shows: () => [...document.querySelectorAll("article")].map((card) => getComputedStyle(card).borderTopLeftRadius).join() === "4px,4px,4px,12px",
+      },
+    ],
+    async apply(desk) {
+      // The Card takes its corners and fill from its usage; the loop tells the Arrange card apart by its title, a field of its data, not by its place.
+      await desk.edit("src/components/Card.tsx", "{ title, body }: { title: string; body: string }", '{ title, body, className = "rounded-xl bg-white" }: { title: string; body: string; className?: string }');
+      await desk.edit("src/components/Card.tsx", '<article className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">', "<article className={`border border-stone-200 p-5 shadow-sm ${className}`}>");
+      await desk.edit(
+        "src/App.tsx",
+        "<Card key={feature.title} title={feature.title} body={feature.body} />",
+        '<Card key={feature.title} title={feature.title} body={feature.body} className={feature.title === "Arrange" ? "rounded-sm bg-[#ff0000]" : "rounded-sm bg-white"} />',
+      );
+    },
+  },
   // Ticket 137: a layer in an open shadow root, styled by the component's own style element there, as the website's hero is.
   {
     id: "shadow-root-style",
