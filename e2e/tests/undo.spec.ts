@@ -273,7 +273,7 @@ test("a row of the change list names its change on one line, its values in its t
   await expect.poll(off).toBeLessThanOrEqual(1);
   await expect.poll(() => design(page).locator('[data-ht-mark="fill"]').first().evaluate((el) => getComputedStyle(el).animationName)).toBe("ht-ping");
   // Blinked, as it was.
-  await expect(design(page).locator('[data-ht-mark="fill"]').first()).not.toHaveClass(/\btk-ping\b/);
+  await expect(design(page).locator('[data-ht-mark="fill"]').first()).not.toHaveClass(/\bht-ping\b/);
 });
 
 test("a shadow added, clicked in the change list, blinks its − in the accent, its fields being unmarked (designer, 2026-11-10)", async ({ page }) => {

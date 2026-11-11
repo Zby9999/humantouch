@@ -316,5 +316,5 @@ test("a change made in the phone view, clicked in the change list, is shown ther
 
   await expect(page.getByRole("dialog", { name: "Changes" })).toHaveCount(0);
   await expect(design(page).getByRole("note", { name: "Phone breakpoint" })).toBeVisible();
-  await expect(design(page).locator('[data-ht-mark="fill"]').first()).toHaveClass(/\btk-ping\b/);
+  await expect(design(page).locator('[data-ht-mark="fill"]').first()).toHaveClass(/\bht-ping\b/);
 });

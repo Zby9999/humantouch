@@ -15,7 +15,7 @@ import type { SavedOffCanvasLayer } from "../src/service-protocol";
 /**
  * A round saved before the instances of a layer shared their edit styles
  * (ticket 60): `fixtures/round-before-60/`, written once by the code of then,
- * when `VITE_TK_WRITE_FIXTURE` is set, and kept since. A round saved then
+ * when `VITE_HT_WRITE_FIXTURE` is set, and kept since. A round saved then
  * opens as it was, edits go on and are undone, and the same edits made now
  * record the same ChangeSet, and look the same, as they did then.
  */
@@ -248,7 +248,7 @@ async function readFixture(): Promise<Fixture> {
   };
 }
 
-describe.runIf((import.meta as ImportMeta & { env: Record<string, string | undefined> }).env.VITE_TK_WRITE_FIXTURE)("the fixture", () => {
+describe.runIf((import.meta as ImportMeta & { env: Record<string, string | undefined> }).env.VITE_HT_WRITE_FIXTURE)("the fixture", () => {
   test("is written by the code of now", async () => {
     // Written once, by the code of then (before ticket 60): never over the one kept.
     const kept = await commands.readFile(`${FIXTURE}canvas.html`).then(
