@@ -368,6 +368,15 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     });
     onEdit();
   };
+  /** What follows each step of a resize after the first, which the rest of the editor follows once it is let go: the Design panel (ticket 153). */
+  const resizeSteps = useRef(new Set<() => void>());
+  const onResizeStep = useMemo(
+    () => (listener: () => void) => {
+      resizeSteps.current.add(listener);
+      return () => void resizeSteps.current.delete(listener);
+    },
+    [],
+  );
   const onEdit = (adjust = true) => {
     // A move builds the layers anew: the selection is found again in them.
     const next = editor?.tree();
@@ -929,8 +938,13 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         }}
         onResize={(layer, to, continues, at) => {
           editorOf(layer)!.resize(layer, to, { continues, along: at && movedWith(layer, at) });
-          onEdit(false);
+          // Each step after the first: the canvas shows it, and the Design panel its size; the rest of the editor follows
+          // once the handle is let go. Drawing the whole editor anew each frame keeps a resize under 60fps (ticket 153).
+          // The whole of a layer off the canvas, which moves too, has the editor follow each step, as ever.
+          if (continues && !at) for (const listener of resizeSteps.current) listener();
+          else onEdit(false);
         }}
+        onResized={() => onEdit(false)}
         onCancelResize={(layer) => {
           editorOf(layer)!.takeBack();
           onEdit(false);
@@ -1030,6 +1044,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
                   editor={editorOf(selected[0])!}
                   layers={selected}
                   onEdit={onEdit}
+                  onResizeStep={onResizeStep}
                   onStack={() => makeStack(selected)}
                   onDissolve={() => dissolve(selected)}
                   onGradientPicker={setGradientPicker}
