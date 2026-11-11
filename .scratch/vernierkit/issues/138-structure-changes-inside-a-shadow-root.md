@@ -118,3 +118,17 @@
 3. `holderOf` 在 live page 的 check 里也会进 shadow root。如果页面上的容器恰好是第三方元素的宿主，读到的子层是它的 shadow 内容，和画布一致；但 closed shadow root 的宿主在画布和页面上都按 light DOM 读。
 4. `check.ts` 里本地的 `holderOf`/`parentOf`，对 slot 进去的层给的是宿主；而它在 flat tree 里的父元素是 slot 所在的元素。`changedAround` 的 `containsAcross` 也是按 DOM 算的，不是按 flat tree。现在都走不到，因为 slot 进去的层不能挪。等它们能挪时，这两处要改用 `flatParent`。
 5. look 的 `LOOK_STYLES_BASE`（look 文档的基础样式）只在 look 文档的 head 里，进不了 shadow root。shadow root 里的元素靠的是各自冻结的样式，目前没看到差别，但基础样式里有的东西 shadow root 里没有。
+
+**规划会话，2026-11-12**
+
+线上合并到 main 2c74e25。135–138 这条线全部完成。
+
+代定：
+- 1–6 都确认。
+  - 第 4 条，claim 的句子写得清楚：改的是组件渲染进 shadow root 的标记，不是外面页面的标记。
+  - 第 6 条，把 bench 分成两个场景，同意。ticket 99 的限制在 light DOM 里也一样。
+- 第 7 条改一下：⌘V 粘贴到边界另一侧时，照旧不粘贴，但要用同一个 toast 提示，不能悄悄地什么都不做。文字是 `Layers can't be pasted into this component.`。这是个小改动，由这条线顺手补上。
+
+风险 1–5 接受。风险 4（slot 进去的层能挪以后，要改用 flatParent）记在这里，以后开放挪动时一起处理。
+
+这张票的整套验证跟下一批 main 一起跑。
