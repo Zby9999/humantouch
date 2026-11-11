@@ -107,7 +107,7 @@ closed shadow root：页面的脚本读不到它（`el.shadowRoot` 是 null）�
   - 点 shadow 里的文字，选中框和宿主一样大；
   - 改了宿主的填色，存下轮次，重新载入，进入编辑态：画布是存下的那张（宿主是红色），shadow root 照样显示，各视图按各自宽度显示。
   - `--repeat-each=3` 9/9。
-- `packages/humantouch/test/shadow-roots.browser.test.ts`，13 个：
+- `packages/humantouch/test/shadow-roots.browser.test.ts`，12 个：
   - 显示和各视图：`<style>` 和 constructable sheet、媒体查询、`vh`、slot、嵌套 shadow root、closed、样式不漏到外面；
   - 存下再打开，再存一次逐字节相同；
   - 画布 shadow root 里的改动同步到视图；
