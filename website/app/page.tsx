@@ -29,27 +29,24 @@ export default function Home() {
       <Feature
         side="left"
         backdrop="/backdrops/canvas.jpg"
-        label="Canvas"
         title="Edit the page itself"
-        body="Click the toggle and the page freezes into a canvas. Drag layers to move them, select a few and press ⇧A to make a Stack, the way you would in Figma."
+        body="Click the toggle and your page becomes a canvas you edit like Figma."
       >
         <CanvasDemo />
       </Feature>
       <Feature
         side="right"
         backdrop="/backdrops/design-panel.jpg"
-        label="Views"
-        title="Every width at once"
-        body="Desktop, Tablet and Phone, side by side. Change a Fill or a corner radius in the Design panel and all three follow; a change made in the Phone view stays at its breakpoint."
+        title="One change, every view"
+        body="Change it once and Desktop, Tablet and Phone all follow."
       >
         <DesignPanelDemo />
       </Feature>
       <Feature
         side="left"
         backdrop="/backdrops/apply.jpg"
-        label="Apply"
         title="Tell your Agent, then check"
-        body="Say “Apply my design changes”. Your Agent writes them into the code, the ring on the toggle fills as each one shows on the page, and the report says which it could not apply 1:1."
+        body="Your Agent writes your changes into the code, and the page checks every one."
       >
         <ApplyDemo />
       </Feature>
@@ -105,7 +102,7 @@ export default function Home() {
 }
 
 /** One of the three features: an 800×500 card, the demo on its backdrop on one side, the words on the other. */
-function Feature({ side, backdrop, label, title, body, children }: { side: "left" | "right"; backdrop: string; label: string; title: string; body: string; children: React.ReactNode }) {
+function Feature({ side, backdrop, title, body, children }: { side: "left" | "right"; backdrop: string; title: string; body: string; children: React.ReactNode }) {
   return (
     <section className={`flex w-full max-w-[800px] flex-col gap-3 rounded-[4px] bg-surface p-3 md:h-[500px] ${side === "right" ? "md:flex-row-reverse" : "md:flex-row"}`}>
       <div className="relative aspect-square w-full shrink-0 overflow-hidden rounded-[4px] bg-neutral-900 md:aspect-auto md:h-full md:w-[480px]">
@@ -114,7 +111,6 @@ function Feature({ side, backdrop, label, title, body, children }: { side: "left
         <div className="absolute inset-0">{children}</div>
       </div>
       <div className="flex flex-col gap-2 p-3 md:justify-end md:p-5">
-        <p className="label text-[16px] leading-[18px]">{label}</p>
         <h2 className="text-[20px] leading-[1.3] font-[500] tracking-[-0.2px] text-ink">{title}</h2>
         <p className="text-[14px] leading-[1.5] font-[440] text-label">{body}</p>
       </div>
