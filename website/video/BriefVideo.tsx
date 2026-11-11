@@ -23,6 +23,11 @@ const EASE_OUT = Easing.bezier(0.16, 1, 0.3, 1);
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 /** The brief's line: the product's muted gray is lost on this darker backdrop, so drawn light, as the view's label is. */
 const LINE = "rgb(255 255 255 / 0.85)";
+/**
+ * The camera at its closest. A 3D-transformed layer is drawn at its own size and then scaled, so a plane scaled up
+ * comes out soft: the plane is laid out this much larger (CSS zoom) and the camera only ever scales it down.
+ */
+const CLOSEST = 3.3;
 const BRIEF = "Pressed, it shrinks a little and springs back.";
 /** The product's card: 220px wide, 40px off the view, on the side of the view its layer is on (brief-cards.ts). */
 const CARD_WIDTH = 220;
@@ -53,22 +58,42 @@ function useButton(page: React.RefObject<HTMLDivElement | null>) {
   return box;
 }
 
+/** The brief trimmed to its capitals and baseline, so the space above it looks the same as below it. */
+const TRIM = { textBoxTrim: "trim-both", textBoxEdge: "cap alphabetic" } as React.CSSProperties;
+
+/** The text field's caret; `before` the text it takes no room, so the placeholder stays where it is. */
+function Caret({ on, width, before }: { on: boolean; width: number; before?: boolean }) {
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        width,
+        height: 13,
+        marginLeft: before ? 0 : 1,
+        marginRight: before ? -width : 0,
+        verticalAlign: -2,
+        background: "var(--ht-accent)",
+        opacity: on ? 1 : 0,
+      }}
+    />
+  );
+}
+
 const Stage: React.FC<{ frame: number }> = ({ frame }) => {
   const { width, height } = useVideoConfig();
   const page = useRef<HTMLDivElement>(null);
   const button = useButton(page);
   const b = button ?? { x: 24, y: 360, width: 150, height: 48 };
 
-  // The card: left of the view, level with the button; the line straight between them.
-  const cardHeight = frame < 168 ? 76 : 52;
-  const card = { x: -CARD_OFFSET - CARD_WIDTH, y: b.y + b.height / 2 - 38 };
+  // The card: left of the view, its middle level with the button's, where the line runs straight between them.
   const lineY = b.y + b.height / 2;
+  const card = { x: -CARD_OFFSET - CARD_WIDTH, y: lineY };
   const from = b.x;
   const to = card.x + CARD_WIDTH;
 
   // Where the camera looks, and how close: the button, along the line to the card, then back to see them all.
   const atButton = { x: b.x + b.width / 2, y: lineY };
-  const atCard = { x: card.x + CARD_WIDTH / 2, y: card.y + cardHeight / 2 };
+  const atCard = { x: card.x + CARD_WIDTH / 2, y: lineY };
   const atAll = { x: (card.x + b.x + b.width) / 2, y: lineY - 20 };
   const along = interpolate(frame, [38, 98], [0, 1], { ...clamp, easing: EASE_IN_OUT });
   const back = interpolate(frame, [170, 192], [0, 1], { ...clamp, easing: EASE_IN_OUT });
@@ -76,7 +101,7 @@ const Stage: React.FC<{ frame: number }> = ({ frame }) => {
     x: atButton.x + (atCard.x - atButton.x) * along + (atAll.x - atCard.x) * back,
     y: atButton.y + (atCard.y - atButton.y) * along + (atAll.y - atCard.y) * back,
   };
-  const zoom = interpolate(frame, [0, 38, 98, 170, 192], [3.3, 3.0, 2.9, 2.9, 1.75], { ...clamp, easing: EASE_IN_OUT });
+  const zoom = interpolate(frame, [0, 38, 98, 170, 192], [CLOSEST, 3.0, 2.9, 2.9, 1.75], { ...clamp, easing: EASE_IN_OUT });
   /**
    * A screen pixel, on the plane. The product draws its lines and handles at one screen pixel, whatever the zoom; the
    * video is seen at about a quarter of its size in the card, so they are drawn here at a few screen pixels, as wide
@@ -103,83 +128,90 @@ const Stage: React.FC<{ frame: number }> = ({ frame }) => {
           display: "block",
           background: "none",
           transformOrigin: "0 0",
-          transform: `translate(${width / 2}px, ${height / 2}px) rotateX(30deg) rotateZ(${interpolate(frame, [0, 210], [-9, -6])}deg) scale(${zoom}) translate(${-look.x}px, ${-look.y}px)`,
+          // Only ever scaled down: the plane is laid out at its closest (`zoom`), so its text and lines are drawn sharp.
+          transform: `translate(${width / 2}px, ${height / 2}px) rotateX(30deg) rotateZ(${interpolate(frame, [0, 210], [-9, -6])}deg) scale(${zoom / CLOSEST})`,
           ["--ht-icon-size" as string]: "13.5px",
           ["--ht-icon-stroke" as string]: "1.05px",
           ["--font-geist" as string]: fontFamily,
         }}
       >
-        {/* The view: its label, and Acme at Phone. */}
-        <div className="ht-view-label" style={{ left: 0, top: -24, width: VIEW_WIDTH, color: "rgb(255 255 255 / 0.6)" }}>
-          <span className="ht-view-title">
-            <span className="ht-view-name is-active" style={{ color: "#fff" }}>
-              Phone
+        <div style={{ position: "absolute", left: -look.x, top: -look.y, zoom: CLOSEST }}>
+          {/* The view: its label, and Acme at Phone. */}
+          <div className="ht-view-label" style={{ left: 0, top: -24, width: VIEW_WIDTH, color: "rgb(255 255 255 / 0.6)" }}>
+            <span className="ht-view-title">
+              <span className="ht-view-name is-active" style={{ color: "#fff" }}>
+                Phone
+              </span>
+              <span className="ht-view-range">≤ 767</span>
             </span>
-            <span className="ht-view-range">≤ 767</span>
-          </span>
-        </div>
-        <div ref={page} style={{ position: "absolute", left: 0, top: 0, width: VIEW_WIDTH, boxShadow: "0 0 0 0.5px rgb(0 0 0 / 0.2), 0 30px 80px -20px rgb(0 0 0 / 0.45)" }}>
-          <DemoPage view="Phone" width={VIEW_WIDTH} onPick={() => {}} onHover={() => {}} hug />
-        </div>
+          </div>
+          <div ref={page} style={{ position: "absolute", left: 0, top: 0, width: VIEW_WIDTH, boxShadow: "0 0 0 0.5px rgb(0 0 0 / 0.2), 0 30px 80px -20px rgb(0 0 0 / 0.45)" }}>
+            <DemoPage view="Phone" width={VIEW_WIDTH} onPick={() => {}} onHover={() => {}} hug />
+          </div>
 
-        {/* The button, selected. */}
-        <div
-          className="ht-selection"
-          style={{ left: b.x, top: b.y, width: b.width, height: b.height, borderWidth: hair, opacity: interpolate(frame, [6, 14], [0, 1], clamp) }}
-        />
-        {[
-          [b.x, b.y],
-          [b.x + b.width, b.y],
-          [b.x, b.y + b.height],
-          [b.x + b.width, b.y + b.height],
-        ].map(([x, y]) => (
+          {/* The button, selected. */}
           <div
-            key={`${x} ${y}`}
-            style={{
-              position: "absolute",
-              left: x - 8 * px,
-              top: y - 8 * px,
-              width: 16 * px,
-              height: 16 * px,
-              boxSizing: "border-box",
-              border: `${hair}px solid var(--ht-accent)`,
-              background: "#fff",
-              opacity: interpolate(frame, [8, 16], [0, 1], clamp),
-            }}
+            className="ht-selection"
+            style={{ left: b.x, top: b.y, width: b.width, height: b.height, borderWidth: hair, opacity: interpolate(frame, [6, 14], [0, 1], clamp) }}
           />
-        ))}
+          {[
+            [b.x, b.y],
+            [b.x + b.width, b.y],
+            [b.x, b.y + b.height],
+            [b.x + b.width, b.y + b.height],
+          ].map(([x, y]) => (
+            <div
+              key={`${x} ${y}`}
+              style={{
+                position: "absolute",
+                left: x - 8 * px,
+                top: y - 8 * px,
+                width: 16 * px,
+                height: 16 * px,
+                boxSizing: "border-box",
+                border: `${hair}px solid var(--ht-accent)`,
+                background: "#fff",
+                opacity: interpolate(frame, [8, 16], [0, 1], clamp),
+              }}
+            />
+          ))}
 
-        {/* The brief's line, drawn from the button to the card as the camera goes; the dot on the button's edge. */}
-        <svg className="ht-brief-lines" width="1" height="1" aria-hidden="true" style={{ overflow: "visible" }}>
-          <g data-selected="true">
-            <path d={`M ${from} ${lineY} H ${from + (to - from) * drawn}`} style={{ vectorEffect: "none", stroke: LINE, strokeWidth: hair, strokeDasharray: `${10 * px} ${8 * px}` }} />
-            <circle style={{ fill: LINE }} cx={from} cy={lineY} r={7 * px * interpolate(frame, [26, 34], [0, 1], { ...clamp, easing: EASE_OUT })} />
-          </g>
-        </svg>
+          {/* The brief's line, drawn from the button to the card as the camera goes; the dot on the button's edge. */}
+          <svg className="ht-brief-lines" width="1" height="1" aria-hidden="true" style={{ overflow: "visible" }}>
+            <g data-selected="true">
+              <path d={`M ${from} ${lineY} H ${from + (to - from) * drawn}`} style={{ vectorEffect: "none", stroke: LINE, strokeWidth: hair, strokeDasharray: `${10 * px} ${8 * px}` }} />
+              <circle style={{ fill: LINE }} cx={from} cy={lineY} r={7 * px * interpolate(frame, [26, 34], [0, 1], { ...clamp, easing: EASE_OUT })} />
+            </g>
+          </svg>
 
-        {/* The card: written in, then set. */}
-        <div
-          className="ht-brief-card"
-          data-selected="true"
-          data-writing={writing || undefined}
-          style={{
-            left: card.x,
-            top: card.y,
-            width: CARD_WIDTH,
-            opacity: interpolate(frame, [68, 78], [0, 1], clamp),
-            scale: `${interpolate(frame, [68, 84], [0.94, 1], { ...clamp, easing: EASE_OUT })}`,
-            transformOrigin: "100% 50%",
-          }}
-        >
-          <p className="ht-brief-card-text" style={typed ? undefined : { color: "var(--ht-text-muted)" }}>
-            {typed ? BRIEF.slice(0, typed) : "What should the Agent achieve here?"}
-            {writing && <span style={{ display: "inline-block", width: hair, height: 13, marginLeft: 1, verticalAlign: -2, background: "var(--ht-accent)", opacity: caret ? 1 : 0 }} />}
-          </p>
-          {writing && (
-            <button type="button" className="ht-brief-card-set" aria-label="Set brief" style={{ scale: `${pressed}` }}>
-              <Icon name="arrow-up" />
-            </button>
-          )}
+          {/* The card: written in, then set. */}
+          <div
+            className="ht-brief-card"
+            data-selected="true"
+            data-writing={writing || undefined}
+            style={{
+              left: card.x,
+              top: card.y,
+              // Its middle on the line, whatever its height, written in or set.
+              translate: "0 -50%",
+              width: CARD_WIDTH,
+              opacity: interpolate(frame, [68, 78], [0, 1], clamp),
+              scale: `${interpolate(frame, [68, 84], [0.94, 1], { ...clamp, easing: EASE_OUT })}`,
+              transformOrigin: "100% 50%",
+            }}
+          >
+            <p className="ht-brief-card-text" style={{ ...TRIM, ...(typed ? {} : { color: "var(--ht-text-muted)" }) }}>
+              {/* The caret where the next letter goes: at the start, over the placeholder, till the first is typed. */}
+              {writing && !typed && <Caret on={caret} width={hair} before />}
+              {typed ? BRIEF.slice(0, typed) : "What should the Agent achieve here?"}
+              {writing && typed > 0 && <Caret on={caret} width={hair} />}
+            </p>
+            {writing && (
+              <button type="button" className="ht-brief-card-set" aria-label="Set brief" style={{ scale: `${pressed}` }}>
+                <Icon name="arrow-up" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </AbsoluteFill>

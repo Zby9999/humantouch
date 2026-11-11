@@ -21,6 +21,9 @@ const { fontFamily } = loadFont("normal", { weights: ["400", "500", "600"], subs
 const BACKDROP = "#a0a19f";
 const EASE_OUT = Easing.bezier(0.16, 1, 0.3, 1);
 
+/** The camera at its closest; see the Brief video. */
+const CLOSEST = 2.12;
+
 /** When each color's piece sets off, in frames: the project's in turn, then Tailwind's along each row, row by row. */
 const PROJECT_START = 20;
 const TAILWIND_START = 38;
@@ -56,12 +59,15 @@ const Stage: React.FC<{ frame: number }> = ({ frame }) => {
           inset: "auto",
           // Left of the middle: tilted and turned, the panel leans right; so it is centred in a card cut narrow.
           left: "40%",
-          top: 70,
+          // In its own zoomed pixels: 70 on screen.
+          top: 70 / CLOSEST,
           transformOrigin: "50% 0",
           display: "block",
           background: "none",
-          // The camera: the panel tilted away and turned, close; drifting in a little over the clip.
-          transform: `translateX(-50%) rotateX(34deg) rotateZ(-12deg) scale(${interpolate(frame, [0, durationInFrames], [2.0, 2.12])})`,
+          // The camera: the panel tilted away and turned, close; drifting in a little over the clip. Only ever scaled
+          // down: the panel is laid out at the closest (`zoom`), so its text is drawn sharp, not a small one scaled up.
+          transform: `translateX(-50%) rotateX(34deg) rotateZ(-12deg) scale(${interpolate(frame, [0, durationInFrames], [2.0, CLOSEST]) / CLOSEST})`,
+          zoom: CLOSEST,
           ["--ht-icon-size" as string]: "13.5px",
           ["--ht-icon-stroke" as string]: "1.05px",
           ["--font-geist" as string]: fontFamily,
