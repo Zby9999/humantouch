@@ -113,8 +113,9 @@ function Feature({ side, backdrop, title, body, children }: { side: "left" | "ri
   return (
     <section className={`flex w-full max-w-[800px] flex-col gap-3 rounded-lg bg-surface p-1 md:h-[500px] ${right ? "md:flex-row-reverse md:pl-3" : "md:flex-row md:pr-3"}`}>
       <div className="relative aspect-square w-[500px] max-w-full shrink-0 overflow-hidden rounded-sm border border-neutral-0 bg-neutral-900 md:aspect-auto md:h-full dark:border-raised">
+        {/* Below the hero: asked for as it nears the screen, so it does not take the network from the hero (designer, 2026-11-12). */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={backdrop} alt="" className="absolute inset-0 size-full object-cover" />
+        <img src={backdrop} alt="" loading="lazy" decoding="async" className="absolute inset-0 size-full object-cover" />
         <div className="absolute inset-0">{children}</div>
       </div>
       <div className="flex flex-col justify-between gap-2 px-4 pt-2 pb-7 md:pt-6 md:pb-60">

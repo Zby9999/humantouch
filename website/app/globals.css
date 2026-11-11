@@ -115,6 +115,16 @@ html,
 body {
   overscroll-behavior-y: none;
 }
+
+/* The hero's picture: hidden for its first second, then shown at once (HeroEditor.tsx). */
+@keyframes hero-picture-in {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
+  }
+}
 html {
   background: var(--page);
 }
