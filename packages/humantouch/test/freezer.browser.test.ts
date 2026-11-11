@@ -133,6 +133,41 @@ describe("the canvas shown at several widths", () => {
     expect(style(desktop.document, "tall").color).toBe("rgb(0, 128, 0)");
   });
 
+  test("a view beside waiting for a value's steps to pause is not fitted again as the canvas changes; once it shows them, it is (ticket 153)", async () => {
+    const canvas = await freeze(livePage(), iframe());
+    const views = createViews(canvas);
+    const phone = await views.add(iframe(), 390);
+    const [desktop] = views.list();
+    await painted();
+    await painted();
+    const frameOf = (doc: Document) => doc.defaultView!.frameElement as HTMLIFrameElement;
+    // Fitting a view writes its iframe's height, twice over.
+    let phoneFitted = 0;
+    const watch = new MutationObserver(() => phoneFitted++);
+    watch.observe(frameOf(phone.document), { attributes: true, attributeFilter: ["style"] });
+    const [before, phoneBefore] = [desktop.height, phone.height];
+
+    // Steps of a value in the desktop view, as a handle dragged makes them: the view beside waits for them to pause.
+    for (let i = 1; i <= 3; i++) {
+      views.lagBeside(() => desktop, true, () => {
+        canvas.document.getElementById("narrow")!.style.height = `${10 + i * 100}px`;
+      });
+      await painted();
+      expect(desktop.height).toBe(before + i * 100);
+    }
+    await new Promise((done) => setTimeout(done));
+    expect(phoneFitted).toBe(0);
+
+    // Caught up, it shows them, and is as tall as what it shows.
+    views.catchUp();
+    await painted();
+    watch.disconnect();
+    expect(phoneFitted).toBeGreaterThan(0);
+    expect(phone.height).toBe(phone.document.documentElement.scrollHeight);
+    expect(frameOf(phone.document).offsetHeight).toBe(phone.height);
+    expect(phone.height).toBe(phoneBefore + 300);
+  });
+
   test("while a drag pins the views' heights, nothing shifted on the canvas makes a view taller; let go, each is as tall as what it shows again", async () => {
     const canvas = await freeze(livePage(), iframe());
     const views = createViews(canvas);

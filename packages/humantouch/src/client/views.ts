@@ -152,22 +152,33 @@ export function createViews(canvas: Canvas): Views {
   const desktop = viewOf(canvas.document, canvas.width, ITSELF, () => fittings.get(desktop)?.height ?? canvas.height);
   const views: View[] = [desktop];
 
-  /** Each view made as tall as what it shows, once a frame, when anything may have changed it. */
+  /** Each view made as tall as what it shows, once a frame, when anything in it may have changed it. */
   let frame = 0;
   /** What pins every view as tall as it is: while any does, none is fitted. */
   const pins = new Set<object>();
+  /**
+   * The views whose page has changed, or changed size, since they were last
+   * fitted: only those are fitted again. Fitting one lays its page out twice
+   * over, and a view beside, waiting for a value's steps to pause (ADR 0011),
+   * has not changed (ticket 153).
+   */
+  const unfitted = new Set<View>();
   const fit = () => {
     frame = 0;
     if (pins.size) return;
     let changed = false;
-    for (const fitting of fittings.values()) {
+    for (const [view, fitting] of fittings) {
+      if (!unfitted.has(view)) continue;
       const height = fitHeight(fitting.doc, fitting.iframe, canvas.windowHeight);
       if (height !== fitting.height) changed = true;
       fitting.height = height;
     }
+    unfitted.clear();
     if (changed) for (const listener of listeners) listener();
   };
-  const refit = () => {
+  /** Fits `view` again before the next frame; every view, none named. */
+  const refit = (view?: View) => {
+    for (const each of view ? [view] : fittings.keys()) unfitted.add(each);
     frame ||= requestAnimationFrame(fit);
   };
   /** Keeps `view`, `height` px tall now, as tall as what it shows from now on. */
@@ -177,14 +188,15 @@ export function createViews(canvas: Canvas): Views {
     if (!iframe) return;
     // What the view shows can change size by itself too, as images load: watched in its own window.
     const Observer = doc.defaultView!.ResizeObserver;
-    const observer = new Observer(refit);
+    const observer = new Observer(() => refit(view));
     observer.observe(doc.documentElement);
     if (doc.body) observer.observe(doc.body);
-    fittings.set(view, { doc, iframe, height, observer });
+    // Anything changed in its page may change how tall it is: the canvas's, as edited; a view beside's, as it follows the canvas.
+    const changes = new MutationObserver(() => refit(view));
+    changes.observe(doc.documentElement, EVERYTHING);
+    fittings.set(view, { doc, iframe, height, observer, changes });
   };
   keepFitted(desktop, canvas.height);
-  // Anything changed on the canvas may change how tall a view is: each is fitted again before the next frame.
-  new MutationObserver(refit).observe(canvas.document.documentElement, EVERYTHING);
   /**
    * The layers making room for a drag: the view dragged in, where it has
    * them, what each view shows of them so far, the style attribute each
@@ -310,7 +322,9 @@ export function createViews(canvas: Canvas): Views {
       followers.get(view)?.stop();
       followers.delete(view);
       fittings.get(view)?.observer.disconnect();
+      fittings.get(view)?.changes.disconnect();
       fittings.delete(view);
+      unfitted.delete(view);
       const i = views.indexOf(view);
       if (i >= 0) views.splice(i, 1);
     },
@@ -364,6 +378,7 @@ interface Fitting {
   iframe: HTMLIFrameElement;
   height: number;
   observer: ResizeObserver;
+  changes: MutationObserver;
 }
 
 /** Which node of a view is which node of the canvas, both ways, and how text is typed in it. */
