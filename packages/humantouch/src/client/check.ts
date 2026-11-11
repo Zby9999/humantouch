@@ -17,7 +17,7 @@ import { canvasOf, type RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
 import { autoMarginTakesRoom, edgeGoneBy, middleShareOf, offsetPlacing, placedFrom, roomAlong, shareOf, sideShareOf, sizeAlong } from "./placed-from";
 import { checkable, foundByMarker, isEndOffset, textMovedInPlace, madeLayer, pxIn, makerOf, PLACED_BY, placeOfMade, PLACING, movedBy, SIDES, centeringSides, whereMade, type Edge, type InLayout, type Position, type Share, type Unfound } from "./checkable";
-import { absolute, ARRANGED, ordersOf, placementOf, readValue, roomBetween, round as rounded, sourcesFor, type Arrangement, type MarginBetween, type Property, type Stroke } from "./property-table";
+import { absolute, ARRANGED, ordersOf, placementOf, readValue, roomBetween, round as rounded, sourcesFor, stackOf, type Align, type Arrangement, type MarginBetween, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, mayBeOf, savedCanvas as savedCanvasOf, usageKeyOf, type SavedCanvas } from "./page-elements";
 import { MADE_ATTR } from "./canvas-style";
@@ -32,7 +32,9 @@ import type { TextLength } from "./typography";
  * Properties the browser draws otherwise than written: compared as the code
  * writes them, or else as the page draws them, the value after drawn on the
  * page first (`draw`), so a value the code writes right is not taken for one it
- * does not, nor one it writes wrong for one it does.
+ * does not, nor one it writes wrong for one it does. Some draw nothing, and
+ * only compare otherwise than value for value: 0 in any unit, or with a part
+ * of the value no CSS carries left out.
  */
 const AS_WRITTEN: Partial<Record<Property, { draw(doc: Document, value: unknown): unknown; shows(el: Element, value: unknown, drawn: unknown): boolean }>> = {
   // A border is drawn a whole number of physical pixels wide: 1.5px is 1px on a 1x screen, as 1px is.
@@ -46,6 +48,16 @@ const AS_WRITTEN: Partial<Record<Property, { draw(doc: Document, value: unknown)
     shows: (el, value) => {
       const shown = readValue(el, "letterSpacing") as TextLength;
       return (shown.value === 0 && (value as TextLength).value === 0) || sameValue(shown, value);
+    },
+  },
+  // Spread evenly, a Stack is written space-between, which carries no point along it, read back as the start: with both spread evenly, only the point across it is compared (ticket 145).
+  align: {
+    draw: () => null,
+    shows: (el, value) => {
+      const [shown, after] = [readValue(el, "align") as Align, value as Align];
+      if (!shown.distribute || !after.distribute) return sameValue(shown, after);
+      const across = stackOf(el).direction === "horizontal" ? "y" : "x";
+      return shown[across] === after[across];
     },
   },
 };
