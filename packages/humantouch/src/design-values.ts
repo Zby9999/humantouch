@@ -311,6 +311,8 @@ const BREAK_ORDER: BreakFound["kind"][] = ["page", "wider", "clipped"];
 /** How to fix a change whose layer breaks the layout (ticket 147): made in the desktop view, to use its value only where it fits; at a breakpoint, to keep it within its container. */
 export function breakFix(change: Change): string {
   if (change.breakpoint) return "keep the layer within its container there";
+  // A place: its value only where it fits, or a place that keeps it in.
+  if (change.kind !== "style" || PLACEMENT.has(change.property)) return `give it this place only from a breakpoint up where it fits (a variant such as \`md:\`), or place the layer within its container`;
   return `use ${valueToUse(change)} only from a breakpoint up where it fits (a variant such as \`md:\`), or keep the layer within its container`;
 }
 
