@@ -54,7 +54,7 @@ export default function Home() {
         <ApplyDemo />
       </Feature>
 
-      <section className="grid w-full max-w-[1200px] gap-5 md:grid-cols-3">
+      <section className="grid w-full max-w-[800px] gap-5 xl:max-w-[1200px] xl:grid-cols-3">
         <Mini visual="top" label="Brief" title="Say what the panel can’t" body="Pick the Brief tool, click a layer, and write on its card what your Agent should achieve there.">
           <BriefMini />
         </Mini>
@@ -116,10 +116,10 @@ function Feature({ side, backdrop, label, title, body, children }: { side: "left
   );
 }
 
-/** One of the three small cards: a 300px visual at its top or bottom, the words in the rest. */
+/** One of the three small cards: a 300px visual at its top or bottom, the words in the rest. One column below 1280px wide: three would each be too narrow. */
 function Mini({ visual, label, title, body, children }: { visual: "top" | "bottom"; label: string; title: string; body: string; children: React.ReactNode }) {
   return (
-    <div className={`flex flex-col gap-3 rounded-[4px] bg-surface p-3 md:h-[500px] ${visual === "bottom" ? "md:flex-col-reverse md:justify-between" : ""}`}>
+    <div className={`flex flex-col gap-3 rounded-[4px] bg-surface p-3 xl:h-[500px] ${visual === "bottom" ? "xl:flex-col-reverse xl:justify-between" : ""}`}>
       <div className="relative h-[300px] shrink-0 overflow-hidden rounded-[4px] bg-sunk">{children}</div>
       <div className="flex flex-col gap-2 p-3">
         <p className="label text-[16px] leading-[18px]">{label}</p>

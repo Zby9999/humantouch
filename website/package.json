@@ -3,9 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "editor-css": "node scripts/editor-css.mjs",
+    "predev": "node scripts/editor-css.mjs",
     "dev": "next dev -p 6300",
+    "prebuild": "node scripts/editor-css.mjs",
     "build": "next build",
     "start": "next start -p 6310",
+    "pretypecheck": "node scripts/editor-css.mjs",
     "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
@@ -14,11 +18,12 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
-    "humantouch": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "esbuild": "^0.28.2",
+    "humantouch": "workspace:*",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3"
   }
