@@ -273,6 +273,20 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   --ht-panel-label: #525351; /* neutral 600: the tools' icons */
   --ht-raised-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1px rgb(0 0 0 / 0.15);
   --ht-tab-track: #d4d4d3; /* neutral 300: the Design and Variables tabs */
+  /* An open disclosure (the Layers' chevrons, an effect's fold): raised in white, its chevron grey. */
+  --ht-disclosure: #717171;
+  --ht-disclosure-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1.5px rgb(0 0 0 / 0.15);
+  /* Neutral 800, the panel's darkest mark: a check ticked, the alignment's point chosen. */
+  --ht-ink: #262625;
+  /* A check's box, off: neutral 200. */
+  --ht-check-off: #e5e5e4;
+  /* Quieter than muted: a group's count, a radius tile's drawn corner. */
+  --ht-text-faint: #a0a19f;
+  /* A text Variable's sample, in its own type. */
+  --ht-sample: #171716;
+  /* What shows out over the canvas from the Variables (a bar whole, a shadow's layers): white, and a soft rule inside it. */
+  --ht-popup: #ffffff;
+  --ht-rule-soft: #ebebea;
   /* The panels' widths: each set by its edge (designer, 2026-11-08), on the shell's style, as panel-widths.ts fits them. */
   --ht-layers-width: 320px;
   --ht-design-width: 320px;
@@ -322,6 +336,14 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
     --ht-panel-label: #e6e6e6;
     --ht-raised-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.4), 0 1px 1px rgb(0 0 0 / 0.3);
     --ht-tab-track: #1e1e1e;
+    --ht-disclosure: #e6e6e6;
+    --ht-disclosure-shadow: var(--ht-raised-shadow);
+    --ht-ink: #e6e6e6;
+    --ht-check-off: #4a4a4a;
+    --ht-text-faint: #8c8c8c;
+    --ht-sample: #ffffff;
+    --ht-popup: #2c2c2c;
+    --ht-rule-soft: #444444;
     color-scheme: dark;
   }
 }
@@ -644,7 +666,19 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   --ht-accent-soft: rgb(0 143 240 / 0.16);
   --ht-instance: #9a3cee; /* purple 600 */
   --ht-instance-soft: #efe4ff; /* purple 100 */
+  /* An instance's name and icons in the panels; its outline and button on the canvas keep --ht-instance. */
+  --ht-instance-ink: #9a3cee;
   --ht-locked: #8c8c8c;
+}
+/*
+ * Dark: purple 600 is 2.8:1 on the dark panel, so in the panels an instance is purple 600's hue lighter (OKLCH L 0.72, 4.6:1 on its
+ * ground), on purple 600 at 16%, as the accent's tint is. On the canvas, over the page, the outline and its white-lettered button stay purple 600.
+ */
+@media (prefers-color-scheme: dark) {
+  .ht-shell {
+    --ht-instance-soft: rgb(154 60 238 / 0.16);
+    --ht-instance-ink: #bc85fe;
+  }
 }
 
 /*
@@ -675,13 +709,14 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   user-select: none;
   -webkit-user-select: none;
 }
-.ht-tree-row:hover { background: rgb(237 237 236 / 0.6); }
+/* Pointed at: the selected row's ground at 60%, lighter than the row selected, in either mode. */
+.ht-tree-row:hover { background: color-mix(in srgb, var(--ht-field) 60%, transparent); }
 .ht-tree-row.is-selected { background: var(--ht-field); }
 /* The canvas's layers after those off it. */
 .ht-tree-row.is-first-on-canvas { margin-top: 4px; }
 .ht-tree-row.is-first-on-canvas::after { content: ""; position: absolute; top: -4px; left: 16px; right: 16px; height: 1px; background: var(--ht-border); }
 /* An instance's icons purple; its disclosure as every other row's (designer, 2026-11-08). */
-.ht-tree-row.is-instance .ht-icon:not(.ht-tree-chevron > .ht-icon) { color: var(--ht-instance); }
+.ht-tree-row.is-instance .ht-icon:not(.ht-tree-chevron > .ht-icon) { color: var(--ht-instance-ink); }
 .ht-tree-row .ht-icon { flex: none; color: var(--ht-text-muted); }
 .ht-tree-name { flex: none; }
 .ht-tree-brief { display: flex; margin-left: auto; color: var(--ht-text-muted); }
@@ -690,7 +725,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 .ht-tree-chevron { position: relative; z-index: 1; }
 :is(.ht-tree-chevron, .ht-fold) { display: grid; flex: none; place-items: center; width: 22px; height: 22px; border-radius: 6px; }
 .ht-fold { width: 28px; height: 28px; }
-:is(.ht-tree-chevron[data-open], .ht-fold) { background: #ffffff; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1.5px rgb(0 0 0 / 0.15); color: #717171; }
+:is(.ht-tree-chevron[data-open], .ht-fold) { background: var(--ht-tool-chosen); box-shadow: var(--ht-disclosure-shadow); color: var(--ht-disclosure); }
 :is(.ht-tree-chevron[data-open="false"], .ht-fold[aria-expanded="false"]) .ht-icon { rotate: -90deg; }
 .ht-fold:focus-visible { outline: 2px solid var(--ht-accent); outline-offset: 1px; }
 /* A guide: down from the layer this one is in, and in to this one; or down past it, to a later one there. */
@@ -723,7 +758,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 }
 .ht-layer-name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ht-layer-name .ht-icon { flex: none; color: var(--ht-text-muted); }
-.ht-layer-name.is-instance { background: var(--ht-instance-soft); color: var(--ht-instance); }
+.ht-layer-name.is-instance { background: var(--ht-instance-soft); color: var(--ht-instance-ink); }
 .ht-layer-name.is-instance .ht-icon { color: inherit; }
 /* Rows 24px high, 4px apart, no rules between them; the label 68px wide (designer, 2026-11-07). */
 .ht-layer-info dl { display: grid; grid-template-columns: minmax(68px, auto) minmax(0, 1fr); gap: 4px 0; margin: 0; padding: 6px 8px; letter-spacing: -0.02em; }
@@ -1273,7 +1308,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 /* Where it was before this round's change: a larger dash, muted (designer, 2026-11-08). */
 .ht-align-point.is-before::before { width: 12px; height: 6px; border-radius: 2px; background: #a0a19f; }
 /* The point chosen: dark, as a check ticked, till it changes in this round; then the accent (designer, 2026-11-08). */
-.ht-align-point[aria-checked="true"]::before { width: 24px; height: 12px; border-radius: 4px; background: #262625; box-shadow: 0 1px 1.5px rgb(0 0 0 / 0.25); }
+.ht-align-point[aria-checked="true"]::before { width: 24px; height: 12px; border-radius: 4px; background: var(--ht-ink); box-shadow: 0 1px 1.5px rgb(0 0 0 / 0.25); }
 /* Its blue edge 1px, as every selected edge: 0.5px was hard to see (designer, 2026-11-08). */
 .ht-align.is-changed .ht-align-point[aria-checked="true"]::before { background: var(--ht-accent); box-shadow: inset 0 0 0 1px var(--ht-accent-on), 0 1px 1.5px rgb(13 153 255 / 0.4); }
 .ht-align-point:focus-visible { outline: 1px solid var(--ht-accent); }
@@ -1304,13 +1339,17 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   margin: 0;
   border: 0;
   border-radius: 4px;
-  background: var(--ht-check) no-repeat center / 13px 13px, #e5e5e4;
+  background: var(--ht-check) no-repeat center / 13px 13px, var(--ht-check-off);
 }
 .ht-check input:checked {
   --ht-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='%23e5e5e4' stroke-width='1.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.40625 7.4375L5.46875 10.5L11.5938 3.9375'/%3E%3C/svg%3E");
-  background-color: #262625;
+  background-color: var(--ht-ink);
 }
-.ht-check input:indeterminate { background: #e5e5e4; }
+/* Dark, the box ticked is light: its check in the panel's grey. */
+@media (prefers-color-scheme: dark) {
+  .ht-check input:checked { --ht-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14' fill='none' stroke='%232c2c2c' stroke-width='1.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.40625 7.4375L5.46875 10.5L11.5938 3.9375'/%3E%3C/svg%3E"); }
+}
+.ht-check input:indeterminate { background: var(--ht-check-off); }
 /* Changed, in the accent; checked again to go back, it has no reset of its own (designer, 2026-11-08). */
 .ht-check.is-changed { background: var(--ht-accent); box-shadow: var(--ht-changed-shadow); color: #fafafa; }
 .ht-check input:focus-visible { outline: 2px solid var(--ht-accent); outline-offset: 1px; }
@@ -1782,7 +1821,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   color: var(--ht-title);
 }
 .ht-tabs[role="tablist"] .ht-tab { font-size: 12px; }
-.ht-tab:is([aria-selected="true"], [aria-checked="true"]) { background: var(--ht-raised); box-shadow: var(--ht-raised-shadow); color: #525351; }
+.ht-tab:is([aria-selected="true"], [aria-checked="true"]) { background: var(--ht-raised); box-shadow: var(--ht-raised-shadow); color: var(--ht-panel-label); }
 .ht-tab:focus-visible { outline: 2px solid var(--ht-accent); outline-offset: -2px; }
 .ht-variable-search {
   flex: none;
@@ -1791,6 +1830,10 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   padding: 0 8px 0 30px;
   border-radius: 6px;
   background: var(--ht-field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23737472' stroke-width='1.43' stroke-linecap='round'%3E%3Ccircle cx='7.25' cy='7.25' r='4.5'/%3E%3Cline x1='10.5' y1='10.5' x2='13.25' y2='13.25'/%3E%3C/svg%3E") no-repeat 8px center / 14px 14px;
+}
+/* Dark, its magnifier the muted grey, as the select's chevron. */
+@media (prefers-color-scheme: dark) {
+  .ht-variable-search { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23a6a6a6' stroke-width='1.43' stroke-linecap='round'%3E%3Ccircle cx='7.25' cy='7.25' r='4.5'/%3E%3Cline x1='10.5' y1='10.5' x2='13.25' y2='13.25'/%3E%3C/svg%3E"); }
 }
 .ht-variable-search::placeholder { color: var(--ht-text-muted); font-weight: 500; }
 /* The picker's colors: the palette of the Variables tab, without its ramps' names. */
@@ -1822,7 +1865,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   background: var(--ht-swatch);
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.1);
 }
-.ht-variable-preview.is-shadow { background: #fff; }
+.ht-variable-preview.is-shadow { background: var(--ht-tool-chosen); }
 /* Marks over a view, as in Figma's guides: red where a layer lines up and for distances measured with ⌥, magenta for equal spacing. 1px, labels one size, at any zoom. */
 .ht-marks { --ht-line: #f24822; --ht-spacing: #e81cc4; pointer-events: none; }
 .ht-mark {
@@ -1862,7 +1905,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 .ht-select.ht-variants-source { width: 76px; color: var(--ht-text-muted); font-weight: 500; letter-spacing: -0.02em; }
 .ht-variants .ht-input[type="search"]::-webkit-search-cancel-button { display: none; }
 .ht-variants .ht-input::placeholder { color: var(--ht-text-muted); font-weight: 500; letter-spacing: -0.02em; }
-.ht-variants-count { flex: none; order: 1; font-size: 11px; font-weight: 400; color: #a0a19f; }
+.ht-variants-count { flex: none; order: 1; font-size: 11px; font-weight: 400; color: var(--ht-text-faint); }
 .ht-section-title > .ht-variants-count + * { order: 2; }
 .ht-section-title:has(.ht-variants-count)::after { order: 2; }
 .ht-section-header .ht-icon-button[aria-expanded="false"] .ht-icon { rotate: -90deg; }
@@ -1874,7 +1917,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
    20px, its size in the 320px panel: the panel widened, only the room between the name and the swatches grows, the
    swatches at the right; narrower, as with 12 steps or more, they shrink to fit (designer, 2026-11-08). */
 .ht-variants-ramp { display: grid; grid-template-columns: minmax(50px, 1fr) repeat(var(--ht-steps, 11), minmax(0, 20px)); gap: 2px; align-items: center; }
-.ht-variants-ramp-name { overflow: hidden; color: #525351; text-overflow: ellipsis; white-space: nowrap; }
+.ht-variants-ramp-name { overflow: hidden; color: var(--ht-panel-label); text-overflow: ellipsis; white-space: nowrap; }
 .ht-variants-swatch, .ht-variants-empty { aspect-ratio: 1; border-radius: 4px; }
 /* A step the ramp has no color for: a placeholder in its column, the size of a swatch, outlined dashed and not
    filled, so it reads as no color here rather than a white one (designer, 2026-11-08). Not a control: nothing on hover. */
@@ -1883,7 +1926,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
    names, and the color after one, from a row's start. */
 .ht-variants-named { display: flex; flex-direction: column; gap: 2px; }
 .ht-variants-palette > .ht-variants-ramp + .ht-variants-named { margin-top: 6px; }
-.ht-variants-named-title { margin: 0; padding: 2px 0; color: #525351; }
+.ht-variants-named-title { margin: 0; padding: 2px 0; color: var(--ht-panel-label); }
 .ht-variants-names { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 4px; }
 .ht-variants-named-item { all: unset; display: flex; align-items: center; gap: 6px; min-width: 0; box-sizing: border-box; height: 24px; padding: 0 4px; border-radius: 6px; }
 .ht-variants-named-item.is-start { grid-column: 1; }
@@ -1891,7 +1934,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 .ht-variants-named-item[aria-disabled="true"] { cursor: default; }
 .ht-variants-named-swatch { flex: none; width: 16px; height: 16px; border-radius: 4px; background: var(--ht-swatch); box-shadow: inset 0 0 0 0.5px var(--ht-border); }
 .ht-variants-named-item.is-in-use .ht-variants-named-swatch { box-shadow: inset 0 0 0 1px #fff, 0 0 0 2px var(--ht-accent); }
-.ht-variants-named-name { overflow: hidden; color: #525351; text-overflow: ellipsis; white-space: nowrap; }
+.ht-variants-named-name { overflow: hidden; color: var(--ht-panel-label); text-overflow: ellipsis; white-space: nowrap; }
 .ht-variants-swatch {
   all: unset;
   aspect-ratio: 1;
@@ -1904,7 +1947,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 .ht-variants-row { display: flex; align-items: center; gap: 8px; box-sizing: border-box; min-height: 24px; padding: 0 8px; border-radius: 8px; }
 .ht-variants-row.is-button { all: unset; display: flex; align-items: center; gap: 8px; box-sizing: border-box; min-height: 28px; padding: 2px 8px; border-radius: 8px; }
 .ht-variants-row.is-button:hover, .ht-variants-row.is-button:focus-visible, .ht-variants-tile:hover, .ht-variants-tile:focus-visible { background: var(--ht-field); outline: none; }
-:is(.ht-variants-row.is-button, .ht-variants-tile).is-in-use { background: #ffffff; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1); }
+:is(.ht-variants-row.is-button, .ht-variants-tile).is-in-use { background: var(--ht-tool-chosen); box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1); }
 .ht-variants-name { flex: none; width: 60px; overflow: hidden; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .ht-variants-row.is-button .ht-variants-name { flex: 1; }
 .ht-variants-track { flex: 1; min-width: 0; }
@@ -1930,12 +1973,12 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   padding: 8px;
   overflow: hidden;
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--ht-popup);
   box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.06), 0 8px 24px -4px rgb(0 0 0 / 0.12);
   transform: translateY(-100%);
   pointer-events: none;
 }
-.ht-variants-sample { flex: none; width: 48px; overflow: hidden; color: #171716; font-weight: 500; line-height: 1.15; white-space: nowrap; }
+.ht-variants-sample { flex: none; width: 48px; overflow: hidden; color: var(--ht-sample); font-weight: 500; line-height: 1.15; white-space: nowrap; }
 .ht-variants-tiles { display: grid; gap: 6px; }
 .ht-variants-tiles.is-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .ht-variants-tiles.is-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1950,8 +1993,9 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   border-radius: 8px;
   background: var(--ht-field);
 }
-.ht-variants-radius { width: 40px; height: 40px; box-sizing: border-box; border: 1px solid #a0a19f; border-radius: 2px; background: #ffffff; }
-.ht-variants-shadow { width: 48px; height: 28px; margin-top: 4px; border-radius: 6px; background: #ffffff; }
+.ht-variants-radius { width: 40px; height: 40px; box-sizing: border-box; border: 1px solid var(--ht-text-faint); border-radius: 2px; background: var(--ht-tool-chosen); }
+/* The shadow drawn on a raised chip: white in light, dark mode's raised grey in dark, as the radius tile's corner. */
+.ht-variants-shadow { width: 48px; height: 28px; margin-top: 4px; border-radius: 6px; background: var(--ht-tool-chosen); }
 .ht-variants-label { display: flex; align-self: stretch; justify-content: space-between; gap: 4px; font-weight: 500; }
 .ht-variants-label.is-center { justify-content: center; }
 /*
@@ -2013,19 +2057,19 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   gap: 8px;
   padding: 10px 12px 12px;
   border-radius: 12px;
-  background: #ffffff;
+  background: var(--ht-popup);
   box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.06), 0 8px 24px -4px rgb(0 0 0 / 0.12);
-  color: #0a0a09;
+  color: var(--ht-text);
   font-size: 11px;
   pointer-events: none;
 }
 /* A line under the name, as between its layers (designer, 2026-11-09). */
-.ht-variants-details-name { overflow: hidden; padding-bottom: 8px; border-bottom: 1px solid #ebebea; font-weight: 500; font-size: 12px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.ht-variants-details-name { overflow: hidden; padding-bottom: 8px; border-bottom: 1px solid var(--ht-rule-soft); font-weight: 500; font-size: 12px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
 .ht-variants-details-layer { display: flex; flex-direction: column; gap: 6px; }
-.ht-variants-details-layer + .ht-variants-details-layer { padding-top: 8px; border-top: 1px solid #ebebea; }
+.ht-variants-details-layer + .ht-variants-details-layer { padding-top: 8px; border-top: 1px solid var(--ht-rule-soft); }
 .ht-variants-details-head { display: flex; justify-content: space-between; gap: 8px; }
 .ht-variants-details-title { font-weight: 500; }
-.ht-variants-details-label { color: #737472; }
+.ht-variants-details-label { color: var(--ht-text-muted); }
 .ht-variants-details-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px 8px; margin: 0; }
 .ht-variants-details-pair { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .ht-variants-details-pair.is-color { grid-column: 1 / -1; }
