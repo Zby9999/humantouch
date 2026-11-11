@@ -153,9 +153,18 @@ export interface Editor {
   /**
    * Whether the layer can go into `container`: a Stack, a Grid or a Frame, outside
    * the layer itself, that repeats with the layer's own container (each
-   * instance of the layer has a container to go to).
+   * instance of the layer has a container to go to), in the same tree as the
+   * layer (`acrossShadowRoot`).
    */
   canDrop(layer: Layer, container: Layer): boolean;
+  /**
+   * Whether the layer going into `container` would cross a shadow root's edge
+   * (ticket 138), which no layer does: out of a shadow root or into one, or a
+   * layer slotted in one going anywhere. `layer` null: one from another
+   * document, a layer off the canvas, going into `container`; `container`
+   * null: the layer going out of the canvas, off it. On a canvas with no shadow root, never.
+   */
+  acrossShadowRoot(layer: Layer | null, container: Layer | null): boolean;
   /**
    * Moves the layer, across the instances of its container, and records the
    * move: one per layer, from where it was to where it is. Loose text first

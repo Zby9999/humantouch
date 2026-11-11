@@ -10,6 +10,7 @@ import { equalColumns } from "./grid-tracks";
 import type { Edge } from "./checkable";
 import type { Alignment, Padding } from "./property-table";
 import { MOVE_CSS, slotsOf } from "./moves";
+import { holderOf } from "./shadow-roots";
 import { CHAIN_ATTR } from "./usage-chain";
 
 /** Every CSS property making a Stack may declare on it: what taking it apart takes off. */
@@ -289,7 +290,7 @@ export function compose(doc: Document, id: string, composed: Composed, style: Re
       // Written in the JSX its container is written in.
       const chain = container.getAttribute(CHAIN_ATTR);
       if (chain) stack.setAttribute(CHAIN_ATTR, chain);
-      container.insertBefore(stack, slotsOf(container)[composed.place.slot] ?? null);
+      holderOf(container).insertBefore(stack, slotsOf(container)[composed.place.slot] ?? null);
     }
     keepOriginal(stack);
     stacks.push(stack);
@@ -321,7 +322,7 @@ export function decompose(doc: Document, id: string, composed: Composed, changes
     for (const { el } of members) el!.remove();
     if (composed.place) stack.remove();
     // Each back at its place among the others, from the first: those before it are back by then.
-    for (const { el, from } of [...members].sort((a, b) => a.from.slot - b.from.slot)) container.insertBefore(el!, slotsOf(container)[from.slot] ?? null);
+    for (const { el, from } of [...members].sort((a, b) => a.from.slot - b.from.slot)) holderOf(container).insertBefore(el!, slotsOf(container)[from.slot] ?? null);
     for (const member of members) back.get(member.layer)!.push(member.el!);
     if (!composed.place) frames.push(container);
   }
@@ -353,7 +354,7 @@ export function undissolve(doc: Document, id: string, dissolved: Dissolved, chan
 
 /** The child of `parent` that is the layer with id `layer`. */
 function childOf(parent: Element, layer: string): Element | null {
-  return [...parent.children].find((el) => el.getAttribute(LAYER_ID_ATTR) === layer) ?? null;
+  return [...holderOf(parent).children].find((el) => el.getAttribute(LAYER_ID_ATTR) === layer) ?? null;
 }
 
 function median(values: number[]): number {

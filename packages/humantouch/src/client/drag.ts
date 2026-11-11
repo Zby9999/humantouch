@@ -51,6 +51,8 @@ export function findDrop(
   const el = (layer: Layer) => view.elementOf(layer.el) ?? layer.el;
   let container = view.layerAt(editor.tree(), point.x, point.y, layer ?? undefined);
   for (; container; container = container.parent) {
+    // Past a shadow root's edge, it goes nowhere: not beside the shadow root's host either, further out (ticket 138).
+    if (editor.acrossShadowRoot(layer, container)) return null;
     if (!layer) {
       if (editor.canHold(container)) break;
       continue;
@@ -128,6 +130,27 @@ export function findDrop(
           : area.top + parseFloat(style.paddingTop);
   const line = horizontal ? { x: main - 1, y: area.top, width: 2, height: area.height } : { x: area.left, y: main - 1, width: area.width, height: 2 };
   return { to: { parent: container, index }, line, shifts, box, marks: [] };
+}
+
+/**
+ * What the canvas's toast says when a layer is let go past a shadow root's
+ * edge, where it cannot go (ticket 138): in or out of a shadow root, or, slotted in one, anywhere.
+ * A placeholder, in the toast as any short note is, until the designer settles how it is told.
+ */
+export const SHADOW_EDGE_HINT = "Layers can't move into or out of a shadow root.";
+
+/**
+ * Whether a layer dragged to `point` of `view` goes nowhere because of a
+ * shadow root's edge (ticket 138): the first container out from under the
+ * pointer that would take it, but for that edge, is past it. As `findDrop`
+ * walks out, for a drop it found none for; `layer` null: one from another document.
+ */
+export function stopsAtShadowEdge(editor: Editor, view: View, layer: Layer | null, point: { x: number; y: number }): boolean {
+  for (let container = view.layerAt(editor.tree(), point.x, point.y, layer ?? undefined); container; container = container.parent) {
+    if (editor.acrossShadowRoot(layer, container)) return true;
+    if (layer ? editor.canDrop(layer, container) : editor.canHold(container)) return false;
+  }
+  return false;
 }
 
 /**

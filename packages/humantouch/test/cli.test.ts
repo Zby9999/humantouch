@@ -165,6 +165,28 @@ describe("claim", () => {
     expect(notes).not.toContain("- **Third-party Web Components:**");
   });
 
+  test("new words for a layer in a shadow root, located, are written at Location, in what the component renders into the shadow root; no rule about its styles (ticket 138)", async () => {
+    const title = {
+      ...cards,
+      loc: "src/HeroCard.tsx:21:11",
+      chain: [{ component: "HeroCard", usage: "src/App.tsx:12:7", thirdParty: false }, APP],
+      component: "HeroCard",
+      instances: 1,
+      shadowRoot: '<hero-card id="hero">',
+      context: { path: ["Page", "hero-card", "Title"], element: '<h2 class="title">' },
+    };
+    saveRound({ ...redFill, kind: "text", property: "text", target: title, before: "Hero", after: "Hero card", style: {} });
+
+    const notes = (await cli("claim")).output;
+
+    expect(section(notes, 1)).toContain("- **Location:** `src/HeroCard.tsx:21:11`\n");
+    expect(section(notes, 1)).toContain(
+      "- **Shadow root:** the layer is in the shadow root of `<hero-card id=\"hero\">`: the change is to what the component that renders into its shadow root renders there, at Location; it stays in that shadow root.\n",
+    );
+    expect(notes).not.toContain("- **Shadow roots:**");
+    expect(notes).toContain("- **Text:**");
+  });
+
   test("a layer in a shadow root with no source marker, as a Lit template writes it, is not located, as any other such layer, and the page does not check it (ticket 137)", async () => {
     const inLit = {
       ...cards,

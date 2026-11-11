@@ -92,6 +92,47 @@ export function flatParent(node: Node): Element | null {
   return node.parentElement ?? (node.parentNode as ShadowRoot | null)?.host ?? null;
 }
 
+/**
+ * What holds the layers `el` shows, as their container (ticket 138): the
+ * page's open shadow root it hosts, if it does; else `el` itself. A layer
+ * moved, made or copied into `el` goes in it, and its places are its nodes.
+ */
+export function holderOf(el: Element): Element | ShadowRoot {
+  return el.shadowRoot && hostsPagesShadowRoot(el) ? el.shadowRoot : el;
+}
+
+/**
+ * The element `node` is in, as the DOM has it (ticket 138): its parent
+ * element, or, at the top of a shadow root, its host. Unlike `flatParent`, a
+ * slotted node's is its host's light DOM, where it is written.
+ */
+export function parentOf(node: Node): Element | null {
+  return node.parentElement ?? (node.parentNode as ShadowRoot | null)?.host ?? null;
+}
+
+/** Whether `node` is in `el`, or in a shadow root of a host in it, or one in that (ticket 138): `contains` across shadow roots. */
+export function containsAcross(el: Node, node: Node): boolean {
+  if (el.contains(node)) return true;
+  for (let root = node.getRootNode(); (root as ShadowRoot).host; root = (root as ShadowRoot).host.getRootNode()) if (el.contains((root as ShadowRoot).host)) return true;
+  return false;
+}
+
+/**
+ * Whether `node`, a layer's, would cross a shadow root's edge going into the
+ * container `el` (ticket 138): it is in another tree, the document or a
+ * shadow root, than the layers `el` holds; or it is slotted, written in its
+ * host's light DOM but shown in the shadow root, which no move can keep it
+ * so. `el` null: out of its document altogether, off the canvas, say, which a
+ * layer in a shadow root, or slotted in one, cannot go either. `node` null:
+ * a layer from another document, which cannot go into a shadow root.
+ */
+export function acrossShadowEdge(node: Node | null, el: Element | null): boolean {
+  if (node && (node as Element | Text).assignedSlot) return true;
+  if (!el) return !!node && node.getRootNode().nodeType !== Node.DOCUMENT_NODE;
+  const tree = holderOf(el).getRootNode();
+  return node ? node.getRootNode() !== tree : tree.nodeType !== Node.DOCUMENT_NODE;
+}
+
 /** Whether `node` is `el`, or what it shows: in it, slotted in a shadow root in it, in an open shadow root in it, or one in that. */
 function showsIn(el: Node, node: Node): boolean {
   for (let at: Node | null = node; at; at = flatParent(at)) if (at === el) return true;

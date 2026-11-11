@@ -7,17 +7,17 @@ import { changesOn, declare, DELETED_ATTR, elementsOf, keepOriginal, LAYER_ID_AT
 import { isReorder, placedAt, type Change, type ChangeSet, type Place } from "./changeset";
 import { NOT_DRAWN, signOf } from "./layers";
 import { savedCanvas, type SavedCanvas } from "./page-elements";
-import { parseCanvas } from "./shadow-roots";
+import { holderOf, parentOf, parseCanvas } from "./shadow-roots";
 
 /** The CSS properties a move may declare on the layer: what moving it back takes off. */
 export const MOVE_CSS = ["position", "left", "top", "right", "bottom", "width", "height"];
 /**
  * The places in a container a layer can be at: its child elements and its runs
  * of text. White space between elements does not count, so a layer moved away
- * and back is where it was.
+ * and back is where it was. A host's are those of its shadow root (`holderOf`, ticket 138).
  */
 export function slotsOf(container: Element): ChildNode[] {
-  return [...container.childNodes].filter((node) => node.nodeType === Node.ELEMENT_NODE || (node.nodeType === Node.TEXT_NODE && node.textContent!.trim()));
+  return [...holderOf(container).childNodes].filter((node) => node.nodeType === Node.ELEMENT_NODE || (node.nodeType === Node.TEXT_NODE && node.textContent!.trim()));
 }
 
 /**
@@ -32,11 +32,11 @@ export function relocate(doc: Document, layer: string, move: string, from: Place
   const targets = elementsOf(doc, to.container.layer);
   const moved: Element[] = [];
   sources.forEach((container, i) => {
-    const node = [...container.children].find((el) => el.getAttribute(LAYER_ID_ATTR) === layer && el.getAttribute(MOVE_ATTR) === move);
+    const node = [...holderOf(container).children].find((el) => el.getAttribute(LAYER_ID_ATTR) === layer && el.getAttribute(MOVE_ATTR) === move);
     if (!node) return;
     const into = targets.length === sources.length ? targets[i] : targets[0];
     node.remove();
-    into.insertBefore(node, slotsOf(into)[to.slot] ?? null);
+    holderOf(into).insertBefore(node, slotsOf(into)[to.slot] ?? null);
     moved.push(node);
   });
 
@@ -44,7 +44,7 @@ export function relocate(doc: Document, layer: string, move: string, from: Place
   for (const el of moved) keepOriginal(el);
   restoreStyle(moved, MOVE_CSS, others);
   declare(moved, style);
-  if (to.absolute) holdAbsolute(new Set(moved.map((el) => el.parentElement!)));
+  if (to.absolute) holdAbsolute(new Set(moved.map((el) => parentOf(el)!)));
   if (from.absolute) releaseAbsolute(doc, from.container.layer, changes);
 }
 
@@ -144,9 +144,9 @@ export function canvasOf(round: RoundOnCanvas): SavedCanvas | null {
  */
 function amongOf(doc: Document, id: string, changes: Change[]): Among | null {
   const el = elementsOf(doc, id).find((e) => e.getAttribute(MADE_ATTR) === id);
-  const container = el?.parentElement;
+  const container = el && parentOf(el);
   if (!el || !container) return null;
-  const layers = [...container.children].filter((child) => !NOT_DRAWN.has(child.localName));
+  const layers = [...holderOf(container).children].filter((child) => !NOT_DRAWN.has(child.localName));
   let before = 0;
   let maybe = 0;
   for (const layer of layers.slice(0, layers.indexOf(el))) {
@@ -168,9 +168,10 @@ function amongOf(doc: Document, id: string, changes: Change[]): Among | null {
 function layersIn(doc: Document, id: string): Element[] | null {
   const container = elementsOf(doc, id)[0];
   if (!container) return null;
-  const text = [...container.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent!.trim());
-  if (text || [...container.children].some((el) => el.hasAttribute(WRAP_ATTR))) return null;
-  return [...container.children].filter((el) => !NOT_DRAWN.has(el.localName) && !el.hasAttribute(MADE_ATTR));
+  const holder = holderOf(container);
+  const text = [...holder.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent!.trim());
+  if (text || [...holder.children].some((el) => el.hasAttribute(WRAP_ATTR))) return null;
+  return [...holder.children].filter((el) => !NOT_DRAWN.has(el.localName) && !el.hasAttribute(MADE_ATTR));
 }
 
 /** Makes each container the positioning reference of what is placed absolute in it, where it is not one already. */

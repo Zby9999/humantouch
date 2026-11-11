@@ -59,6 +59,7 @@ import { PIN_OFFSET_ATTR, pinOffsetOf, type StyleSource } from "./style-source";
 import { heldCentered, placedAlong, roomIn, shiftIn, startOffsetOf } from "./placed-from";
 import type { Steps } from "./undo-steps";
 import { CHAIN_ATTR } from "./usage-chain";
+import { acrossShadowEdge, holderOf, mayHoldShadowRoots, parentOf } from "./shadow-roots";
 
 /**
  * What the structure commands build on, inside the editor: the canvas and
@@ -99,6 +100,7 @@ export type StructureEdits = Pick<
   Editor,
   | "canMove"
   | "canDrop"
+  | "acrossShadowRoot"
   | "move"
   | "nudge"
   | "revert"
@@ -349,7 +351,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
         drop(id, record.property);
         taken = elementsOf(doc, id)
           .filter((el) => el.getAttribute(MADE_ATTR) === id)
-          .map((el) => [el, el.parentElement!, el.nextSibling]);
+          .map((el) => [el, el.parentNode as Element, el.nextSibling]);
         removeMade(doc, id, container, changes.list());
       },
     };
@@ -407,8 +409,11 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
   /** A layer made this round by the change `id` is the one with: the change that made it, if there is one. */
   const makerOf = (id: string) => changes.list().find((change) => change.layer === id && madeBy(change) === id) ?? null;
 
-  /** Laid out in its container's own element, there to be placed: not text with no element of its own, nor pinned to the window. */
-  const placeable = (layer: Layer) => !layer.text && layer.el.parentElement === layer.parent?.el && !layer.el.hasAttribute(PIN_OFFSET_ATTR);
+  /**
+   * Laid out in its container's own element, there to be placed: not text with no element of its own, nor pinned to the window.
+   * A host's own are in its shadow root; one slotted in a shadow root is in its host's light DOM, not placed by its container (ticket 138).
+   */
+  const placeable = (layer: Layer) => !layer.text && !!layer.parent && layer.el.parentNode === holderOf(layer.parent.el) && !layer.el.hasAttribute(PIN_OFFSET_ATTR);
   /** The layer is in every instance of `container`: not one of the instances a loop renders there. */
   const repeatsWith = (layer: Layer, container: Layer) => tree().acrossInstances(layer).length === tree().acrossInstances(container).length;
   /** A Frame that can become a Stack of its layers. */
@@ -583,8 +588,14 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
 
   return {
     canMove: (layer) => layer.parent !== null,
+    acrossShadowRoot(layer, container) {
+      if (!mayHoldShadowRoots(doc)) return false;
+      return acrossShadowEdge(layer && nodeOf(layer), container && container.el);
+    },
     canDrop(layer, container) {
       if (!editor().canMove(layer) || !CONTAINERS.includes(container.kind)) return false;
+      // Not out of a shadow root, nor into one (ticket 138).
+      if (editor().acrossShadowRoot(layer, container)) return false;
       // Pinned where the designer saw it, against a window the canvas has none of: it stays in its container.
       if (!layer.text && layer.el.hasAttribute(PIN_OFFSET_ATTR) && container !== layer.parent) return false;
       for (let c: Layer | null = container; c; c = c.parent) if (c === layer) return false;
@@ -856,7 +867,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
         insertNew(doc, id, created, style);
       });
       structural([id], [containerId], make, takeOff);
-      return tree().layerOf([...container.el.children].find((el) => el.getAttribute(LAYER_ID_ATTR) === id)!)!;
+      return tree().layerOf([...holderOf(container.el).children].find((el) => el.getAttribute(LAYER_ID_ATTR) === id)!)!;
     },
     brief(layer) {
       if (layer.text) return "";
@@ -991,7 +1002,8 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       const { make, bringBack } = deleting(id, record, loop ? [own.el] : instances.map((instance) => instance.el));
       structural([idOf(parent, tree().acrossInstances(parent))], [id], make, bringBack);
     },
-    canDuplicate: (layer) => layer.parent !== null && !layer.text,
+    // A layer slotted in a shadow root has no place of its own there to be copied beside (ticket 138).
+    canDuplicate: (layer) => layer.parent !== null && !layer.text && !editor().acrossShadowRoot(layer, layer.parent),
     duplicate(layer, to) {
       if (!editor().canDuplicate(layer) || (to && !editor().canDrop(layer, to.parent))) throw new Error(`Human Touch: ${layer.name} cannot be copied there`);
       const instances = tree().acrossInstances(layer);
@@ -1040,7 +1052,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
       });
       structural([id], [layer.el.getAttribute(LAYER_ID_ATTR)!], make, takeOff);
       const at = containers[loop ? 0 : instances.indexOf(layer)].el;
-      return tree().layerOf([...at.children].find((el) => el.getAttribute(LAYER_ID_ATTR) === id)!)!;
+      return tree().layerOf([...holderOf(at).children].find((el) => el.getAttribute(LAYER_ID_ATTR) === id)!)!;
     },
     putBack(from, to) {
       const deletion = movedOffBy(changes.list(), from.kept.id);
@@ -1072,7 +1084,7 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
         insertPutBack(doc, id, from.el, place, style);
       });
       structural([id], [containerId], make, takeOff);
-      return tree().layerOf(elementsOf(doc, id).find((el) => el.parentElement === container.el) ?? elementsOf(doc, id)[0])!;
+      return tree().layerOf(elementsOf(doc, id).find((el) => parentOf(el) === container.el) ?? elementsOf(doc, id)[0])!;
     },
     unstack(layer) {
       if (!editor().canUnstack(layer)) throw new Error(`Human Touch: ${layer.name} cannot be dissolved`);
@@ -1143,7 +1155,7 @@ function bodyText(doc: Document): Record<string, string> {
 
 /** Instances a loop renders: several, side by side in one container. */
 function isLoop(els: Element[]): boolean {
-  return els.length > 1 && els.every((el) => el.parentElement === els[0].parentElement);
+  return els.length > 1 && els.every((el) => el.parentNode === els[0].parentNode);
 }
 
 /** The margins a layer joining a Stack loses. */
