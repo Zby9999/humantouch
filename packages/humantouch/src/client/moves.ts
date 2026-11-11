@@ -3,22 +3,39 @@
  * to the canvas being edited and to a saved one. A layer goes in each instance
  * of its container's usage; a layer one of several a loop renders goes alone.
  */
-import { changesOn, declare, DELETED_ATTR, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, MOVE_ATTR, REFERENCE_ATTR, restoreStyle, WRAP_ATTR } from "./canvas-style";
+import { changesOn, declare, DELETED_ATTR, elementsOf, keepOriginal, LAYER_ID_ATTR, MADE_ATTR, MOVE_ATTR, REFERENCE_ATTR, restoreStyle, RULES_FOR_ATTR, WRAP_ATTR } from "./canvas-style";
 import { isReorder, placedAt, type Change, type ChangeSet, type Place } from "./changeset";
 import { NOT_DRAWN, signOf } from "./layers";
 import { savedCanvas, type SavedCanvas } from "./page-elements";
 import { holderOf, parentOf, parseCanvas } from "./shadow-roots";
+import { EDIT_STYLES_ATTR, LOOK_STYLES_ATTR } from "./style-marks";
 
 /** The CSS properties a move may declare on the layer: what moving it back takes off. */
 export const MOVE_CSS = ["position", "left", "top", "right", "bottom", "width", "height"];
 /**
  * The places in a container a layer can be at: its child elements and its runs
  * of text. White space between elements does not count, so a layer moved away
- * and back is where it was. A host's are those of its shadow root (`holderOf`, ticket 138).
+ * and back is where it was. A host's are those of its shadow root (`holderOf`, ticket 138),
+ * but for the editor's own style elements in it, which edits add and take out.
  */
 export function slotsOf(container: Element): ChildNode[] {
-  return [...holderOf(container).childNodes].filter((node) => node.nodeType === Node.ELEMENT_NODE || (node.nodeType === Node.TEXT_NODE && node.textContent!.trim()));
+  return [...holderOf(container).childNodes].filter((node) =>
+    node.nodeType === Node.ELEMENT_NODE ? !isOwnStyle(node as Element) : node.nodeType === Node.TEXT_NODE && node.textContent!.trim(),
+  );
 }
+
+/**
+ * What a layer going to place `slot` of `container` goes before: the node at
+ * that place, or, past its last, the editor's own style elements at the end
+ * of a shadow root (ADR 0017), else none.
+ */
+export function slotAt(container: Element, slot: number): ChildNode | null {
+  return slotsOf(container)[slot] ?? [...holderOf(container).children].find(isOwnStyle) ?? null;
+}
+
+/** One of the editor's own style elements: edit styles (`canvas-style.ts`) or a frozen look's. */
+const isOwnStyle = (el: Element) =>
+  el.localName === "style" && (el.hasAttribute(RULES_FOR_ATTR) || el.hasAttribute(EDIT_STYLES_ATTR) || el.hasAttribute(LOOK_STYLES_ATTR));
 
 /**
  * Moves the layer with id `layer` from one place to another, and gives it the
@@ -36,7 +53,7 @@ export function relocate(doc: Document, layer: string, move: string, from: Place
     if (!node) return;
     const into = targets.length === sources.length ? targets[i] : targets[0];
     node.remove();
-    holderOf(into).insertBefore(node, slotsOf(into)[to.slot] ?? null);
+    holderOf(into).insertBefore(node, slotAt(into, to.slot));
     moved.push(node);
   });
 

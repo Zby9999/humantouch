@@ -100,6 +100,7 @@ export type StructureEdits = Pick<
   Editor,
   | "canMove"
   | "canDrop"
+  | "canDropIgnoringEdge"
   | "acrossShadowRoot"
   | "move"
   | "nudge"
@@ -589,13 +590,13 @@ export function createStructureEdits(core: EditorCore): StructureEdits {
   return {
     canMove: (layer) => layer.parent !== null,
     acrossShadowRoot(layer, container) {
-      if (!mayHoldShadowRoots(doc)) return false;
+      if (!mayHoldShadowRoots(doc)) return null;
       return acrossShadowEdge(layer && nodeOf(layer), container && container.el);
     },
-    canDrop(layer, container) {
+    // Not out of a shadow root, nor into one (ticket 138).
+    canDrop: (layer, container) => editor().canDropIgnoringEdge(layer, container) && !editor().acrossShadowRoot(layer, container),
+    canDropIgnoringEdge(layer, container) {
       if (!editor().canMove(layer) || !CONTAINERS.includes(container.kind)) return false;
-      // Not out of a shadow root, nor into one (ticket 138).
-      if (editor().acrossShadowRoot(layer, container)) return false;
       // Pinned where the designer saw it, against a window the canvas has none of: it stays in its container.
       if (!layer.text && layer.el.hasAttribute(PIN_OFFSET_ATTR) && container !== layer.parent) return false;
       for (let c: Layer | null = container; c; c = c.parent) if (c === layer) return false;

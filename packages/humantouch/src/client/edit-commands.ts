@@ -11,6 +11,7 @@ import type { ArrangeAs } from "./arrangement";
 import type { Breakpoint } from "./breakpoints";
 import type { Bindings, Change, Created, Picked } from "./changeset";
 import type { Layer, LayerTree } from "./layers";
+import type { ShadowEdge } from "./shadow-roots";
 import type { Property, PropertyValues } from "./property-table";
 import type { View } from "./views";
 
@@ -158,13 +159,20 @@ export interface Editor {
    */
   canDrop(layer: Layer, container: Layer): boolean;
   /**
+   * `canDrop` but for the shadow root's edge: whether `container` would take
+   * the layer were no edge in the way. A drag judges the edge only on the
+   * container that would take it (ticket 138).
+   */
+  canDropIgnoringEdge(layer: Layer, container: Layer): boolean;
+  /**
    * Whether the layer going into `container` would cross a shadow root's edge
    * (ticket 138), which no layer does: out of a shadow root or into one, or a
    * layer slotted in one going anywhere. `layer` null: one from another
    * document, a layer off the canvas, going into `container`; `container`
    * null: the layer going out of the canvas, off it. On a canvas with no shadow root, never.
+   * Which edge, for the hint on letting go; null when none.
    */
-  acrossShadowRoot(layer: Layer | null, container: Layer | null): boolean;
+  acrossShadowRoot(layer: Layer | null, container: Layer | null): ShadowEdge | null;
   /**
    * Moves the layer, across the instances of its container, and records the
    * move: one per layer, from where it was to where it is. Loose text first

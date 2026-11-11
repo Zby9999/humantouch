@@ -127,7 +127,7 @@ _Avoid_: 同步、应用到全部、Apply to all
 _Avoid_: 只读图层、外部组件
 
 **Shadow root**:
-页面上某个元素（宿主）挂着的一棵单独的 DOM 子树，自带样式；页面的 CSS 进不去，它的样式也出不来。open 的能读，里面的层和别的层一样能看、能选、能改样式、能挪、能排顺序（ticket 135–138）；closed 的读不到，宿主照没有 shadow root 显示。层挪不出 shadow root，外面的层也挪不进去；slot 进去的层写在宿主的 light DOM 里，在画布上不能挪（ticket 138）。
+页面上某个元素（宿主）挂着的一棵单独的 DOM 子树，自带样式；页面的 CSS 进不去，它的样式也出不来。open 的能读，里面的层和别的层一样能看、能选、能改（ticket 135–137）；closed 的读不到，宿主照没有 shadow root 显示。
 _Avoid_: 影子 DOM、Shadow DOM（说整棵子树时）
 
 **编辑样式 (Edit Styles)**:

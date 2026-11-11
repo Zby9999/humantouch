@@ -125,12 +125,23 @@ export function containsAcross(el: Node, node: Node): boolean {
  * layer in a shadow root, or slotted in one, cannot go either. `node` null:
  * a layer from another document, which cannot go into a shadow root.
  */
-export function acrossShadowEdge(node: Node | null, el: Element | null): boolean {
-  if (node && (node as Element | Text).assignedSlot) return true;
-  if (!el) return !!node && node.getRootNode().nodeType !== Node.DOCUMENT_NODE;
+export function acrossShadowEdge(node: Node | null, el: Element | null): ShadowEdge | null {
+  if (node && (node as Element | Text).assignedSlot) return "slotted";
+  const from = node ? node.getRootNode() : null;
+  const inShadow = !!from && from.nodeType !== Node.DOCUMENT_NODE;
+  if (!el) return inShadow ? "out" : null;
   const tree = holderOf(el).getRootNode();
-  return node ? node.getRootNode() !== tree : tree.nodeType !== Node.DOCUMENT_NODE;
+  if (from === tree || (!from && tree.nodeType === Node.DOCUMENT_NODE)) return null;
+  // Out of the shadow root it is in, wherever to; else into one from outside.
+  return inShadow ? "out" : "in";
 }
+
+/**
+ * Which shadow root's edge a layer would cross (`acrossShadowEdge`), which
+ * the hint on letting go tells: `out` of the one it is in, `in` to one from
+ * outside it, or, `slotted` in one, anywhere.
+ */
+export type ShadowEdge = "out" | "in" | "slotted";
 
 /** Whether `node` is `el`, or what it shows: in it, slotted in a shadow root in it, in an open shadow root in it, or one in that. */
 function showsIn(el: Node, node: Node): boolean {

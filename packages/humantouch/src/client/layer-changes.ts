@@ -31,7 +31,7 @@ import type { Change, CopiedBreakpoint, Created, Place } from "./changeset";
 import { NEW_TAGS } from "./checkable";
 import { wrappedTextOf } from "./layers";
 import { copyLook, matchLook } from "./look";
-import { holdAbsolute, releaseAbsolute, slotsOf } from "./moves";
+import { holdAbsolute, releaseAbsolute, slotAt, slotsOf } from "./moves";
 import { elementsWithin, holderOf } from "./shadow-roots";
 import { editableShadowRoots } from "./freezer";
 import { ORIGINAL_STYLE_ATTR } from "./style-source";
@@ -52,7 +52,7 @@ export function insertNew(doc: Document, id: string, created: Created, style: Re
     if (created.text !== undefined) writeWords(el, created.text);
     if (created.brief) el.setAttribute(BRIEF_ATTR, created.brief);
     keepOriginal(el);
-    holderOf(container).insertBefore(el, slotsOf(container)[created.place.slot] ?? null);
+    holderOf(container).insertBefore(el, slotAt(container, created.place.slot));
     made.push(el);
   }
   declare(made, style);
@@ -82,7 +82,7 @@ export function insertCopies(originals: Element[], containers: Element[], id: st
       if (el.getAttribute(NEW_ATTR) !== "frame") el.removeAttribute(BRIEF_ATTR);
     }
     copy.setAttribute(LAYER_ID_ATTR, id);
-    holderOf(containers[i]).insertBefore(copy, slotsOf(containers[i])[place.slot] ?? null);
+    holderOf(containers[i]).insertBefore(copy, slotAt(containers[i], place.slot));
     // Once in, in the tree its rules go in: the document, or the shadow root it is in, or one copied with it (ADR 0017).
     for (const el of els) {
       if (!el.isConnected) continue;
@@ -117,7 +117,7 @@ export function insertPutBack(doc: Document, id: string, source: Element, place:
       else el.removeAttribute(CHAIN_ATTR);
     }
     copy.setAttribute(LAYER_ID_ATTR, id);
-    holderOf(container).insertBefore(copy, slotsOf(container)[place.slot] ?? null);
+    holderOf(container).insertBefore(copy, slotAt(container, place.slot));
     const css = matchLook(pairs, `[${MADE_ATTR}="${CSS.escape(id)}"]`, lookRules);
     declare(copy, style);
     pseudos ??= css;

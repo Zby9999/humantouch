@@ -117,7 +117,7 @@ export function keepOriginal(el: Element) {
 /** On a canvas element edits have given styles: the key its rules go by in the edit styles, which instances of its layer with the same rules share. */
 export const STYLE_KEY_ATTR = "data-ht-style";
 /** On a style element of a group's rules: the group's key. */
-const RULES_FOR_ATTR = "data-ht-rules-for";
+export const RULES_FOR_ATTR = "data-ht-rules-for";
 /** On a style element of a group's rules: the rules, as JSON, which its CSS is written from. */
 const RULES_ATTR = "data-ht-rules";
 /** On an element read as if shown: its edits that hide it do not apply meanwhile. */

@@ -381,8 +381,12 @@ const toast = (page: Page) => page.getByRole("status").locator(".ht-toast span:n
 /** Marks the toast showing now as seen, so the next check waits for a new one, though its words be the same. */
 const sawToast = (page: Page) => page.getByRole("status").locator(".ht-toast span").evaluateAll((spans) => spans.forEach((span) => span.setAttribute("data-seen", "")));
 const marks = (page: Page, type: string) => page.locator(`.ht-mark[data-type="${type}"]`);
-/** The words the toast says when a layer is let go past a shadow root's edge (`SHADOW_EDGE_HINT`). */
-const EDGE_HINT = "Layers can't move into or out of a shadow root.";
+/** The words the toast says when a layer is let go past a shadow root's edge, by the edge (`SHADOW_EDGE_HINTS`). */
+const EDGE_HINTS = {
+  out: "This layer stays inside its component.",
+  in: "Layers can't be moved into this component.",
+  slotted: "This layer's place is set by its component.",
+};
 
 /** A Frame at the top of the shadow root, after the panel, 240 px tall, with an absolute layer in it, 60 × 40 at 100, 120. */
 async function addShadowBoard(page: Page) {
@@ -454,7 +458,7 @@ test("in the shadow root, a layer is placed freely in a Frame there, snapping wi
   // Let go over the page's heading, out of the shadow root: it stays, and the toast says why.
   const h1 = await placeOf(canvas.locator("h1"));
   await dragTo(page, canvas.locator("#shadow-host .fade"), { x: h1[0] + h1[2] / 2, y: h1[1] + h1[3] / 2 });
-  await expect(toast(page)).toHaveText(EDGE_HINT);
+  await expect(toast(page)).toHaveText(EDGE_HINTS.out);
   await sawToast(page);
   await expect(canvas.locator("#shadow-host #board > .fade")).toHaveCount(1);
   await expect.poll(async () => (await placeInBoard(desktop(page), ".fade")).x).toBe(100);
@@ -465,7 +469,7 @@ test("in the shadow root, a layer is placed freely in a Frame there, snapping wi
   await expect(tree.getByRole("treeitem", { selected: true })).toHaveText("Slotted note");
   const title = await placeOf(canvas.locator("#shadow-host .title"));
   await dragTo(page, canvas.locator("#shadow-host > .note"), { x: title[0] + title[2] / 2, y: title[1] + 2 });
-  await expect(toast(page)).toHaveText(EDGE_HINT);
+  await expect(toast(page)).toHaveText(EDGE_HINTS.slotted);
   await sawToast(page);
   expect(await panelChildren(desktop(page))).toEqual(["h2.title", "p.body", "slot"]);
   await expect(canvas.locator("#shadow-host > .note")).toHaveCount(1);
@@ -475,7 +479,7 @@ test("in the shadow root, a layer is placed freely in a Frame there, snapping wi
   await tree.getByRole("treeitem", { name: "Button", exact: true }).click();
   const boardNow = await placeOf(canvas.locator("#shadow-host #board"));
   await dragTo(page, canvas.locator('[data-testid="hero"] > button'), { x: boardNow[0] + 20 * zoom, y: boardNow[1] + boardNow[3] - 20 * zoom });
-  await expect(toast(page)).toHaveText(EDGE_HINT);
+  await expect(toast(page)).toHaveText(EDGE_HINTS.in);
   await sawToast(page);
   await expect(canvas.locator('[data-testid="hero"] > button')).toHaveCount(1);
   await expect(canvas.locator("#shadow-host button")).toHaveCount(0);
@@ -492,6 +496,56 @@ test("in the shadow root, a layer is placed freely in a Frame there, snapping wi
   for (const view of views) await expect.poll(() => order(view)).toEqual(["board", "panel"]);
   await page.keyboard.press("ControlOrMeta+z");
   for (const view of views) await expect.poll(() => order(view)).toEqual(["panel", "board"]);
+});
+
+/** A Stack at the top of the page: a layer of the page, then two hosts, each a line in its shadow root. */
+async function addCardRow(page: Page) {
+  await page.evaluate(() => {
+    const row = Object.assign(document.createElement("div"), { id: "row" });
+    row.style.cssText = "display: flex; flex-direction: column; gap: 8px; padding: 8px";
+    const lite = Object.assign(document.createElement("div"), { id: "lite" });
+    lite.style.cssText = "height: 40px; background: rgb(200, 200, 200)";
+    row.append(lite);
+    for (const id of ["card-a", "card-b"]) {
+      const host = Object.assign(document.createElement("div"), { id });
+      host.style.cssText = "height: 80px; background: rgb(238, 238, 238)";
+      host.attachShadow({ mode: "open" }).innerHTML = `<p style="margin: 0">Card ${id.slice(-1).toUpperCase()}</p>`;
+      row.append(host);
+    }
+    document.body.prepend(row);
+  });
+}
+
+test("a layer of the page let go over the line in a host beside it, near the host's edge, goes beside the host, as beside any layer; over the host's middle, it stays, and the toast says why (ticket 138)", async ({ page }) => {
+  await openPage(page);
+  await addCardRow(page);
+  await enterEditMode(page);
+  const canvas = desktop(page).contentFrame();
+  const views = [desktop(page), tablet(page), phone(page)];
+  const order = (view: Locator) =>
+    view
+      .contentFrame()
+      .locator("#row")
+      .evaluate((row) => [...row.children].map((el) => el.id));
+  for (const view of views) expect(await order(view)).toEqual(["lite", "card-a", "card-b"]);
+
+  // Over the line in card B's shadow root, near card B's top: before card B, in the Stack around it.
+  await selectDeepest(page, canvas.locator("#lite"));
+  const card = await placeOf(canvas.locator("#card-b"));
+  await dragTo(page, canvas.locator("#lite"), { x: card[0] + card[2] / 2, y: card[1] + 3 }, { drop: false });
+  await expect(page.locator(".ht-drop-line")).toBeVisible();
+  await page.mouse.up();
+  for (const view of views) await expect.poll(() => order(view)).toEqual(["card-a", "lite", "card-b"]);
+
+  // Over card B's middle, which would take it but for the shadow root's edge: it stays, not beside card B either.
+  await sawToast(page);
+  const cardNow = await placeOf(canvas.locator("#card-b"));
+  await dragTo(page, canvas.locator("#lite"), { x: cardNow[0] + cardNow[2] / 2, y: cardNow[1] + cardNow[3] / 2 });
+  await expect(toast(page)).toHaveText(EDGE_HINTS.in);
+  for (const view of views) expect(await order(view)).toEqual(["card-a", "lite", "card-b"]);
+
+  await page.keyboard.press("ControlOrMeta+z");
+  for (const view of views) await expect.poll(() => order(view)).toEqual(["lite", "card-a", "card-b"]);
 });
 
 test("in the shadow root, a layer is deleted and another copied; the host copied has its shadow root, its layers apart from the original's; in every view and the change list; undone, as they were (ticket 138)", async ({ page }) => {

@@ -9,7 +9,7 @@ import type { Change, Composed, Dissolved, GridSettings, Margins, StackSettings 
 import { equalColumns } from "./grid-tracks";
 import type { Edge } from "./checkable";
 import type { Alignment, Padding } from "./property-table";
-import { MOVE_CSS, slotsOf } from "./moves";
+import { MOVE_CSS, slotAt, slotsOf } from "./moves";
 import { holderOf } from "./shadow-roots";
 import { CHAIN_ATTR } from "./usage-chain";
 
@@ -290,7 +290,7 @@ export function compose(doc: Document, id: string, composed: Composed, style: Re
       // Written in the JSX its container is written in.
       const chain = container.getAttribute(CHAIN_ATTR);
       if (chain) stack.setAttribute(CHAIN_ATTR, chain);
-      holderOf(container).insertBefore(stack, slotsOf(container)[composed.place.slot] ?? null);
+      holderOf(container).insertBefore(stack, slotAt(container, composed.place.slot));
     }
     keepOriginal(stack);
     stacks.push(stack);
@@ -322,7 +322,7 @@ export function decompose(doc: Document, id: string, composed: Composed, changes
     for (const { el } of members) el!.remove();
     if (composed.place) stack.remove();
     // Each back at its place among the others, from the first: those before it are back by then.
-    for (const { el, from } of [...members].sort((a, b) => a.from.slot - b.from.slot)) holderOf(container).insertBefore(el!, slotsOf(container)[from.slot] ?? null);
+    for (const { el, from } of [...members].sort((a, b) => a.from.slot - b.from.slot)) holderOf(container).insertBefore(el!, slotAt(container, from.slot));
     for (const member of members) back.get(member.layer)!.push(member.el!);
     if (!composed.place) frames.push(container);
   }

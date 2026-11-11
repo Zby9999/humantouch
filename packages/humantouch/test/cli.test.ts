@@ -181,10 +181,31 @@ describe("claim", () => {
 
     expect(section(notes, 1)).toContain("- **Location:** `src/HeroCard.tsx:21:11`\n");
     expect(section(notes, 1)).toContain(
-      "- **Shadow root:** the layer is in the shadow root of `<hero-card id=\"hero\">`: the change is to what the component that renders into its shadow root renders there, at Location; it stays in that shadow root.\n",
+      "- **Shadow root:** the layer is in the shadow root of `<hero-card id=\"hero\">`: the change is to the markup the component renders into that shadow root, at **Location**, not to the page's markup outside it.\n",
     );
     expect(notes).not.toContain("- **Shadow roots:**");
     expect(notes).toContain("- **Text:**");
+  });
+
+  test("new words for a layer in a shadow root with no source marker name no Location, which there is none of (ticket 138)", async () => {
+    const inLit = {
+      ...cards,
+      loc: null,
+      chain: [],
+      component: null,
+      instances: 1,
+      unlocated: true,
+      shadowRoot: "<lit-card>",
+      context: { path: ["Page", "lit-card", "Title"], element: '<h2 class="title">' },
+    };
+    saveRound({ ...redFill, kind: "text", property: "text", target: inLit, before: "Hero", after: "Hero card", style: {} });
+
+    const notes = (await cli("claim")).output;
+
+    expect(section(notes, 1)).toContain("- **Location:** **Not located.**");
+    expect(section(notes, 1)).toContain(
+      "- **Shadow root:** the layer is in the shadow root of `<lit-card>`: the change is to the markup the component renders into that shadow root, not to the page's markup outside it.\n",
+    );
   });
 
   test("a layer in a shadow root with no source marker, as a Lit template writes it, is not located, as any other such layer, and the page does not check it (ticket 137)", async () => {

@@ -943,12 +943,16 @@ const NOT_LOCATED =
  * to what that component renders there, at Location, and stays in that
  * shadow root, as the editor keeps it.
  */
-function shadowRootLine({ shadowRoot, chain }: Target, change: Change): string {
+function shadowRootLine(target: Target, change: Change): string {
+  const { shadowRoot, chain } = target;
   if (chain[0]?.webComponent) {
     return `**Shadow root:** the layer is in the shadow root of \`${shadowRoot}\`, a custom element a dependency defines: change it from where \`<${chain[0].component}>\` is used, by what it takes there (see **Third-party Web Components**), never inside the dependency.`;
   }
   if (structureOnly(change)) {
-    return `**Shadow root:** the layer is in the shadow root of \`${shadowRoot}\`: the change is to what the component that renders into its shadow root renders there, at Location; it stays in that shadow root.`;
+    // At Location only where there is one; staying in the shadow root said of a layer that goes somewhere.
+    const at = target.made || target.loc ? ", at **Location**," : ",";
+    const stays = change.kind === "move" || change.kind === "duplicate" ? "; it stays in that shadow root" : "";
+    return `**Shadow root:** the layer is in the shadow root of \`${shadowRoot}\`: the change is to the markup the component renders into that shadow root${at} not to the page's markup outside it${stays}.`;
   }
   return `**Shadow root:** the layer is in the shadow root of \`${shadowRoot}\`, which the page's CSS does not reach: the change is to the styles of the component that renders into its shadow root (see **Shadow roots**), not to global CSS.`;
 }
