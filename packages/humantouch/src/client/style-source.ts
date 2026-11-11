@@ -158,7 +158,8 @@ export function winnersAmong(el: Element, lists: string[][]): ({ declaration: st
 function cascade(el: Element, properties: string[]): { winners: Map<string, Candidate | null>; unreadable: boolean } {
   const doc = el.ownerDocument;
   const candidates = new Map<string, Candidate[]>(properties.map((p) => [p, []]));
-  const layers = new LayerOrder();
+  /** The CSS layers of the tree whose stylesheets are read now: each tree has its own. */
+  let layers = new LayerOrder();
   const view = doc.defaultView!;
   const logical = logicalBorders(el);
   let order = 0;
@@ -263,12 +264,13 @@ function cascade(el: Element, properties: string[]): { winners: Map<string, Cand
   visitSheets(tree === doc ? doc.styleSheets : sheetsOf(tree as ShadowRoot));
   const reachingOut = (shadow: ShadowRoot, how: ReachIn) => {
     reach = how;
+    layers = new LayerOrder();
     visitSheets(sheetsOf(shadow));
     reach = null;
   };
   if (shadows && el.shadowRoot) reachingOut(el.shadowRoot, asHost(el));
-  const slot = shadows ? el.assignedSlot : null;
-  if (slot) reachingOut(slot.getRootNode() as ShadowRoot, asSlotted(el, slot));
+  // Slotted on through a slot slotted in another shadow root, by that one's `::slotted()` rules too.
+  for (let slot = shadows ? el.assignedSlot : null; slot; slot = slot.assignedSlot) reachingOut(slot.getRootNode() as ShadowRoot, asSlotted(el, slot));
 
   // The style attribute as the page wrote it, before any edit added to it, and without what the freezer pinned.
   const original = el.getAttribute(ORIGINAL_STYLE_ATTR) ?? el.getAttribute("style");
@@ -442,8 +444,7 @@ function asHost(el: Element): ReachIn {
   return (selector) => {
     const match = /^:host(?:\((.*)\))?$/.exec(selector);
     if (!match || (match[1] && !el.matches(match[1]))) return null;
-    const own = match[1] ? specificity(match[1]) : [0, 0, 0];
-    return [own[0], own[1] + 1, own[2]];
+    return specificity(selector);
   };
 }
 
@@ -550,6 +551,11 @@ function specificity(selector: string): Specificity {
       const arg = selector[i] === "(" ? parens() : null;
       if (arg !== null && MATCHES_ANY.has(name)) add(maxOf(arg));
       else if (name === "where") continue;
+      else if (arg !== null && (name === "host" || name === "host-context")) {
+        // A pseudo-class, and what it is of (CSS Scoping).
+        add([0, 1, 0]);
+        add(maxOf(arg));
+      }
       else if (arg !== null && /^nth-(last-)?child$/.test(name) && / of /.test(arg)) {
         add([0, 1, 0]);
         add(maxOf(arg.slice(arg.indexOf(" of ") + 4)));

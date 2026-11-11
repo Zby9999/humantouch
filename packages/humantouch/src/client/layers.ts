@@ -136,7 +136,7 @@ export function buildLayerTree(doc: Document): LayerTree {
     } else if (LEAVES.has(el.localName)) {
       set({ name: "Frame" });
     } else if (isText(el, view, shadows) && !drawsBoxAsPage(el, style)) {
-      set({ kind: "text", name: textName(shadows && showsOtherNodes(el) ? runWords(textIn(el, view, shadows)) : el.textContent!) });
+      set({ kind: "text", name: textName(shadows ? runWords(textIn(el, view, shadows)) : el.textContent!) });
     } else {
       const text = isText(el, view, shadows);
       // Text that draws a box around it, as a button does, is a Frame (or a Stack, a Grid) of one text layer: all its words, its inline fragments with them.
@@ -474,22 +474,24 @@ function textIn(el: Element, view: Window, shadows: boolean): Text[] {
   return run;
 }
 
-/** Whether `el` shows other nodes than those in it: it hosts an open shadow root, or it holds a slot. */
-function showsOtherNodes(el: Element): boolean {
-  return !!el.shadowRoot || el.getElementsByTagName("slot").length > 0;
-}
-
 /** The words of a run of text. */
 function runWords(run: Text[]): string {
   return run.map((node) => node.data).join("");
 }
 
-/** Only text, with inline pieces (bold, links, …) counted as part of it. */
+/**
+ * Only text, with inline pieces (bold, links, …) counted as part of it. Where
+ * there may be shadow roots, its text is all of one tree too (ticket 136): a
+ * run of text is drawn from one range, which cannot cross from a shadow root
+ * to the tree around it. Text shown from two is several layers.
+ */
 function isText(el: Element, view: Window, shadows: boolean): boolean {
   let text = false;
+  let tree: Node | null = null;
   const visit = (node: Element): boolean => {
     for (const child of shownChildren(node, shadows)) {
       if (child.nodeType === Node.TEXT_NODE) {
+        if (shadows && (tree ??= child.getRootNode()) !== child.getRootNode()) return false;
         if (child.textContent!.trim()) text = true;
       } else if (child.nodeType === Node.ELEMENT_NODE) {
         const e = child as Element;

@@ -1,9 +1,9 @@
 <!--
   Put at the top of the example's page by shadow-roots.spec.ts (ticket 135), so the example itself is left as it is.
-  An open shadow root, styled by a style element in it and by a constructable stylesheet, each answering to the width,
+  An open shadow root, styled by a style element in it and by a constructable stylesheet, each answering to the width, the host's own paragraph slotted in it (ticket 136),
   with a script's animation under way in it; and a closed shadow root.
 -->
-<div id="shadow-host"></div>
+<div id="shadow-host"><p class="note">Slotted note</p></div>
 <div id="closed-host"><span>Light of the closed host</span></div>
 <script>
   (() => {
@@ -15,7 +15,7 @@
   @media (max-width: 1000px) { .title { color: rgb(0, 150, 0) } }
   @media (max-width: 500px) { .title { color: rgb(0, 0, 200) } }
 </style>
-<div class="panel"><h2 class="title">Shadow title</h2><p class="body">Shadow body</p><p class="fade">Fading</p></div>`;
+<div class="panel"><h2 class="title">Shadow title</h2><p class="body">Shadow body</p><p class="fade">Fading</p><slot></slot></div>`;
     // A script's animation, as motion libraries make: at its end on the canvas.
     shadow.querySelector(".fade").animate([{ opacity: 1 }, { opacity: 0.4 }], { duration: 60000, fill: "forwards" });
     const sheet = new CSSStyleSheet();

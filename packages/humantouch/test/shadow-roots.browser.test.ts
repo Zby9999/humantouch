@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { freeze, restore, serializeCanvas } from "../src/client/freezer";
-import { buildLayerTree, type Layer } from "../src/client/layers";
+import { boxOf, buildLayerTree, type Layer } from "../src/client/layers";
 import { sourcesOf } from "../src/client/style-source";
 import { createViews } from "../src/client/views";
 
@@ -403,6 +403,51 @@ describe("the layers in an open shadow root (ticket 136)", () => {
     const box = inShadow(doc, "box")!;
     expect(tree.layerOf(slotted)!.parent!.el).toBe(box);
     expect(tree.layerAt(...middleOf(slotted), box)!.el.id).toBe("host");
+  });
+
+  test("a `:host(…)` rule weighs as a pseudo-class and what it is of: `:host([dark]) .title` beats a later `.panel .title`", async () => {
+    const live = livePage(`<!DOCTYPE html><body><div id="host" dark></div></body>`, (doc) => {
+      doc.getElementById("host")!.attachShadow({ mode: "open" }).innerHTML =
+        `<style>:host([dark]) .title { color: rgb(1, 1, 1) } .panel .title { color: rgb(2, 2, 2) }</style><div class="panel"><h2 class="title">Title</h2></div>`;
+    });
+    const canvas = await freeze(live, iframe());
+    const title = canvas.document.getElementById("host")!.shadowRoot!.querySelector(".title")!;
+    expect(getComputedStyle(title).color).toBe("rgb(1, 1, 1)");
+    expect(sourcesOf(title, ["color"])[0].selector).toBe(":host([dark]) .title");
+  });
+
+  test("text shown from two trees, a shadow root's and the one around its host, is a layer for each, each drawn and hit where it is", async () => {
+    const live = livePage(`<!DOCTYPE html><style>body { margin: 0; font: 20px/24px sans-serif }</style><body><p id="mixed">Hi <x-name id="name"></x-name></p></body>`, (doc) => {
+      doc.getElementById("name")!.attachShadow({ mode: "open" }).innerHTML = "<b>Ada Lovelace</b>";
+    });
+    const canvas = await freeze(live, iframe());
+    const doc = canvas.document;
+    const tree = buildLayerTree(doc);
+    const mixed = tree.layerOf(doc.getElementById("mixed")!)!;
+    expect(mixed.children.map((layer) => [layer.kind, layer.name])).toEqual([
+      ["text", "Hi"],
+      ["text", "Ada Lovelace"],
+    ]);
+    const [hi, name] = mixed.children;
+    for (const layer of [hi, name]) expect(boxOf(layer).width).toBeGreaterThan(0);
+    const bold = doc.getElementById("name")!.shadowRoot!.querySelector("b")!;
+    expect(tree.layerAt(...middleOf(bold))).toBe(name);
+    const box = boxOf(hi);
+    expect(tree.layerAt(box.left + box.width / 2, box.top + box.height / 2)).toBe(hi);
+  });
+
+  test("slotted on through a slot slotted in another shadow root, a layer's values come from either shadow root's `::slotted()` rules", async () => {
+    const live = livePage(`<!DOCTYPE html><body><div id="outer"><p id="note">Note</p></div></body>`, (doc) => {
+      const outer = doc.getElementById("outer")!.attachShadow({ mode: "open" });
+      outer.innerHTML = `<style>::slotted(p) { font-size: 31px }</style><div id="inner"><slot></slot></div>`;
+      outer.getElementById("inner")!.attachShadow({ mode: "open" }).innerHTML = `<style>::slotted(*) { letter-spacing: 3px }</style><slot></slot>`;
+    });
+    const canvas = await freeze(live, iframe());
+    const note = canvas.document.getElementById("note")!;
+    const [size, spacing] = ["font-size", "letter-spacing"].map((property) => sourcesOf(note, [property])[0]);
+    expect(getComputedStyle(note).letterSpacing).toBe("3px");
+    expect(size.declaration).toBe("font-size: 31px");
+    expect([spacing.selector, spacing.declaration]).toEqual(["::slotted(*)", "letter-spacing: 3px"]);
   });
 });
 

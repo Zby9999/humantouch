@@ -120,8 +120,9 @@ test("the layers in an open shadow root are selected, hovered and listed under t
   await expect.poll(() => boxOn(selection)).toEqual(title);
   await expect(selectedRow).toHaveText("Shadow title");
   await expect(selectedRow).toHaveAttribute("aria-level", "3");
-  const rows = await tree.getByRole("treeitem").evaluateAll((rows) => rows.slice(0, 5).map((row) => `${row.getAttribute("aria-level")} ${row.textContent!.trim()}`));
-  expect(rows).toEqual(["1 Stack", "2 Stack", "3 Shadow title", "3 Shadow body", "3 Fading"]);
+  // The host's own paragraph, slotted at the end of the panel, is listed there, where it shows.
+  const rows = await tree.getByRole("treeitem").evaluateAll((rows) => rows.slice(0, 6).map((row) => `${row.getAttribute("aria-level")} ${row.textContent!.trim()}`));
+  expect(rows).toEqual(["1 Stack", "2 Stack", "3 Shadow title", "3 Shadow body", "3 Fading", "3 Slotted note"]);
   // Its text styles, from the shadow root's own style element.
   await expect(design.getByRole("textbox", { name: "Font size" })).toHaveValue("24");
 
@@ -129,6 +130,16 @@ test("the layers in an open shadow root are selected, hovered and listed under t
   const body = await placeOf(canvas.locator("#shadow-host .body"));
   await page.mouse.move(body[0] + body[2] / 2, body[1] + body[3] / 2);
   await expect.poll(() => boxOn(page.locator('.ht-hover[data-view="Desktop"]'))).toEqual(body);
+  // With ⌥ held, the distance from the title to it: as far as the canvas has them apart.
+  const gap = await canvas.locator("#shadow-host .body").evaluate((el) => {
+    const title = el.parentElement!.querySelector(".title")!.getBoundingClientRect();
+    return String(Math.round(el.getBoundingClientRect().top - title.bottom));
+  });
+  await page.keyboard.down("Alt");
+  await page.mouse.move(body[0] + body[2] / 2 + 1, body[1] + body[3] / 2);
+  await expect(page.locator('.ht-mark[data-type="distance"] .ht-mark-label')).toHaveText([gap]);
+  await page.keyboard.up("Alt");
+  await expect(page.locator('.ht-mark[data-type="distance"]')).toHaveCount(0);
   // Clicked, it is selected, at the depth of the title.
   await page.mouse.click(body[0] + body[2] / 2, body[1] + body[3] / 2);
   await expect(selectedRow).toHaveText("Shadow body");
@@ -138,6 +149,15 @@ test("the layers in an open shadow root are selected, hovered and listed under t
   await expect.poll(() => boxOn(selection)).toEqual(await placeOf(canvas.locator("#shadow-host .panel")));
   await page.keyboard.press("Escape");
   await expect(selectedRow).toHaveAttribute("aria-level", "1");
+
+  // ⌘-click on the slotted paragraph: selected, under the panel it shows in.
+  const note = await placeOf(canvas.locator("#shadow-host > .note"));
+  await page.keyboard.down("ControlOrMeta");
+  await page.mouse.click(note[0] + note[2] / 2, note[1] + note[3] / 2);
+  await page.keyboard.up("ControlOrMeta");
+  await expect.poll(() => boxOn(selection)).toEqual(note);
+  await expect(selectedRow).toHaveText("Slotted note");
+  await expect(selectedRow).toHaveAttribute("aria-level", "3");
 });
 
 test("in the Phone view too, a layer in the shadow root is selected at that view's width (ticket 136)", async ({ page }) => {
