@@ -9,20 +9,28 @@ import { OffCanvasMini } from "@/components/demos/Minis";
 import { installPrompt } from "@/lib/readme";
 import { UPDATES } from "@/lib/updates";
 
+/**
+ * The two install buttons, at the top and the foot (designer, 2026-11-11): 8px corners, #008FF0 flat, with the hairline
+ * inside, the soft shadow under it and the darker blue when hovered of the product's count of changes beside its toggle
+ * (.ht-toggle-count).
+ */
+const BUTTON_ACCENT =
+  "rounded-lg bg-blue-500 text-neutral-50 shadow-[inset_0_0_0_0.5px_rgb(0_0_0/0.15),0_1px_1px_rgb(0_0_0/0.15)] hover:bg-blue-600";
+
 export default function Home() {
   const prompt = installPrompt();
 
   return (
-    <main className="flex flex-col items-center gap-20 px-4 pt-[120px] pb-[184px] md:pt-[160px]">
+    <main className="flex flex-col items-center gap-20 px-4 pt-[120px] pb-12 max-xl:pb-3.5 md:pt-[160px]">
       <section className="flex w-full max-w-[800px] flex-col gap-6">
         <div className="flex flex-col gap-3 px-1.5">
-          <h1 className="label font-sans font-medium text-ink normal-case tracking-[-0.005em]">Human Touch</h1>
-          <div className="text-[16px] leading-[1.4] font-[440] tracking-[-0.04px] text-label">
+          <h1 className="label font-sans font-medium text-ink-strong normal-case tracking-[-0.005em]">Human Touch</h1>
+          <div className="text-[16px] leading-[1.4] font-[440] tracking-[-0.04px] text-ink-strong">
             <p className="text-balance">An Agent native design layer inside your project&apos;s local dev server.</p>
             <p className="text-balance">Edit the page itself, visually, on a canvas, then have your Agent write the changes into the code.</p>
           </div>
         </div>
-        <CopyButton text={prompt} label="Copy prompt to install" size="h-8 px-4" font="text-sm" className="self-start" />
+        <CopyButton text={prompt} label="Copy prompt to install" size="h-8 px-4" font="text-sm" surface={BUTTON_ACCENT} className="self-start" />
       </section>
 
       <HeroEditor />
@@ -65,7 +73,7 @@ export default function Home() {
       </section>
 
       <section className="flex w-full max-w-[800px] flex-col gap-3">
-        <h2 className="label">Recent update</h2>
+        <h2 className="label font-sans text-base font-medium text-ink leading-normal normal-case tracking-[-0.005em]">Recent update</h2>
         <ul className="flex flex-col gap-3">
           {UPDATES.map((update) => (
             <li key={update.title} className="flex h-[120px] flex-col justify-between rounded-[4px] bg-surface p-5">
@@ -83,21 +91,23 @@ export default function Home() {
         </ul>
       </section>
 
-      <section className="flex flex-col items-center gap-6 text-center">
-        <div className="flex flex-col items-center gap-3">
-          <h2 className="label font-sans font-medium text-ink leading-normal normal-case tracking-[-0.005em]">Try Human Touch now with your Agents</h2>
-          <div className="flex flex-col items-center gap-0">
-            <p className="text-balance">Design, apply and check, all in one place.</p>
-            <p className="text-balance">Install and apply changes in seconds</p>
+      <div className="flex flex-col items-center gap-40 self-stretch max-xl:gap-32">
+        <section className="flex flex-col items-center gap-6 text-center">
+          <div className="flex flex-col items-center gap-3">
+            <h2 className="label font-sans font-medium text-ink leading-normal normal-case tracking-[-0.005em] text-balance">Try Human Touch now with your Agents</h2>
+            <div className="flex flex-col items-center gap-0">
+              <p className="text-balance">Design, apply and check, all in one place.</p>
+              <p className="text-balance">Install and apply changes in seconds</p>
+            </div>
           </div>
-        </div>
-        <CopyButton text={prompt} label="Copy prompt to install" size="h-8 px-3.5" />
-      </section>
+          <CopyButton text={prompt} label="Copy prompt to install" size="h-8 px-4" font="text-sm" surface={BUTTON_ACCENT} />
+        </section>
 
-      <footer className="flex w-full max-w-[800px] items-start justify-between">
-        <ThemeSwitch />
-        <p className="text-[12px] leading-[28px] text-muted">MIT · © 2026 Zby9999</p>
-      </footer>
+        <footer className="flex w-full max-w-[800px] items-start justify-between">
+          <ThemeSwitch />
+          <p className="text-[12px] leading-[28px] text-muted">MIT · © 2026 Zby9999</p>
+        </footer>
+      </div>
     </main>
   );
 }

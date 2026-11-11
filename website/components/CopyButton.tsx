@@ -4,9 +4,17 @@ import { useEffect, useRef, useState } from "react";
 
 /**
  * A pill button that copies `text` and says so for a moment (Figma: "Copy prompt to install", 28px high). `size`: its height
- * and side padding, 28px and 11px unless a usage sets its own; `font`: its text size, 12px unless a usage sets its own.
+ * and side padding, 28px and 11px unless a usage sets its own; `font`: its text size, 12px unless a usage sets its own;
+ * `surface`: its corners, fill, text color and shadow, a pill in the raised color unless a usage sets its own.
  */
-export function CopyButton({ text, label, className = "", size = "h-7 px-[11px]", font = "text-[12px]" }: { text: string; label: string; className?: string; size?: string; font?: string }) {
+export function CopyButton({
+  text,
+  label,
+  className = "",
+  size = "h-7 px-[11px]",
+  font = "text-[12px]",
+  surface = "rounded-full bg-raised text-ink-strong shadow-raised",
+}: { text: string; label: string; className?: string; size?: string; font?: string; surface?: string }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -26,7 +34,7 @@ export function CopyButton({ text, label, className = "", size = "h-7 px-[11px]"
     <button
       type="button"
       onClick={copy}
-      className={`relative inline-flex ${size} items-center justify-center rounded-full bg-raised ${font} leading-[1.4] tracking-[-0.04px] text-ink-strong shadow-raised transition-transform active:scale-[0.97] ${className}`}
+      className={`relative inline-flex ${size} items-center justify-center ${surface} ${font} leading-[1.4] tracking-[-0.04px] transition-transform active:scale-[0.97] ${className}`}
     >
       <span className={`transition-opacity duration-150 ${copied ? "opacity-0" : "opacity-100"}`}>{label}</span>
       <span aria-live="polite" className={`absolute inset-0 flex items-center justify-center transition-opacity duration-150 ${copied ? "opacity-100" : "opacity-0"}`}>
