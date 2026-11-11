@@ -117,7 +117,7 @@ export function keepOriginal(el: Element) {
 /** On a canvas element edits have given styles: the key its rules go by in the edit styles, which instances of its layer with the same rules share. */
 export const STYLE_KEY_ATTR = "data-ht-style";
 /** On a style element of a group's rules: the group's key. */
-const RULES_FOR_ATTR = "data-ht-rules-for";
+export const RULES_FOR_ATTR = "data-ht-rules-for";
 /** On a style element of a group's rules: the rules, as JSON, which its CSS is written from. */
 const RULES_ATTR = "data-ht-rules";
 /** On an element read as if shown: its edits that hide it do not apply meanwhile. */
@@ -554,7 +554,21 @@ export function dropUnusedRules(root: Element) {
   // A shadow root's layer order goes with its last edit style element.
   if (all) for (const el of all) if (el.shadowRoot && !el.shadowRoot.querySelector(`style[${RULES_FOR_ATTR}]`)) el.shadowRoot.querySelector(`style[${EDIT_STYLES_ATTR}="${EDIT_STYLES_ORDER}"]`)?.remove();
   for (const sheet of root.querySelectorAll(`style[${PUT_BACK_ATTR}]`)) {
-    if (!root.querySelector(`[${MADE_ATTR}="${CSS.escape(sheet.getAttribute(PUT_BACK_ATTR)!)}"]`)) sheet.remove();
+    if (!matching(`[${MADE_ATTR}="${CSS.escape(sheet.getAttribute(PUT_BACK_ATTR)!)}"]`).length) sheet.remove();
+  }
+}
+
+/**
+ * Takes the edit styles out of the shadow roots in `copy`, a copy of a layer
+ * not in the canvas yet (ticket 138): a host's shadow root is copied with it,
+ * and its edit styles, the original's, with it; the copy's elements are given
+ * rules of their own once it is in (`copyRules`), in their own shadow root.
+ */
+export function dropCopiedEditStyles(copy: Element) {
+  if (!mayHoldShadowRoots(copy.ownerDocument)) return;
+  for (const el of elementsWithin(copy)) {
+    if (!el.shadowRoot) continue;
+    for (const sheet of el.shadowRoot.querySelectorAll(`style[${RULES_FOR_ATTR}], style[${EDIT_STYLES_ATTR}="${EDIT_STYLES_ORDER}"]`)) sheet.remove();
   }
 }
 

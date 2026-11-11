@@ -16,6 +16,7 @@ import type { AddressInfo } from "node:net";
 import { gunzipSync } from "node:zlib";
 import type { PutBack } from "./client/changeset";
 import { CLAIM_PATH, CODE_QUIET_MS, OTHER_USAGES_PATH } from "./client/code-changes";
+import { PAGE_PATH, type PageCode, type PagePrint } from "./client/page-print";
 import { readProjectBreakpoints } from "./project-breakpoints";
 import { snippetAt } from "./source-snippet";
 import {
@@ -43,6 +44,8 @@ import {
   keepOtherUsages,
   readChecks,
   readIfThere,
+  readPage,
+  type PageKept,
   readOffCanvas,
   readOtherUsages,
   readState,
@@ -149,7 +152,10 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
         // Claimed: with what was noted of the other usages, for a page opened or reloaded since to go by (ticket 82).
         const state = await readState(files);
         const otherUsages = state && (await readOtherUsages(files, state));
-        return send(res, 200, JSON.stringify({ canvas, changeSet: JSON.parse(changeSet), ...(otherUsages && { otherUsages }) } satisfies SavedRound));
+        // The page the canvas reflects (ticket 141): what cannot be read is left out, the round kept.
+        const kept = await readPage(files);
+        const page = kept && { path: kept.path, structure: kept.structure, styles: kept.styles };
+        return send(res, 200, JSON.stringify({ canvas, changeSet: JSON.parse(changeSet), ...(otherUsages && { otherUsages }), ...(page && { page }) } satisfies SavedRound));
       }
       case `PUT ${ROUND_PATH}`: {
         // The Agent is applying the ChangeSet: it stays as claimed.
@@ -174,10 +180,32 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
         void takeRested().catch((error) => console.error("Human Touch:", error));
         return send(res, 204);
       }
+      case `PUT ${PAGE_PATH}`: {
+        // The page a canvas reflects (ticket 141): kept for the round being edited, or about to be, as edit mode put the canvas up.
+        if ((await status()).status === "claimed") return send(res, 409);
+        let print: PagePrint | null = null;
+        try {
+          print = JSON.parse(body || "null") as PagePrint | null;
+        } catch {}
+        if (!print || typeof print.path !== "string" || typeof print.structure !== "string" || typeof print.styles !== "string") return send(res, 400);
+        // Kept with the code it was printed on: while the code is the same, so is the page (`GET /page`).
+        const code = (await snapshotCode(root))?.tree ?? null;
+        await mkdir(files.dir, { recursive: true });
+        await writeAtomically(files.page, `${JSON.stringify({ path: print.path, structure: print.structure, styles: print.styles, code } satisfies PageKept)}\n`);
+        return send(res, 204);
+      }
+      case `GET ${PAGE_PATH}`: {
+        // Whether the code is the code the page the canvas reflects was printed on (ticket 141): null when that cannot be told.
+        const kept = await readPage(files);
+        const now = kept?.code ? ((await snapshotCode(root))?.tree ?? null) : null;
+        return send(res, 200, JSON.stringify({ codeSame: kept?.code && now ? now === kept.code : null } satisfies PageCode));
+      }
       case `DELETE ${ROUND_PATH}`:
         if ((await status()).status === "claimed") return send(res, 409);
         await rm(files.changeSet, { force: true });
         await rm(files.canvas, { force: true });
+        // The page that canvas reflected goes with it (ticket 141).
+        await rm(files.page, { force: true });
         return send(res, 204);
       case `GET ${EVENTS_PATH}`: {
         res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" });
@@ -274,7 +302,7 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
       case `POST ${UNLOCK_PATH}`:
         return send(res, (await archiveRound(files, "unlocked")) ? 204 : 409);
       default:
-        return send(res, [ROUND_PATH, EVENTS_PATH, STATUS_PATH, CLAIM_PATH, OTHER_USAGES_PATH, UNLOCK_PATH, CHECKS_PATH, VARIABLES_PATH, BREAKPOINTS_PATH, OFF_CANVAS_PATH].includes(path) ? 405 : 404);
+        return send(res, [ROUND_PATH, PAGE_PATH, EVENTS_PATH, STATUS_PATH, CLAIM_PATH, OTHER_USAGES_PATH, UNLOCK_PATH, CHECKS_PATH, VARIABLES_PATH, BREAKPOINTS_PATH, OFF_CANVAS_PATH].includes(path) ? 405 : 404);
     }
   };
 

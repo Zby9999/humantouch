@@ -118,6 +118,8 @@ interface OutlineProps {
   view: View;
   name: string;
   camera: Camera;
+  /** Where the layer is in the view, read already: not read again (ticket 153). */
+  box?: DOMRect | null;
   /** The layer under the pointer rather than the selected one. */
   hover?: boolean;
   /** The text being typed in: blue, whatever the layer is. */
@@ -132,8 +134,8 @@ interface OutlineProps {
  * above the canvas, so its lines stay 1px at any zoom. Blue, purple for an
  * instance, gray for a locked layer.
  */
-export function Outline({ layer, view, name, camera, hover, hidden, typing, away }: OutlineProps) {
-  const r = view.boxOf(layer);
+export function Outline({ layer, view, name, camera, box, hover, hidden, typing, away }: OutlineProps) {
+  const r = box === undefined ? view.boxOf(layer) : box;
   if (!r) return null;
   const kind = typing ? "typing" : role(layer);
   return (
@@ -187,6 +189,8 @@ interface HandlesProps {
   camera: Camera;
   /** A handle pressed: true when it is taken, to resize; false, the press is the canvas's (Space held: it pans). */
   onPress(handle: Handle, event: TargetedPointerEvent<HTMLDivElement>): boolean;
+  /** Where the layer is in the view, read already: not read again (ticket 153). */
+  box?: DOMRect | null;
 }
 
 /**
@@ -197,8 +201,8 @@ interface HandlesProps {
  * of its size, into it, so a small layer can still be dragged by its middle;
  * shorter on screen than `SMALL`, its middle third is over the corners'.
  */
-export function Handles({ layer, view, name, camera, onPress }: HandlesProps) {
-  const r = view.boxOf(layer);
+export function Handles({ layer, view, name, camera, onPress, box }: HandlesProps) {
+  const r = box === undefined ? view.boxOf(layer) : box;
   if (!r) return null;
   const [left, top, width, height] = [camera.x + r.left * camera.zoom, camera.y + r.top * camera.zoom, r.width * camera.zoom, r.height * camera.zoom];
   const zoneOf = (handle: Handle): Record<string, string> => {
@@ -246,8 +250,8 @@ export function Handles({ layer, view, name, camera, onPress }: HandlesProps) {
 }
 
 /** Below the layer being resized, in the view it is resized in: its size, as Figma shows it, W × H. */
-export function SizeLabel({ layer, view, name, camera }: { layer: Layer; view: View; name: string; camera: Camera }) {
-  const r = view.boxOf(layer);
+export function SizeLabel({ layer, view, name, camera, box }: { layer: Layer; view: View; name: string; camera: Camera; box?: DOMRect | null }) {
+  const r = box === undefined ? view.boxOf(layer) : box;
   if (!r) return null;
   return (
     <div

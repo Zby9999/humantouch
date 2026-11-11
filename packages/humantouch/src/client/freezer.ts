@@ -3,7 +3,7 @@
  * page inside a same-origin iframe, laid out at the page's original width.
  * The live page itself is left untouched.
  */
-import { dropUnusedRules, orderEditStyles, syncEditStyles, upgradeEditStyles } from "./canvas-style";
+import { dropUnusedRules, orderEditStyles, PUT_BACK_ATTR, syncEditStyles, upgradeEditStyles } from "./canvas-style";
 import { containingBlockOf } from "./containing-block";
 import { HOST_TAG } from "./host";
 import { EDIT_STYLES_ATTR } from "./style-marks";
@@ -163,19 +163,81 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
 
   doc.replaceChild(copy, doc.documentElement);
   noteShadowRoots(doc, shadowRoots.length > 0);
-  // Written back as text: every view, and the canvas saved with the round, takes the sheets from their text.
-  for (const sheet of [...doc.styleSheets, ...shadowRoots.flatMap((shadow) => [...shadow.styleSheets])]) {
-    const rules = readRules(sheet);
-    const owner = sheet.ownerNode;
-    const text = owner?.textContent ?? "";
-    const onViewport = VIEWPORT_DEPENDENT.test(text);
-    const onDefined = DEFINED.test(text);
-    if (!rules || !owner || !(onViewport || onDefined)) continue;
-    if (onViewport) resolveViewport(rules, frozen);
-    if (onDefined) resolveDefined(rules);
-    owner.textContent = serialize(rules, null);
-  }
+  for (const sheet of [...doc.styleSheets, ...shadowRoots.flatMap((shadow) => [...shadow.styleSheets])]) resolveSheet(sheet, frozen);
   return present(doc, iframe, { width: root.clientWidth, height: frozen.height, windowHeight: frozen.height, scrollY: viewport.scrollY });
+}
+
+/**
+ * What answers to the window, and `:defined`, in `sheet` of a copy, made to
+ * answer to each view and to every element (`VIEWPORT_DEPENDENT`,
+ * `DEFINED`): written back as text, as every view, and the canvas saved
+ * with the round, takes the sheets from their text.
+ */
+function resolveSheet(sheet: CSSStyleSheet, frozen: FrozenWindow) {
+  const rules = readRules(sheet);
+  const owner = sheet.ownerNode;
+  const text = owner?.textContent ?? "";
+  const onViewport = VIEWPORT_DEPENDENT.test(text);
+  const onDefined = DEFINED.test(text);
+  if (!rules || !owner || !(onViewport || onDefined)) return;
+  if (onViewport) resolveViewport(rules, frozen);
+  if (onDefined) resolveDefined(rules);
+  owner.textContent = serialize(rules, null);
+}
+
+/**
+ * The page's own stylesheets on `doc`, a copy of it: those of its head, and
+ * those its root holds beside the head and the body (the sheets it adopted,
+ * on a canvas), the editor's own aside. Those in the body, and in shadow
+ * roots, are part of what it draws (`page-print.ts`).
+ */
+function pageSheetsOf(doc: Document): Element[] {
+  const sheet = "style, link[rel~=stylesheet]";
+  const editors = (el: Element) => el.hasAttribute(EDIT_STYLES_ATTR) || el.hasAttribute(PUT_BACK_ATTR) || el.hasAttribute(CANVAS_STYLES_ATTR);
+  return [...(doc.head?.querySelectorAll(sheet) ?? []), ...[...doc.documentElement.children].filter((el) => el.matches(sheet))].filter((el) => !editors(el));
+}
+
+/**
+ * Puts the stylesheets `page` has now on `doc`, a saved canvas being put back
+ * (ticket 141), in place of those it was frozen with, as `freeze` copies
+ * them: the page changed its styles alone since. The editor's own (the
+ * edits' styles, the breakpoints' rules in them) stay as they are; so does
+ * the rest of the canvas. `windowHeight`: the height of the window the
+ * canvas was frozen in, which what answers to the height answers to.
+ * `@font-face` rules new in them load in the canvas, and in each view of it.
+ */
+export function restyle(doc: Document, page: Window, windowHeight: number) {
+  const live = page.document;
+  const frozen: FrozenWindow = {
+    height: windowHeight,
+    scrollbar: Math.max(0, page.innerWidth - live.documentElement.clientWidth),
+    matches: (query) => page.matchMedia(query).matches,
+  };
+  const old = pageSheetsOf(doc);
+  const head = doc.head ?? doc.documentElement;
+  // Where the page's sheets went in the head: the new ones go there, in their order.
+  const at = doc.createComment("");
+  const first = old.find((el) => el.parentNode === doc.head);
+  if (first) first.before(at);
+  else head.append(at);
+  for (const el of old) el.remove();
+  const made: Element[] = [];
+  for (const from of pageSheetsOf(live)) {
+    const to = doc.importNode(from, true);
+    at.before(to);
+    if (from.localName === "style") {
+      copyStyleRules(from as HTMLStyleElement, to);
+      if ((from as HTMLStyleElement).media) to.setAttribute("media", mediaForViews((from as HTMLStyleElement).media, frozen));
+      made.push(to);
+    } else {
+      inlineStylesheet(from as HTMLLinkElement, to, frozen);
+      made.push(at.previousElementSibling!);
+    }
+  }
+  at.remove();
+  // Constructable stylesheets come after all the others in the cascade.
+  for (const sheet of live.adoptedStyleSheets) made.push(doc.documentElement.appendChild(styleOf(doc, sheet)));
+  for (const el of made) if ((el as HTMLStyleElement).sheet) resolveSheet((el as HTMLStyleElement).sheet!, frozen);
 }
 
 /** Swaps `el` for an element the same but with no shadow root: its attributes, and what is in it, moved into it. */
@@ -250,8 +312,12 @@ export function doctypeOf(doc: Document): string {
   return doc.compatMode === "CSS1Compat" ? "<!DOCTYPE html>" : "";
 }
 
-/** Puts a canvas saved by `serializeCanvas` back into `iframe`, as `freeze` would; `takeIn`, on it before it is laid out. */
-export function restore(html: string, iframe: HTMLIFrameElement, takeIn?: (doc: Document) => void): Promise<Canvas> {
+/**
+ * Puts a canvas saved by `serializeCanvas` back into `iframe`, as `freeze`
+ * would; `takeIn`, on it before it is laid out, told the height of the window
+ * it was frozen in.
+ */
+export function restore(html: string, iframe: HTMLIFrameElement, takeIn?: (doc: Document, windowHeight: number) => void): Promise<Canvas> {
   const doc = iframe.contentDocument;
   if (!doc) return Promise.reject(new Error("Human Touch: the canvas iframe is not in the document"));
   doc.open();
@@ -267,8 +333,9 @@ export function restore(html: string, iframe: HTMLIFrameElement, takeIn?: (doc: 
   root.removeAttribute(LAYOUT_ATTR);
   // Saved by an earlier Human Touch: as edits are kept now, looking as it did.
   upgradeEditStyles(doc);
-  // A round carried over from one that ended with changes not applied (ticket 68): what was applied taken in, before it is laid out.
-  takeIn?.(doc);
+  // A round carried over from one that ended with changes not applied (ticket 68): what was applied taken in, before it is laid out;
+  // the page's styles as they are now, when they alone changed since (ticket 141).
+  takeIn?.(doc, layout.windowHeight);
   const pixels = queryWithin<HTMLCanvasElement>(doc, `canvas[${PIXELS_ATTR}]`).map((still) => {
     const image = new Image();
     image.src = still.getAttribute(PIXELS_ATTR)!;

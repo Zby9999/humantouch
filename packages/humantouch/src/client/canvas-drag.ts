@@ -11,6 +11,7 @@
 import type { Drop } from "./drag";
 import type { Layer } from "./layers";
 import { split } from "./paint";
+import type { ShadowEdge } from "./shadow-roots";
 import { marginsAside } from "./stacks";
 import type { Axis } from "./snap";
 import type { Shown } from "./view-layout";
@@ -46,6 +47,8 @@ export interface DragSession {
   box?: DOMRect;
   /** Let go now, the layer goes off the canvas (ADR 0009). */
   out: boolean;
+  /** Let go now, it goes nowhere because of a shadow root's edge, which no layer crosses (ticket 138): which edge, for the hint it shows; null or none when no edge. */
+  shadowEdge?: ShadowEdge | null;
   /** A layer off the canvas, dragged whole: where its top left would go on the stage; null over a view. */
   to: { x: number; y: number } | null;
   /** A layer off the canvas dragged whole, rather than a layer in a view or in it. */

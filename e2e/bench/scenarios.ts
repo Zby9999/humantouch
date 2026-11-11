@@ -274,6 +274,8 @@ export async function saved(desk: Desk, count: number) {
 const HERO = '[data-testid="hero"]';
 /** The panel the page `/shadow` has in a shadow root (ticket 137): Playwright's locators go into open shadow roots. */
 const SHADOW_PANEL = '[data-testid="shadow-panel"] .panel';
+/** The words of the paragraph in that panel, its layer's name. */
+const SHADOW_BODY = "Styled by its own styles, which the page's CSS does not reach.";
 /** The intro paragraph's layer, by its words. */
 const INTRO = "A Framer-style editor layer for any page.";
 
@@ -1954,6 +1956,66 @@ export const SCENARIOS: Scenario[] = [
     async apply(desk) {
       // As the notes say: the styles of the component that renders into its shadow root, not the page's CSS, which does not reach in.
       await desk.edit("src/shadow/ShadowPanel.tsx", ".panel { padding: 16px; border-radius: 16px; background: #fde68a; }", ".panel { padding: 16px; border-radius: 10px; background: #2563eb; }");
+    },
+  },
+  // Ticket 138: a change to the structure in a shadow root: its two layers swap places, in the same shadow root.
+  {
+    id: "shadow-root-structure",
+    path: "/shadow",
+    title: "In the panel at the top of the page `/shadow`, which its component renders into a shadow root of its own: the paragraph moved above the title.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      const panel = desktop(page).contentFrame().locator(SHADOW_PANEL);
+      await layer(page, SHADOW_BODY).click();
+      await drag(page, panel.locator(".body"), async () => {
+        const title = await boxOf(panel.locator(".title"));
+        return { x: title.x + title.width / 2, y: title.y + 2 };
+      });
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "move",
+        expect: "In the panel at the top of `/shadow`, in its shadow root, the paragraph comes before the title.",
+        checkable: true,
+        shows: () => [...document.querySelector('[data-testid="shadow-panel"]')!.shadowRoot!.querySelector(".panel")!.children].map((child) => child.localName).join() === "p,h2",
+      },
+    ],
+    async apply(desk) {
+      // In the component that renders into the shadow root, as the claim's Location says: the paragraph's line above the title's.
+      await desk.edit(
+        "src/shadow/ShadowPanel.tsx",
+        `              <h2 className="title">In a shadow root</h2>\n              <p className="body">${SHADOW_BODY}</p>\n`,
+        `              <p className="body">${SHADOW_BODY}</p>\n              <h2 className="title">In a shadow root</h2>\n`,
+      );
+    },
+  },
+  // Ticket 138: new words for a layer in a shadow root. Apart from the reorder above: with both, the two lines swap, which of the two markers is the title's cannot be told (ticket 99), and its words are not checked.
+  {
+    id: "shadow-root-text",
+    path: "/shadow",
+    title: "The title of the panel at the top of the page `/shadow`, which its component renders into a shadow root of its own, changed to “Inside a shadow root”.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "In a shadow root").click();
+      await desktop(page).contentFrame().locator(`${SHADOW_PANEL} .title`).dblclick();
+      await page.keyboard.type("Inside a shadow root");
+      await page.keyboard.press("Escape");
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "text",
+        expect: "The panel's title at the top of `/shadow` reads “Inside a shadow root”.",
+        // Found by its source marker in the shadow root, its words are checked.
+        checkable: true,
+        shows: () => document.querySelector('[data-testid="shadow-panel"]')!.shadowRoot!.querySelector("h2")?.textContent === "Inside a shadow root",
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/shadow/ShadowPanel.tsx", '<h2 className="title">In a shadow root</h2>', '<h2 className="title">Inside a shadow root</h2>');
     },
   },
 ];

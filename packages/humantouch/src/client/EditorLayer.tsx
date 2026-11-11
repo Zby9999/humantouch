@@ -13,6 +13,7 @@ import { placedOnCanvas, type RoundOnCanvas } from "./moves";
 import { showsAnyHere, watchPage, type PageChecks } from "./page-checks";
 import { effectNotes, type EffectNotes } from "./check";
 import { keptOf, notedFor, notedFrom, noteRound, type OtherUsagesNoted } from "./other-usages";
+import type { PageEntry, PagePrint } from "./page-print";
 import { PageToast, type PageToastMessage } from "./PageToast";
 import { createPartsReader } from "./range-parts";
 import { revertSaved, withPartsRead } from "./saved-round";
@@ -90,13 +91,55 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   const [status, setStatus] = useState<RoundStatus | undefined>(store ? undefined : { status: "editing" });
   const claimed = status?.status === "claimed" ? status : null;
 
+  /**
+   * The page the round's canvas reflects, printed (ticket 141): as loaded with the round, kept as edit mode puts the
+   * canvas up. Null when not known: a round carried over, the Agent's code in since; the page as it is next taken.
+   */
+  const reflected = useRef<PagePrint | null>(saved?.page ?? null);
+  /** The round was dropped, and the print kept with it went too: kept again if a round is made on the canvas still up. */
+  const pageDropped = useRef(false);
+  /**
+   * Whether the code is the code the page the canvas reflects was printed on, as the local service last said (ticket
+   * 141): the same, the page is too, whatever it draws as time goes by. Asked again as the page may have seen the code
+   * change: as it loads, comes back to the front, hears of a code change, leaves edit mode. Null while asked, or not known.
+   */
+  const codeSame = useRef<boolean | null>(null);
+  const asked = useRef(0);
+  const askCode = () => {
+    const ask = ++asked.current;
+    codeSame.current = null;
+    if (!reflected.current) return;
+    store?.pageCode().then(
+      (same) => void (ask === asked.current && (codeSame.current = same)),
+      (error: unknown) => console.warn(error),
+    );
+  };
+  useEffect(() => {
+    const again = () => document.visibilityState === "visible" && askCode();
+    window.addEventListener("focus", again);
+    window.addEventListener(CODE_EVENT, askCode);
+    document.addEventListener("visibilitychange", again);
+    return () => {
+      window.removeEventListener("focus", again);
+      window.removeEventListener(CODE_EVENT, askCode);
+      document.removeEventListener("visibilitychange", again);
+    };
+  }, []);
   const load = () =>
-    store?.load().then(setRound, (error: unknown) => {
-      console.warn(error);
-      setRound(null);
-    });
+    store?.load().then(
+      (round) => {
+        reflected.current = round?.page ?? null;
+        askCode();
+        setRound(round);
+      },
+      (error: unknown) => {
+        console.warn(error);
+        setRound(null);
+      },
+    );
   useEffect(() => {
     if (saved === undefined) void load();
+    else askCode();
     store?.breakpoints().then(setBreakpoints, (error: unknown) => {
       console.warn(error);
       setBreakpoints(null);
@@ -278,6 +321,12 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
     roundNow.current = next;
     setRound(next);
     store?.save(next, leaving).catch((error: unknown) => console.warn(error));
+    // The page a round's canvas reflects goes with the round (ticket 141): dropped with it, kept again as a round is made on the same canvas.
+    if (!next) pageDropped.current = true;
+    else if (pageDropped.current && reflected.current) {
+      pageDropped.current = false;
+      store?.savePage(reflected.current).catch((error: unknown) => console.warn(error));
+    }
   };
 
   // What the page shows in each part of the range of a change saved with that yet to be read (ticket 65): read
@@ -432,7 +481,10 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   // Edit mode on a round of none, the page frozen afresh: up to date.
   useEffect(() => {
     if (editing && !round) stale.current = false;
-    if (!editing) setPageToast(null);
+    if (!editing) {
+      setPageToast(null);
+      askCode();
+    }
   }, [editing]);
   /** The changes on the canvas as of the last render: what a run of code changes, told later, is told by. */
   const listedNow = useRef(listed);
@@ -499,6 +551,28 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       stop();
     };
   }, [unclaimed]);
+  /**
+   * The canvas is up (ticket 141): the page it reflects from now on kept, when it is another; the page changed since
+   * the page it reflects, its structure too, told, the canvas as it was, and not again as the code changes till it is
+   * frozen afresh (ticket 78).
+   */
+  const keepPage = (page: PageEntry | { keep: PagePrint }) => {
+    if (page.keep) {
+      reflected.current = page.keep;
+      pageDropped.current = false;
+      const ask = ++asked.current;
+      codeSame.current = null;
+      // Printed on the code as it is: the same, till it changes.
+      store?.savePage(page.keep).then(
+        () => void (ask === asked.current && (codeSame.current = true)),
+        (error: unknown) => console.warn(error),
+      );
+    }
+    if (!("since" in page)) return;
+    // Its styles taken in, the canvas is up to date with the page, as it is frozen afresh.
+    stale.current = page.since === "structure";
+    if (stale.current) tell("since");
+  };
   const updateCanvas = () => {
     tell(null);
     discardRound();
@@ -548,6 +622,9 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
           onChanges={setLive}
           control={control}
           notice={editing && <PageToast message={pageToast} changes={listed.length} onUpdate={updateCanvas} />}
+          reflects={reflected.current}
+          codeSame={() => codeSame.current}
+          onPage={keepPage}
           startAt={startAt}
           cameraNow={cameraNow}
           animate={animate}

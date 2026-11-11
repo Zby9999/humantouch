@@ -7,6 +7,7 @@ import type { Destination, Editor } from "./edit-commands";
 import { placesItself } from "./property-table";
 import { trackCount } from "./grid-tracks";
 import type { Layer } from "./layers";
+import { mayHoldShadowRoots, type ShadowEdge } from "./shadow-roots";
 import { snap, type Axis, type Mark } from "./snap";
 import { insideBorder, marginsAside, paddingBox } from "./stacks";
 import type { View } from "./views";
@@ -49,17 +50,8 @@ export function findDrop(
 ): Drop | null {
   const home = layer?.parent ?? null;
   const el = (layer: Layer) => view.elementOf(layer.el) ?? layer.el;
-  let container = view.layerAt(editor.tree(), point.x, point.y, layer ?? undefined);
-  for (; container; container = container.parent) {
-    if (!layer) {
-      if (editor.canHold(container)) break;
-      continue;
-    }
-    if (!editor.canDrop(layer, container)) continue;
-    if (container.parent === home && !inMiddle(rectOf(container), point)) continue;
-    break;
-  }
-  if (!container) return null;
+  const container = dropContainer(editor, view, layer, point, rectOf);
+  if (!container || typeof container === "string") return null;
 
   const area = rectOf(container);
   if (container.kind === "frame") {
@@ -128,6 +120,63 @@ export function findDrop(
           : area.top + parseFloat(style.paddingTop);
   const line = horizontal ? { x: main - 1, y: area.top, width: 2, height: area.height } : { x: area.left, y: main - 1, width: area.width, height: 2 };
   return { to: { parent: container, index }, line, shifts, box, marks: [] };
+}
+
+/**
+ * The container a dragged layer would go into (`findDrop`): out from under
+ * the pointer, the first that takes it, but for a Stack or Frame beside it
+ * entered near its edges, where it goes beside it. Past a shadow root's edge
+ * (ticket 138), which edge, judged on the first that would take it were the
+ * edge not there: it goes nowhere then, not beside the shadow root's host
+ * either, further out. One that would not take it anyway is passed, as any is.
+ */
+function dropContainer(
+  editor: Editor,
+  view: View,
+  layer: Layer | null,
+  point: { x: number; y: number },
+  rectOf: (layer: Layer) => DOMRect,
+): Layer | ShadowEdge | null {
+  const home = layer?.parent ?? null;
+  for (let container = view.layerAt(editor.tree(), point.x, point.y, layer ?? undefined); container; container = container.parent) {
+    if (!layer) {
+      if (!editor.canHold(container)) continue;
+    } else {
+      if (!editor.canDropIgnoringEdge(layer, container)) continue;
+      if (container.parent === home && !inMiddle(rectOf(container), point)) continue;
+    }
+    return editor.acrossShadowRoot(layer, container) ?? container;
+  }
+  return null;
+}
+
+/**
+ * What the canvas's toast says when a layer is let go past a shadow root's
+ * edge, where it cannot go (ticket 138), by the edge: out of the component it
+ * is in, into one from outside it, or, slotted in one, anywhere.
+ */
+export const SHADOW_EDGE_HINTS: Record<ShadowEdge, string> = {
+  out: "This layer stays inside its component.",
+  in: "Layers can't be moved into this component.",
+  slotted: "This layer's place is set by its component.",
+};
+
+/**
+ * Which shadow root's edge a layer dragged to `point` of `view` stops at,
+ * going nowhere (ticket 138), as `findDrop` walks out: for a drop it found
+ * none for; null when none. `layer` null: one from another document.
+ */
+export function shadowEdgeAt(
+  editor: Editor,
+  view: View,
+  layer: Layer | null,
+  point: { x: number; y: number },
+  rectOf: (layer: Layer) => DOMRect,
+): ShadowEdge | null {
+  // On a canvas with no shadow root, no edge: no second walk on a drag step that goes nowhere.
+  if (!mayHoldShadowRoots(editor.tree().root.el.ownerDocument)) return null;
+  const found = dropContainer(editor, view, layer, point, rectOf);
+  return typeof found === "string" ? found : null;
 }
 
 /**

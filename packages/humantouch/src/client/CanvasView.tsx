@@ -1,5 +1,5 @@
 /** @jsxImportSource preact */
-import type { TargetedPointerEvent } from "preact";
+import type { ComponentChildren, TargetedPointerEvent } from "preact";
 import { Fragment } from "preact";
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "preact/hooks";
 import { BriefCards, briefedLayers, briefViews, type BriefCard } from "./BriefCards";
@@ -11,7 +11,7 @@ import { marksNow, resizeStep, type ResizePointer, type ResizeSession, type Resi
 import { boxFrom, DRAG_THRESHOLD, laidOut, moveWhole, restoreDragStyles, shift, SNAP_PX, startDragSession, type At, type DragSession, type Pointer } from "./canvas-drag";
 import { boundsOf, cameraIn, centredOn, fitCamera, initialCamera, place, scrolled, showsWhole, transformOf, wheelZoom, type Bounds, type Camera } from "./camera";
 import type { Created } from "./changeset";
-import { findDrop, findPlace, type Drop } from "./drag";
+import { findDrop, findPlace, SHADOW_EDGE_HINTS, shadowEdgeAt, type Drop } from "./drag";
 import type { Destination, Editor } from "./edit-commands";
 import { freeze, restore } from "./freezer";
 import { ENTER_MARK } from "./host";
@@ -39,8 +39,11 @@ type Modifiers = Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "shiftKey" | "altKe
 interface Props {
   /** A saved canvas to put back; null to freeze the page. */
   restoreFrom: string | null;
-  /** Done on the saved canvas put back, before it is laid out: what was applied in a round before taken in (ticket 68). */
-  takeIn?(doc: Document): void;
+  /**
+   * Done on the saved canvas put back, before it is laid out, told the height of the window it was frozen in: what was
+   * applied in a round before taken in (ticket 68), the page's styles as they are now (ticket 141).
+   */
+  takeIn?(doc: Document, windowHeight: number): void;
   /** The page frozen afresh in place of a canvas (ticket 78): the camera to start at, where it was, with no mode switch to show. */
   startAt?: Camera | null;
   /** Kept up to date with where the camera is, once there is a canvas: for a canvas frozen afresh in its place to start there. */
@@ -96,6 +99,8 @@ interface Props {
   editor: Editor | null;
   /** A dragged layer let go where it can go. */
   onMove(layer: Layer, to: Destination): void;
+  /** A short note for the canvas's toast: a layer let go past a shadow root's edge, say (ticket 138). */
+  onHint?(text: string): void;
   /**
    * A handle of the layer selected dragged: one step of the resize, `to` as
    * `Editor.resize` has it; `continues`, after the first. `at`: the whole of a
@@ -104,6 +109,8 @@ interface Props {
   onResize(layer: Layer, to: ResizeStep["to"], continues: boolean, at?: { x: number; y: number }): void;
   /** Esc, while a handle is dragged: the resize taken back, as if never made. */
   onCancelResize(layer: Layer): void;
+  /** A resize that changed the layer let go: it stays as it is. */
+  onResized(layer: Layer): void;
   /** The fill's picker is open on a gradient: its handles show on the layer selected, in every view, and change it. */
   gradientHandles: boolean;
   /** A gradient's handle dragged: one step of the change made to the layer's fill. */
@@ -146,7 +153,7 @@ function gapFor(doc: Document): number | undefined {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, rowHovered, rowHoveredRange, focus, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onEditAlone, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, animate } = props;
+  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, rowHovered, rowHoveredRange, focus, onSelect, editor, onMove, onHint, onResize, onCancelResize, onResized, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onEditAlone, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, animate } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -214,8 +221,21 @@ export function CanvasView(props: Props) {
   const resizing = useRef<ResizeSession | null>(null);
   const [resize, setResize] = useState<{ layer: Layer; in: Shown; handle: Handle; showsSize: boolean; marks: ResizeStep["marks"] } | null>(null);
   /** Drawn again once the views beside have caught up with a resize step: the selection there follows the layer (ADR 0011). */
-  const [, caughtUp] = useReducer((n: number) => n + 1, 0);
+  const [caughtUps, caughtUp] = useReducer((n: number) => n + 1, 0);
   const catchingUp = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /**
+   * While a resize is under way, the selection in each view beside the one resized in, as last drawn: those views wait
+   * for its steps to pause (ADR 0011), so it stays where it is till they catch up, the camera moves or its height
+   * changes. Read again each frame, each would lay the editor out anew (ticket 153).
+   */
+  const besideResized = useRef(new Map<string, { key: string; drawn: ComponentChildren }>());
+  if (!resize) besideResized.current.clear();
+  /**
+   * While a resize is under way, where the layer resized is in the view resized in: read once, as this is drawn, for its
+   * selection, handles and size. Read by each, after what was drawn before it, each would lay the editor out anew (ticket 153).
+   */
+  const resizedBox = resize ? resize.in.view.boxOf(resize.layer) : undefined;
+  const boxIn = (view: View, layer: Layer) => (resize && view === resize.in.view && layer === resize.layer ? resizedBox : undefined);
   useEffect(() => () => clearTimeout(catchingUp.current), []);
   /**
    * A layer being drawn: the view it is drawn in (null: the blank space beside them, ticket 106), where the
@@ -1012,6 +1032,7 @@ export function CanvasView(props: Props) {
       const rectOf = (l: Layer) => into?.view.boxOf(l) ?? new DOMRect();
       const there = into && new DOMRect(offCanvasLayer.x + box.x - into.x, offCanvasLayer.y + box.y - into.y, box.width, box.height);
       const drop = into && there && editorIn(into) ? inLayer(findDrop(editorIn(into)!, into.view, null, toView(event, into), there, rectOf, snapWithin), into) : null;
+      session.shadowEdge = !drop && into && editorIn(into) ? shadowEdgeAt(editorIn(into)!, into.view, null, toView(event, into), rectOf) : null;
       // Snapped, it is shown where it snaps to.
       if (drop && there) [dx, dy] = [dx + drop.box.x - there.x, dy + drop.box.y - there.y];
       moveWhole(session, dx, dy);
@@ -1026,7 +1047,11 @@ export function CanvasView(props: Props) {
     const across = over && over.offCanvasLayer !== offCanvasLayer && editorIn(over) ? over : null;
     if (across) {
       const there = new DOMRect(shown.x + box.x - across.x, shown.y + box.y - across.y, box.width, box.height);
-      const drop = inLayer(findDrop(editorIn(across)!, across.view, null, toView(event, across), there, (l) => across.view.boxOf(l) ?? new DOMRect(), snapWithin), across);
+      // Out of a shadow root, or slotted in one, it goes into no other document (ticket 138).
+      const stays = editorIn(shown)?.acrossShadowRoot(layer, null) ?? null;
+      const rectOf = (l: Layer) => across.view.boxOf(l) ?? new DOMRect();
+      const drop = stays ? null : inLayer(findDrop(editorIn(across)!, across.view, null, toView(event, across), there, rectOf, snapWithin), across);
+      session.shadowEdge = stays ?? (drop ? null : shadowEdgeAt(editorIn(across)!, across.view, null, toView(event, across), rectOf));
       session.out = false;
       session.drop = null;
       session.into = drop && { shown: across, drop };
@@ -1037,10 +1062,14 @@ export function CanvasView(props: Props) {
     }
     session.into = null;
     // Let go outside every view and every layer off the canvas, a layer of the canvas goes off it; one in a layer off the canvas, a layer off it of its own (ticket 108).
-    session.out = !viewAt(event) && !!(offCanvasLayer ? !layer.text && editorIn(shown)?.canRemove(layer) : editor?.canRemove(layer));
+    // Out of a shadow root, or slotted in one, it does not go off the canvas either (ticket 138).
+    const overNone = !viewAt(event);
+    const stays = overNone ? (editorIn(shown)?.acrossShadowRoot(layer, null) ?? null) : null;
+    session.out = overNone && !stays && !!(offCanvasLayer ? !layer.text && editorIn(shown)?.canRemove(layer) : editor?.canRemove(layer));
     const rectOf = (l: Layer) => laidOut(session, l);
     const drop = session.out ? null : (editorIn(shown) && findDrop(editorIn(shown)!, shown.view, layer, toView(event, shown), box, rectOf, snapWithin, session.marginsAside));
     session.drop = drop;
+    session.shadowEdge = stays ?? (!session.out && !drop && editorIn(shown) ? shadowEdgeAt(editorIn(shown)!, shown.view, layer, toView(event, shown), rectOf) : null);
     // Snapped, it is shown where it snaps to.
     const at = drop?.box ?? box;
     session.box = at;
@@ -1143,6 +1172,7 @@ export function CanvasView(props: Props) {
     session.release();
     setResize(null);
     if (!commit && session.stepped) onCancelResize(session.layer);
+    if (commit && session.stepped) onResized(session.layer);
   }
 
   /** Makes the layer drawn over `box`, where it goes; new text is typed in at once. A click rather than a drag makes one of the size it takes. */
@@ -1244,6 +1274,11 @@ export function CanvasView(props: Props) {
     setDrag(null);
     if (!commit) return;
     const { layer, in: shown, box, to, out, drop, back, holder, into } = session;
+    // Let go past a shadow root's edge: it stays where it was, and the toast says why (ticket 138).
+    if (session.shadowEdge) {
+      onHint?.(SHADOW_EDGE_HINTS[session.shadowEdge]);
+      return;
+    }
     if (shown.offCanvasLayer && session.whole) {
       if (to && (to.x !== shown.offCanvasLayer.x || to.y !== shown.offCanvasLayer.y)) onPlaceOff(shown.offCanvasLayer, to.x, to.y);
       // Into another layer off the canvas (ticket 108).
@@ -1549,10 +1584,12 @@ export function CanvasView(props: Props) {
                 <Outline layer={rowHovered} view={view} name={name} camera={at} hover away={rowHoveredRange !== undefined && !shown.offCanvasLayer && !contains(rowHoveredRange, shown.width)} />
               )}
               {tree && titled === keyOf(shown) && !selected.includes(tree.root) && <Outline layer={tree.root} view={view} name={name} camera={at} hover />}
-              {selected.map((layer, i) => layer !== typingLayer && shows(shown, layer) && <Outline key={i} layer={layer} view={view} name={name} camera={at} hidden={hideSelection} away={away} />)}
+              {asDrawn(resize && view !== resize.in.view ? besideResized.current : null, keyOf(shown), [at.x, at.y, at.zoom, caughtUps, view.height, hideSelection, away, ...selected.map((layer) => layer.el)], () =>
+                selected.map((layer, i) => layer !== typingLayer && shows(shown, layer) && <Outline key={i} layer={layer} view={view} name={name} camera={at} box={boxIn(view, layer)} hidden={hideSelection} away={away} />),
+              )}
               {typingLayer && shows(shown, typingLayer) && <Outline layer={typingLayer} view={view} name={name} camera={at} typing />}
               {withHandles && !away && shows(shown, withHandles) && (!spaceHeld || resize) && (
-                <Handles layer={withHandles} view={view} name={name} camera={at} onPress={(handle, event) => pressHandle(withHandles, shown, handle, event)} />
+                <Handles layer={withHandles} view={view} name={name} camera={at} box={boxIn(view, withHandles)} onPress={(handle, event) => pressHandle(withHandles, shown, handle, event)} />
               )}
               {withGradient && !shown.offCanvasLayer && shows(shown, withGradient) && (
                 <GradientHandles
@@ -1616,7 +1653,7 @@ export function CanvasView(props: Props) {
       {bounds && !travelling && !playing && (
         <AddView left={camera.x + bounds.width * camera.zoom + 8} top={camera.y - LABEL_OFFSET} onAdd={(width) => setViewWidths(withWidth(widths, width))} />
       )}
-      {resize?.showsSize && <SizeLabel layer={resize.layer} view={resize.in.view} name={resize.in.name} camera={cameraIn(camera, shownNow(resize.in))} />}
+      {resize?.showsSize && <SizeLabel layer={resize.layer} view={resize.in.view} name={resize.in.name} camera={cameraIn(camera, shownNow(resize.in))} box={resizedBox} />}
       {resize && resize.marks.length > 0 && <Marks marks={resize.marks} view={resize.in.name} camera={cameraIn(camera, shownNow(resize.in))} />}
       {drag?.drop && <Outline layer={drag.drop.to.parent} view={drag.in.view} name={drag.in.name} camera={cameraIn(camera, drag.in)} hover />}
       {drag?.drop?.line && <div class="ht-drop-line" aria-hidden="true" style={place(drag.drop.line, cameraIn(camera, drag.in))} />}
@@ -1669,4 +1706,27 @@ function selectWord(selection: Selection, { node, offset }: { node: Node; offset
 /** Whether a layer is one of the tree's, not of one built before it. */
 function inTree(tree: LayerTree, layer: Layer): boolean {
   return tree.layerOf(nodeOf(layer)) === layer;
+}
+
+/**
+ * What `draw` makes, or, with `kept` and the same `deps` as when it was kept under `key`, what it made then: the same
+ * elements, which are not drawn again. Kept anew whenever drawn.
+ */
+function asDrawn(kept: Map<string, { key: string; drawn: ComponentChildren }> | null, key: string, deps: unknown[], draw: () => ComponentChildren): ComponentChildren {
+  if (!kept) return draw();
+  const stamp = deps.map((dep) => (typeof dep === "object" && dep !== null ? identity(dep) : String(dep))).join(" ");
+  const was = kept.get(key);
+  if (was?.key === stamp) return was.drawn;
+  const drawn = draw();
+  kept.set(key, { key: stamp, drawn });
+  return drawn;
+}
+
+/** A number of its own for each object, as long as it lives. */
+const ids = new WeakMap<object, number>();
+let lastId = 0;
+function identity(object: object): string {
+  let id = ids.get(object);
+  if (id === undefined) ids.set(object, (id = ++lastId));
+  return `#${id}`;
 }

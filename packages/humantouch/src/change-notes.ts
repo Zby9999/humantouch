@@ -34,7 +34,7 @@ import type { Arrangement, Size } from "./client/property-table";
 import type { Axis } from "./client/snap";
 import type { UsageLevel } from "./client/usage-chain";
 import { variablesLine } from "./variable-notes";
-import { writingRules } from "./writing-rules";
+import { structureOnly, writingRules } from "./writing-rules";
 import { changeTitle, breaksLines, inLines, kindTitle, layerName, listed, moveKind, ordinal, propertyName, quoted, quotedWords, stackSettings, usagePlace, usedAt, value } from "./design-values";
 import type { WhereToLook } from "./where-to-look";
 
@@ -94,7 +94,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Scope:** ${change.scope === "component" ? componentScope(target) : scope(target, look, !!change.alone)}`,
     `**Breakpoint:** ${breakpoint(change)}`,
     `**Design intent:** ${intent(change, list, look)}`,
-    ...(target.shadowRoot ? [shadowRootLine(target)] : []),
+    ...(target.shadowRoot ? [shadowRootLine(target, change)] : []),
     ...(change.kind === "style" ? [variablesLine(change)].filter((line) => line !== null) : []),
     ...(change.copiedBreakpoints?.length ? [copiedBreakpoints(change.copiedBreakpoints, list)] : []),
     ...(change.asStack && !madeGridAfter(change, list) ? [AS_STACK] : []),
@@ -938,11 +938,21 @@ const NOT_LOCATED =
 /**
  * Where a layer in an open shadow root is styled (ticket 137, ADR 0017): by
  * the styles of the component that renders into it, not the page's CSS; drawn by a
- * dependency's custom element, from its usage.
+ * dependency's custom element, from its usage. A change to the structure that
+ * writes no style (a reorder, new words, a copy, a deletion, ticket 138) is
+ * to what that component renders there, at Location, and stays in that
+ * shadow root, as the editor keeps it.
  */
-function shadowRootLine({ shadowRoot, chain }: Target): string {
+function shadowRootLine(target: Target, change: Change): string {
+  const { shadowRoot, chain } = target;
   if (chain[0]?.webComponent) {
     return `**Shadow root:** the layer is in the shadow root of \`${shadowRoot}\`, a custom element a dependency defines: change it from where \`<${chain[0].component}>\` is used, by what it takes there (see **Third-party Web Components**), never inside the dependency.`;
+  }
+  if (structureOnly(change)) {
+    // At Location only where there is one; staying in the shadow root said of a layer that goes somewhere.
+    const at = target.made || target.loc ? ", at **Location**," : ",";
+    const stays = change.kind === "move" || change.kind === "duplicate" ? "; it stays in that shadow root" : "";
+    return `**Shadow root:** the layer is in the shadow root of \`${shadowRoot}\`: the change is to the markup the component renders into that shadow root${at} not to the page's markup outside it${stays}.`;
   }
   return `**Shadow root:** the layer is in the shadow root of \`${shadowRoot}\`, which the page's CSS does not reach: the change is to the styles of the component that renders into its shadow root (see **Shadow roots**), not to global CSS.`;
 }

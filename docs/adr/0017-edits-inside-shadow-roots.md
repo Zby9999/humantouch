@@ -54,4 +54,4 @@ ticket 137，2026-11-11。135、136 让 open shadow root 里的层看得见、�
 - 编辑样式的 CSS layer 在 shadow root 里声明得最晚：页面 shadow root 里有 CSS layer、而且里面有 `!important` 时，页面的会压过编辑样式。很少见。
 - 宿主元素自己的改动写在外面的树里。shadow root 里 `:host { … !important }` 会压过它（CSS Cascade：important 时里面的赢）。很少见。
 - 第三方的判断只在 Vite 的开发服务器上有（它往页面里注入那段脚本）。Next.js 上暂不判断（ticket 159，发布之后做）：在那之前，Next 里第三方 Web Component 的 shadow root 算项目自己的，能改；Agent 照 **Every change** 不改第三方代码，会把这种改动留下不做并报告，不会改坏东西。
-- 138（结构改动）要接着处理：复制、挪动的元素进出 shadow root 时，它的编辑样式要跟着换到新的树里。
+- 跨树的挪动一律拒绝（ticket 138）：层挪不出所在的 shadow root，外面的层也挪不进去，所以编辑样式从不换树；复制的层留在原来的树里，带着自己的一份编辑样式。

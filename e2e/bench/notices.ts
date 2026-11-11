@@ -18,6 +18,8 @@ const NOTICES = {
   canvasUpdated: { selector: '[data-ht-notice="canvas-updated"]', key: "__htBenchCanvasUpdatedNotices" },
   /** In edit mode, at the canvas's bottom left: the page changed since the canvas, with changes on it, was frozen (ticket 78). */
   pageChanged: { selector: '[data-ht-notice="page-changed"]', key: "__htBenchPageChangedNotices" },
+  /** In edit mode, at the canvas's bottom left: edit mode came back to a round's canvas, and the page's structure changed since the page it reflects (ticket 141). */
+  pageSince: { selector: '[data-ht-notice="page-changed-since-round"]', key: "__htBenchPageSinceNotices" },
   /** On the locked toggle: the Agent seems to have stopped (ticket 67). */
   stalled: { selector: '[role="alert"][data-ht-notice="stalled"]', key: "__htBenchStalledNotices" },
 };
@@ -26,6 +28,7 @@ export const unclaimedNotice = (page: Page) => page.locator(NOTICES.unclaimed.se
 export const canvasUpdatedNotice = (page: Page) => page.locator(NOTICES.canvasUpdated.selector);
 export const pageChangedNotice = (page: Page) => page.locator(NOTICES.pageChanged.selector);
 export const stalledNotice = (page: Page) => page.locator(NOTICES.stalled.selector);
+export const pageSinceNotice = (page: Page) => page.locator(NOTICES.pageSince.selector);
 
 /**
  * Has the page, from its next load on, note each time each notice shows: once
@@ -85,3 +88,5 @@ export const canvasUpdatedNoticesShown = (page: Page, since = -Infinity) => show
 export const pageChangedNoticesShown = (page: Page, since = -Infinity) => shownTimes(page, NOTICES.pageChanged.key, since);
 /** When the notice that the Agent seems to have stopped showed. */
 export const stalledNoticesShown = (page: Page, since = -Infinity) => shownTimes(page, NOTICES.stalled.key, since);
+/** When the toast that the page changed since the round's canvas reflects it showed (ticket 141). */
+export const pageSinceNoticesShown = (page: Page, since = -Infinity) => shownTimes(page, NOTICES.pageSince.key, since);
