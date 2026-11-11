@@ -106,6 +106,16 @@
 12. 文字按行量（每行一个 rect），换行位置不同、总宽一样的不会算一样。
 13. 部分：其他宽度的页面副本只在还能记的时候去看（记录关了以后其他宽度只按值比，不再每次加样式）。大层的耗时（浏览器微测，`main` 改成 Fixed 1100，下面 96 张卡片和 3000 多个元素，改动没落地，连看 6 次）：第一次（顺便记）约 30–32ms，第二次 26–32ms，之后约 10.4–12.2ms（缓存命中，主要是读画面）。没有再做更多的削减：要么少读（区域大时只看这一层和父层），要么限定元素数（现在是 1500 个以上就说不准）。留作风险 5。
 
+没有判为不成立的条目，也没有跳过的（11、12 做了，13 做了一部分，理由见上）。`drawn-check` 现在 24 条。
+
+修完后的数字（合了 main 15e0492 之后，2026-11-12）：
+
+- `pnpm typecheck` 过。`pnpm test`：vitest 53 个文件 1285 过、1 跳过；node 132 过、0 失败。
+- 整套 e2e（`HT_E2E_PORT=6900`，在锁里，跑完时 planner 还没改成只跑相关 spec）：616 过、1 跳过、1 失败：`applying-bench.spec.ts:1527`（「promoted to the Card itself」，提升到 Card 后 `scope` 还是 usage）。合 15e0492 之前的一轮也是这一条。单独跑（`--project="project files" --no-deps --workers=1 --repeat-each=3`）3/3 过；它在认领之前就失败（改动的 scope），不经过核对，和本票无关，是负载下的抖动（当时另有会话在修 promote 的 e2e）。
+- `--dry` 33/33（main 15e0492 是 32/32）。`--claim-out` 和 main 做 `diff -r`：已有 32 个场景逐字相同，只多了 `panel-width-as-maximum.md`。
+- `--scripted` 24/24（main 加了一个场景，本分支再加一个）。没有已有场景的结果变了。
+- `test:perf`（`HT_PERF_HEADLESS=1`，仅供参考）20 过。「claimed round」五项，最长一段核对的中位数：3 changes to 96 cards 25.2ms；phone breakpoint 16.7ms；new text 21.7ms；own usage 9.2ms；reloaded 10.0ms。每次热更新的核对总时长中位数：55.5、48.8、39.7、25.6、24.9ms。都没有核对自己的长任务。
+
 代定：
 
 1. 做法：值对不上时先「临时加画布样式、看画面变不变」，再看「第一次看时记下的挪动」。两条都过不了才 not shown。
