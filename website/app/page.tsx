@@ -37,8 +37,8 @@ export default function Home() {
       <Feature
         side="right"
         backdrop="/backdrops/design-panel.jpg"
-        title="One change, every view"
-        body="Change it once and Desktop, Tablet and Phone all follow."
+        title="One change, everywhere"
+        body="Every view follows, and so can every use of the component."
       >
         <DesignPanelDemo />
       </Feature>
