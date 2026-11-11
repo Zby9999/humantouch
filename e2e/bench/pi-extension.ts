@@ -53,6 +53,8 @@ export interface ShellList {
   options: readonly string[];
   /** Whether the Skill's undo goes ahead (`git -C` of the project, ticket 86): off unless a list asks for it. */
   undo?: boolean;
+  /** Whether `rm` of a file in the project git does not track goes ahead (ticket 151): off unless a list asks for it, as the install list does. */
+  remove?: boolean;
 }
 
 /** The applying bench's list, what pi is held to with no install list beside the extension. */
@@ -284,11 +286,11 @@ const intoPi = (what: string) => `${DENIED} no tool or command in pi's own folde
  * a sandbox).
  */
 export function shellDenied(command: string, cwd: string, list: ShellList = APPLYING): string | null {
-  const denied = deniedReason(command, list.shell, list.servers, list.undo === true);
+  const denied = deniedReason(command, list.shell, list.servers, list.undo === true, list.remove === true);
   const inProject = (path: string) => realPath(resolve(cwd, path)).startsWith(realPath(cwd) + sep);
   const project = list.undo === true ? cwd : undefined;
   // A dev server in the background is checked as the command it runs, the paths in it too.
-  const checked = shellAllowed(command, list.shell, project) ? command : backgroundServer(command, list.servers, inProject);
+  const checked = shellAllowed(command, list.shell, project, list.remove === true ? cwd : undefined) ? command : backgroundServer(command, list.servers, inProject);
   if (checked === null) return denied;
   if (!(shellWords(checked) ?? []).every((words) => runsAllowed(words, list.runners, list.flags, list.options))) {
     const runners = Object.entries(list.runners).map(([runner, programs]) => `${runner} ${programs.join("|")}`);
