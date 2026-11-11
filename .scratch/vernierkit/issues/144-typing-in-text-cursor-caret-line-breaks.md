@@ -56,7 +56,7 @@
   - `wordsOf(el, lines)`：`<br>` 读成 "\n"，`white-space` 保留换行的元素（pre、pre-wrap、pre-line、break-spaces）里的 "\n" 也读成换行，别的空白照旧合成一个空格。
   - `tidyWords`：每行里连续空白合成一个空格并去掉首尾空格；开头、结尾的换行去掉，中间的（包括空行）保留。
   - 结束编辑时在去掉 `contenteditable` 之前读，因为那时还是 pre-wrap。
-- **画到画布上**：`layer-changes.ts` 的 `writeWords` 把 "\n" 写成 `<br>`。它用在改字（`writeText`）、新建文字（`insertNew`）、新建文字改字（`setText` 的 create 分支）这几处。撤销、重做、存下的一轮重新加载都走这几处。三个视图跟着画布，都显示换行。图层名把换行当空格（"Third Kind"，不是 "ThirdKind"）。
+- **画到画布上**：`layer-changes.ts` 的 `writeWords` 把 "\n" 写成 `<br>`。它用在改字（`writeText`）、新建文字（`insertNew`）、新建文字改字（`setText` 的 create 分支）这几处。撤销、重做、存下的一轮重新加载都走这几处。三个视图跟着画布，都显示换行。图层名把换行当空格（"Third Kind"，不会把两行连成一个词）。
 - **改动列表**：`“Third Kind” → “Third↵Kind↵Studio One”`（↵ 表示换行，`quotedWords`；Brief 照旧用 `quoted`，不换成 ↵）。
 - **改动说明**（只在改动前或改动后有换行时才出现，`breaksLines`，其他场景逐字不变）：
   - Design intent 后面加一句，比如 `The new words are in 2 lines: “Third” and “Kind”, a line break where ↵ is.`；去掉换行时加 `The new words are on one line, with no line break.`；新建文字加 `It reads in 2 lines: …`。
