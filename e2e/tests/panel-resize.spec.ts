@@ -24,7 +24,7 @@ async function edgeAt(page: Page, panel: "Layers" | "Design", y = 400) {
 /** The grip's look: whether it is shown, and its middle's height. */
 const grip = (page: Page, panel: "Layers" | "Design") =>
   edge(page, panel)
-    .locator(".tk-resizer-grip")
+    .locator(".ht-resizer-grip")
     .evaluate((el) => {
       const box = el.getBoundingClientRect();
       return { opacity: getComputedStyle(el).opacity, middle: Math.round(box.top + box.height / 2) };
@@ -122,7 +122,7 @@ test("pressed, the grip and the panel's whole edge take the accent; let go, the 
   await page.mouse.down();
   await expect(edge(page, "Design")).toHaveClass(/is-pressed/);
   expect(await line(page, "Design")).toEqual({ color: "rgb(0, 143, 240)", opacity: "1", height: "720px" });
-  await expect(edge(page, "Design").locator(".tk-resizer-grip")).toHaveCSS("background-color", "rgb(0, 143, 240)");
+  await expect(edge(page, "Design").locator(".ht-resizer-grip")).toHaveCSS("background-color", "rgb(0, 143, 240)");
   await page.mouse.up();
   await expect.poll(async () => (await line(page, "Design")).opacity).toBe("0");
 });
@@ -157,7 +157,7 @@ test("pressed, the edge's line runs the panel's whole height, over its header, o
 test("an edge is there at the headers' height too: the grip shows, and the Design panel's edge drags (designer, 2026-11-08)", async ({ page }) => {
   await enterEditMode(page);
   for (const panel of ["Layers", "Design"] as const) {
-    const header = await (panel === "Layers" ? layers : design)(page).locator(".tk-panel-header").boundingBox();
+    const header = await (panel === "Layers" ? layers : design)(page).locator(".ht-panel-header").boundingBox();
     const y = Math.round(header!.y + header!.height / 2);
     const at = await edgeAt(page, panel, y);
     await page.mouse.move(at.x, at.y);
@@ -165,7 +165,7 @@ test("an edge is there at the headers' height too: the grip shows, and the Desig
     await page.mouse.move(at.x + (panel === "Layers" ? 200 : -200), at.y);
   }
 
-  const header = await design(page).locator(".tk-panel-header").boundingBox();
+  const header = await design(page).locator(".ht-panel-header").boundingBox();
   const right = await edgeAt(page, "Design", Math.round(header!.y + header!.height / 2));
   await page.mouse.move(right.x, right.y);
   await page.mouse.down();
@@ -225,7 +225,7 @@ test("a long name shows in full: the Layers scroll sideways, the tree with the n
   const tree = page.getByRole("tree", { name: "Layers" });
   const row = tree.getByRole("treeitem", { name });
   await row.scrollIntoViewIfNeeded();
-  await expect(row.locator(".tk-tree-name")).toHaveText(name);
+  await expect(row.locator(".ht-tree-name")).toHaveText(name);
 
   const { scroll, client } = await tree.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
   expect(scroll).toBeGreaterThan(client);
@@ -237,11 +237,11 @@ test("a long name shows in full: the Layers scroll sideways, the tree with the n
   const parts = (locator: typeof row) =>
     locator.evaluate((el) => {
       const left = (selector: string) => Math.round(el.querySelector(selector)!.getBoundingClientRect().left);
-      const name = el.querySelector(".tk-tree-name")!.getBoundingClientRect();
-      return { chevron: left(".tk-tree-chevron"), icon: left(".tk-tree-chevron + *"), start: Math.round(name.left), end: Math.round(name.right) };
+      const name = el.querySelector(".ht-tree-name")!.getBoundingClientRect();
+      return { chevron: left(".ht-tree-chevron"), icon: left(".ht-tree-chevron + *"), start: Math.round(name.left), end: Math.round(name.right) };
     });
   const before = await parts(row);
-  const header = layers(page).locator(".tk-panel-header");
+  const header = layers(page).locator(".ht-panel-header");
   const headerBefore = await header.boundingBox();
 
   // Sideways over the list, as a trackpad does, far past the end.

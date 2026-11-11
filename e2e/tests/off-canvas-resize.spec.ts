@@ -11,9 +11,9 @@ const viewportArea = (page: Page) => page.getByRole("region", { name: "Canvas vi
 const layerTree = (page: Page) => page.getByRole("tree", { name: "Layers" });
 const design = (page: Page) => page.getByRole("complementary", { name: "Design" });
 const badge = (page: Page) => page.getByRole("button", { name: /not applied yet/ });
-const sizeLabel = (page: Page) => page.locator(".tk-size-label");
+const sizeLabel = (page: Page) => page.locator(".ht-size-label");
 /** A handle of the layer selected, off the canvas. */
-const handle = (page: Page, name: string) => page.locator(`.tk-handles[data-view="Off canvas"] .tk-handle[data-handle="${name}"]`);
+const handle = (page: Page, name: string) => page.locator(`.ht-handles[data-view="Off canvas"] .ht-handle[data-handle="${name}"]`);
 const mod = process.platform === "darwin" ? "Meta" : "Control";
 
 async function enterEditMode(page: Page) {
@@ -88,9 +88,9 @@ test.beforeEach(async ({ page }) => {
 
 test("a Frame off the canvas has handles; a corner dragged resizes it, and the room it takes with it, W × H meanwhile, with no change for the Agent; ⌘Z takes it back in one step; kept after a reload", async ({ page }) => {
   const frame = await frameOffCanvas(page);
-  await expect(page.locator('.tk-handles[data-view="Off canvas"] .tk-handle')).toHaveCount(8);
+  await expect(page.locator('.ht-handles[data-view="Off canvas"] .ht-handle')).toHaveCount(8);
   // Only off the canvas: the views do not show it.
-  await expect(page.locator('.tk-handles:not([data-view="Off canvas"])')).toHaveCount(0);
+  await expect(page.locator('.ht-handles:not([data-view="Off canvas"])')).toHaveCount(0);
   const before = await room(page);
   const size = await sizeOf(frame);
   expect(before).toMatchObject(size);
@@ -180,7 +180,7 @@ test("a layer in a layer off the canvas has handles too, and is resized as on th
   await page.mouse.up();
   const inner = frame.locator(":scope > *").first();
   await expect(inner).toBeVisible();
-  await expect(page.locator('.tk-handles[data-view="Off canvas"] .tk-handle')).toHaveCount(8);
+  await expect(page.locator('.ht-handles[data-view="Off canvas"] .ht-handle')).toHaveCount(8);
   const size = await sizeOf(inner);
 
   await dragHandle(page, handle(page, "se"), { x: 30, y: 20 });
@@ -233,7 +233,7 @@ test("a layer moved off the canvas and resized there is put back new, as it was 
     await expect.poll(async () => Math.abs((await sizeOf(shown.contentFrame().locator("#board > h1"))).width - (size.width - 60))).toBeLessThanOrEqual(1);
   }
   await badge(page).click();
-  const names = await page.getByRole("dialog", { name: "Changes" }).locator(".tk-change-name").allTextContents();
+  const names = await page.getByRole("dialog", { name: "Changes" }).locator(".ht-change-name").allTextContents();
   await page.keyboard.press("Escape");
   expect(names).toEqual(["Delete · Third Kind", "Put back · Third Kind"]);
 });

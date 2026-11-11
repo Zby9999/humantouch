@@ -29,7 +29,7 @@ async function pointOn(view: Locator, selector: string) {
 
 /** Where the selection box is drawn, in page coordinates, one per view. */
 function selectionBoxes(page: Page) {
-  return page.locator(".tk-selection").evaluateAll((boxes) =>
+  return page.locator(".ht-selection").evaluateAll((boxes) =>
     boxes.map((box) => {
       const r = box.getBoundingClientRect();
       return { x: r.x, y: r.y, width: r.width, height: r.height };
@@ -80,9 +80,9 @@ test("edit mode shows the page as desktop, tablet and phone side by side, each w
   for (const [name, widths] of Object.entries(covers)) {
     const label = page.getByRole("group", { name: `${name} view` });
     await expect(label).toHaveText(`${name}${widths}`);
-    await expect(label.locator(".tk-view-range")).toHaveText(widths);
+    await expect(label.locator(".ht-view-range")).toHaveText(widths);
     // No tip: one was too long to be worth it (designer, 2026-11-08).
-    await expect(label.locator("[data-tk-tip]").and(label.locator(".tk-view-range"))).toHaveCount(0);
+    await expect(label.locator("[data-ht-tip]").and(label.locator(".ht-view-range"))).toHaveCount(0);
     // The phone's, narrow, has full screen once pointed at (designer, 2026-11-08).
     if (name === "Phone") await label.hover();
     await expect(label.getByRole("button", { name: `Full screen ${name} view`, exact: true })).toBeVisible();
@@ -96,34 +96,34 @@ test("a view's name and widths, pointed at, outline its page; clicked, they sele
   const title = page.getByRole("button", { name: "Select Tablet view" });
   await expect(title).toContainText("Tablet");
   await title.hover();
-  const hover = page.locator('.tk-hover[data-view="Tablet"]');
+  const hover = page.locator('.ht-hover[data-view="Tablet"]');
   await expect(hover).toBeVisible();
   // As wide as the view's page, on screen.
   const frame = (await tablet(page).boundingBox())!;
   expect(Math.abs((await steadyBox(hover)).width - frame.width)).toBeLessThanOrEqual(2);
-  await expect(page.locator('.tk-hover[data-view="Desktop"]')).toHaveCount(0);
+  await expect(page.locator('.ht-hover[data-view="Desktop"]')).toHaveCount(0);
 
   await title.click();
   await expect(design(page).getByRole("note", { name: "Tablet breakpoint" })).toBeVisible();
-  await expect(page.locator('.tk-selection[data-view="Tablet"]')).toBeVisible();
+  await expect(page.locator('.ht-selection[data-view="Tablet"]')).toBeVisible();
   // The page is not moved, copied or deleted by the keys.
   for (const key of ["ArrowRight", "Delete", "ControlOrMeta+d"]) await page.keyboard.press(key);
   await expect(tablet(page).contentFrame().locator("h1")).toBeVisible();
   await expect(page.getByRole("button", { name: /changes? not applied yet/ })).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await expect(page.locator(".tk-selection")).toHaveCount(0);
+  await expect(page.locator(".ht-selection")).toHaveCount(0);
 });
 
 test("zoomed out, a view's label leaves out full screen, then its widths, then ×, keeping its name; pointed at, its buttons stay and the rest goes first (designer, 2026-11-08)", async ({ page }) => {
   await enterEditMode(page);
   // Wide enough, a label shows all it has.
   const wide = page.getByRole("group", { name: "Desktop view" });
-  for (const part of [".tk-view-name", ".tk-view-range", ".tk-view-play"]) await expect(wide.locator(part)).toBeVisible();
+  for (const part of [".ht-view-name", ".ht-view-range", ".ht-view-play"]) await expect(wide.locator(part)).toBeVisible();
   const label = page.getByRole("group", { name: "Phone view" });
   const parts = () =>
     label.evaluate((el) => {
       const shown = (selector: string) => !!el.querySelector<HTMLElement>(selector)?.checkVisibility({ opacityProperty: true });
-      return { name: shown(".tk-view-name"), range: shown(".tk-view-range"), play: shown(".tk-view-play"), del: shown(".tk-view-delete"), fits: el.scrollWidth <= el.clientWidth + 1 };
+      return { name: shown(".ht-view-name"), range: shown(".ht-view-range"), play: shown(".ht-view-play"), del: shown(".ht-view-delete"), fits: el.scrollWidth <= el.clientWidth + 1 };
     });
   const area = (await viewportArea(page).boundingBox())!;
   const away = { x: area.x + area.width / 2, y: area.y + area.height - 20 };
@@ -253,7 +253,7 @@ test("a value set once in the Design panel shows in the views beside the frame a
   await radius.press("ArrowUp");
   await expect.poll(async () => (await shown()).ms).toBeGreaterThanOrEqual(100);
   // Dragged on the icon: so is each px.
-  const { x, y } = (await page.locator('.tk-field:has([aria-label="Corner radius"]) .tk-scrub').boundingBox())!;
+  const { x, y } = (await page.locator('.ht-field:has([aria-label="Corner radius"]) .ht-scrub').boundingBox())!;
   shown = await watchTablet(page, "border-radius", "9px", "pointermove");
   await page.mouse.move(x + 4, y + 4);
   await page.mouse.down();
@@ -275,7 +275,7 @@ test("⌘Z and ⇧⌘Z right after steps of a value, while the views beside wait
   await page.evaluate(() => {
     const w = window as unknown as { framesAfter: string[][] };
     w.framesAfter = [];
-    const frames = [...document.querySelectorAll("third-kind")].flatMap((host) => [...(host.shadowRoot ?? host).querySelectorAll("iframe")]);
+    const frames = [...document.querySelectorAll("human-touch")].flatMap((host) => [...(host.shadowRoot ?? host).querySelectorAll("iframe")]);
     addEventListener(
       "keydown",
       (event) => {
@@ -319,7 +319,7 @@ test("a layer dragged in the phone view goes where it is let go there, and moves
   await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
   await page.mouse.down();
   // What each view shows as the paragraph first makes room: read as the move of the pointer that made it is handled.
-  await page.locator("iframe.tk-canvas").evaluateAll((frames: HTMLIFrameElement[], hero) => {
+  await page.locator("iframe.ht-canvas").evaluateAll((frames: HTMLIFrameElement[], hero) => {
     const shifted = (frame: HTMLIFrameElement) => getComputedStyle(frame.contentDocument!.querySelector(`${hero} > p`)!).translate;
     const phone = frames.find((frame) => frame.title === "Phone 390")!;
     const onMove = () => {
@@ -332,7 +332,7 @@ test("a layer dragged in the phone view goes where it is let go there, and moves
   const p = (await paragraph.boundingBox())!;
   await page.mouse.move(p.x + p.width / 2, p.y + 1, { steps: 8 });
   // The line where it would go is drawn in the phone view.
-  const line = (await page.locator(".tk-drop-line").boundingBox())!;
+  const line = (await page.locator(".ht-drop-line").boundingBox())!;
   expect(line.x).toBeGreaterThanOrEqual(p.x - 1);
   expect(line.x + line.width).toBeLessThanOrEqual(p.x + p.width + 1);
   // The paragraph makes room in the phone view at once; the desktop and tablet views do not follow the pointer as it moves.
@@ -462,7 +462,7 @@ test("a view of another width can be added and the tablet view deleted; the view
   await enterEditMode(page);
   await expect(custom).toHaveCSS("width", "1024px");
   await expect(tablet(page)).toHaveCount(0);
-  const order = await page.locator("iframe.tk-canvas").evaluateAll((frames) => frames.map((frame) => frame.getAttribute("title")));
+  const order = await page.locator("iframe.ht-canvas").evaluateAll((frames) => frames.map((frame) => frame.getAttribute("title")));
   expect(order).toEqual(["Canvas", "Custom 1024", "Phone 390"]);
 });
 
@@ -522,11 +522,11 @@ test("the camera moved while a number's icon or a layer is pressed: the stage is
   await enterEditMode(page);
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
   // The stage in place, its animation into edit mode over, and drawn again at its end.
-  await expect.poll(() => page.locator(".tk-stage").evaluate((stage) => stage.getAnimations().length)).toBe(0);
+  await expect.poll(() => page.locator(".ht-stage").evaluate((stage) => stage.getAnimations().length)).toBe(0);
   // And at rest well past the 100ms it waits for, whatever moved the camera as the views were laid out.
   await page.waitForTimeout(400);
   // Each time the stage is drawn only as far as it shows (`drawOnlyWhatShows`), it is taken out of the layout for a moment.
-  await page.locator(".tk-stage").evaluate((stage) => {
+  await page.locator(".ht-stage").evaluate((stage) => {
     const w = window as unknown as { redrawn: number };
     w.redrawn = 0;
     new MutationObserver((records) => {
@@ -534,7 +534,7 @@ test("the camera moved while a number's icon or a layer is pressed: the stage is
     }).observe(stage, { attributes: true, attributeFilter: ["style"], attributeOldValue: true });
   });
   const redrawn = () => page.evaluate(() => (window as unknown as { redrawn: number }).redrawn);
-  const icon = page.locator('.tk-field:has([aria-label="Corner radius"]) .tk-scrub');
+  const icon = page.locator('.ht-field:has([aria-label="Corner radius"]) .ht-scrub');
   const onIcon = async () => {
     const box = await steadyBox(icon);
     return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -559,9 +559,9 @@ test("the camera moved while a number's icon or a layer is pressed: the stage is
  * for a moment. Once edit mode is up and the stage at rest well past the 100ms it waits for.
  */
 async function countRedraws(page: Page) {
-  await expect.poll(() => page.locator(".tk-stage").evaluate((stage) => stage.getAnimations().length)).toBe(0);
+  await expect.poll(() => page.locator(".ht-stage").evaluate((stage) => stage.getAnimations().length)).toBe(0);
   await page.waitForTimeout(400);
-  await page.locator(".tk-stage").evaluate((stage) => {
+  await page.locator(".ht-stage").evaluate((stage) => {
     const w = window as unknown as { redrawn: number };
     w.redrawn = 0;
     new MutationObserver((records) => {
@@ -575,11 +575,11 @@ async function countRedraws(page: Page) {
 function viewEdges(page: Page) {
   return viewportArea(page).evaluate((area) => {
     const box = area.getBoundingClientRect();
-    const views = [...area.querySelectorAll<HTMLIFrameElement>(".tk-stage iframe.tk-canvas")].map((frame) => {
+    const views = [...area.querySelectorAll<HTMLIFrameElement>(".ht-stage iframe.ht-canvas")].map((frame) => {
       const r = frame.getBoundingClientRect();
       return { title: frame.title, bottom: r.bottom, right: r.right };
     });
-    return { top: box.top, bottom: box.bottom, right: box.right, views, transform: area.querySelector<HTMLElement>(".tk-stage")!.style.transform };
+    return { top: box.top, bottom: box.bottom, right: box.right, views, transform: area.querySelector<HTMLElement>(".ht-stage")!.style.transform };
   });
 }
 
@@ -756,9 +756,9 @@ test("every view grows with what it shows and shrinks back, nothing cut off; the
   expect(boxes[2].height).toBeCloseTo(lastCard.height, 0);
   // Pointed at, the bottom of the phone view is found there: the view takes the pointer all the way down.
   await page.mouse.click(area.x + 4, area.y + area.height - 4);
-  await expect(page.locator(".tk-selection")).toHaveCount(0);
+  await expect(page.locator(".ht-selection")).toHaveCount(0);
   await page.mouse.move(lastCard.x + lastCard.width / 2, lastCard.y + lastCard.height - 2);
-  await expect(page.locator('.tk-hover[data-view="Phone"]')).toHaveCount(1);
+  await expect(page.locator('.ht-hover[data-view="Phone"]')).toHaveCount(1);
 
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).last().click();
   for (let i = 0; i < 6; i++) await page.keyboard.press("ControlOrMeta+z");
@@ -802,8 +802,8 @@ test("a layer selected, its selection in the views other than the one worked in 
   await page.goto(DEV_URL);
   await enterEditMode(page);
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
-  const outline = (view: string) => page.locator(`.tk-selection[data-view="${view}"]`);
-  const handles = (view: string) => page.locator(`.tk-handles[data-view="${view}"]`);
+  const outline = (view: string) => page.locator(`.ht-selection[data-view="${view}"]`);
+  const handles = (view: string) => page.locator(`.ht-handles[data-view="${view}"]`);
   const look = (el: Locator) => el.evaluate((node) => getComputedStyle(node).borderTopColor);
 
   // Worked in the desktop view at first: its handles there alone.
@@ -822,7 +822,7 @@ test("a layer selected, its selection in the views other than the one worked in 
   for (const view of ["Desktop", "Tablet"]) await expect(handles(view)).toHaveCount(0);
 
   // Pointed at in the tablet view: outlined as it is there, lighter in the others.
-  const hover = (view: string) => page.locator(`.tk-hover[data-view="${view}"]`);
+  const hover = (view: string) => page.locator(`.ht-hover[data-view="${view}"]`);
   const heading = (await tablet(page).contentFrame().locator("h1").boundingBox())!;
   await page.mouse.move(heading.x + 10, heading.y + heading.height / 2);
   await expect(hover("Tablet")).toHaveCount(1);

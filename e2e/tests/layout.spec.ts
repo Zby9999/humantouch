@@ -94,8 +94,8 @@ test("Hug made Fixed marks its sizing, not its number, until the number changes 
   await enterEditMode(page);
   await rows(page, "Button").click();
   const sizing = design(page).getByRole("combobox", { name: "Width sizing" });
-  const sizingField = design(page).locator(`.tk-size-row > .tk-select-field:has([aria-label="Width sizing"])`);
-  const widthField = design(page).locator(`.tk-field:has([aria-label="Width"])`);
+  const sizingField = design(page).locator(`.ht-size-row > .ht-select-field:has([aria-label="Width sizing"])`);
+  const widthField = design(page).locator(`.ht-field:has([aria-label="Width"])`);
   const reset = design(page).getByRole("button", { name: /^Reset width/ });
 
   await sizing.selectOption("fixed");
@@ -329,9 +329,9 @@ test("the alignment grid: half the row, its point dark till it changes, then the
   const grid = panel.getByRole("radiogroup", { name: "Alignment" });
 
   // Half the row each, the grid's right edge at the left padding field's.
-  const row = await steadyBox(panel.locator(".tk-align-row"));
+  const row = await steadyBox(panel.locator(".ht-align-row"));
   const box = await steadyBox(grid);
-  const options = await steadyBox(panel.locator(".tk-align-options"));
+  const options = await steadyBox(panel.locator(".ht-align-options"));
   const top = await steadyBox(panel.getByRole("group", { name: "Padding" }).locator(":scope > *").first());
   expect(Math.abs(box.width - options.width)).toBeLessThanOrEqual(1);
   expect(Math.abs(box.width - (row.width - 4) / 2)).toBeLessThanOrEqual(1);
@@ -391,7 +391,7 @@ test("the alignment grid: half the row, its point dark till it changes, then the
   await expect(point("Bottom right")).toBeChecked();
   const accent = await panel.evaluate((el) => {
     const probe = el.appendChild(document.createElement("i"));
-    probe.style.color = "var(--tk-accent)";
+    probe.style.color = "var(--ht-accent)";
     const color = getComputedStyle(probe).color;
     probe.remove();
     return color;
@@ -597,7 +597,7 @@ test("dragging left and right on the opacity icon changes it, 1% per 2px", async
   await enterEditMode(page);
   await rows(page, "Card").first().click();
   const opacity = design(page).getByRole("textbox", { name: "Opacity", exact: true });
-  const icon = page.locator('.tk-field:has([aria-label="Opacity"]) .tk-scrub');
+  const icon = page.locator('.ht-field:has([aria-label="Opacity"]) .ht-scrub');
   const { x, y } = (await icon.boundingBox())!;
 
   await page.mouse.move(x + 4, y + 4);

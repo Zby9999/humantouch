@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
-import { STALL_MS } from "../../packages/03kind/src/client/agent-stall";
+import { STALL_MS } from "../../packages/humantouch/src/client/agent-stall";
 import { canvasUpdatedNotice, canvasUpdatedNoticesShown, pageChangedNotice, pageChangedNoticesShown, recordNotices, stalledNotice, stalledNoticesShown, unclaimedNotice, unclaimedNoticesShown } from "../bench/notices";
 import { canvasInPlace, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
-import { clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind, servesAsWritten } from "./project-files";
+import { clearHumanTouchFolder, EXAMPLE, forTheLoopAlone, readHumanTouchFile, HUMAN_TOUCH_FOLDER, npxHumanTouch, servesAsWritten } from "./project-files";
 
 /**
  * The applying bench, scripted (docs/goals.md, Robust): a script plays the
@@ -15,7 +15,7 @@ import { clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIR
  * own playbooks also measure the canvas edit mode comes back to.
  */
 
-/** These tests save into the example project's `.03kind/` for real, and edit its source. */
+/** These tests save into the example project's `.humantouch/` for real, and edit its source. */
 test.use({ keepRoundInMemory: false });
 test.setTimeout(120_000);
 
@@ -23,16 +23,16 @@ test.setTimeout(120_000);
  * The toggle says the Agent seems to have stopped once nothing has moved for
  * `STALL_MS` (ticket 67), about 9 minutes. The playbooks run the page's clock
  * on past most of it (Playwright's clock: nothing in the editor layer is set
- * apart for tests); `TK_BENCH_STALL_REAL=1` has the playbook of an Agent that
+ * apart for tests); `HT_BENCH_STALL_REAL=1` has the playbook of an Agent that
  * stops halfway wait it out in real time instead.
  */
-const STALL_REAL = process.env.TK_BENCH_STALL_REAL === "1";
+const STALL_REAL = process.env.HT_BENCH_STALL_REAL === "1";
 /** How late the notice may show, past the threshold (docs/goals.md, Robust). */
 const NOTICE_LATE_MS = 5000;
 /** How much longer than that a playbook watches for it, so a notice too late is measured rather than missed. */
 const WATCH_PAST_MS = 5000;
 /** How long the editor layer is watched for noticing code changed with no claim. */
-const UNCLAIMED_WATCH_MS = Number(process.env.TK_BENCH_UNCLAIMED_WATCH_MS ?? 5_000);
+const UNCLAIMED_WATCH_MS = Number(process.env.HT_BENCH_UNCLAIMED_WATCH_MS ?? 5_000);
 
 const RESULTS = fileURLToPath(new URL("../../bench-results/playbooks/", import.meta.url));
 const CARD = `${EXAMPLE}src/components/Card.tsx`;
@@ -47,13 +47,13 @@ const CHANGES = [
 const IDS = [1, 2, 3];
 
 
-test.beforeEach(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
+test.beforeEach(() => clearHumanTouchFolder(HUMAN_TOUCH_FOLDER));
 test.afterEach(async () => {
   if (readFileSync(CARD, "utf8") !== original) writeFileSync(CARD, original);
   // The next test's page must open on the Card as it was: wait for the dev server to serve it so.
   await expect.poll(async () => servesAsWritten(await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text(), original)).toBe(true);
 });
-test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
+test.afterAll(() => clearHumanTouchFolder(HUMAN_TOUCH_FOLDER));
 
 const canvas = (page: Page) => page.locator('iframe[title="Canvas"]').contentFrame();
 const ring = (page: Page) => page.getByRole("progressbar", { name: "Applying design changes" });
@@ -70,7 +70,7 @@ async function designTheRound(page: Page) {
     await box.fill(value);
     await box.press("Enter");
   }
-  await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(CHANGES.length);
+  await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(CHANGES.length);
 }
 
 /** The scripted Agent writes change `id` into the code; the dev server brings it into the page. */
@@ -98,8 +98,8 @@ async function progressGap(page: Page) {
 
 /** Of the changes the page can check (all three), how many have a check result, shown or not. The round's archive when it ended, else its checks so far. */
 function checkCoverage() {
-  const history = `${THIRD_KIND_FOLDER}history/`;
-  let results: Record<string, { outcome: string }> = readThirdKindFile("checks.json")?.results ?? {};
+  const history = `${HUMAN_TOUCH_FOLDER}history/`;
+  let results: Record<string, { outcome: string }> = readHumanTouchFile("checks.json")?.results ?? {};
   try {
     const last = readdirSync(history).sort().at(-1);
     if (last) results = JSON.parse(readFileSync(`${history}${last}/result.json`, "utf8")).checks;
@@ -155,20 +155,20 @@ async function falseNotices(page: Page) {
 
 test("playbook: the Agent follows the workflow, done after each change, then finish", async ({ page }) => {
   await designTheRound(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   const gaps: number[] = [];
   const notices: { stalled: boolean; unclaimed: boolean }[] = [];
   for (const id of IDS) {
     await apply(page, id);
     gaps.push(await progressGap(page));
     notices.push(await falseNotices(page));
-    await npx03kind("done", String(id));
+    await npxHumanTouch("done", String(id));
     await expect(ring(page)).toHaveAttribute("aria-valuenow", String(id));
     gaps.push(await progressGap(page));
     notices.push(await falseNotices(page));
   }
   const atEnd = await progressGap(page);
-  await npx03kind("finish");
+  await npxHumanTouch("finish");
   record("follows-the-workflow", {
     checkCoverage: checkCoverage(),
     progressGapAtEnd: atEnd,
@@ -187,7 +187,7 @@ test("playbook: the Agent follows the workflow, done after each change, then fin
 
 test("playbook: the Agent skips done, applies every change and finishes", async ({ page }) => {
   await designTheRound(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   await expect(ring(page)).toBeVisible();
   const gaps: number[] = [];
   for (const id of IDS) {
@@ -195,7 +195,7 @@ test("playbook: the Agent skips done, applies every change and finishes", async 
     gaps.push(await progressGap(page));
   }
   const atEnd = gaps.at(-1)!;
-  await npx03kind("finish");
+  await npxHumanTouch("finish");
   const coverage = checkCoverage();
   const unclaimedShown = (await unclaimedNoticesShown(page)).length;
   record("skips-done", { checkCoverage: coverage, progressGapAtEnd: atEnd, progressGapMax: Math.max(...gaps), unclaimedNoticesShown: unclaimedShown });
@@ -208,14 +208,14 @@ test("playbook: the Agent skips done, applies every change and finishes", async 
 
 test("playbook: the Agent applies every change first, then runs done for them all, then finish", async ({ page }) => {
   await designTheRound(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   await expect(ring(page)).toBeVisible();
   for (const id of IDS) await apply(page, id);
   const beforeDone = await progressGap(page);
-  for (const id of IDS) await npx03kind("done", String(id));
+  for (const id of IDS) await npxHumanTouch("done", String(id));
   await expect(ring(page)).toHaveAttribute("aria-valuenow", String(IDS.length));
   const atEnd = await progressGap(page);
-  await npx03kind("finish");
+  await npxHumanTouch("finish");
   const coverage = checkCoverage();
   const unclaimedShown = (await unclaimedNoticesShown(page)).length;
   record("done-all-at-the-end", { checkCoverage: coverage, progressGapAtEnd: atEnd, progressGapMax: Math.max(beforeDone, atEnd), unclaimedNoticesShown: unclaimedShown });
@@ -232,9 +232,9 @@ test("playbook: the Agent applies every change first, then runs done for them al
  */
 async function stopHalfway(page: Page): Promise<number> {
   await designTheRound(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   await apply(page, 1);
-  await npx03kind("done", "1");
+  await npxHumanTouch("done", "1");
   const stoppedAt = Date.now();
   await expect(ring(page)).toHaveAttribute("aria-valuenow", "1");
   return stoppedAt;
@@ -261,7 +261,7 @@ test("playbook: the Agent stops halfway, with no finish; the toggle says so, and
   test.setTimeout(STALL_REAL ? STALL_MS + 120_000 : 120_000);
   if (!STALL_REAL) await page.clock.install();
   const stoppedAt = await stopHalfway(page);
-  const properties: { id: number; property: string }[] = readThirdKindFile("changeset.json").changes;
+  const properties: { id: number; property: string }[] = readHumanTouchFile("changeset.json").changes;
   const unapplied = properties.filter((change) => change.id !== 1).map((change) => change.property);
   const applied = properties.find((change) => change.id === 1)!.property;
   // The Agent is gone. The toggle is to say so, the stopping threshold (ticket 67) + 5 seconds after.
@@ -276,7 +276,7 @@ test("playbook: the Agent stops halfway, with no finish; the toggle says so, and
   // Edit mode again: the two changes never applied are to be in the round still (ticket 68).
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
-  const nextRound: { property: string }[] = readThirdKindFile("changeset.json")?.changes ?? [];
+  const nextRound: { property: string }[] = readHumanTouchFile("changeset.json")?.changes ?? [];
   const kept = nextRound.filter((change) => unapplied.includes(change.property)).length;
   record(STALL_REAL ? "stops-halfway-real-time" : "stops-halfway", {
     stalledNoticeAfterMs,
@@ -304,26 +304,26 @@ test("playbook: the Agent stops halfway, with no finish; the toggle says so, and
 
 /** The designer ends the round by hand: pressing and holding the locked toggle. */
 async function pressAndHold(page: Page) {
-  await page.getByRole("button", { name: /^03Kind: applying design changes/ }).hover();
+  await page.getByRole("button", { name: /^Human Touch: applying design changes/ }).hover();
   await page.mouse.down();
   await page.waitForTimeout(1200);
   await page.mouse.up();
 }
 
-/** How a round ended by hand left things: its archive, the project's `.03kind/`, the toggle and what edit mode opens on next; dates and code left out. */
+/** How a round ended by hand left things: its archive, the project's `.humantouch/`, the toggle and what edit mode opens on next; dates and code left out. */
 async function endedRound(page: Page) {
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
-  const history = `${THIRD_KIND_FOLDER}history/`;
+  const history = `${HUMAN_TOUCH_FOLDER}history/`;
   await expect.poll(() => existsSync(history) && readdirSync(history).some((round) => existsSync(`${history}${round}/result.json`))).toBe(true);
   const last = readdirSync(history).sort().at(-1)!;
   const { ended, done, applied, checks } = JSON.parse(readFileSync(`${history}${last}/result.json`, "utf8"));
   const outcomes = Object.fromEntries(Object.entries(checks as Record<string, { outcome: string }>).map(([id, check]) => [id, check.outcome]));
-  const files = readdirSync(THIRD_KIND_FOLDER).filter((name) => name !== "history" && name !== "checks.json").sort();
+  const files = readdirSync(HUMAN_TOUCH_FOLDER).filter((name) => name !== "history" && name !== "checks.json").sort();
   const badge = await page.getByRole("button", { name: /not applied yet$/ }).count();
   await page.getByRole("button", { name: TOGGLE_LABEL }).click();
   await expect(canvas(page).locator("h1")).toBeVisible();
   const firstCardFill = await canvas(page).locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor);
-  return { ended, done, applied, outcomes, files, badge, nextRound: readThirdKindFile("changeset.json")?.changes.length ?? 0, firstCardFill, notices: await stalledNotice(page).count() };
+  return { ended, done, applied, outcomes, files, badge, nextRound: readHumanTouchFile("changeset.json")?.changes.length ?? 0, firstCardFill, notices: await stalledNotice(page).count() };
 }
 
 test("ending the round from the notice that the Agent seems to have stopped does what pressing and holding the toggle does; keep waiting has it go till the threshold has passed again", async ({ page }) => {
@@ -343,7 +343,7 @@ test("ending the round from the notice that the Agent seems to have stopped does
   // The same round again, on the code as it was, ended by pressing and holding the toggle.
   writeFileSync(CARD, original);
   await expect.poll(async () => servesAsWritten(await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text(), original)).toBe(true);
-  clearThirdKindFolder(THIRD_KIND_FOLDER);
+  clearHumanTouchFolder(HUMAN_TOUCH_FOLDER);
   await stopHalfway(page);
   await pressAndHold(page);
   const byHolding = await endedRound(page);
@@ -388,12 +388,12 @@ async function stillEditable(page: Page) {
 }
 
 /** Where the camera has the canvas: the stage's transform. */
-const cameraOf = (page: Page) => page.locator(".tk-stage").evaluate((stage) => (stage as HTMLElement).style.transform);
+const cameraOf = (page: Page) => page.locator(".ht-stage").evaluate((stage) => (stage as HTMLElement).style.transform);
 
 /** Pans the canvas a little, as the designer would, so a camera left where it was is told from one put back where edit mode starts. */
 async function panCanvas(page: Page) {
   const before = await cameraOf(page);
-  const box = (await page.locator(".tk-viewport").boundingBox())!;
+  const box = (await page.locator(".ht-viewport").boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.wheel(40, 120);
   await expect.poll(() => cameraOf(page)).not.toBe(before);
@@ -439,13 +439,13 @@ const canvasCard = async (page: Page) => {
 
 test("playbook: the Agent lands the designer's changes with no claim, while the designer is in edit mode", async ({ page }) => {
   await designTheRound(page);
-  const changesBefore = readThirdKindFile("changeset.json").changes.map((change: { id: number }) => change.id);
+  const changesBefore = readHumanTouchFile("changeset.json").changes.map((change: { id: number }) => change.id);
   // Not claimed: the Agent goes by the chat, not the Skill.
   writeFileSync(CARD, forTheLoopAlone(original, CHANGES[0].from, CHANGES[0].to));
-  const claimedAfterMs = await within(UNCLAIMED_WATCH_MS, async () => existsSync(`${THIRD_KIND_FOLDER}state.json`) && (await ring(page).count()) > 0);
+  const claimedAfterMs = await within(UNCLAIMED_WATCH_MS, async () => existsSync(`${HUMAN_TOUCH_FOLDER}state.json`) && (await ring(page).count()) > 0);
   const autoClaimed = claimedAfterMs !== null;
   const atClaim = await noticesSoFar(page);
-  const changesKept = (readThirdKindFile("changeset.json")?.changes ?? []).filter((change: { id: number }) => changesBefore.includes(change.id)).length / CHANGES.length;
+  const changesKept = (readHumanTouchFile("changeset.json")?.changes ?? []).filter((change: { id: number }) => changesBefore.includes(change.id)).length / CHANGES.length;
   // As if it had claimed: the ring fills as the page shows each change, `done` and `finish` work, and the round ends with all three applied.
   let ringAtEnd: number | null = null;
   let doneSays: string | null = null;
@@ -455,10 +455,10 @@ test("playbook: the Agent lands the designer's changes with no claim, while the 
     for (const id of [2, 3]) await apply(page, id);
     await expect(ring(page)).toHaveAttribute("aria-valuenow", "3");
     ringAtEnd = Number(await ring(page).getAttribute("aria-valuenow"));
-    doneSays = (await npx03kind("done", "1", "2", "3")).split("\n")[0];
-    await npx03kind("finish");
+    doneSays = (await npxHumanTouch("done", "1", "2", "3")).split("\n")[0];
+    await npxHumanTouch("finish");
     await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
-    const history = `${THIRD_KIND_FOLDER}history/`;
+    const history = `${HUMAN_TOUCH_FOLDER}history/`;
     appliedAtFinish = JSON.parse(readFileSync(`${history}${readdirSync(history).sort().at(-1)}/result.json`, "utf8")).applied;
   }
   const notices = await noticesSoFar(page);
@@ -485,16 +485,16 @@ test("playbook: the Agent lands the designer's changes with no claim, while the 
 test("playbook: the code of a component the page uses changes, and the page draws the same", async ({ page }) => {
   await designTheRound(page);
   const canvasBefore = await canvasCard(page);
-  const locBefore = await page.locator("article").first().getAttribute("data-tk-loc");
+  const locBefore = await page.locator("article").first().getAttribute("data-ht-loc");
   writeFileSync(CARD, typedApart(original));
   // In: the card's JSX two lines down, as its source marker says.
-  await expect.poll(() => page.locator("article").first().getAttribute("data-tk-loc")).not.toBe(locBefore);
+  await expect.poll(() => page.locator("article").first().getAttribute("data-ht-loc")).not.toBe(locBefore);
   // Past the second the code is to rest, and some.
   await page.waitForTimeout(3000);
   const notices = await noticesSoFar(page);
   const editable = await stillEditable(page);
   if (editable) await setField(page, "Corner radius", "6");
-  const changesAfter = editable ? await within(3000, async () => (readThirdKindFile("changeset.json")?.changes.length ?? 0) === CHANGES.length + 1) : null;
+  const changesAfter = editable ? await within(3000, async () => (readHumanTouchFile("changeset.json")?.changes.length ?? 0) === CHANGES.length + 1) : null;
   const canvasAfter = await canvasCard(page);
   record("code-changes-page-same", {
     notices,
@@ -502,7 +502,7 @@ test("playbook: the code of a component the page uses changes, and the page draw
     editable,
     anotherEditSaved: changesAfter !== null,
     canvasKept: JSON.stringify(canvasAfter) === JSON.stringify(canvasBefore),
-    claimed: existsSync(`${THIRD_KIND_FOLDER}state.json`),
+    claimed: existsSync(`${HUMAN_TOUCH_FOLDER}state.json`),
   });
   // Ticket 78: nothing at all; editing goes on, on the same canvas.
   expect(notices).toEqual({ unclaimed: 0, canvasUpdated: 0, pageChanged: 0 });
@@ -567,11 +567,11 @@ test("playbook: the page changes as the code does, with changes on the canvas", 
     await toast.getByRole("button", { name: "Update canvas" }).click();
     const asks = (await toast.textContent()) ?? "";
     await toast.getByRole("button", { name: "Cancel" }).click();
-    const afterCancel = { canvas: await canvasCard(page), changes: readThirdKindFile("changeset.json")?.changes.length ?? 0, confirming: await toast.getByRole("button", { name: "Discard and update" }).count() };
+    const afterCancel = { canvas: await canvasCard(page), changes: readHumanTouchFile("changeset.json")?.changes.length ?? 0, confirming: await toast.getByRole("button", { name: "Discard and update" }).count() };
     await toast.getByRole("button", { name: "Update canvas" }).click();
     await toast.getByRole("button", { name: "Discard and update" }).click();
     const updatedAfterMs = await within(6000, async () => (await canvasCard(page)).title === TITLE.shows);
-    await expect.poll(() => readThirdKindFile("changeset.json")).toBeNull();
+    await expect.poll(() => readHumanTouchFile("changeset.json")).toBeNull();
     result = {
       ...result,
       canvasKeptWhenTold: JSON.stringify(kept) === JSON.stringify(before),
@@ -581,7 +581,7 @@ test("playbook: the page changes as the code does, with changes on the canvas", 
       afterCancel,
       updatedAfterMs,
       canvasAfterUpdate: await canvasCard(page),
-      changesAfterUpdate: readThirdKindFile("changeset.json")?.changes.length ?? 0,
+      changesAfterUpdate: readHumanTouchFile("changeset.json")?.changes.length ?? 0,
       cameraKept: (await cameraOf(page)) === cameraBefore,
     };
   }
@@ -600,15 +600,15 @@ test("playbook: the page changes as the code does, with changes on the canvas", 
 test("playbook: the Agent sits still a long time between two changes, then goes on to finish", async ({ page }) => {
   await page.clock.install();
   await designTheRound(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   await apply(page, 1);
-  await npx03kind("done", "1");
+  await npxHumanTouch("done", "1");
   // Working, though still, for 10 seconds short of the threshold (the page's clock run on): a notice here is a false one (ticket 67).
   const pauseMs = STALL_MS - 10_000;
   await page.clock.fastForward(pauseMs);
   const noticeDuringPauseAfterMs = await watchFor(stalledNotice(page), 5000);
   await apply(page, 2);
-  await npx03kind("done", "2");
+  await npxHumanTouch("done", "2");
   await expect(ring(page)).toHaveAttribute("aria-valuenow", "2");
   await pageHeardTheLastMove(page);
   // Still past the threshold, then on again: the notice shows, and goes as the code comes in.
@@ -616,9 +616,9 @@ test("playbook: the Agent sits still a long time between two changes, then goes 
   const noticePastThreshold = (await watchFor(stalledNotice(page), NOTICE_LATE_MS)) !== null;
   await apply(page, 3);
   const noticeAfterResuming = await stalledNotice(page).count();
-  await npx03kind("done", "3");
+  await npxHumanTouch("done", "3");
   const atEnd = await progressGap(page);
-  await npx03kind("finish");
+  await npxHumanTouch("finish");
   // Once the round is over, as the page hears, never.
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
   await page.clock.fastForward(STALL_MS + 1000);
@@ -733,7 +733,7 @@ async function designTheRoundAcrossViews(page: Page) {
   await page.mouse.move(view.x - 200, title.y, { steps: 10 });
   await page.mouse.up();
   await expect(page.locator('iframe[title="Off canvas"]:visible')).toHaveCount(1);
-  await expect.poll(() => readThirdKindFile("changeset.json")?.changes.map((change: { kind: string; breakpoint?: object }) => `${change.kind}${change.breakpoint ? " at a breakpoint" : ""}`)).toEqual([
+  await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.map((change: { kind: string; breakpoint?: object }) => `${change.kind}${change.breakpoint ? " at a breakpoint" : ""}`)).toEqual([
     "style", "style", "style", "style at a breakpoint", "delete",
   ]);
 }
@@ -753,19 +753,19 @@ async function enterAgain(page: Page) {
 }
 
 /** The round's changes now, by their numbers and properties. */
-const changesNow = (): { id: number; property: string; kind: string; carried?: true; before: unknown }[] => readThirdKindFile("changeset.json")?.changes ?? [];
+const changesNow = (): { id: number; property: string; kind: string; carried?: true; before: unknown }[] => readHumanTouchFile("changeset.json")?.changes ?? [];
 
 /** Whether edit mode froze the page afresh: no element of the canvas carries an edit or a layer id of a round's. */
-const frozenAfresh = (page: Page) => canvas(page).locator("[data-tk-layer], [data-tk-style]").count().then((n) => n === 0);
+const frozenAfresh = (page: Page) => canvas(page).locator("[data-ht-layer], [data-ht-style]").count().then((n) => n === 0);
 
 test("playbook: the Agent stops halfway; the designer ends the round, and edits again on the same canvas, the changes not applied there still (ticket 68)", async ({ page }) => {
   await designTheRoundAcrossViews(page);
   const before = await canvasLooks(page);
   const designed = changesNow();
   await leaveEditMode(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   await apply(page, 1);
-  await npx03kind("done", "1");
+  await npxHumanTouch("done", "1");
   await expect(ring(page)).toHaveAttribute("aria-valuenow", "1");
   // The Agent is gone; the designer ends the round, as the notice that it seems to have stopped would (ticket 67).
   await pressAndHold(page);
@@ -794,10 +794,10 @@ test("playbook: the Agent stops halfway; the designer ends the round, and edits 
   await leaveEditMode(page);
 
   // The next claim: the changes left, numbered from 1, then the new one.
-  const notes = await npx03kind("claim");
+  const notes = await npxHumanTouch("claim");
   const sections = [...notes.matchAll(/^## (\d+)\. /gm)].map((match) => Number(match[1]));
   const opening = notes.split("\n")[2];
-  const last = await npx03kind("last");
+  const last = await npxHumanTouch("last");
   // Ended by hand again, nothing applied: all of it is left.
   await pressAndHold(page);
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
@@ -817,7 +817,7 @@ test("playbook: the Agent stops halfway; the designer ends the round, and edits 
   await page.getByRole("button", { name: /not applied yet$/ }).click();
   await changeList.getByRole("button", { name: "Discard all" }).click();
   await changeList.getByRole("button", { name: "Discard", exact: true }).click();
-  await expect.poll(() => readThirdKindFile("changeset.json")).toBeNull();
+  await expect.poll(() => readHumanTouchFile("changeset.json")).toBeNull();
   await enterAgain(page);
   const refrozen = await frozenAfresh(page);
 
@@ -852,7 +852,7 @@ test("playbook: the Agent stops halfway; the designer ends the round, and edits 
   expect(afterListUndo).toEqual(["rgb(255, 0, 0)", "12px"]);
   expect(newEdit).toMatchObject({ id: 5, before: { type: "solid", color: "#FF0000" } });
   expect(sections).toEqual([1, 2, 3, 4, 5]);
-  expect(opening).toBe("This round carries 4 changes over from the round before, not applied then (1, 2, 3 and 4), and none of its 5 changes are applied yet. Left: 5 changes, made by the designer in 03Kind. Apply them to the source, in order: each section says what to change and where, and **How to write them**, after the last, how to write the kinds of change in this round and how the page checks them. The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look. After a change, or a group of related ones, run `npx 03kind done <number> …` with their numbers: it says whether the designer's page shows each. Run it at least once before `npx 03kind finish`, which ends the round once you are through them, and gives the form of the report to end your reply with.");
+  expect(opening).toBe("This round carries 4 changes over from the round before, not applied then (1, 2, 3 and 4), and none of its 5 changes are applied yet. Left: 5 changes, made by the designer in Human Touch. Apply them to the source, in order: each section says what to change and where, and **How to write them**, after the last, how to write the kinds of change in this round and how the page checks them. The designer's page and its dev server are running already, and the page checks your edits as the code changes: start no dev server, and open no browser to look. After a change, or a group of related ones, run `npx humantouch done <number> …` with their numbers: it says whether the designer's page shows each. Run it at least once before `npx humantouch finish`, which ends the round once you are through them, and gives the form of the report to end your reply with.");
   expect(last.startsWith("# Last round of design changes") && last.includes("- **Status:** Applied")).toBe(true);
   expect(leftAgain).toEqual([1, 2, 3, 4, 5]);
   expect(refrozen).toBe(true);
@@ -863,10 +863,10 @@ test("playbook: the Agent finishes with changes not applied (⚠️); they are l
   await designTheRound(page);
   const before = await canvasLooks(page);
   await leaveEditMode(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   await apply(page, 1);
-  await npx03kind("done", "1");
-  const finished = (await npx03kind("finish")).split("\n")[0];
+  await npxHumanTouch("done", "1");
+  const finished = (await npxHumanTouch("finish")).split("\n")[0];
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
   const left = changesNow();
   const unapplied = CHANGES.slice(1).length;
@@ -876,15 +876,15 @@ test("playbook: the Agent finishes with changes not applied (⚠️); they are l
   await leaveEditMode(page);
 
   // The rest applied in the next round: then no change is left, and edit mode freezes the page afresh.
-  const notes = await npx03kind("claim");
+  const notes = await npxHumanTouch("claim");
   await apply(page, 2);
   await apply(page, 3);
-  await npx03kind("done", "1", "2");
-  await npx03kind("finish");
-  const leftAtLast = readThirdKindFile("changeset.json");
+  await npxHumanTouch("done", "1", "2");
+  await npxHumanTouch("finish");
+  const leftAtLast = readHumanTouchFile("changeset.json");
   await enterAgain(page);
   const refrozen = await frozenAfresh(page);
-  const lastRound = await npx03kind("last");
+  const lastRound = await npxHumanTouch("last");
 
   record("finishes-with-changes-left", {
     finished,
@@ -954,10 +954,10 @@ test("playbook: changes left over and under what was applied: a change to the Ca
   await leaveEditMode(page);
 
   // The Agent writes the loop's padding into the Card (the page shows 24px: change 2, and not change 1's 16px), reports the board's fill done (the page cannot check it), and stops.
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   writeFileSync(CARD, original.replace("p-5", "p-5 pt-6"));
   await expect.poll(() => page.locator("article").first().evaluate((card) => getComputedStyle(card).paddingTop)).toBe("24px");
-  await npx03kind("done", "3");
+  await npxHumanTouch("done", "3");
   await pressAndHold(page);
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
   const left = changesNow().map((change) => [change.id, change.kind, change.property]);
@@ -969,7 +969,7 @@ test("playbook: changes left over and under what was applied: a change to the Ca
   await leaveEditMode(page);
 
   // The next claim: what the Agent reads of the Card's own padding left, the code changed since; the round then ended by hand again, nothing more applied.
-  const claimed = await npx03kind("claim");
+  const claimed = await npxHumanTouch("claim");
   const leftNotes = claimed.split(/^## /m).find((part) => part.startsWith("1. "))!;
   const paddingNotes = leftNotes.split("\n").filter((line) => /^- \*\*(Design intent|Currently set by)/.test(line));
   await pressAndHold(page);
@@ -1044,14 +1044,14 @@ test.afterEach(async () => {
 
 /** The round's checks: from its archive once it has ended, else so far. */
 function roundChecks(): Record<string, { outcome: string; reason?: string }> {
-  const history = `${THIRD_KIND_FOLDER}history/`;
+  const history = `${HUMAN_TOUCH_FOLDER}history/`;
   try {
     const last = readdirSync(history).sort().at(-1);
     if (last) return JSON.parse(readFileSync(`${history}${last}/result.json`, "utf8")).checks;
   } catch {
     // Not ended.
   }
-  return readThirdKindFile("checks.json")?.results ?? {};
+  return readHumanTouchFile("checks.json")?.results ?? {};
 }
 
 /** What the round's checks say of changes `ids`: how many have a result (shown or not), how many shown, and each one's outcome and reason. */
@@ -1067,7 +1067,7 @@ function checksOf(ids: number[]) {
 
 /** The applied changes of the round's archive. */
 function appliedInArchive(): number[] {
-  const history = `${THIRD_KIND_FOLDER}history/`;
+  const history = `${HUMAN_TOUCH_FOLDER}history/`;
   const last = readdirSync(history).sort().at(-1)!;
   return JSON.parse(readFileSync(`${history}${last}/result.json`, "utf8")).applied;
 }
@@ -1098,8 +1098,8 @@ async function drawAFrameBelowTheIntro(page: Page, size = { width: 360, height: 
   await expect(canvas(page).locator("h1")).toBeVisible();
   const intro = (await canvas(page).locator('[data-testid="hero"] > p').boundingBox())!;
   await drawWith(page, "f", { x: intro.x + 20, y: intro.y + intro.height - 2 }, size);
-  await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
-  return readThirdKindFile("changeset.json").changes[0];
+  await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(1);
+  return readHumanTouchFile("changeset.json").changes[0];
 }
 
 /** `html` written into the hero below the intro, as the Agent writes a new layer; once the page has it. */
@@ -1143,15 +1143,15 @@ async function makeAFrameFilledAndRounded(page: Page, radius = "rounded-[4px]") 
   ]);
   const { width, height } = made.after;
   await leaveEditMode(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   const dones: string[] = [];
   await writeBelowTheIntro(page, `        <div className="h-[${height}px] w-[${width}px]" />\n`);
-  dones.push(await npx03kind("done", "1"));
+  dones.push(await npxHumanTouch("done", "1"));
   await editApp(`w-[${width}px]"`, `w-[${width}px] bg-[#ff0000]"`, async () => (await belowTheIntro(page, "backgroundColor")) === "rgb(255, 0, 0)");
-  dones.push(await npx03kind("done", "2"));
+  dones.push(await npxHumanTouch("done", "2"));
   await editApp(`bg-[#ff0000]"`, `bg-[#ff0000] ${radius}"`, async () => (await belowTheIntro(page, "borderTopLeftRadius")) !== "0px");
-  dones.push(await npx03kind("done", "3"));
-  const finished = await npx03kind("finish");
+  dones.push(await npxHumanTouch("done", "3"));
+  const finished = await npxHumanTouch("finish");
   return { dones, finished, size: { width, height }, radius: await belowTheIntro(page, "borderTopLeftRadius") };
 }
 
@@ -1209,7 +1209,7 @@ test("playbook: a Frame drawn in a new Frame, filled; the Agent writes one in th
   const inner = changesNow()[1] as unknown as { after: { width: number; height: number; place: { absolute: { x: number; y: number } } } };
   const { x, y } = inner.after.place.absolute;
   await leaveEditMode(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   await writeBelowTheIntro(
     page,
     `        <div className="relative h-[${outer.after.height}px] w-[${outer.after.width}px]">\n` +
@@ -1217,8 +1217,8 @@ test("playbook: a Frame drawn in a new Frame, filled; the Agent writes one in th
       "        </div>\n",
   );
   await expect(page.locator('[data-testid="hero"] > p + div > div')).toHaveCSS("background-color", "rgb(255, 0, 0)");
-  const done = await npx03kind("done", "1", "2", "3");
-  await npx03kind("finish");
+  const done = await npxHumanTouch("done", "1", "2", "3");
+  await npxHumanTouch("finish");
   const checks = checksOf([1, 2, 3]);
   record("makes-a-frame-in-a-frame", { ...checks, applied: appliedInArchive(), inner: { x, y }, done: done.split("\n") });
   // Ticket 76: found a level in, too.
@@ -1242,11 +1242,11 @@ async function drawTextInTheCards(page: Page) {
 test("playbook: text drawn in a Card of the loop; the Agent writes it in the Card once, the page renders it in every card (ticket 76)", async ({ page }) => {
   await drawTextInTheCards(page);
   await leaveEditMode(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   writeFileSync(CARD, original.replace(CARD_BODY_END, `${CARD_BODY_END}      <p className="mt-2 text-sm">Fresh</p>\n`));
   await expect(page.locator("article").first().getByText("Fresh")).toBeVisible();
-  const done = await npx03kind("done", "1");
-  await npx03kind("finish");
+  const done = await npxHumanTouch("done", "1");
+  await npxHumanTouch("finish");
   const checks = checksOf([1]);
   record("made-in-a-loop", { ...checks, applied: appliedInArchive(), done: done.split("\n") });
   // Ticket 76: three elements from one place in the source are one layer.
@@ -1256,12 +1256,12 @@ test("playbook: text drawn in a Card of the loop; the Agent writes it in the Car
 test("playbook: text drawn in a Card of the loop; the Agent writes it in two places of the Card, one for the first card and one for the rest (ticket 76)", async ({ page }) => {
   await drawTextInTheCards(page);
   await leaveEditMode(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   const twice = `{title === "Freeze" ? (\n        <p className="mt-2 text-sm">Fresh</p>\n      ) : (\n        <p className="mt-2 text-sm">Fresh</p>\n      )}\n`;
   writeFileSync(CARD, original.replace(CARD_BODY_END, `${CARD_BODY_END}      ${twice}`));
   await expect(page.locator("article").first().getByText("Fresh")).toBeVisible();
-  const done = await npx03kind("done", "1");
-  await npx03kind("finish");
+  const done = await npxHumanTouch("done", "1");
+  await npxHumanTouch("finish");
   const checks = checksOf([1]);
   record("made-in-two-places", { ...checks, applied: appliedInArchive(), done: done.split("\n") });
   // Ticket 76: from two places, the page does not guess, and names them.
@@ -1290,7 +1290,7 @@ test("a page opened only once the round is claimed, in a browser of its own, fin
   await page.mouse.up();
   await expect.poll(() => changesNow().map((change) => change.kind)).toEqual(["create", "delete"]);
   await leaveEditMode(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   // The designer's page goes; another opens, in a browser context of its own, the round claimed already.
   await page.close();
   const context = await browser.newContext();
@@ -1300,14 +1300,14 @@ test("a page opened only once the round is claimed, in a browser of its own, fin
     await expect(other.getByRole("progressbar", { name: "Applying design changes" })).toBeVisible();
     writeFileSync(APP, readFileSync(APP, "utf8").replace(INTRO_END, `${INTRO_END}        <p className="mt-4">Fresh line</p>\n`));
     await expect(other.getByText("Fresh line")).toBeVisible();
-    const whileThere = await npx03kind("done", "1");
+    const whileThere = await npxHumanTouch("done", "1");
     const text = readFileSync(APP, "utf8");
     const INTRO = '        <p className="mt-4 text-stone-600">\n          A Framer-style editor layer for <strong>any</strong> page.\n        </p>\n';
     expect(text).toContain(INTRO);
     writeFileSync(APP, text.replace(INTRO, ""));
     await expect(other.getByText("A Framer-style editor layer for")).toHaveCount(0);
-    const once = await npx03kind("done", "1", "2");
-    await npx03kind("finish");
+    const once = await npxHumanTouch("done", "1", "2");
+    await npxHumanTouch("finish");
     const checks = checksOf([1, 2]);
     record("made-found-by-a-page-opened-later", { ...checks, done: [whileThere.split("\n")[1], ...once.split("\n").slice(1, 3)] });
     expect(whileThere).toContain("Checked on the page: it shows the change.");
@@ -1329,12 +1329,12 @@ test("a page opened only once the round is claimed, in a browser of its own, fin
  */
 test("playbook: a Frame drawn between the intro and the button, not claimed; the Card's code changes and the page draws the same: no claim (ticket 78, after review)", async ({ page }) => {
   await drawAFrameBelowTheIntro(page);
-  const locBefore = await page.locator("article").first().getAttribute("data-tk-loc");
+  const locBefore = await page.locator("article").first().getAttribute("data-ht-loc");
   writeFileSync(CARD, typedApart(original));
-  await expect.poll(() => page.locator("article").first().getAttribute("data-tk-loc")).not.toBe(locBefore);
+  await expect.poll(() => page.locator("article").first().getAttribute("data-ht-loc")).not.toBe(locBefore);
   // Past the second the code is to rest, and some.
   await page.waitForTimeout(3000);
-  const claimed = existsSync(`${THIRD_KIND_FOLDER}state.json`) || (await ring(page).count()) > 0;
+  const claimed = existsSync(`${HUMAN_TOUCH_FOLDER}state.json`) || (await ring(page).count()) > 0;
   const notices = await noticesSoFar(page);
   // Claimed, the editor has folded into the toggle: nothing to edit.
   const editable = !claimed && (await stillEditable(page));
@@ -1348,12 +1348,12 @@ test("playbook: the same Frame, the Agent writing it at its place with no claim:
   const made = await drawAFrameBelowTheIntro(page);
   const { width, height } = made.after;
   await writeBelowTheIntro(page, `        <div className="h-[${height}px] w-[${width}px]" />\n`);
-  const claimedAfterMs = await within(UNCLAIMED_WATCH_MS, async () => existsSync(`${THIRD_KIND_FOLDER}state.json`) && (await ring(page).count()) > 0);
+  const claimedAfterMs = await within(UNCLAIMED_WATCH_MS, async () => existsSync(`${HUMAN_TOUCH_FOLDER}state.json`) && (await ring(page).count()) > 0);
   const notices = await noticesSoFar(page);
   record("frame-drawn-applied-unclaimed", { autoClaimed: claimedAfterMs !== null, claimedAfterMs, notices });
   expect(claimedAfterMs).not.toBeNull();
   expect(notices).toEqual({ unclaimed: 0, canvasUpdated: 0, pageChanged: 0 });
-  await npx03kind("finish");
+  await npxHumanTouch("finish");
 });
 
 /**
@@ -1407,14 +1407,14 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
 
   /** The round claimed, the change written by `edits`, `done 1`, the ring, and `finish`: what each said, and what the page shows. */
   async function applyTheChange(page: Page, edits: [string, string, string][], shows: () => Promise<boolean>) {
-    await npx03kind("claim");
+    await npxHumanTouch("claim");
     // As a real Agent, which reads the notes before it edits: the page has begun to check, and has noted what the other usages show.
-    await expect.poll(() => readThirdKindFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
+    await expect.poll(() => readHumanTouchFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
     await write(edits, shows);
-    const done = await npx03kind("done", "1");
+    const done = await npxHumanTouch("done", "1");
     await expect(ring(page)).toBeVisible();
     const ringAfterDone = Number(await ring(page).getAttribute("aria-valuenow"));
-    const finished = await npx03kind("finish");
+    const finished = await npxHumanTouch("finish");
     const checks = checksOf([1]);
     return { done, ringAfterDone, finished, checks, ticked: tickedIn(finished), applied: appliedInArchive() };
   }
@@ -1552,7 +1552,7 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
 
   /**
    * Ticket 82: what the other usages showed as the round was claimed is kept
-   * with the claim in `.03kind/`, so a page that checks the round anew (the
+   * with the claim in `.humantouch/`, so a page that checks the round anew (the
    * designer reloads it, or opens it again) still goes by it; a round the page
    * claims for an Agent that did not (ticket 78) goes by what they showed
    * before the code began to change. Before 82 the page noted them afresh
@@ -1568,15 +1568,15 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
       if (how === "reload") await page.reload();
       else await page.goto(DEV_URL);
       await expect(ring(page)).toBeVisible();
-      await expect.poll(() => (readThirdKindFile("checks.json")?.results?.[1]?.at ?? "") >= since, { timeout: 20_000 }).toBe(true);
+      await expect.poll(() => (readHumanTouchFile("checks.json")?.results?.[1]?.at ?? "") >= since, { timeout: 20_000 }).toBe(true);
     }
 
     /** `done 1`, the ring, and `finish`: what each said, and what the page shows, as `applyTheChange` keeps them. */
     async function doneAndFinish(page: Page) {
-      const done = await npx03kind("done", "1");
+      const done = await npxHumanTouch("done", "1");
       await expect(ring(page)).toBeVisible();
       const ringAfterDone = Number(await ring(page).getAttribute("aria-valuenow"));
-      const finished = await npx03kind("finish");
+      const finished = await npxHumanTouch("finish");
       const checks = checksOf([1]);
       return { done, ringAfterDone, finished, checks, ticked: tickedIn(finished), applied: appliedInArchive() };
     }
@@ -1598,14 +1598,14 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
     async function writeUnclaimed(page: Page, card: string, shows: () => Promise<boolean>) {
       writeFileSync(CARD, card);
       await expect.poll(shows).toBe(true);
-      return within(UNCLAIMED_WATCH_MS, async () => existsSync(`${THIRD_KIND_FOLDER}state.json`) && (await ring(page).count()) > 0);
+      return within(UNCLAIMED_WATCH_MS, async () => existsSync(`${HUMAN_TOUCH_FOLDER}state.json`) && (await ring(page).count()) > 0);
     }
 
     for (const how of ["reload", "reopen"] as const) {
       test(`playbook: the loop's cards filled red and claimed; the Agent writes it into the Card itself, ${how === "reload" ? "the page open, then reloaded" : "the page left first and opened again after"}: the fourth card is red too`, async ({ page }) => {
         await changeACard(page, 0, [["Fill color", "ff0000"]]);
-        await npx03kind("claim");
-        await expect.poll(() => readThirdKindFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
+        await npxHumanTouch("claim");
+        await expect.poll(() => readHumanTouchFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
         if (how === "reopen") await page.goto("about:blank");
         await write([[CARD, "bg-white", "bg-[#ff0000]"]], async () => (await (await fetch(`${DEV_URL}/src/components/Card.tsx`)).text()).includes("bg-[#ff0000]"));
         if (how === "reload") await expect.poll(() => allRed(page)).toBe(true);
@@ -1623,8 +1623,8 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
 
     test("playbook: the same, claimed; the Agent writes it for the loop alone, and the page is reloaded: no false leak", async ({ page }) => {
       await changeACard(page, 0, [["Fill color", "ff0000"]]);
-      await npx03kind("claim");
-      await expect.poll(() => readThirdKindFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
+      await npxHumanTouch("claim");
+      await expect.poll(() => readHumanTouchFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
       writeFileSync(CARD, forTheLoopAlone(original, "bg-white", "bg-[#ff0000]"));
       await expect.poll(() => loopRed(page)).toBe(true);
       await openAgain(page, "reload");
@@ -1667,9 +1667,9 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
         await expect(ring(other)).toBeVisible();
         await expect.poll(() => allRed(other)).toBe(true);
         // Each page has had its look: the second's word, said as the code changed, stays if it says the change shows.
-        await expect.poll(() => readThirdKindFile("checks.json")?.results?.[1]?.outcome, { timeout: 10_000 }).toBeTruthy();
+        await expect.poll(() => readHumanTouchFile("checks.json")?.results?.[1]?.outcome, { timeout: 10_000 }).toBeTruthy();
         await other.waitForTimeout(1500);
-        const saidUnasked = readThirdKindFile("checks.json")?.results?.[1]?.outcome;
+        const saidUnasked = readHumanTouchFile("checks.json")?.results?.[1]?.outcome;
         const result = await doneAndFinish(page);
         const told = toldLeak(result, /src\/App\.tsx:\d+:\d+/);
         record("usage-leak-unclaimed-two-pages", { ...kept(result), claimedAfterMs, saidUnasked, told, found: told ? 1 : 0 });
@@ -1771,18 +1771,18 @@ test.describe("a text change (ticket 90)", () => {
    */
   async function applyTheWords(page: Page, waitFor: "first" | "note" | "none", edits: [string, string, string][], shows: () => Promise<boolean>) {
     const ids = changesNow().map((change) => change.id);
-    const claim = await npx03kind("claim");
+    const claim = await npxHumanTouch("claim");
     await expect(ring(page)).toBeVisible();
-    if (waitFor === "first") await expect.poll(() => readThirdKindFile("checks.json")?.results?.[ids[0]]?.outcome).toBeTruthy();
-    if (waitFor === "note") await expect.poll(() => !!readThirdKindFile("other-usages.json")?.otherUsages?.[ids[0]]).toBe(true);
+    if (waitFor === "first") await expect.poll(() => readHumanTouchFile("checks.json")?.results?.[ids[0]]?.outcome).toBeTruthy();
+    if (waitFor === "note") await expect.poll(() => !!readHumanTouchFile("other-usages.json")?.otherUsages?.[ids[0]]).toBe(true);
     for (const [file, from, to] of edits) {
       const text = readFileSync(file, "utf8");
       expect(text).toContain(from);
       writeFileSync(file, text.replace(from, to));
     }
     await expect.poll(shows).toBe(true);
-    const done = await npx03kind("done", ...ids.map(String));
-    const finished = await npx03kind("finish");
+    const done = await npxHumanTouch("done", ...ids.map(String));
+    const finished = await npxHumanTouch("finish");
     return { claim, done, finished, checks: checksOf(ids), ticked: tickedIn(finished), applied: appliedInArchive() };
   }
 
@@ -1809,7 +1809,7 @@ test.describe("a text change (ticket 90)", () => {
     record("text-title-wrong", kept(result));
     expect(result.done).toBe(
       "Change 1 done: 0 of 1 change applied.\n" +
-        "Checked on the page: it does not show the change. The layer reads “Third Kind Studios” on the page, not “Third Kind Studio” as on the canvas: change its words in the JSX, or where they are given when they come from a prop or a variable, and run `npx 03kind done 1` again.\n",
+        "Checked on the page: it does not show the change. The layer reads “Third Kind Studios” on the page, not “Third Kind Studio” as on the canvas: change its words in the JSX, or where they are given when they come from a prop or a variable, and run `npx humantouch done 1` again.\n",
     );
     expect(result.finished).toMatch(/^Round finished: 0 of 1 change applied\. The page does not show: 1\./);
     expect(result.finished).toContain("- 1. Text: <the layer>\n  Why: the layer reads “Third Kind Studios” on the page, not “Third Kind Studio”: <what keeps it so>\n");
@@ -1830,7 +1830,7 @@ test.describe("a text change (ticket 90)", () => {
     const result = await applyTheWords(page, "note", [[CARD, "{title}</h3>", "Your move</h3>"]], async () => (await titlesOnThePage(page)).every((words) => words === "Your move"));
     record("text-usage-leak", { ...kept(result), titles: await titlesOnThePage(page) });
     expect(result.done).toMatch(
-      /^Change 1 done: 0 of 1 change applied\.\nChecked on the page: it shows the change, but on another usage of Card too: Card used at `src\/App\.tsx:\d+:\d+`, inside App used at `src\/main\.tsx:\d+:\d+`, its words from “Freeze” to “Your move” since the round was claimed\. The change is for this usage only \(Scope\): make it at the usage, put the other usage back as it was, and run `npx 03kind done 1` again\.\n$/,
+      /^Change 1 done: 0 of 1 change applied\.\nChecked on the page: it shows the change, but on another usage of Card too: Card used at `src\/App\.tsx:\d+:\d+`, inside App used at `src\/main\.tsx:\d+:\d+`, its words from “Freeze” to “Your move” since the round was claimed\. The change is for this usage only \(Scope\): make it at the usage, put the other usage back as it was, and run `npx humantouch done 1` again\.\n$/,
     );
     expect(result.finished).toMatch(/^Round finished: 0 of 1 change applied\. Shown at other usages of its component too: 1\./);
     expect(result.finished).toMatch(/\n {2}Why: the page shows it at another usage of Card too, Card used at `src\/App\.tsx:\d+:\d+`, its words from “Freeze” to “Your move”: <what keeps it so>\n/);
@@ -1891,7 +1891,7 @@ test.describe("a loop's instance deleted, copied or moved (ticket 95)", () => {
   /** The round claimed, the features data written as `features` (each card keyed by its place, as two may share a title), `done` for every change, and `finish`: what each said, and the round's checks. */
   async function writeTheData(page: Page, features: string[]) {
     const ids = changesNow().map((change) => change.id);
-    const claim = await npx03kind("claim");
+    const claim = await npxHumanTouch("claim");
     await expect(ring(page)).toBeVisible();
     const items = Object.fromEntries([...originalApp.matchAll(/^ {2}\{ title: "(\w+)",.*\n/gm)].map((match) => [match[1], match[0]]));
     const data = /^const features = \[\n[\s\S]*?^\];\n/m;
@@ -1903,8 +1903,8 @@ test.describe("a loop's instance deleted, copied or moved (ticket 95)", () => {
         .replace("{features.map((feature) => (\n          <Card key={feature.title}", "{features.map((feature, i) => (\n          <Card key={i}"),
     );
     await expect.poll(() => page.locator("article h3").allTextContents()).toEqual([...features, "Your turn"]);
-    const done = await npx03kind("done", ...ids.map(String));
-    const finished = await npx03kind("finish");
+    const done = await npxHumanTouch("done", ...ids.map(String));
+    const finished = await npxHumanTouch("finish");
     return { claim, done, finished, checks: checksOf(ids), ticked: tickedIn(finished), applied: appliedInArchive() };
   }
 
@@ -1969,7 +1969,7 @@ test.describe("a layer whose markers the Agent's edit moves (ticket 99)", () => 
       await expect.poll(() => changesNow().map((change) => change.property)).toEqual(["fill"]);
       await leaveEditMode(page);
 
-      await npx03kind("claim");
+      await npxHumanTouch("claim");
       await expect(ring(page)).toBeVisible();
       const grid = page.locator("article").first().locator("..");
       // Each edit brought into the page before the next, as an Agent's come one by one.
@@ -1977,7 +1977,7 @@ test.describe("a layer whose markers the Agent's edit moves (ticket 99)", () => 
       await expect(grid).toHaveCSS("background-color", "rgb(245, 245, 244)");
       writeFileSync(APP, readFileSync(APP, "utf8").replace("<Badge>Beta</Badge>", `<${wrapper} className="contents">\n            <Badge>Beta</Badge>\n          </${wrapper}>`));
       await expect(page.locator(`header > ${wrapper}.contents`)).toHaveCount(1);
-      const done = await npx03kind("done", "1");
+      const done = await npxHumanTouch("done", "1");
       expect(done).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
       expect(checksOf([1]).outcomes[1]).toBe("shown");
     });
@@ -2014,25 +2014,25 @@ test.describe("a change at a breakpoint, the widths outside its range kept (tick
     }
     // A change at the phone's breakpoint is claimed once the parts of its range are read (ticket 65).
     await expect
-      .poll(() => readThirdKindFile("changeset.json")?.changes.map((change: { property: string; breakpoint?: object; parts?: unknown[] }) => `${change.property}${change.breakpoint ? ` at a breakpoint, ${change.parts?.length ?? 0} parts` : ""}`))
+      .poll(() => readHumanTouchFile("changeset.json")?.changes.map((change: { property: string; breakpoint?: object; parts?: unknown[] }) => `${change.property}${change.breakpoint ? ` at a breakpoint, ${change.parts?.length ?? 0} parts` : ""}`))
       .toEqual(fills.map(([view]) => (view === "Phone 390" ? "fill at a breakpoint, 2 parts" : "fill")));
     await leaveEditMode(page);
   }
 
   /** The round claimed, the page's first look in, `edits` written once `shows` says the page has them, then `done` and `finish`. */
   async function applyTheRound(page: Page, ids: number[], edits: [string, string, string | ((text: string) => string)][], shows: () => Promise<boolean>) {
-    await npx03kind("claim");
-    await expect.poll(() => readThirdKindFile("checks.json")?.results?.[ids[0]]?.outcome).toBeTruthy();
+    await npxHumanTouch("claim");
+    await expect.poll(() => readHumanTouchFile("checks.json")?.results?.[ids[0]]?.outcome).toBeTruthy();
     for (const [file, from, to] of edits) {
       const text = readFileSync(file, "utf8");
       expect(text).toContain(from);
       writeFileSync(file, typeof to === "string" ? text.replace(from, to) : to(text));
     }
     await expect.poll(shows).toBe(true);
-    const done = await npx03kind("done", ...ids.map(String));
+    const done = await npxHumanTouch("done", ...ids.map(String));
     await expect(ring(page)).toBeVisible();
     const ringAfterDone = Number(await ring(page).getAttribute("aria-valuenow"));
-    const finished = await npx03kind("finish");
+    const finished = await npxHumanTouch("finish");
     return { done, ringAfterDone, finished, checks: checksOf(ids), ticked: tickedIn(finished), applied: appliedInArchive() };
   }
 
@@ -2120,19 +2120,19 @@ test.describe("a Stack made a Grid, a Grid a Stack, and a Grid's cell made Fill 
     await pick();
     await change();
     await expect
-      .poll(() => readThirdKindFile("changeset.json")?.changes.map((c: { property: string; breakpoint?: object; parts?: unknown[] }) => `${c.property}${c.breakpoint ? `, ${c.parts?.length ?? 0} parts` : ""}`))
+      .poll(() => readHumanTouchFile("changeset.json")?.changes.map((c: { property: string; breakpoint?: object; parts?: unknown[] }) => `${c.property}${c.breakpoint ? `, ${c.parts?.length ?? 0} parts` : ""}`))
       .toEqual([saved]);
     await leaveEditMode(page);
   }
 
   /** The round claimed, `file` edited from `from` to `to` once its first look is in, then `done 1` once `shows`, and `finish`. */
   async function applyIt(page: Page, file: string, edit: (text: string) => string, shows: () => Promise<boolean>) {
-    const notes = await npx03kind("claim");
-    await expect.poll(() => readThirdKindFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
+    const notes = await npxHumanTouch("claim");
+    await expect.poll(() => readHumanTouchFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
     writeFileSync(file, edit(readFileSync(file, "utf8")));
     await expect.poll(shows).toBe(true);
-    const done = await npx03kind("done", "1");
-    const finished = await npx03kind("finish");
+    const done = await npxHumanTouch("done", "1");
+    const finished = await npxHumanTouch("finish");
     return { notes, done, finished, outcome: checksOf([1]).outcomes[1], ticked: tickedIn(finished) };
   }
 
@@ -2210,13 +2210,13 @@ test.describe("a Stack made a Grid, a Grid a Stack, and a Grid's cell made Fill 
       () => direction(page, "Grid", "Vertical").click(),
       "arrangement, 2 parts",
     );
-    const notes = await npx03kind("claim");
-    await expect.poll(() => readThirdKindFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
+    const notes = await npxHumanTouch("claim");
+    await expect.poll(() => readHumanTouchFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
     const first = checksOf([1]).outcomes[1];
     writeFileSync(APP, readFileSync(APP, "utf8").replace(PLACED, `<Surface className="${as}">`));
     await expect.poll(() => grid.evaluate((el) => el.className.includes("max-md:flex-col"))).toBe(true);
-    const done = await npx03kind("done", "1");
-    const finished = await npx03kind("finish");
+    const done = await npxHumanTouch("done", "1");
+    const finished = await npxHumanTouch("finish");
     return { notes, first, done, outcome: checksOf([1]).outcomes[1], ticked: tickedIn(finished) };
   }
 
@@ -2292,16 +2292,16 @@ test.describe("free layers in two rows of two made a Grid (ticket 110)", () => {
     for (const n of [2, 3, 4]) await frames.nth(n).click({ modifiers: ["Shift"] });
     await page.keyboard.press("Shift+A");
     await expect(tree.getByRole("treeitem", { name: "Grid", exact: true }).last()).toHaveAttribute("aria-selected", "true");
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.map((c: { kind: string }) => c.kind)).toEqual(["stack"]);
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.map((c: { kind: string }) => c.kind)).toEqual(["stack"]);
     await leaveEditMode(page);
 
-    const notes = await npx03kind("claim");
-    await expect.poll(() => readThirdKindFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
+    const notes = await npxHumanTouch("claim");
+    await expect.poll(() => readHumanTouchFile("checks.json")?.results?.[1]?.outcome).toBeTruthy();
     const first = checksOf([1]).outcomes[1];
     writeFileSync(APP, readFileSync(APP, "utf8").replace(BOARD, GRID));
     await expect.poll(() => page.locator("div:has(> .bg-stone-300)").first().evaluate((el) => getComputedStyle(el).display)).toBe("grid");
-    const done = await npx03kind("done", "1");
-    const finished = await npx03kind("finish");
+    const done = await npxHumanTouch("done", "1");
+    const finished = await npxHumanTouch("finish");
     record("grid-made-of-free-layers", { first, outcome: checksOf([1]).outcomes[1], ticked: tickedIn(finished) });
 
     expect(notes).toContain("## 1. Make Grid");

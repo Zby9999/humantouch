@@ -30,9 +30,6 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0(react@19.3.0)
     devDependencies:
-      03kind:
-        specifier: workspace:*
-        version: link:../../packages/03kind
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
@@ -42,6 +39,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.3.0
         version: 19.3.0(@types/react@19.3.0)
+      humantouch:
+        specifier: workspace:*
+        version: link:../../packages/humantouch
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -58,9 +58,6 @@ importers:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
     devDependencies:
-      03kind:
-        specifier: workspace:*
-        version: link:../../packages/03kind
       '@types/react':
         specifier: ^18.3.31
         version: 18.3.31
@@ -70,6 +67,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^6.1.2
         version: 6.1.2(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@1.21.7))
+      humantouch:
+        specifier: workspace:*
+        version: link:../../packages/humantouch
       postcss:
         specifier: ^8.5.32
         version: 8.5.32
@@ -95,9 +95,6 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0(react@19.3.0)
     devDependencies:
-      03kind:
-        specifier: workspace:*
-        version: link:../../packages/03kind
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0))
@@ -110,6 +107,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^6.1.2
         version: 6.1.2(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0))
+      humantouch:
+        specifier: workspace:*
+        version: link:../../packages/humantouch
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
@@ -117,7 +117,7 @@ importers:
         specifier: ^8.3.4
         version: 8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)
 
-  packages/03kind:
+  packages/humantouch:
     dependencies:
       '@babel/parser':
         specifier: ^8.0.7

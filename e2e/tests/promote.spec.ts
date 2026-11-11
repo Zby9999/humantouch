@@ -28,7 +28,7 @@ const toolbar = (page: Page) => page.getByRole("toolbar", { name: "Selection" })
 const promote = (page: Page) => toolbar(page).getByRole("button", { name: "Promote" });
 const radius = (page: Page) => design(page).getByRole("textbox", { name: "Corner radius" });
 const badge = (page: Page) => page.getByRole("button", { name: /not applied yet/ });
-const toast = (page: Page) => page.getByRole("status").locator(".tk-toast");
+const toast = (page: Page) => page.getByRole("status").locator(".ht-toast");
 const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
 const tablet = (page: Page) => page.locator('iframe[title="Tablet 768"]');
 
@@ -51,7 +51,7 @@ async function pick(page: Page, view: Locator, selector: string) {
 
 /** The corner radius of each Card, in each view: the desktop view first, then those beside it. */
 async function cardRadii(page: Page): Promise<string[][]> {
-  const frames = [page.locator('iframe[title="Canvas"]'), ...(await page.locator("iframe.tk-canvas.is-beside").all())];
+  const frames = [page.locator('iframe[title="Canvas"]'), ...(await page.locator("iframe.ht-canvas.is-beside").all())];
   return Promise.all(
     frames.map((frame) => frame.contentFrame().locator("article").evaluateAll((els) => els.map((el) => getComputedStyle(el).borderRadius))),
   );
@@ -74,7 +74,7 @@ test("a Card changed on one usage offers Promote on the top right of its selecti
   await expect.poll(async () => (await cardRadii(page)).map((view) => view.join())).toEqual(Array(3).fill("2px,2px,2px,12px"));
 
   // On the top right of the selection box, above it.
-  const box = (await page.locator('.tk-selection[data-view="Desktop"]').boundingBox())!;
+  const box = (await page.locator('.ht-selection[data-view="Desktop"]').boundingBox())!;
   const bar = (await toolbar(page).boundingBox())!;
   expect(Math.abs(bar.x + bar.width - (box.x + box.width))).toBeLessThan(1);
   expect(bar.y + bar.height).toBeLessThan(box.y);

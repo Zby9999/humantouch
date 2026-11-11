@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { ThirdKind } from "03kind/react";
+import { HumanTouch } from "humantouch/react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "03Kind example: Next.js App Router + CSS Modules",
+  title: "Human Touch example: Next.js App Router + CSS Modules",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -11,7 +11,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         {children}
-        <ThirdKind />
+        <HumanTouch />
       </body>
     </html>
   );

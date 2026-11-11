@@ -7,7 +7,7 @@
 import type { Transcript } from "./metrics.ts";
 
 /** Step 1's command, as README has it. */
-export const NPX_INIT = "npx -y 03kind@latest init";
+export const NPX_INIT = "npx -y humantouch@latest init";
 
 /** The longest the toggle may take to show, from the Agent's start (docs/goals.md, Light). */
 const TOGGLE_BUDGET_MS = 60_000;
@@ -22,7 +22,7 @@ export function forAgents(readme: string): string {
 
 /**
  * The steps with step 1 installing the package packed from this repository,
- * at `tarball`, in place of 03kind@latest: the only change. As `file:`, for
+ * at `tarball`, in place of humantouch@latest: the only change. As `file:`, for
  * npx runs a bare path as a program of its own.
  */
 export function withLocalPackage(prompt: string, tarball: string): string {
@@ -66,7 +66,7 @@ export function waitsOnAnswer(text: string): string | null {
 }
 
 /** `doctor` as the Agent runs it: by npx (by name, a version or the packed file), by the package manager, or by the project's copy. */
-const DOCTOR = /(?:03kind\S*|\.tgz)["']?\s+doctor\b/;
+const DOCTOR = /(?:humantouch\S*|\.tgz)["']?\s+doctor\b/;
 
 /** Whether the transcript shows `doctor` run and saying "All good.": the steps are done. */
 function doctorAllGood(transcript: Pick<Transcript, "toolCalls">): boolean {
@@ -97,7 +97,7 @@ export function intervention(transcript: Pick<Transcript, "toolCalls" | "finalTe
 
 /** Whether the last message tells the designer to look for the round button at the page's bottom right (step 3, headless). */
 export function toldToLook(text: string): boolean {
-  return /(?:bottom|lower)[\s-]*right|右下/i.test(text) && ABOUT_THE_TOGGLE.test(text) && /\b(page|round|03Kind)\b|页面|圆/i.test(text);
+  return /(?:bottom|lower)[\s-]*right|右下/i.test(text) && ABOUT_THE_TOGGLE.test(text) && /\b(page|round|Human Touch)\b|页面|圆/i.test(text);
 }
 
 /** The steps, in order, as the transcript shows the Agent reached them. */
@@ -106,14 +106,14 @@ export type Step = (typeof STEPS)[number];
 
 /**
  * Which steps the transcript shows the Agent reached, for ticket 24's "where
- * it got stuck, and why": `init` run (by 03kind's name or a packed file), a
+ * it got stuck, and why": `init` run (by humantouch's name or a packed file), a
  * dev server started (a `dev` script, `vite`, `next dev`), `doctor` run, and
  * saying "All good.", and the designer told to look for the toggle.
  */
 export function stepsReached(transcript: Pick<Transcript, "toolCalls" | "finalText">): Step[] {
   const ran = (pattern: RegExp) => transcript.toolCalls.some((call) => pattern.test(call.command ?? ""));
   const reached: Record<Step, boolean> = {
-    "ran init": ran(/(?:03kind\S*|\.tgz)["']?\s+init\b/),
+    "ran init": ran(/(?:humantouch\S*|\.tgz)["']?\s+init\b/),
     "started a dev server": ran(/\b(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?dev|vite(?!\s+build)|next\s+dev)\b/),
     "ran doctor": ran(DOCTOR),
     "doctor All good": doctorAllGood(transcript),
@@ -122,8 +122,8 @@ export function stepsReached(transcript: Pick<Transcript, "toolCalls" | "finalTe
   return STEPS.filter((step) => reached[step]);
 }
 
-/** 03Kind's own files, as `init` changes them: not the project's source. */
-const THIRD_KIND_FILES = /^(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|\.gitignore|AGENTS\.md|\.agents\/skills\/03kind\/.*|\.claude\/skills\/03kind\/.*)$/;
+/** Human Touch's own files, as `init` changes them: not the project's source. */
+const HUMAN_TOUCH_FILES = /^(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?|\.gitignore|AGENTS\.md|\.agents\/skills\/humantouch\/.*|\.claude\/skills\/humantouch\/.*)$/;
 
 /**
  * What a dev server's output goes to when an Agent sends it to a file in the
@@ -172,12 +172,12 @@ function diffLines(diff: string): Map<string, { added: string[]; removed: string
  * The places the project's source changed (docs/goals.md, Light: at most two,
  * the build config and the file that renders the app, each by an import plus
  * one line), from `git status --porcelain --untracked-files=all` and
- * `git diff HEAD`. 03Kind's own files are not counted, nor a log file; any
+ * `git diff HEAD`. Human Touch's own files are not counted, nor a log file; any
  * other file than those two is a place that fails, and so is a new file.
  */
 export function sourceEdits(status: string, diff: string, framework: Framework): { places: string[]; problems: string[] } {
   const lines = diffLines(diff);
-  const changed = statusFiles(status).filter(({ file }) => !THIRD_KIND_FILES.test(file) && !LOGS.test(file));
+  const changed = statusFiles(status).filter(({ file }) => !HUMAN_TOUCH_FILES.test(file) && !LOGS.test(file));
   const places = changed.map(({ file }) => file).sort();
   const problems: string[] = [];
   if (places.length > 2) problems.push(`${places.length} places changed: ${places.join(", ")}`);

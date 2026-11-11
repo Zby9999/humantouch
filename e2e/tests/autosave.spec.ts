@@ -2,18 +2,18 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { DEV_URL, EXIT_LABEL, TOGGLE_LABEL } from "../playwright.config";
 import { canvasInPlace, steadyBox, expect, test, type Locator, type Page } from "./fixtures";
-import { clearThirdKindFolder, npx03kind } from "./project-files";
+import { clearHumanTouchFolder, npxHumanTouch } from "./project-files";
 
-/** These tests save into the example project's `.03kind/` for real, so they go one at a time. */
+/** These tests save into the example project's `.humantouch/` for real, so they go one at a time. */
 test.use({ keepRoundInMemory: false });
 test.describe.configure({ mode: "serial" });
 
-const THIRD_KIND_FOLDER = fileURLToPath(new URL("../../examples/vite-react19-tw4/.03kind/", import.meta.url));
-const CHANGESET = `${THIRD_KIND_FOLDER}changeset.json`;
-const CANVAS = `${THIRD_KIND_FOLDER}canvas.html`;
+const HUMAN_TOUCH_FOLDER = fileURLToPath(new URL("../../examples/vite-react19-tw4/.humantouch/", import.meta.url));
+const CHANGESET = `${HUMAN_TOUCH_FOLDER}changeset.json`;
+const CANVAS = `${HUMAN_TOUCH_FOLDER}canvas.html`;
 
-test.beforeEach(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
-test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
+test.beforeEach(() => clearHumanTouchFolder(HUMAN_TOUCH_FOLDER));
+test.afterAll(() => clearHumanTouchFolder(HUMAN_TOUCH_FOLDER));
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -39,7 +39,7 @@ function savedChanges() {
 
 /** Where the editor layer reaches the local service, as the dev server hands it to the page. */
 function service(page: Page): Promise<{ url: string; token: string }> {
-  return page.evaluate(() => (window as unknown as { __THIRD_KIND__: { url: string; token: string } }).__THIRD_KIND__);
+  return page.evaluate(() => (window as unknown as { __HUMAN_TOUCH__: { url: string; token: string } }).__HUMAN_TOUCH__);
 }
 
 test("the local service listens on 127.0.0.1 only, and turns away requests without its token", async ({ page, request }) => {
@@ -49,12 +49,12 @@ test("the local service listens on 127.0.0.1 only, and turns away requests witho
 
   expect(new URL(url).hostname).toBe("127.0.0.1");
   expect((await request.get(round)).status()).toBe(401);
-  expect((await request.get(round, { headers: { "X-03Kind-Token": "not-the-token" } })).status()).toBe(401);
+  expect((await request.get(round, { headers: { "X-Human-Touch-Token": "not-the-token" } })).status()).toBe(401);
   expect((await request.put(round, { data: { canvas: "<html></html>", changeSet: { lastId: 0, changes: [] } } })).status()).toBe(401);
   expect((await request.delete(round)).status()).toBe(401);
-  expect((await request.get(round, { headers: { "X-03Kind-Token": token } })).ok()).toBe(true);
+  expect((await request.get(round, { headers: { "X-Human-Touch-Token": token } })).ok()).toBe(true);
   // Not on any other address of this machine.
-  await expect(request.get(`http://[::1]:${new URL(url).port}/round`, { headers: { "X-03Kind-Token": token } })).rejects.toThrow();
+  await expect(request.get(`http://[::1]:${new URL(url).port}/round`, { headers: { "X-Human-Touch-Token": token } })).rejects.toThrow();
 });
 
 test("edits are saved into the project about half a second after the designer stops, with no save action", async ({ page }) => {
@@ -186,7 +186,7 @@ test("a badge on the toggle counts the changes not yet applied", async ({ page }
 /**
  * A round saved before the instances of a layer shared their edit styles
  * (ticket 60): `e2e/fixtures/round-before-60/`, written once by the code of
- * then, with `TK_WRITE_FIXTURE` set, and kept since.
+ * then, with `HT_WRITE_FIXTURE` set, and kept since.
  *
  * A saved round names files by where they are on disk: the source a style
  * comes from, and the fonts the canvas loads through Vite's `/@fs/`. The
@@ -243,7 +243,7 @@ async function enterEveryView(page: Page) {
 }
 
 test.describe("a round saved before the instances of a layer shared their edit styles", () => {
-  test.skip(!process.env.TK_WRITE_FIXTURE, "writes the fixture, with the code of then");
+  test.skip(!process.env.HT_WRITE_FIXTURE, "writes the fixture, with the code of then");
   // Written once, by the code of then: never over the one kept.
   test.skip(existsSync(BEFORE_60), "the fixture is kept: written by the code of then");
   test("is written", async ({ page }) => {
@@ -265,13 +265,13 @@ test.describe("a round saved before the instances of a layer shared their edit s
     writeBefore60("canvas.html", readFileSync(CANVAS, "utf8"));
     writeBefore60("changeset.json", readFileSync(CHANGESET, "utf8"));
     writeBefore60("styles.json", `${JSON.stringify(await viewStyles(page))}\n`);
-    writeBefore60("claim.md", await npx03kind("claim"));
+    writeBefore60("claim.md", await npxHumanTouch("claim"));
   });
 });
 
 test("a round saved before the instances of a layer shared their edit styles opens as it was in every view; edits go on and are undone, and the notes of each change are as they were", async ({ page }) => {
-  mkdirSync(THIRD_KIND_FOLDER, { recursive: true });
-  for (const file of ["canvas.html", "changeset.json"]) writeFileSync(`${THIRD_KIND_FOLDER}${file}`, readBefore60(file));
+  mkdirSync(HUMAN_TOUCH_FOLDER, { recursive: true });
+  for (const file of ["canvas.html", "changeset.json"]) writeFileSync(`${HUMAN_TOUCH_FOLDER}${file}`, readBefore60(file));
   const before = JSON.parse(readBefore60("styles.json"));
   const changeSet = JSON.parse(readBefore60("changeset.json"));
 
@@ -294,7 +294,7 @@ test("a round saved before the instances of a layer shared their edit styles ope
   // Each change's notes as they were; what goes around them, the way through the round and how to write them, is of the notes of now (ticket 65).
   // Ticket 101 names the other usages of the component, from the source as it is now: the Card at the end of the Grid.
   const named = changeSections(readBefore60("claim.md")).replaceAll("Other usages of Card stay as they are.", "Other usages of Card stay as they are: `src/App.tsx:42:9`.");
-  expect(changeSections(await npx03kind("claim"))).toBe(named);
+  expect(changeSections(await npxHumanTouch("claim"))).toBe(named);
 });
 
 /** The change notes' sections of the changes, one after another: what is said around them left out. */

@@ -101,7 +101,7 @@ test("full screen shows the canvas alone, at full size, with its changes; Esc go
   await fullScreen(page).click();
   await expect(layers(page)).toBeHidden();
   await expect(design(page)).toBeHidden();
-  await expect(page.locator(".tk-selection")).toHaveCount(0);
+  await expect(page.locator(".ht-selection")).toHaveCount(0);
   await expect.poll(async () => (await canvasBox(page)).scale).toBe(1);
   await expect(canvas(page).locator("article").first()).toHaveCSS("background-color", RED);
 

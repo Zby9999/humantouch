@@ -6,7 +6,7 @@ import { after, test } from "node:test";
 import { AGENTS, commandLine, headedBrowsers, headlessShell, NO_SKILL_PROMPT, piConfigFingerprints, piFffVersion, PROMPT, runAgent } from "./agents.ts";
 import { withoutSkill } from "./project.ts";
 
-const scratch = mkdtempSync(join(tmpdir(), "03kind-bench-agents-test-"));
+const scratch = mkdtempSync(join(tmpdir(), "humantouch-bench-agents-test-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
 /** A file that stands in for a browser binary. */
@@ -17,20 +17,20 @@ function fakeBinary(path: string): string {
 }
 
 /**
- * The browser plugins Cursor's run is given, with TK_BENCH_HEADLESS_SHELL set
+ * The browser plugins Cursor's run is given, with HT_BENCH_HEADLESS_SHELL set
  * to `shell`: each `--plugin-dir` of its command line, by the plugin's name,
  * with the MCP servers it declares.
  */
 function cursorPlugins(shell: string): Record<string, unknown> {
   const dir = mkdtempSync(join(scratch, "project-"));
   const folder = mkdtempSync(join(scratch, "run-"));
-  const saved = process.env.TK_BENCH_HEADLESS_SHELL;
-  process.env.TK_BENCH_HEADLESS_SHELL = shell;
+  const saved = process.env.HT_BENCH_HEADLESS_SHELL;
+  process.env.HT_BENCH_HEADLESS_SHELL = shell;
   try {
     AGENTS.cursor.prepare!(dir, folder);
   } finally {
-    if (saved === undefined) delete process.env.TK_BENCH_HEADLESS_SHELL;
-    else process.env.TK_BENCH_HEADLESS_SHELL = saved;
+    if (saved === undefined) delete process.env.HT_BENCH_HEADLESS_SHELL;
+    else process.env.HT_BENCH_HEADLESS_SHELL = saved;
   }
   const args = AGENTS.cursor.args(folder);
   const plugins = args.flatMap((arg, i) => (arg === "--plugin-dir" ? [args[i + 1]] : []));
@@ -98,25 +98,25 @@ test("of the processes under the Agent, the browsers that came up with a window 
 test("with no Skill, each Agent is asked only to run claim and apply as it says, by a command line of its own (ticket 65)", () => {
   for (const agent of ["claude", "cursor", "pi"] as const) {
     const args = AGENTS[agent].args("/run", NO_SKILL_PROMPT);
-    assert.equal(args[args.indexOf("-p") + 1], "运行 `npx 03kind claim`，照输出落地");
+    assert.equal(args[args.indexOf("-p") + 1], "运行 `npx humantouch claim`，照输出落地");
     assert.equal(AGENTS[agent].args("/run")[1], PROMPT);
     assert.notEqual(commandLine(agent, NO_SKILL_PROMPT), commandLine(agent));
   }
 });
 
-test("pi runs on Command Code's DeepSeek v4.1 flash at thinking high, pinned, unless TK_BENCH_PI names another binary; with the project's Skill only, and none of the designer's extensions but pi-fff, nor MCP, prompt templates or themes", () => {
-  const saved = process.env.TK_BENCH_PI;
+test("pi runs on Command Code's DeepSeek v4.1 flash at thinking high, pinned, unless HT_BENCH_PI names another binary; with the project's Skill only, and none of the designer's extensions but pi-fff, nor MCP, prompt templates or themes", () => {
+  const saved = process.env.HT_BENCH_PI;
   try {
-    process.env.TK_BENCH_PI = "/opt/pi";
+    process.env.HT_BENCH_PI = "/opt/pi";
     const line = commandLine("pi");
     assert.match(line, /^\/opt\/pi -p '落地我的设计改动' --mode json --provider command-code --model deepseek\/deepseek-v4\.1-flash --thinking high --no-session --offline /);
-    assert.match(line, / --no-extensions -e '?\S+\/pi-commandcode-provider'? -e '?\S+\/@ff-labs\/pi-fff'? --fff-mode override --fff-frecency-db '<run folder>\/fff\/frecency' --fff-history-db '<run folder>\/fff\/history' --fff-follow-symlinks -e '<run folder>\/pi-extension\/pi-extension\.ts' --no-mcp --no-skills --skill \.agents\/skills\/03kind --no-prompt-templates --no-themes --approve /);
+    assert.match(line, / --no-extensions -e '?\S+\/pi-commandcode-provider'? -e '?\S+\/@ff-labs\/pi-fff'? --fff-mode override --fff-frecency-db '<run folder>\/fff\/frecency' --fff-history-db '<run folder>\/fff\/history' --fff-follow-symlinks -e '<run folder>\/pi-extension\/pi-extension\.ts' --no-mcp --no-skills --skill \.agents\/skills\/humantouch --no-prompt-templates --no-themes --approve /);
     // grep and find are fff's, in place of pi's own (ticket 92).
     assert.match(line, / --tools read,bash,edit,write,ls,grep,find$/);
     assert.equal(AGENTS.pi.model, "command-code/deepseek/deepseek-v4.1-flash");
   } finally {
-    if (saved === undefined) delete process.env.TK_BENCH_PI;
-    else process.env.TK_BENCH_PI = saved;
+    if (saved === undefined) delete process.env.HT_BENCH_PI;
+    else process.env.HT_BENCH_PI = saved;
   }
 });
 
@@ -195,27 +195,27 @@ test("the effort pi ran at is the thinking level its answers name in the transcr
   assert.equal(AGENTS.cursor.effortSeen, undefined);
 });
 
-test("Cursor runs on grok-4.7-high unless TK_BENCH_CURSOR_MODEL names another id, and its command line says which (ticket 63)", () => {
-  const saved = process.env.TK_BENCH_CURSOR_MODEL;
+test("Cursor runs on grok-4.7-high unless HT_BENCH_CURSOR_MODEL names another id, and its command line says which (ticket 63)", () => {
+  const saved = process.env.HT_BENCH_CURSOR_MODEL;
   try {
-    delete process.env.TK_BENCH_CURSOR_MODEL;
+    delete process.env.HT_BENCH_CURSOR_MODEL;
     assert.match(commandLine("cursor"), / --model grok-4\.7-high /);
-    process.env.TK_BENCH_CURSOR_MODEL = "grok-4.7[context=256k,reasoning_effort=high,fast=false]";
+    process.env.HT_BENCH_CURSOR_MODEL = "grok-4.7[context=256k,reasoning_effort=high,fast=false]";
     assert.match(commandLine("cursor"), / --model 'grok-4\.7\[context=256k,reasoning_effort=high,fast=false\]' /);
     assert.doesNotMatch(commandLine("cursor"), /grok-4\.7-high/);
   } finally {
-    if (saved === undefined) delete process.env.TK_BENCH_CURSOR_MODEL;
-    else process.env.TK_BENCH_CURSOR_MODEL = saved;
+    if (saved === undefined) delete process.env.HT_BENCH_CURSOR_MODEL;
+    else process.env.HT_BENCH_CURSOR_MODEL = saved;
   }
 });
 
 test("a project with no Skill: init's Skill and its line in AGENTS.md are taken out, and nothing else (ticket 65)", () => {
   const dir = mkdtempSync(join(scratch, "project-"));
-  for (const folder of [".agents/skills/03kind", ".claude/skills/03kind", ".claude/skills/deploy"]) {
+  for (const folder of [".agents/skills/humantouch", ".claude/skills/humantouch", ".claude/skills/deploy"]) {
     mkdirSync(join(dir, folder), { recursive: true });
     writeFileSync(join(dir, folder, "SKILL.md"), "# Skill");
   }
-  const line = "03Kind: to apply the designer's design changes, or undo the last round, follow `.agents/skills/03kind/SKILL.md`.";
+  const line = "Human Touch: to apply the designer's design changes, or undo the last round, follow `.agents/skills/humantouch/SKILL.md`.";
   writeFileSync(join(dir, "AGENTS.md"), `# Project\n\nUse pnpm.\n${line}\n`);
 
   withoutSkill(dir);
@@ -232,18 +232,18 @@ test("a project with no Skill: init's Skill and its line in AGENTS.md are taken 
 
 test("a project with no Skill: init's record of its line in AGENTS.md is taken out too, its other edits kept (ticket 63)", () => {
   const dir = mkdtempSync(join(scratch, "project-"));
-  const line = "03Kind: to apply the designer's design changes, or undo the last round, follow `.agents/skills/03kind/SKILL.md`.";
+  const line = "Human Touch: to apply the designer's design changes, or undo the last round, follow `.agents/skills/humantouch/SKILL.md`.";
   writeFileSync(join(dir, "AGENTS.md"), `${line}\n`);
-  mkdirSync(join(dir, ".03kind"));
-  const config = { file: "vite.config.ts", before: "plugins: [", after: "plugins: [thirdKind(), " };
-  const record = { dependency: true, edits: [config, { file: "AGENTS.md", before: "", after: `${line}\n` }, { file: ".gitignore", before: "", after: ".03kind/\n" }], created: ["AGENTS.md"] };
-  writeFileSync(join(dir, ".03kind/install.json"), JSON.stringify(record));
+  mkdirSync(join(dir, ".humantouch"));
+  const config = { file: "vite.config.ts", before: "plugins: [", after: "plugins: [humanTouch(), " };
+  const record = { dependency: true, edits: [config, { file: "AGENTS.md", before: "", after: `${line}\n` }, { file: ".gitignore", before: "", after: ".humantouch/\n" }], created: ["AGENTS.md"] };
+  writeFileSync(join(dir, ".humantouch/install.json"), JSON.stringify(record));
 
   withoutSkill(dir);
 
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".03kind/install.json"), "utf8")), {
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, ".humantouch/install.json"), "utf8")), {
     dependency: true,
-    edits: [config, { file: ".gitignore", before: "", after: ".03kind/\n" }],
+    edits: [config, { file: ".gitignore", before: "", after: ".humantouch/\n" }],
     created: [],
   });
 });

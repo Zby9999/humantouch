@@ -1,5 +1,5 @@
 import { Badge } from "acme-ui";
-import { ThirdKind } from "03kind/react";
+import { HumanTouch } from "humantouch/react";
 import { avatar, picture } from "./images";
 import { ArticleCard, ProductCard, StatTile, Testimonial, UserRow } from "./parts";
 
@@ -207,7 +207,7 @@ export function BigPage() {
           <span>Made with care</span>
         </div>
       </footer>
-      <ThirdKind />
+      <HumanTouch />
     </div>
   );
 }

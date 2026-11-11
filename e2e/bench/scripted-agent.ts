@@ -4,7 +4,7 @@
  * It is given the same steps and environment as a real one, and does them the
  * plain way: runs step 1's command as the steps name it, starts the dev server
  * with the command `init` printed (detached, left running, on its default
- * port), runs `npx 03kind doctor` until it says "All good.", and ends telling
+ * port), runs `npx humantouch doctor` until it says "All good.", and ends telling
  * the designer to look for the round button at the bottom right. It prints its
  * transcript in Claude Code's stream-json form, so the bench judges it as it
  * judges Claude.
@@ -104,15 +104,15 @@ async function main([steps, ...rest]: string[]) {
     toolCall("Bash", { command, description: "Start the dev server", run_in_background: true }, `Command running in background with ID: scripted-dev.`);
   }
   if (plant === "asks") {
-    return end("`init` has finished and the dev server is running. Should I run `npx 03kind doctor` now, or would you rather look at the page first?");
+    return end("`init` has finished and the dev server is running. Should I run `npx humantouch doctor` now, or would you rather look at the page first?");
   }
 
   // 3 is the branch with no browser: told at the end. 4. doctor, until All good.
-  for (let tries = 0; tries < 3; tries++) if (/All good\./.test((await bash("npx 03kind doctor")).output)) break;
+  for (let tries = 0; tries < 3; tries++) if (/All good\./.test((await bash("npx humantouch doctor")).output)) break;
   if (plant === "leaves-file") appendLine(".gitignore", "*.local.log");
 
   end(
-    "03Kind is installed, and `npx 03kind doctor` says All good. I cannot open a browser here, so: the next time you open the page there should be a round button at its bottom right; tell me if it is not there.",
+    "Human Touch is installed, and `npx humantouch doctor` says All good. I cannot open a browser here, so: the next time you open the page there should be a round button at its bottom right; tell me if it is not there.",
   );
 }
 

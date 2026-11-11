@@ -2,7 +2,7 @@ import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 import { expect, test } from "./fixtures";
 
 test("the page not made into a canvas says so, and sends the designer to their Agent (designer, 2026-11-10)", async ({ page }) => {
-  // The canvas iframe has no document to freeze the page into, as when 03Kind itself goes wrong.
+  // The canvas iframe has no document to freeze the page into, as when Human Touch itself goes wrong.
   await page.addInitScript(() => {
     const own = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, "contentDocument")!;
     Object.defineProperty(HTMLIFrameElement.prototype, "contentDocument", {

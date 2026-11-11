@@ -1,6 +1,6 @@
 import { expect as baseExpect, test as base, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { showLayersOnEntry } from "../layers-on-entry.ts";
-import { LAYERS_FOLD_MS, LAYERS_FOLD_RISE_PX } from "../../packages/03kind/src/client/motion";
+import { LAYERS_FOLD_MS, LAYERS_FOLD_RISE_PX } from "../../packages/humantouch/src/client/motion";
 
 /**
  * Playwright's, and `toReadAs`: the change list's rows read as `patterns`, in order, each row its name and then its
@@ -9,7 +9,7 @@ import { LAYERS_FOLD_MS, LAYERS_FOLD_RISE_PX } from "../../packages/03kind/src/c
 export const expect = baseExpect.extend({
   async toReadAs(rows: Locator, patterns: (RegExp | string)[], options?: { timeout?: number }) {
     const read = () =>
-      rows.evaluateAll((els) => els.map((el) => `${el.textContent} ${el.querySelector(".tk-change-text")?.getAttribute("data-tk-tip") ?? ""}`.trim()));
+      rows.evaluateAll((els) => els.map((el) => `${el.textContent} ${el.querySelector(".ht-change-text")?.getAttribute("data-ht-tip") ?? ""}`.trim()));
     const expected = patterns.map((each) => (typeof each === "string" ? baseExpect.stringContaining(each) : baseExpect.stringMatching(each)));
     try {
       await baseExpect.poll(read, options).toEqual(expected);
@@ -22,7 +22,7 @@ export const expect = baseExpect.extend({
 export type { CDPSession, Frame, Locator, Page } from "@playwright/test";
 
 /**
- * Tests share one dev server, and so one `.03kind/` folder. Unless a test
+ * Tests share one dev server, and so one `.humantouch/` folder. Unless a test
  * opts out with `keepRoundInMemory: false`, the round it saves stays in its
  * own browser context, so tests running side by side never see each other's.
  *
@@ -65,7 +65,7 @@ export async function keepRoundIn(context: BrowserContext) {
       const headers = {
         "Access-Control-Allow-Origin": request.headers().origin ?? "*",
         "Access-Control-Allow-Methods": "GET, PUT, DELETE, POST",
-        "Access-Control-Allow-Headers": "X-03Kind-Token, Content-Type",
+        "Access-Control-Allow-Headers": "X-Human-Touch-Token, Content-Type",
       };
       const { pathname } = new URL(request.url());
       if (pathname === "/off-canvas") {
@@ -96,7 +96,7 @@ export async function keepRoundIn(context: BrowserContext) {
  * Also waits for the canvas to travel into place, which matters only with
  * motion on. The tests run with reduced motion (`reducedMotion` in the
  * config), and then the mode switch only fades the shell in: nothing travels,
- * `.tk-viewport.is-travelling` is never there, and the wait returns at once.
+ * `.ht-viewport.is-travelling` is never there, and the wait returns at once.
  * With motion on, the page shrinks into the canvas, and a press or a drag made
  * meanwhile lands on the page shrinking. The one test calling this with motion
  * on (views.spec.ts, the drag in the phone view) waits for the phone view
@@ -104,7 +104,7 @@ export async function keepRoundIn(context: BrowserContext) {
  * that turns motion on and waits for the desktop view, which travels.
  */
 export async function canvasInPlace(page: Page) {
-  await page.locator(".tk-viewport.is-travelling").waitFor({ state: "detached" });
+  await page.locator(".ht-viewport.is-travelling").waitFor({ state: "detached" });
   await variablesIn(page);
 }
 
@@ -268,8 +268,8 @@ export async function expectSegmentedChanged(group: Locator, chosen: Locator, re
 function detachInCode() {
   if (window.top !== window) return;
   const tick = () => {
-    const root = document.querySelector("third-kind")?.shadowRoot;
-    root?.querySelectorAll<HTMLElement>("[data-tk-in-code]").forEach((button) => button.click());
+    const root = document.querySelector("human-touch")?.shadowRoot;
+    root?.querySelectorAll<HTMLElement>("[data-ht-in-code]").forEach((button) => button.click());
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);

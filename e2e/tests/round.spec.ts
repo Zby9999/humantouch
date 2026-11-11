@@ -1,13 +1,13 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
 import { canvasInPlace, expect, test, type Locator, type Page } from "./fixtures";
-import { clearThirdKindFolder, EXAMPLE, forTheLoopAlone, readThirdKindFile, THIRD_KIND_FOLDER, npx03kind, servesAsWritten } from "./project-files";
+import { clearHumanTouchFolder, EXAMPLE, forTheLoopAlone, readHumanTouchFile, HUMAN_TOUCH_FOLDER, npxHumanTouch, servesAsWritten } from "./project-files";
 
-/** These tests save into the example project's `.03kind/` for real. */
+/** These tests save into the example project's `.humantouch/` for real. */
 test.use({ keepRoundInMemory: false });
 
-test.beforeEach(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
-test.afterAll(() => clearThirdKindFolder(THIRD_KIND_FOLDER));
+test.beforeEach(() => clearHumanTouchFolder(HUMAN_TOUCH_FOLDER));
+test.afterAll(() => clearHumanTouchFolder(HUMAN_TOUCH_FOLDER));
 
 const CARD = `${EXAMPLE}src/components/Card.tsx`;
 const originalCard = readFileSync(CARD, "utf8");
@@ -27,7 +27,7 @@ async function applyToCard(page: Page, which: keyof typeof CARD_EDITS) {
   await expect.poll(() => page.locator("article").first().evaluate((card, name) => getComputedStyle(card)[name], property)).toBe(value);
 }
 
-const LOCKED_LABEL = /^03Kind: applying design changes/;
+const LOCKED_LABEL = /^Human Touch: applying design changes/;
 
 function canvas(page: Page) {
   return page.locator('iframe[title="Canvas"]').contentFrame();
@@ -51,7 +51,7 @@ async function changeTheCards(page: Page) {
   await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
   await setField(page, "Fill color", "ff0000");
   await setField(page, "Corner radius", "2");
-  await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(2);
+  await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(2);
 }
 
 /** The local service's round, as the page loads and saves it. */
@@ -62,7 +62,7 @@ const badge = (page: Page) => page.getByRole("button", { name: /not applied yet/
 
 /** How each archived round ended. */
 function results() {
-  const history = `${THIRD_KIND_FOLDER}history/`;
+  const history = `${HUMAN_TOUCH_FOLDER}history/`;
   return readdirSync(history)
     .sort()
     .map((round) => JSON.parse(readFileSync(`${history}${round}/result.json`, "utf8")));
@@ -72,7 +72,7 @@ test("claim folds the editor into a locked toggle; as the page shows each change
   await page.goto(DEV_URL);
   await changeTheCards(page);
 
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
 
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   const toggle = page.getByRole("button", { name: LOCKED_LABEL });
@@ -96,7 +96,7 @@ test("claim folds the editor into a locked toggle; as the page shows each change
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
 
   // Done before the code has it: the page does not show it, and it does not count.
-  expect(await npx03kind("done", "1")).toContain("Change 1 done: 0 of 2 changes applied.");
+  expect(await npxHumanTouch("done", "1")).toContain("Change 1 done: 0 of 2 changes applied.");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
 
   await applyToCard(page, "fill");
@@ -107,7 +107,7 @@ test("claim folds the editor into a locked toggle; as the page shows each change
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "2");
   await expect(badge(page)).toHaveCount(0);
 
-  expect(await npx03kind("finish")).toMatch(/^Round finished: 2 of 2 changes applied.\n\nEnd your reply with this report\. Each change is under the heading/);
+  expect(await npxHumanTouch("finish")).toMatch(/^Round finished: 2 of 2 changes applied.\n\nEnd your reply with this report\. Each change is under the heading/);
   await expect(progress(page)).toHaveCount(0);
   expect(results()).toMatchObject([{ ended: "finished", done: [1], applied: [1, 2], checks: { 1: { outcome: "shown" }, 2: { outcome: "shown" } } }]);
 });
@@ -115,7 +115,7 @@ test("claim folds the editor into a locked toggle; as the page shows each change
 test("a change the page shows, undone by a later edit before any done: the ring goes back down", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   await applyToCard(page, "fill");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
 
@@ -125,13 +125,13 @@ test("a change the page shows, undone by a later edit before any done: the ring 
 
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
   await expect(badge(page)).toHaveText("2");
-  expect(await npx03kind("finish")).toMatch(/^Round finished: 0 of 2 changes applied. The page does not show: 1, 2.\n\nEnd your reply with this report\. Each change is under the heading/);
+  expect(await npxHumanTouch("finish")).toMatch(/^Round finished: 0 of 2 changes applied. The page does not show: 1, 2.\n\nEnd your reply with this report\. Each change is under the heading/);
 });
 
 /** The page, with React's drawing held (by the React plugin's own hook, before each Fast Refresh) till the test lets it. */
 interface HeldDrawing {
-  __tkDraw: Promise<void>;
-  __tkLetDraw(): void;
+  __htDraw: Promise<void>;
+  __htLetDraw(): void;
   __registerBeforePerformReactRefresh(hold: () => Promise<void>): void;
 }
 
@@ -141,10 +141,10 @@ test("an Agent that edits the code as it claims, with no done: the page draws th
   // React draws the Card anew only once the test lets it: after the dev server has brought the code in, and the page has looked.
   await page.evaluate(() => {
     const win = window as unknown as HeldDrawing;
-    win.__tkDraw = new Promise((resolve) => (win.__tkLetDraw = resolve));
-    win.__registerBeforePerformReactRefresh(() => win.__tkDraw);
+    win.__htDraw = new Promise((resolve) => (win.__htLetDraw = resolve));
+    win.__registerBeforePerformReactRefresh(() => win.__htDraw);
   });
-  const code = () => page.evaluate(() => (window as unknown as { __THIRD_KIND_CODE__: { at: number; updating: number } }).__THIRD_KIND_CODE__);
+  const code = () => page.evaluate(() => (window as unknown as { __HUMAN_TOUCH_CODE__: { at: number; updating: number } }).__HUMAN_TOUCH_CODE__);
   const codeAt = (await code()).at;
   // The round the page reads again as it hears of the claim: held till the dev server has brought the edit in.
   let letRound!: () => void;
@@ -159,7 +159,7 @@ test("an Agent that edits the code as it claims, with no done: the page draws th
     if (request.method() === "POST" && new URL(request.url()).pathname === "/checks" && request.postDataJSON()?.id === 1) fillLooks.push(Date.now());
   });
 
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   writeFileSync(CARD, forTheLoopAlone(readFileSync(CARD, "utf8"), ...CARD_EDITS.fill));
   // The Card's module and the stylesheet with its new class are both in; React has not drawn it yet.
   await expect.poll(async () => ((c) => c.at > codeAt && c.updating === 0)(await code())).toBe(true);
@@ -173,7 +173,7 @@ test("an Agent that edits the code as it claims, with no done: the page draws th
   await expect.poll(() => page.locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor)).toBe("rgb(255, 255, 255)");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
 
-  await page.evaluate(() => (window as unknown as HeldDrawing).__tkLetDraw());
+  await page.evaluate(() => (window as unknown as HeldDrawing).__htLetDraw());
 
   await expect.poll(() => page.locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor)).toBe("rgb(255, 0, 0)");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
@@ -183,11 +183,11 @@ test("an Agent that edits the code as it claims, with no done: the page draws th
 test("done for several changes at once: each with how the page checked it, those the page shows already at once", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   await applyToCard(page, "fill");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
 
-  const output = await npx03kind("done", "1", "2");
+  const output = await npxHumanTouch("done", "1", "2");
 
   expect(output).toContain("Changes 1 and 2 done: 1 of 2 changes applied.\n");
   expect(output).toContain("Change 1: checked on the page: it shows the change.\n");
@@ -213,18 +213,18 @@ test("an edit not yet saved when the Agent claims stays out of the round", async
   );
   await setField(page, "Corner radius", "6");
   await saveSent;
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   claimed();
 
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   await expect(progress(page)).toHaveAttribute("aria-valuemax", "2");
-  expect(readThirdKindFile("changeset.json").changes[1].after).toBe(2);
+  expect(readHumanTouchFile("changeset.json").changes[1].after).toBe(2);
 });
 
 test("while the round is being applied, the change list only shows what is left to do", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   await applyToCard(page, "fill");
   await expect(badge(page)).toHaveText("1");
 
@@ -239,7 +239,7 @@ test("while the round is being applied, the change list only shows what is left 
 test("a page loaded while the round is being applied shows it locked, with what the page shows so far", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   await applyToCard(page, "radius");
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
 
@@ -252,7 +252,7 @@ test("a page loaded while the round is being applied shows it locked, with what 
 test("pressing and holding the locked toggle unlocks it: changes the page shows are archived as applied, the others recorded and left for the next round, on the same canvas (ticket 68)", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   await applyToCard(page, "fill");
   const toggle = page.getByRole("button", { name: LOCKED_LABEL });
   await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
@@ -268,10 +268,10 @@ test("pressing and holding the locked toggle unlocks it: changes the page shows 
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   expect(results()).toMatchObject([{ ended: "unlocked", done: [], applied: [1] }]);
   // The corners, not applied, are left, numbered 1; the fill applied goes with them apart, for the canvas to take in.
-  expect(readThirdKindFile("changeset.json")).toMatchObject({ lastId: 1, changes: [{ id: 1, property: "radius", carried: true }], applied: [{ id: 1, property: "fill" }] });
-  expect(readdirSync(THIRD_KIND_FOLDER).sort()).toEqual(["canvas.html", "changeset.json", "checks.json", "history"]);
+  expect(readHumanTouchFile("changeset.json")).toMatchObject({ lastId: 1, changes: [{ id: 1, property: "radius", carried: true }], applied: [{ id: 1, property: "fill" }] });
+  expect(readdirSync(HUMAN_TOUCH_FOLDER).sort()).toEqual(["canvas.html", "changeset.json", "checks.json", "history"]);
   await expect(badge(page)).toHaveText("1");
-  const last = await npx03kind("last");
+  const last = await npxHumanTouch("last");
   expect(last.split(/^## /m)[1]).toContain("- **Status:** Applied\n");
   expect(last.split(/^## /m)[2]).toContain("- **Status:** Not applied\n");
 });
@@ -279,13 +279,13 @@ test("pressing and holding the locked toggle unlocks it: changes the page shows 
 test("a short press on the locked toggle does nothing", async ({ page }) => {
   await page.goto(DEV_URL);
   await changeTheCards(page);
-  await npx03kind("claim");
+  await npxHumanTouch("claim");
   const toggle = page.getByRole("button", { name: LOCKED_LABEL });
 
   await toggle.click({ force: true });
 
   await expect(toggle).toHaveAttribute("aria-disabled", "true");
-  expect(readThirdKindFile("state.json")).toMatchObject({ status: "claimed", done: [] });
+  expect(readHumanTouchFile("state.json")).toMatchObject({ status: "claimed", done: [] });
 });
 
 /** A computed style of every card on the live page, in page order. */
@@ -300,10 +300,10 @@ test("the page shows the code all along: before the claim, while the round is ap
   await changeTheCards(page);
   await expect.poll(() => cardStyles(page, "backgroundColor")).toEqual([WHITE, WHITE, WHITE, WHITE]);
 
-  await npx03kind("claim");
-  await npx03kind("done", "1");
+  await npxHumanTouch("claim");
+  await npxHumanTouch("done", "1");
   await expect.poll(() => cardStyles(page, "backgroundColor")).toEqual([WHITE, WHITE, WHITE, WHITE]);
-  await npx03kind("finish");
+  await npxHumanTouch("finish");
   await expect.poll(() => cardStyles(page, "borderRadius")).toEqual(["12px", "12px", "12px", "12px"]);
 });
 
@@ -370,22 +370,22 @@ test.describe("done checks the change on the page", () => {
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click();
     await setField(page, "Fill color", "2563eb");
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
-    await npx03kind("claim");
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(1);
+    await npxHumanTouch("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
     // A utility class: the example's own `button` rule, in no CSS layer, beats it.
     editSource(APP, 'className="mt-6 flex items-center gap-2 self-start px-4 py-2 text-white"', 'className="mt-6 flex items-center gap-2 self-start bg-[#2563eb] px-4 py-2 text-white"');
     await drawnWith(button(page), "bg-[#2563eb]");
-    const overridden = await npx03kind("done", "1");
+    const overridden = await npxHumanTouch("done", "1");
     expect(overridden).toContain("Checked on the page: it does not show the change. The fill is #DC2626, not #2563EB, as the browser computes");
 
     editSource(CSS, "background: rgb(220, 38, 38);", "background: #2563eb;");
     await expect(button(page)).toHaveCSS("background-color", "rgb(37, 99, 235)");
-    const fixed = await npx03kind("done", "1");
+    const fixed = await npxHumanTouch("done", "1");
     expect(fixed).toContain("Checked on the page: it shows the change.");
 
-    expect(await npx03kind("finish")).toMatch(/^Round finished: 1 of 1 change applied.\n\nEnd your reply with this report\. Each change is under the heading/);
+    expect(await npxHumanTouch("finish")).toMatch(/^Round finished: 1 of 1 change applied.\n\nEnd your reply with this report\. Each change is under the heading/);
     expect(results()).toMatchObject([{ checks: { 1: { outcome: "shown" } } }]);
   });
 
@@ -394,21 +394,21 @@ test.describe("done checks the change on the page", () => {
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
     await setField(page, "Stroke weight", "1.5");
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
-    await npx03kind("claim");
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(1);
+    await npxHumanTouch("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
     // The code is not edited yet: its 1px draws as 1.5px would on this 1x screen, and is not 1.5px all the same.
-    expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 1px solid #E7E5E4, not 1.5px solid #E7E5E4, as the browser computes");
+    expect(await npxHumanTouch("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 1px solid #E7E5E4, not 1.5px solid #E7E5E4, as the browser computes");
 
     const drawn = () => page.locator("article").first().evaluate((card) => getComputedStyle(card).borderTopWidth);
     editSource(CARD, "rounded-xl border border-stone-200", "rounded-xl border-[3px] border-stone-200");
     await expect.poll(drawn).toBe("3px");
-    expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 3px solid #E7E5E4, not 1.5px solid #E7E5E4, as the browser computes");
+    expect(await npxHumanTouch("done", "1")).toContain("Checked on the page: it does not show the change. The stroke is 3px solid #E7E5E4, not 1.5px solid #E7E5E4, as the browser computes");
 
     editSource(CARD, "border-[3px]", "border-[1.5px]");
     await expect.poll(drawn).toBe("1px");
-    expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
+    expect(await npxHumanTouch("done", "1")).toContain("Checked on the page: it shows the change.");
   });
 
   test("a stroke's color changed alone leaves the weight to the code: the reference style has none", async ({ page }) => {
@@ -416,13 +416,13 @@ test.describe("done checks the change on the page", () => {
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).first().click();
     await setField(page, "Stroke color", "ff0000");
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
-    expect(readThirdKindFile("changeset.json").changes[0].style).toEqual({ "border-style": "solid", "border-color": "rgb(255 0 0 / 1)" });
-    await npx03kind("claim");
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(1);
+    expect(readHumanTouchFile("changeset.json").changes[0].style).toEqual({ "border-style": "solid", "border-color": "rgb(255 0 0 / 1)" });
+    await npxHumanTouch("claim");
 
     editSource(CARD, "border border-stone-200", "border border-[#ff0000]");
     await drawnWith(page.locator("article").first(), "border-[#ff0000]");
-    expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
+    expect(await npxHumanTouch("done", "1")).toContain("Checked on the page: it shows the change.");
   });
 
   test("a layout change is checked in design language: the button fills its Stack once the code stretches it", async ({ page }) => {
@@ -430,36 +430,36 @@ test.describe("done checks the change on the page", () => {
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click();
     await page.getByRole("complementary", { name: "Design" }).getByRole("combobox", { name: "Width sizing" }).selectOption("fill");
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
-    await npx03kind("claim");
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(1);
+    await npxHumanTouch("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
     editSource(APP, "flex items-center gap-2 self-start px-4", "flex items-center gap-2 self-stretch px-4");
     await drawnWith(button(page), "self-stretch");
 
-    expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
+    expect(await npxHumanTouch("done", "1")).toContain("Checked on the page: it shows the change.");
   });
 
   test("a size dragged on the canvas by a handle is a change of size, as the Width field makes it, and checked on the page once the code has it", async ({ page }) => {
     await page.goto(DEV_URL);
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Button", exact: true }).click();
-    const edge = (await page.locator('.tk-handles[data-view="Desktop"] .tk-handle[data-handle="e"]').boundingBox())!;
+    const edge = (await page.locator('.ht-handles[data-view="Desktop"] .ht-handle[data-handle="e"]').boundingBox())!;
     await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
     await page.mouse.down();
     await page.mouse.move(edge.x + edge.width / 2 + 12, edge.y + edge.height / 2, { steps: 6 });
     await page.mouse.up();
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
-    const [change] = readThirdKindFile("changeset.json").changes;
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(1);
+    const [change] = readHumanTouchFile("changeset.json").changes;
     expect(change).toMatchObject({ kind: "style", property: "width", before: { type: "hug" }, after: { type: "fixed" } });
     const width: number = change.after.value;
-    await npx03kind("claim");
+    await npxHumanTouch("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
-    expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change.");
+    expect(await npxHumanTouch("done", "1")).toContain("Checked on the page: it does not show the change.");
     editSource(APP, "flex items-center gap-2 self-start px-4", `flex w-[${width}px] items-center gap-2 self-start px-4`);
     await drawnWith(button(page), `w-[${width}px]`);
-    expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
+    expect(await npxHumanTouch("done", "1")).toContain("Checked on the page: it shows the change.");
   });
 
   test("a layer placed freely, dragged by its top left corner: its X, Y, width and height are changes as the fields make them, each checked on the page once the code has it", async ({ page }) => {
@@ -483,13 +483,13 @@ test.describe("done checks the change on the page", () => {
     await page.keyboard.up("Meta");
 
     // Its top left corner 10 px out each way: the edges across stay.
-    const corner = (await page.locator('.tk-handles[data-view="Desktop"] .tk-handle[data-handle="nw"]').boundingBox())!;
+    const corner = (await page.locator('.ht-handles[data-view="Desktop"] .ht-handle[data-handle="nw"]').boundingBox())!;
     await page.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2);
     await page.mouse.down();
     await page.mouse.move(corner.x + corner.width / 2 - 10 * zoom, corner.y + corner.height / 2 - 10 * zoom, { steps: 6 });
     await page.mouse.up();
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(4);
-    const changes: { id: number; property: string }[] = readThirdKindFile("changeset.json").changes;
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(4);
+    const changes: { id: number; property: string }[] = readHumanTouchFile("changeset.json").changes;
     expect(changes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: "style", property: "x", before: 40, after: 30 }),
@@ -498,13 +498,13 @@ test.describe("done checks the change on the page", () => {
         expect.objectContaining({ kind: "style", property: "height", before: { type: "fixed", value: 40 }, after: { type: "fixed", value: 50 } }),
       ]),
     );
-    await npx03kind("claim");
+    await npxHumanTouch("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "4");
 
-    for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it does not show the change.");
+    for (const { id } of changes) expect(await npxHumanTouch("done", String(id))).toContain("Checked on the page: it does not show the change.");
     editSource(APP, "top-[30px] left-[40px] h-[40px] w-[80px]", "top-[20px] left-[30px] h-[50px] w-[90px]");
     await drawnWith(page.getByTestId("pin"), "top-[20px]", "left-[30px]", "h-[50px]", "w-[90px]");
-    for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it shows the change.");
+    for (const { id } of changes) expect(await npxHumanTouch("done", String(id))).toContain("Checked on the page: it shows the change.");
   });
 
   test("a layer's Y written in the code, the layer not placed absolute there: done and finish say it is not placed absolute, and what to check, not a value read off it (ticket 80)", async ({ page }) => {
@@ -517,20 +517,20 @@ test.describe("done checks the change on the page", () => {
     await layers.getByRole("treeitem", { name: "Third Kind", exact: true }).click();
     const y = Number(await page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Y", exact: true }).inputValue()) + 20;
     await setField(page, "Y", String(y));
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(2);
-    expect(readThirdKindFile("changeset.json").changes[1]).toMatchObject({ id: 2, kind: "style", property: "y", after: y });
-    await npx03kind("claim");
-    const notPlaced = `Checked on the page: it does not show the change. The layer is not placed absolute, not absolute at Y ${y}px: check its \`position\` and \`top\`, and that its container is its positioning reference, then run \`npx 03kind done 2\` again.\n`;
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(2);
+    expect(readHumanTouchFile("changeset.json").changes[1]).toMatchObject({ id: 2, kind: "style", property: "y", after: y });
+    await npxHumanTouch("claim");
+    const notPlaced = `Checked on the page: it does not show the change. The layer is not placed absolute, not absolute at Y ${y}px: check its \`position\` and \`top\`, and that its container is its positioning reference, then run \`npx humantouch done 2\` again.\n`;
 
     // As an Agent that has written neither yet: the title is in its header's layout, with no Y to read.
-    const unwritten = await npx03kind("done", "2");
+    const unwritten = await npxHumanTouch("done", "2");
     expect(unwritten).toContain(notPlaced);
     // Then writes the title's `top`, but not the dissolved Stack: the title is in its header's layout still, its `top` drawing it nowhere.
     editSource(APP, 'className="font-display text-4xl', `className="top-[${y}px] font-display text-4xl`);
     await expect(page.locator("h1")).toHaveClass(/top-\[/);
-    const written = await npx03kind("done", "2");
+    const written = await npxHumanTouch("done", "2");
     expect(written).toContain(notPlaced);
-    const finish = await npx03kind("finish");
+    const finish = await npxHumanTouch("finish");
     expect(finish).toMatch(/\n- 2\. Y: <the layer>\n {2}Why: the layer is not placed absolute on the page: <what keeps it so>\n/);
     for (const output of [unwritten, written, finish]) expect(output).not.toContain("null");
   });
@@ -546,7 +546,7 @@ test.describe("done checks the change on the page", () => {
   /** Drags the right edge of the layer selected `by` px in the desktop view, in its px. */
   async function dragRightEdgeOf(page: Page, by: number) {
     const zoom = await page.locator('iframe[title="Canvas"]').evaluate((frame: HTMLIFrameElement) => frame.getBoundingClientRect().width / frame.offsetWidth);
-    const edge = (await page.locator('.tk-handles[data-view="Desktop"] .tk-handle[data-handle="e"]').boundingBox())!;
+    const edge = (await page.locator('.ht-handles[data-view="Desktop"] .ht-handle[data-handle="e"]').boundingBox())!;
     await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
     await page.mouse.down();
     await page.mouse.move(edge.x + edge.width / 2 + by * zoom, edge.y + edge.height / 2, { steps: 6 });
@@ -580,8 +580,8 @@ test.describe("done checks the change on the page", () => {
     // Its right edge 30 px out: both sides alike, still centered.
     await pick("centered");
     await dragRightEdge(30);
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(5);
-    const changes: { id: number; property: string; before: unknown; after: unknown; placedFrom?: unknown }[] = readThirdKindFile("changeset.json").changes;
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(5);
+    const changes: { id: number; property: string; before: unknown; after: unknown; placedFrom?: unknown }[] = readHumanTouchFile("changeset.json").changes;
     expect(changes.map(({ property, before, after, placedFrom }) => ({ property, before, after, placedFrom }))).toEqual([
       { property: "width", before: { type: "fixed", value: 80 }, after: { type: "fixed", value: 50 }, placedFrom: { edge: "end", centered: false } },
       { property: "right", before: 40, after: 70, placedFrom: undefined },
@@ -590,7 +590,7 @@ test.describe("done checks the change on the page", () => {
       { property: "width", before: { type: "fixed", value: 80 }, after: { type: "fixed", value: 140 }, placedFrom: { edge: "start", centered: true } },
     ]);
 
-    const notes = await npx03kind("claim");
+    const notes = await npxHumanTouch("claim");
     expect(notes).toContain("Change the right position from 40px to 70px: how far the layer's right edge is from its container's, its CSS `right`. It stays placed from that edge: do not place it by `left` instead.");
     expect(notes).toContain("- **Placement:** the layer is placed from its container's bottom edge (CSS `bottom`), and stays so: do not place it by `top` instead.");
     expect(notes).toContain("- **Placement:** the layer is centered across on where its `left` places it, by `translate: -50%` (Tailwind's `-translate-x-1/2`), and stays so: only its width changes, on both sides alike.");
@@ -598,14 +598,14 @@ test.describe("done checks the change on the page", () => {
     expect(notes).toMatch(/- \*\*Centered:\*\* /);
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "5");
 
-    for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it does not show the change.");
+    for (const { id } of changes) expect(await npxHumanTouch("done", String(id))).toContain("Checked on the page: it does not show the change.");
     editSource(APP, "top-[30px] right-[40px] h-[40px] w-[80px]", "top-[30px] right-[70px] h-[40px] w-[50px]");
     editSource(APP, "bottom-[60px] left-[40px] h-[40px] w-[80px]", "bottom-[40px] left-[40px] h-[60px] w-[80px]");
     editSource(APP, "left-1/2 h-[40px] w-[80px] -translate-x-1/2", "left-1/2 h-[40px] w-[140px] -translate-x-1/2");
     await drawnWith(page.getByTestId("from-right"), "right-[70px]", "w-[50px]");
     await drawnWith(page.getByTestId("from-bottom"), "bottom-[40px]", "h-[60px]");
     await drawnWith(page.getByTestId("centered"), "w-[140px]");
-    for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it shows the change.");
+    for (const { id } of changes) expect(await npxHumanTouch("done", String(id))).toContain("Checked on the page: it shows the change.");
     // Where the canvas drew them: the page places them so, at its own width as at the views'.
     const right = await page.getByTestId("from-right").evaluate((el) => el.parentElement!.getBoundingClientRect().right - el.getBoundingClientRect().right);
     expect(right).toBe(70);
@@ -632,8 +632,8 @@ test.describe("done checks the change on the page", () => {
     await dragRightEdgeOf(page, 20);
     await pickOnCanvas(page, "left-on-phones");
     await dragRightEdgeOf(page, -40);
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(4);
-    const changes: { id: number; property: string; before: unknown; after: unknown; placedOtherwiseAt?: { min: number | null; max: number | null }[] }[] = readThirdKindFile("changeset.json").changes;
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(4);
+    const changes: { id: number; property: string; before: unknown; after: unknown; placedOtherwiseAt?: { min: number | null; max: number | null }[] }[] = readHumanTouchFile("changeset.json").changes;
     expect(changes.map(({ property, before, after, placedOtherwiseAt }) => [property, before, after, placedOtherwiseAt?.map(({ min, max }) => [min, max])])).toEqual([
       ["width", { type: "fixed", value: 80 }, { type: "fixed", value: 100 }, undefined],
       ["right", 40, 20, undefined],
@@ -642,21 +642,21 @@ test.describe("done checks the change on the page", () => {
       ["right", 100, 140, [[null, 768]]],
     ]);
     const [width, right, otherWidth, otherRight] = changes.map(({ id }) => String(id));
-    await npx03kind("claim");
+    await npxHumanTouch("claim");
 
     // Not as the notes say: placed by its left, where the canvas draws it as wide as the window. The other, as they say.
     editSource(APP, "top-[30px] right-10 h-[40px] w-20", `top-[30px] left-[${hero - 20 - 100}px] right-auto h-[40px] w-[100px]`);
     editSource(APP, "right-[100px] h-[40px] w-[80px]", "right-[140px] h-[40px] w-[40px]");
     await drawnWith(page.getByTestId("from-right"), `left-[${hero - 20 - 100}px]`, "right-auto", "w-[100px]");
     await drawnWith(page.getByTestId("left-on-phones"), "right-[140px]", "w-[40px]");
-    expect(await npx03kind("done", width)).toContain("Checked on the page: it shows the change.");
-    expect(await npx03kind("done", right)).toContain("Checked on the page: it does not show the change. At 768px wide, the right position is drawn at");
-    for (const id of [otherWidth, otherRight]) expect(await npx03kind("done", id)).toContain("Checked on the page: it shows the change.");
+    expect(await npxHumanTouch("done", width)).toContain("Checked on the page: it shows the change.");
+    expect(await npxHumanTouch("done", right)).toContain("Checked on the page: it does not show the change. At 768px wide, the right position is drawn at");
+    for (const id of [otherWidth, otherRight]) expect(await npxHumanTouch("done", id)).toContain("Checked on the page: it shows the change.");
 
     // As the notes say: shown at every width.
     editSource(APP, `left-[${hero - 20 - 100}px] right-auto`, "right-[20px]");
     await drawnWith(page.getByTestId("from-right"), "right-[20px]");
-    expect(await npx03kind("done", right)).toContain("Checked on the page: it shows the change.");
+    expect(await npxHumanTouch("done", right)).toContain("Checked on the page: it shows the change.");
   });
 
   test("a layer the canvas places absolute from `md` up is not looked at at the phone's width, where the canvas lays it out in its container: its X and Y written as the notes say show; one placed absolute at every width is looked at there, and laid out there is not shown (ticket 83)", async ({ page }) => {
@@ -681,8 +681,8 @@ test.describe("done checks the change on the page", () => {
     await setField(page, "Y", String(Number(await field("Y").inputValue()) + 10));
     await pickOnCanvas(page, "everywhere");
     await setField(page, "X", String(Number(await field("X").inputValue()) + 20));
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(3);
-    const changes: { id: number; property: string; before: unknown; after: unknown; placedOtherwiseAt?: { min: number | null; max: number | null }[] }[] = readThirdKindFile("changeset.json").changes;
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(3);
+    const changes: { id: number; property: string; before: unknown; after: unknown; placedOtherwiseAt?: { min: number | null; max: number | null }[] }[] = readHumanTouchFile("changeset.json").changes;
     expect(changes.map(({ property, before, after, placedOtherwiseAt }) => [property, before, after, placedOtherwiseAt?.map(({ min, max }) => [min, max])])).toEqual([
       // On the canvas, the phone view lays the first out in the hero: its X and Y place nothing below 768px.
       ["x", 40, 60, [[null, 768]]],
@@ -690,17 +690,17 @@ test.describe("done checks the change on the page", () => {
       ["x", 40, 60, undefined],
     ]);
     const [x, y, other] = changes.map(({ id }) => String(id));
-    await npx03kind("claim");
-    for (const id of [x, y, other]) expect(await npx03kind("done", id)).toContain("Checked on the page: it does not show the change.");
+    await npxHumanTouch("claim");
+    for (const id of [x, y, other]) expect(await npxHumanTouch("done", id)).toContain("Checked on the page: it does not show the change.");
 
     // As the notes say for the first; the second written placed freely from `md` up only, in the hero's layout on phones, unlike the canvas.
     editSource(APP, "md:top-[30px] md:left-[40px]", "md:top-[40px] md:left-[60px]");
     editSource(APP, 'className="absolute top-[90px] left-[40px]', 'className="md:absolute md:top-[90px] md:left-[60px]');
     await drawnWith(page.getByTestId("from-md"), "md:top-[40px]", "md:left-[60px]");
     await drawnWith(page.getByTestId("everywhere"), "md:absolute", "md:top-[90px]", "md:left-[60px]");
-    for (const id of [x, y]) expect(await npx03kind("done", id)).toContain("Checked on the page: it shows the change.");
-    expect(await npx03kind("done", other)).toContain(
-      `Checked on the page: it does not show the change. At 390px wide, the layer is not placed absolute, not absolute at X 60px: check its \`position\` and \`left\`, and that its container is its positioning reference, then run \`npx 03kind done ${other}\` again.`,
+    for (const id of [x, y]) expect(await npxHumanTouch("done", id)).toContain("Checked on the page: it shows the change.");
+    expect(await npxHumanTouch("done", other)).toContain(
+      `Checked on the page: it does not show the change. At 390px wide, the layer is not placed absolute, not absolute at X 60px: check its \`position\` and \`left\`, and that its container is its positioning reference, then run \`npx humantouch done ${other}\` again.`,
     );
   });
 
@@ -721,15 +721,15 @@ test.describe("done checks the change on the page", () => {
     // In the desktop view, 20px right, at every width: on the canvas, the phone view moves it 60px from where the hero lays it out.
     await pickOnCanvas(page, "relative-below-md");
     await setField(page, "X", String(Number(await field("X").inputValue()) + 20));
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
-    const [change] = readThirdKindFile("changeset.json").changes;
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(1);
+    const [change] = readHumanTouchFile("changeset.json").changes;
     expect([change.property, change.before, change.after, change.placedOtherwiseAt]).toEqual(["x", 40, 60, undefined]);
-    await npx03kind("claim");
+    await npxHumanTouch("claim");
 
     // Written from `md` up only: on phones, the page does not move it.
     editSource(APP, "md:top-[30px] md:left-[40px]", "md:top-[30px] md:left-[60px]");
     await drawnWith(page.getByTestId("relative-below-md"), "md:left-[60px]");
-    expect(await npx03kind("done", String(change.id))).toContain("Checked on the page: it does not show the change. At 390px wide,");
+    expect(await npxHumanTouch("done", String(change.id))).toContain("Checked on the page: it does not show the change. At 390px wide,");
   });
 
   /** A change's ranges as the changeset records them: where the canvas places the layer otherwise, and where it moves it in its container's layout (ticket 84). */
@@ -756,24 +756,24 @@ test.describe("done checks the change on the page", () => {
     // In the desktop view, 20px right, at every width: on the canvas, the phone view moves it 60px from where the hero lays it out.
     await pickOnCanvas(page, "relative-below-md");
     await setField(page, "X", String(Number(await field("X").inputValue()) + 20));
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
-    const [change] = readThirdKindFile("changeset.json").changes;
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(1);
+    const [change] = readHumanTouchFile("changeset.json").changes;
     expect([change.property, change.before, change.after, ...rangesOf(change)]).toEqual(["x", 40, 60, undefined, [[null, 768, "relative"]]]);
     const id = String(change.id);
-    await npx03kind("claim");
+    await npxHumanTouch("claim");
 
     // Written from `md` up only: on phones, the page does not move it from where the hero lays it out.
     editSource(APP, "md:top-[30px] md:left-[40px]", "md:top-[30px] md:left-[60px]");
     await drawnWith(page.getByTestId("relative-below-md"), "md:left-[60px]");
-    expect(await npx03kind("done", id)).toBe(
+    expect(await npxHumanTouch("done", id)).toBe(
       "Change 1 done: 0 of 1 change applied.\n" +
-        "Checked on the page: it does not show the change. At 390px wide, the page does not move the layer, where the canvas moves it 60px right of where its container lays it out: give it `left` 60px at this width too, then run `npx 03kind done 1` again.\n",
+        "Checked on the page: it does not show the change. At 390px wide, the page does not move the layer, where the canvas moves it 60px right of where its container lays it out: give it `left` 60px at this width too, then run `npx humantouch done 1` again.\n",
     );
     // Written at every width, as the notes say.
     editSource(APP, "md:left-[60px]", "left-[60px]");
     await drawnWith(page.getByTestId("relative-below-md"), "left-[60px]");
-    expect(await npx03kind("done", id)).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
-    expect(await npx03kind("finish")).toContain("Round finished: 1 of 1 change applied.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n✓ Applied\n- 1. X: <the layer, and what you changed>\n```\n");
+    expect(await npxHumanTouch("done", id)).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
+    expect(await npxHumanTouch("finish")).toContain("Round finished: 1 of 1 change applied.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n✓ Applied\n- 1. X: <the layer, and what you changed>\n```\n");
   });
 
   test("a layer the canvas places relative on phones, from the right from `md` up, moved: at the phone's width its `right` moves it too, as it has no `left`, so done compares it there; written from `md` up only, it does not show, and finish says how far the canvas moves it (ticket 84)", async ({ page }) => {
@@ -793,20 +793,20 @@ test.describe("done checks the change on the page", () => {
     // In the desktop view, 20px right, at every width: placed from the right, its `right` 20px less (ADR 0014); on the canvas, the phone view moves it 20px left of where the hero lays it out.
     await pickOnCanvas(page, "right-from-md");
     await setField(page, "X", String(Number(await field("X").inputValue()) + 20));
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
-    const [change] = readThirdKindFile("changeset.json").changes;
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(1);
+    const [change] = readHumanTouchFile("changeset.json").changes;
     expect([change.property, change.before, change.after, ...rangesOf(change)]).toEqual(["right", 40, 20, undefined, [[null, 768, "relative"]]]);
     const id = String(change.id);
-    await npx03kind("claim");
+    await npxHumanTouch("claim");
 
     // Written from `md` up only: on phones, the page does not move it from where the hero lays it out.
     editSource(APP, "md:right-[40px]", "md:right-[20px]");
     await drawnWith(page.getByTestId("right-from-md"), "md:right-[20px]");
-    expect(await npx03kind("done", id)).toBe(
+    expect(await npxHumanTouch("done", id)).toBe(
       "Change 1 done: 0 of 1 change applied.\n" +
-        "Checked on the page: it does not show the change. At 390px wide, the page does not move the layer, where the canvas moves it 20px left of where its container lays it out: give it `right` 20px at this width too, then run `npx 03kind done 1` again.\n",
+        "Checked on the page: it does not show the change. At 390px wide, the page does not move the layer, where the canvas moves it 20px left of where its container lays it out: give it `right` 20px at this width too, then run `npx humantouch done 1` again.\n",
     );
-    expect(await npx03kind("finish")).toContain(
+    expect(await npxHumanTouch("finish")).toContain(
       "Round finished: 0 of 1 change applied. The page does not show: 1.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n⚠️ Not applied 1:1\n" +
         "- 1. Right: <the layer>\n  Why: at 390px wide, the page does not move the layer 20px left of where its container lays it out, as the canvas does: <what keeps it so>\n  Instead: <what you did, or “left as it was”>\n```\n",
     );
@@ -829,24 +829,24 @@ test.describe("done checks the change on the page", () => {
     // In the desktop view, 20px right, at every width: placed from the right, its `right` 20px less (ADR 0014); on the canvas, the phone view goes by its `right`, right to left, and moves it 20px left of where the hero lays it out.
     await pickOnCanvas(page, "both-sides");
     await setField(page, "X", String(Number(await field("X").inputValue()) + 20));
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
-    const [change] = readThirdKindFile("changeset.json").changes;
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(1);
+    const [change] = readHumanTouchFile("changeset.json").changes;
     expect([change.property, change.before, change.after, ...rangesOf(change)]).toEqual(["right", 40, 20, undefined, [[null, 768, "relative"]]]);
     const id = String(change.id);
-    await npx03kind("claim");
+    await npxHumanTouch("claim");
 
     // Written from `md` up only: on phones, the page moves it by its `right` as it was.
     editSource(APP, "md:right-[40px]", "md:right-[20px]");
     await drawnWith(page.getByTestId("both-sides"), "md:right-[20px]");
-    expect(await npx03kind("done", id)).toBe(
+    expect(await npxHumanTouch("done", id)).toBe(
       "Change 1 done: 0 of 1 change applied.\n" +
-        "Checked on the page: it does not show the change. At 390px wide, the page moves the layer 40px left, where the canvas moves it 20px left of where its container lays it out: give it `right` 20px at this width too, then run `npx 03kind done 1` again.\n",
+        "Checked on the page: it does not show the change. At 390px wide, the page moves the layer 40px left, where the canvas moves it 20px left of where its container lays it out: give it `right` 20px at this width too, then run `npx humantouch done 1` again.\n",
     );
     // Written at every width, as the notes say: its `left` there moves it nothing, right to left.
     editSource(APP, "right-[40px] h-[40px]", "right-[20px] h-[40px]");
     await drawnWith(page.getByTestId("both-sides"), "right-[20px]");
-    expect(await npx03kind("done", id)).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
-    expect(await npx03kind("finish")).toContain("Round finished: 1 of 1 change applied.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n✓ Applied\n- 1. Right: <the layer, and what you changed>\n```\n");
+    expect(await npxHumanTouch("done", id)).toBe("Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change.\n");
+    expect(await npxHumanTouch("finish")).toContain("Round finished: 1 of 1 change applied.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n✓ Applied\n- 1. Right: <the layer, and what you changed>\n```\n");
   });
 
   test("layers placed from the right, from the bottom and centered, moved, one resized first: they stay placed so, the notes say which value changes and how to write it, and done checks each, a centered one at every view's width (ticket 79)", async ({ page }) => {
@@ -876,8 +876,8 @@ test.describe("done checks the change on the page", () => {
     // 40 px right of the middle, still centered.
     await pickOnCanvas(page, "centered");
     await setField(page, "X", String(Number(await x()) + 40));
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(4);
-    const changes: { id: number; property: string; before: unknown; after: unknown; centeredOn?: unknown }[] = readThirdKindFile("changeset.json").changes;
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(4);
+    const changes: { id: number; property: string; before: unknown; after: unknown; centeredOn?: unknown }[] = readHumanTouchFile("changeset.json").changes;
     expect(changes.map(({ property, before, after, centeredOn }) => ({ property, before, after, centeredOn }))).toEqual([
       { property: "width", before: { type: "fixed", value: 80 }, after: { type: "fixed", value: 100 }, centeredOn: undefined },
       { property: "right", before: 40, after: 30, centeredOn: undefined },
@@ -885,14 +885,14 @@ test.describe("done checks the change on the page", () => {
       { property: "x", before: hero / 2, after: hero / 2 + 40, centeredOn: { before: { percent: 50, px: 0 }, after: { percent: 50, px: 40 } } },
     ]);
 
-    const notes = await npx03kind("claim");
+    const notes = await npxHumanTouch("claim");
     expect(notes).toContain("Change the right position from 40px to 30px: how far the layer's right edge is from its container's, its CSS `right`. It stays placed from that edge: do not place it by `left` instead.");
     expect(notes).toContain("Change the bottom position from 60px to 80px");
     expect(notes).toContain("Change where its `left` places it from `50%` to `calc(50% + 40px)`: 50% of its container's width from its left edge, and 40px past that (Tailwind's `left-[calc(50%+40px)]`).");
     expect(notes).toMatch(/- \*\*Centered:\*\* .*moved, only how far past the share of its container it is centered on changes/);
     expect(notes).not.toMatch(/Change the X position/);
 
-    for (const { id } of changes) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it does not show the change.");
+    for (const { id } of changes) expect(await npxHumanTouch("done", String(id))).toContain("Checked on the page: it does not show the change.");
     editSource(APP, "top-[30px] right-[40px] h-[40px] w-[80px]", "top-[30px] right-[30px] h-[40px] w-[100px]");
     editSource(APP, "bottom-[60px] left-[40px]", "bottom-[80px] left-[40px]");
     // Not as the notes say: in px, right as wide as the window only.
@@ -900,12 +900,12 @@ test.describe("done checks the change on the page", () => {
     await drawnWith(page.getByTestId("from-right"), "right-[30px]", "w-[100px]");
     await drawnWith(page.getByTestId("from-bottom"), "bottom-[80px]");
     await drawnWith(page.getByTestId("centered"), `left-[${hero / 2 + 40}px]`);
-    for (const { id } of changes.slice(0, 3)) expect(await npx03kind("done", String(id))).toContain("Checked on the page: it shows the change.");
+    for (const { id } of changes.slice(0, 3)) expect(await npxHumanTouch("done", String(id))).toContain("Checked on the page: it shows the change.");
     const centered = String(changes[3].id);
-    expect(await npx03kind("done", centered)).toContain("Checked on the page: it does not show the change. At 768px wide, the layer's `left` is");
+    expect(await npxHumanTouch("done", centered)).toContain("Checked on the page: it does not show the change. At 768px wide, the layer's `left` is");
     editSource(APP, `left-[${hero / 2 + 40}px] h-[40px] w-[80px]`, "left-[calc(50%+40px)] h-[40px] w-[80px]");
     await drawnWith(page.getByTestId("centered"), "left-[calc(50%+40px)]");
-    expect(await npx03kind("done", centered)).toContain("Checked on the page: it shows the change.");
+    expect(await npxHumanTouch("done", centered)).toContain("Checked on the page: it shows the change.");
   });
 
   test("a layer centered by its auto margins, moved: it stays centered so, the notes say to give its sides as much more and less, and done checks where its middle is at every view's width, not a px from one side (ticket 96)", async ({ page }) => {
@@ -927,8 +927,8 @@ test.describe("done checks the change on the page", () => {
     await pickOnCanvas(page, "by-margins");
     expect(Number(await x())).toBe(hero / 2 - 40);
     await setField(page, "X", String(Number(await x()) + 40));
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
-    const [change] = readThirdKindFile("changeset.json").changes;
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(1);
+    const [change] = readHumanTouchFile("changeset.json").changes;
     expect([change.property, change.before, change.after, change.placedFrom, change.centeredOn, change.style]).toEqual([
       "x",
       hero / 2 - 40,
@@ -938,26 +938,26 @@ test.describe("done checks the change on the page", () => {
       { left: "40px", right: "-40px" },
     ]);
 
-    const notes = await npx03kind("claim");
+    const notes = await npxHumanTouch("claim");
     expect(notes).toContain("Give its `left` and `right` as much more and less, `left: 40px; right: -40px` (Tailwind's `left-[40px] right-[-40px]`), keeping both and its auto margins.");
     expect(notes).toContain("- **Placement:** the layer is centered across between its `left` and `right` by its auto margins (`margin-inline: auto`, Tailwind's `mx-auto`)");
     expect(notes).toMatch(/- \*\*Centered by auto margins:\*\* .*moved, keep both sides and the auto margins/);
     expect(notes).not.toMatch(/- \*\*Centered:\*\*/);
 
     const id = String(change.id);
-    expect(await npx03kind("done", id)).toContain("Checked on the page: it does not show the change. The layer is drawn at");
+    expect(await npxHumanTouch("done", id)).toContain("Checked on the page: it does not show the change. The layer is drawn at");
     // Not as the notes say: in px from its left, right as wide as the window only.
     const layer = page.getByTestId("by-margins");
     editSource(APP, "absolute inset-x-0 top-[120px] mx-auto", `absolute left-[${hero / 2}px] top-[120px] mx-auto`);
     await drawnWith(layer, `left-[${hero / 2}px]`);
-    expect(await npx03kind("done", id)).toContain("Checked on the page: it does not show the change. At 768px wide, the layer is drawn at");
+    expect(await npxHumanTouch("done", id)).toContain("Checked on the page: it does not show the change. At 768px wide, the layer is drawn at");
     editSource(APP, `absolute left-[${hero / 2}px] top-[120px] mx-auto`, "absolute left-[40px] right-[-40px] top-[120px] mx-auto");
     await drawnWith(layer, "left-[40px]", "right-[-40px]");
-    expect(await npx03kind("done", id)).toContain("Checked on the page: it shows the change.");
+    expect(await npxHumanTouch("done", id)).toContain("Checked on the page: it shows the change.");
     // Its auto margins gone: drawn at its `left`.
     editSource(APP, "right-[-40px] top-[120px] mx-auto", "right-[-40px] top-[120px]");
     await expect(layer).not.toHaveClass(/(^|\s)mx-auto(\s|$)/);
-    expect(await npx03kind("done", id)).toContain("Checked on the page: it does not show the change. The layer is drawn at 40px");
+    expect(await npxHumanTouch("done", id)).toContain("Checked on the page: it does not show the change. The layer is drawn at 40px");
   });
 
   test("a change made in the phone view is checked at the phone's width, though the window is wider", async ({ page }) => {
@@ -970,23 +970,23 @@ test.describe("done checks the change on the page", () => {
     await page.mouse.click(box.x + 4, box.y + 4);
     await page.keyboard.up("Meta");
     await setField(page, "Fill color", "ff0000");
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes[0]?.breakpoint?.max).toBe(768);
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes[0]?.breakpoint?.max).toBe(768);
     // Saved again once the page is read in each part of the range, below 640px and from 640px (ticket 65).
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes[0]?.parts?.length).toBe(2);
-    await npx03kind("claim");
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes[0]?.parts?.length).toBe(2);
+    await npxHumanTouch("claim");
     await expect(progress(page)).toHaveAttribute("aria-valuemax", "1");
 
     // Not applied yet: the cards are white at the phone's width too, the first part's looked at first.
-    expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change. At 639px wide, the fill is #FFFFFF, not #FF0000, as the browser computes");
+    expect(await npxHumanTouch("done", "1")).toContain("Checked on the page: it does not show the change. At 639px wide, the fill is #FFFFFF, not #FF0000, as the browser computes");
     // Applied below `md` only, as the notes say: the window, 1280px wide, still shows them white.
     editSource(CARD, "bg-white p-5", "bg-white p-5 max-md:bg-[#ff0000]");
     await drawnWith(page.locator("article").first(), "max-md:bg-[#ff0000]");
-    expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
+    expect(await npxHumanTouch("done", "1")).toContain("Checked on the page: it shows the change.");
     await expect(page.locator("article").first()).toHaveCSS("background-color", "rgb(255, 255, 255)");
     // The copy of the page at the phone's width is kept while the round is claimed, and goes with it.
-    await npx03kind("finish");
+    await npxHumanTouch("finish");
     await expect(page.getByRole("progressbar", { name: "Applying design changes" })).toHaveCount(0);
-    await expect(page.locator("iframe[data-tk-check]")).toHaveCount(0);
+    await expect(page.locator("iframe[data-ht-check]")).toHaveCount(0);
   });
 
   test("a change made in the desktop view is checked at every view's width too: the Grid's columns changed for `sm:` only do not show at the phone's", async ({ page }) => {
@@ -994,19 +994,19 @@ test.describe("done checks the change on the page", () => {
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Grid", exact: true }).click();
     await setField(page, "Columns", "2");
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(1);
-    await npx03kind("claim");
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(1);
+    await npxHumanTouch("claim");
 
     // As both Agents did on the bench (ticket 63): the phone still has one column.
     const grid = page.locator("main").locator('[class~="pb-16"]');
     editSource(APP, "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3", "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2");
     await drawnWith(grid, "sm:grid-cols-2");
-    expect(await npx03kind("done", "1")).toContain("Checked on the page: it does not show the change. At 390px wide, the number of columns is 1, not 2, as the browser computes `grid-template-columns` on the layer.");
+    expect(await npxHumanTouch("done", "1")).toContain("Checked on the page: it does not show the change. At 390px wide, the number of columns is 1, not 2, as the browser computes `grid-template-columns` on the layer.");
     await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
 
     editSource(APP, "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2", "grid grid-cols-2 gap-4 pb-16");
     await drawnWith(grid, "grid-cols-2");
-    expect(await npx03kind("done", "1")).toContain("Checked on the page: it shows the change.");
+    expect(await npxHumanTouch("done", "1")).toContain("Checked on the page: it shows the change.");
     await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
   });
 
@@ -1019,17 +1019,17 @@ test.describe("done checks the change on the page", () => {
     await setField(page, "Fill color", "e8f0ff");
     await layers.getByRole("treeitem", { name: "Button", exact: true }).click();
     await setField(page, "Fill color", "2563eb");
-    await expect.poll(() => readThirdKindFile("changeset.json")?.changes.length).toBe(2);
-    await npx03kind("claim");
+    await expect.poll(() => readHumanTouchFile("changeset.json")?.changes.length).toBe(2);
+    await npxHumanTouch("claim");
 
     // Applying the button's fill, the Agent adds a line at the top of App.tsx: every marker below moves.
-    const at = await button(page).getAttribute("data-tk-loc");
+    const at = await button(page).getAttribute("data-ht-loc");
     editSource(CSS, "background: rgb(220, 38, 38);", "background: #2563eb;");
     editSource(APP, 'import { Badge, Surface } from "acme-ui";', '// Buttons are blue now.\nimport { Badge, Surface } from "acme-ui";');
     await expect(button(page)).toHaveCSS("background-color", "rgb(37, 99, 235)");
     // Its marker a line lower.
-    await expect(button(page)).not.toHaveAttribute("data-tk-loc", at!);
+    await expect(button(page)).not.toHaveAttribute("data-ht-loc", at!);
 
-    expect(await npx03kind("done", "2")).toContain("Checked on the page: it shows the change.");
+    expect(await npxHumanTouch("done", "2")).toContain("Checked on the page: it shows the change.");
   });
 });

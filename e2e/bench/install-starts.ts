@@ -307,7 +307,7 @@ async function run(command: string[], cwd: string, log: (line: string) => void):
  * `made` is told how to delete the folder as soon as there is one.
  */
 export async function scaffold(start: Start, log: (line: string) => void, made?: (remove: () => void) => void): Promise<{ dir: string; versions: Record<string, string>; remove(): void }> {
-  const folder = mkdtempSync(join(tmpdir(), "03kind-install-"));
+  const folder = mkdtempSync(join(tmpdir(), "humantouch-install-"));
   const remove = () => rmSync(folder, { recursive: true, force: true });
   // Told at once, so a bench stopped mid-scaffold can delete it (run-install.ts).
   made?.(remove);

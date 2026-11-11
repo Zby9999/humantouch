@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "./fixtures";
 import { DEV_URL, TOGGLE_LABEL } from "../playwright.config";
-import { DOUBLE_CLICK_MS } from "../../packages/03kind/src/client/selection";
+import { DOUBLE_CLICK_MS } from "../../packages/humantouch/src/client/selection";
 
 /**
  * A button with only text in it that draws a box (ticket 56): a Frame, with a

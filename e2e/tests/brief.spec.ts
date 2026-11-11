@@ -31,7 +31,7 @@ const tool = (page: Page, name: string) => page.getByRole("toolbar", { name: "To
 const badge = (page: Page) => page.getByRole("button", { name: /not applied yet/ });
 const changeList = (page: Page) => page.getByRole("dialog", { name: "Changes" });
 /** The cards of the briefs, beside the views. */
-const cards = (page: Page) => page.locator(".tk-brief-card");
+const cards = (page: Page) => page.locator(".ht-brief-card");
 const card = (page: Page, layer: string) => page.getByRole("group", { name: `Brief on ${layer}` });
 /** Presses a card near its right end: cards sit close beside the views, their middles at times under the Layers panel's edge. */
 async function pressCard(page: Page, layer: string) {
@@ -60,7 +60,7 @@ async function writeBrief(page: Page, target: Locator, text: string) {
 
 /** Where a card's line ends: at its layer, on screen. */
 async function lineEnd(page: Page, nth = 0) {
-  return page.locator(".tk-brief-lines circle").nth(nth).evaluate((dot) => {
+  return page.locator(".ht-brief-lines circle").nth(nth).evaluate((dot) => {
     const box = dot.getBoundingClientRect();
     return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   });
@@ -87,7 +87,7 @@ test("the Brief tool, fourth in the toolbar and picked with B, writes a brief on
 
   await writeBrief(page, canvas(page).locator("article").first(), "Bounce back harder when pressed");
 
-  await expect(canvas(page).locator("article").first()).toHaveAttribute("data-tk-brief", "Bounce back harder when pressed");
+  await expect(canvas(page).locator("article").first()).toHaveAttribute("data-ht-brief", "Bounce back harder when pressed");
   // One card for the brief, though the three cards of the loop take it.
   await expect(cards(page)).toHaveCount(1);
   await expect(card(page, "Card")).toContainText("Bounce back harder when pressed");
@@ -101,8 +101,8 @@ test("the Brief tool, fourth in the toolbar and picked with B, writes a brief on
   await page.keyboard.press("Escape");
   await expect(tool(page, "Select")).toHaveAttribute("aria-pressed", "true");
 
-  await expect(layerTree(page).getByRole("treeitem", { name: "Card", exact: true }).first().locator(".tk-tree-brief")).toHaveAttribute(
-    "data-tk-tip",
+  await expect(layerTree(page).getByRole("treeitem", { name: "Card", exact: true }).first().locator(".ht-tree-brief")).toHaveAttribute(
+    "data-ht-tip",
     "Brief: Bounce back harder when pressed",
   );
   await expect(badge(page)).toHaveText("1");
@@ -140,13 +140,13 @@ test("changed on its card when left, taken off by leaving it empty, each a step 
   await field(page).press("Escape");
   await expect(field(page)).toHaveCount(0);
   await expect(card(page, "Button")).toContainText("Press in a little");
-  await expect(button).toHaveAttribute("data-tk-brief", "Press in a little");
+  await expect(button).toHaveAttribute("data-ht-brief", "Press in a little");
 
   // Left by a click elsewhere: set.
   await pressCard(page, "Button");
   await field(page).fill("Press in a little, and spring back");
   await tool(page, "Select").click();
-  await expect(button).toHaveAttribute("data-tk-brief", "Press in a little, and spring back");
+  await expect(button).toHaveAttribute("data-ht-brief", "Press in a little, and spring back");
   await expect(badge(page)).toHaveText("1");
 
   // Left empty, by its arrow: taken off (designer, 2026-11-10).
@@ -154,7 +154,7 @@ test("changed on its card when left, taken off by leaving it empty, each a step 
   await field(page).fill("");
   await card(page, "Button").getByRole("button", { name: "Set brief" }).click();
   await expect(cards(page)).toHaveCount(0);
-  await expect(button).not.toHaveAttribute("data-tk-brief");
+  await expect(button).not.toHaveAttribute("data-ht-brief");
   await expect(badge(page)).toHaveCount(0);
 
   await page.keyboard.press("ControlOrMeta+z");
@@ -174,15 +174,15 @@ test("the Brief tool writes on the deepest layer clicked, as ⌘ held selects it
   const words = canvas(page).locator("article h3").first();
   const box = await steadyBox(words);
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await expect(page.locator(".tk-hover").first()).toBeVisible();
-  const outlined = await steadyBox(page.locator('.tk-hover[data-view^="Desktop"]'));
+  await expect(page.locator(".ht-hover").first()).toBeVisible();
+  const outlined = await steadyBox(page.locator('.ht-hover[data-view^="Desktop"]'));
   expect(Math.abs(outlined.height - box.height)).toBeLessThanOrEqual(2);
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await expect(field(page)).toBeFocused();
   await page.keyboard.type("Bolder");
   await page.keyboard.press("Enter");
-  await expect(words).toHaveAttribute("data-tk-brief", "Bolder");
-  await expect(canvas(page).locator("article").first()).not.toHaveAttribute("data-tk-brief");
+  await expect(words).toHaveAttribute("data-ht-brief", "Bolder");
+  await expect(canvas(page).locator("article").first()).not.toHaveAttribute("data-ht-brief");
 });
 
 test("a card is a field with the accent's arrow beside it as it is written in, which sets what is typed, as one edit (designer, 2026-11-10)", async ({ page }) => {
@@ -199,9 +199,9 @@ test("a card is a field with the accent's arrow beside it as it is written in, w
   await field(page).fill("Something else");
   await card(page, "Button").getByRole("button", { name: "Set brief" }).click();
   await expect(field(page)).toHaveCount(0);
-  await expect(button).toHaveAttribute("data-tk-brief", "Something else");
+  await expect(button).toHaveAttribute("data-ht-brief", "Something else");
   await page.keyboard.press("ControlOrMeta+z");
-  await expect(button).toHaveAttribute("data-tk-brief", "Press in a little");
+  await expect(button).toHaveAttribute("data-ht-brief", "Press in a little");
 });
 
 test("a Brief press let go off the canvas writes nothing, and puts the tool down; the Select tool's next click selects as ever", async ({ page }) => {
@@ -263,7 +263,7 @@ test("cards of layers close together are clear of one another and of the views, 
   await expect(cards(page)).toHaveCount(3);
 
   const boxes = await Promise.all([0, 1, 2].map((i) => steadyBox(cards(page).nth(i))));
-  const views = await Promise.all((await page.locator("iframe.tk-canvas").all()).map((view) => steadyBox(view)));
+  const views = await Promise.all((await page.locator("iframe.ht-canvas").all()).map((view) => steadyBox(view)));
   for (const a of boxes) {
     for (const b of boxes) if (a !== b) expect(overlap(a, b)).toBe(false);
     for (const view of views) expect(overlap(a, view)).toBe(false);
@@ -282,8 +282,8 @@ test("a copy of a layer with a brief has none: the brief stays with the layer it
 
   const buttons = canvas(page).getByRole("button", { name: "Get started" });
   await expect(buttons).toHaveCount(2);
-  await expect(buttons.nth(0)).toHaveAttribute("data-tk-brief", "Press in a little");
-  await expect(buttons.nth(1)).not.toHaveAttribute("data-tk-brief");
+  await expect(buttons.nth(0)).toHaveAttribute("data-ht-brief", "Press in a little");
+  await expect(buttons.nth(1)).not.toHaveAttribute("data-ht-brief");
   await expect(cards(page)).toHaveCount(1);
 });
 
@@ -303,7 +303,7 @@ test("typed on a card, then another layer clicked with the Brief tool: the brief
   // The deepest layer there (designer, 2026-11-10), its card written in now.
   await expect(layerTree(page).getByRole("treeitem", { selected: true })).toHaveText("Third Kind");
   await expect(card(page, "Third Kind").getByRole("textbox", { name: "Brief" })).toBeFocused();
-  await expect(canvas(page).locator("article").first()).toHaveAttribute("data-tk-brief", "Bounce back harder when pressed");
+  await expect(canvas(page).locator("article").first()).toHaveAttribute("data-ht-brief", "Bounce back harder when pressed");
   await expect(badge(page)).toHaveText("1");
 });
 
@@ -320,11 +320,11 @@ test("taken back one by one from the change list, in edit mode and in preview mo
   await badge(page).click();
   await changeList(page).getByRole("button", { name: "Undo the brief of Card" }).click();
   await expect(cards(page)).toHaveCount(1);
-  await expect(canvas(page).locator("article[data-tk-brief]")).toHaveCount(0);
+  await expect(canvas(page).locator("article[data-ht-brief]")).toHaveCount(0);
   await page.keyboard.press("Escape");
 
   // In preview mode: the saved round, and no cards.
-  await page.getByRole("button", { name: "03Kind: back to preview mode" }).click();
+  await page.getByRole("button", { name: "Human Touch: back to preview mode" }).click();
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   await expect(cards(page)).toHaveCount(0);
   await badge(page).click();
@@ -341,7 +341,7 @@ test("taken back one by one from the change list, in edit mode and in preview mo
   await changeList(page).getByRole("button", { name: "Discard", exact: true }).click();
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);
   await enterEditMode(page);
-  await expect(canvas(page).locator("[data-tk-brief]")).toHaveCount(0);
+  await expect(canvas(page).locator("[data-ht-brief]")).toHaveCount(0);
   await expect(cards(page)).toHaveCount(0);
 });
 

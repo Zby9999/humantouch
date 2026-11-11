@@ -58,7 +58,7 @@ function cards(page: Page) {
 }
 
 async function changeRows(page: Page) {
-  await page.locator("[data-tk-changes-opener]").click();
+  await page.locator("[data-ht-changes-opener]").click();
   return page.getByRole("dialog", { name: "Changes" }).getByRole("listitem");
 }
 
@@ -128,7 +128,7 @@ test("a card dragged between the cells of the Grid takes that cell, in every vie
   // Just inside Freeze's left edge: before it, not into it.
   const target = (await freeze.boundingBox())!;
   await page.mouse.move(target.x + 6, target.y + target.height / 2, { steps: 8 });
-  await expect(page.locator(".tk-drop-line")).toBeVisible();
+  await expect(page.locator(".ht-drop-line")).toBeVisible();
   // Only shifted while it moves: Freeze steps into the next cell, the structure is as it was.
   await expect(freeze).not.toHaveCSS("translate", "none");
   await expect.poll(async () => (await cards(page))[0]).toEqual(ORDER);
@@ -136,7 +136,7 @@ test("a card dragged between the cells of the Grid takes that cell, in every vie
 
   const moved = ["Your turn", "Freeze", "Arrange", "Apply"];
   await expect.poll(() => cards(page)).toEqual([moved, moved, moved]);
-  await expect(page.locator(".tk-drop-line")).toHaveCount(0);
+  await expect(page.locator(".ht-drop-line")).toHaveCount(0);
   await expect(freeze).toHaveCSS("translate", "none");
   await expect(await changeRows(page)).toReadAs([/Reorder.*Card.*4th → 1st/]);
   await page.keyboard.press("Escape");
@@ -174,7 +174,7 @@ test("a layer dragged into the Grid from a Stack takes the cell it is let go at"
   await page.mouse.down();
   const target = (await arrange.boundingBox())!;
   await page.mouse.move(target.x + 6, target.y + target.height / 2, { steps: 8 });
-  await expect(page.locator(".tk-drop-line")).toBeVisible();
+  await expect(page.locator(".ht-drop-line")).toBeVisible();
   await page.mouse.up();
 
   const children = () => desktop(page).contentFrame().locator(GRID).evaluate((el) => [...el.children].map((child) => child.querySelector("h3")?.textContent ?? child.localName));
@@ -195,12 +195,12 @@ test("in a Grid one of whose cards is placed by order, a card dragged or nudged 
   await page.mouse.down();
   const target = (await arrange.boundingBox())!;
   await page.mouse.move(target.x + 6, target.y + target.height / 2, { steps: 8 });
-  await expect(page.locator(".tk-drop-line")).toHaveCount(0);
+  await expect(page.locator(".ht-drop-line")).toHaveCount(0);
   await page.mouse.up();
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowUp");
   await expect.poll(() => cards(page)).toEqual([ORDER, ORDER, ORDER]);
-  await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
+  await expect(page.locator("[data-ht-changes-opener]")).toHaveCount(0);
 
   await layers(page).getByRole("treeitem", { name: "Button", exact: true }).click();
   const button = desktop(page).contentFrame().locator('[data-testid="hero"] > button');
@@ -259,7 +259,7 @@ test("a Stack made a Grid from beside its direction, as in Figma: the Grid secti
   await page.keyboard.press("Meta+z");
   await page.keyboard.press("Meta+z");
   await expect.poll(() => Promise.all(views(page).map(headerIn))).toEqual(["flex row", "flex row", "flex row"]);
-  await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
+  await expect(page.locator("[data-ht-changes-opener]")).toHaveCount(0);
 });
 
 test("in the phone view, the Grid made a vertical Stack at its breakpoint only, marked there and reset there (ticket 109)", async ({ page }) => {
@@ -319,14 +319,14 @@ test("in the phone view, a Grid laying its cards out by areas made a vertical St
 
   await page.keyboard.press("Meta+z");
   await expect.poll(drawn).toEqual([placed, placed, placed]);
-  await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
+  await expect(page.locator("[data-ht-changes-opener]")).toHaveCount(0);
   await page.keyboard.press("Meta+Shift+z");
   await expect.poll(drawn).toEqual([placed, placed, ORDER]);
 
   await stack.getByRole("button", { name: "Reset direction" }).click();
   await expect.poll(drawn).toEqual([placed, placed, placed]);
   await expect(gridSection(page)).toBeVisible();
-  await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
+  await expect(page.locator("[data-ht-changes-opener]")).toHaveCount(0);
 });
 
 /** A Frame of four absolute boxes, 100 × 40, 24px apart across and 16px down; the fourth `off` px right of its column. */
@@ -376,14 +376,14 @@ test("the multi-select button says what ⇧A makes: Make Grid for free layers in
 
   // Not in a Grid's columns: a Stack, as ⇧A makes it.
   await pickBoxes(page, 4);
-  await expect(panel.getByRole("button", { name: "Make Stack" })).toHaveAttribute("data-tk-tip", "Make Stack (⇧A)");
+  await expect(panel.getByRole("button", { name: "Make Stack" })).toHaveAttribute("data-ht-tip", "Make Stack (⇧A)");
 
   // The fourth moved into its column meanwhile, the selection the same: its tip, shown, says a Grid.
   await desktop(page).contentFrame().locator("#four").evaluate((el) => void ((el as HTMLElement).style.left = "144px"));
   await panel.getByRole("button", { name: "Make Stack" }).hover();
   await expect(tip).toHaveText("Make Grid (⇧A)");
   const make = panel.getByRole("button", { name: "Make Grid" });
-  await expect(make).toHaveAttribute("data-tk-tip", "Make Grid (⇧A)");
+  await expect(make).toHaveAttribute("data-ht-tip", "Make Grid (⇧A)");
 
   // Two of them, a row: a Stack; all four again: a Grid, as the selection changes.
   await page.mouse.move(0, 0);
@@ -408,7 +408,7 @@ test("the multi-select button says what ⇧A makes: Make Grid for free layers in
   await dissolve.click();
   await expect(layers(page).getByRole("treeitem", { name: "Grid", exact: true })).toHaveCount(1);
   await expect.poll(near).toBe(true);
-  await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
+  await expect(page.locator("[data-ht-changes-opener]")).toHaveCount(0);
 });
 
 test("a selection gone back to says what ⇧A makes of it now, not what its tip said before; focused from the keyboard, the button says it again too (review of ticket 110's follow-up)", async ({ page }) => {
@@ -436,13 +436,13 @@ test("a selection gone back to says what ⇧A makes of it now, not what its tip 
   await expect.poll(left).toBe(150);
   await pickBoxes(page, 2);
   await pickBoxes(page, 4);
-  await expect(make("Make Stack")).toHaveAttribute("data-tk-tip", "Make Stack (⇧A)");
+  await expect(make("Make Stack")).toHaveAttribute("data-ht-tip", "Make Stack (⇧A)");
 
   // In its column again, the selection the same: focused, the button says a Grid.
   await place();
   await expect.poll(left).toBe(144);
   await make("Make Stack").focus();
-  await expect(make("Make Grid")).toHaveAttribute("data-tk-tip", "Make Grid (⇧A)");
+  await expect(make("Make Grid")).toHaveAttribute("data-ht-tip", "Make Grid (⇧A)");
 });
 
 test("a Stack made in this round, made a Grid and its columns changed: its − in the accent takes all of that back, and leaves what was changed of it before and of its layers (review of ticket 110's follow-up)", async ({ page }) => {
@@ -488,7 +488,7 @@ test("a Frame of free boxes in rows and columns, selected alone: its button says
   await page.keyboard.press("Escape");
   await expect(layers(page).getByRole("treeitem").filter({ hasText: /^Frame$/ }).first()).toHaveAttribute("aria-selected", "true");
   const make = design(page).getByRole("button", { name: "Make Grid" });
-  await expect(make).toHaveAttribute("data-tk-tip", "Make Grid (⇧A)");
+  await expect(make).toHaveAttribute("data-ht-tip", "Make Grid (⇧A)");
   const near = await inPlace(page, "#board, #one, #two, #three, #four");
 
   await make.click();
@@ -503,7 +503,7 @@ test("a Frame of free boxes in rows and columns, selected alone: its button says
   await expect(field(page, "Columns")).toHaveCount(0);
   await expect(desktop(page).contentFrame().locator("#board")).toHaveCSS("display", "block");
   await expect.poll(near).toBe(true);
-  await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
+  await expect(page.locator("[data-ht-changes-opener]")).toHaveCount(0);
 });
 
 test("a Grid the page has shows Dissolve Grid in its section, as ⌥⇧A: a Frame, its layers in place; one ⌘Z. The cards' Grid, its cards a loop's, has none, as ⌥⇧A does nothing (ticket 110's follow-up)", async ({ page }) => {
@@ -531,7 +531,7 @@ test("a Grid the page has shows Dissolve Grid in its section, as ⌥⇧A: a Fram
   const tiles = desktop(page).contentFrame().locator("#tiles");
   const near = await inPlace(page, "#one, #two, #three, #four");
   await gridRows.last().click();
-  await expect(dissolve).toHaveAttribute("data-tk-tip", "Dissolve Grid (⌥⇧A)");
+  await expect(dissolve).toHaveAttribute("data-ht-tip", "Dissolve Grid (⌥⇧A)");
   await expect(dissolve).not.toHaveClass(/\bis-added\b/);
 
   await dissolve.click();
@@ -545,7 +545,7 @@ test("a Grid the page has shows Dissolve Grid in its section, as ⌥⇧A: a Fram
   await page.keyboard.press("Meta+z");
   await expect(gridRows).toHaveCount(2);
   await expect(tiles).toHaveCSS("display", "grid");
-  await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
+  await expect(page.locator("[data-ht-changes-opener]")).toHaveCount(0);
 });
 
 test("⇧A on free layers in two rows of two makes a Grid where they are, its columns and gaps theirs; ⌥⇧A dissolves it in place; each one ⌘Z (ticket 110)", async ({ page }) => {
@@ -601,5 +601,5 @@ test("⇧A on free layers in two rows of two makes a Grid where they are, its co
   await page.keyboard.press("Meta+z");
   await expect(layers(page).getByRole("treeitem", { name: "Grid", exact: true })).toHaveCount(1);
   await expect.poll(near).toBe(true);
-  await expect(page.locator("[data-tk-changes-opener]")).toHaveCount(0);
+  await expect(page.locator("[data-ht-changes-opener]")).toHaveCount(0);
 });

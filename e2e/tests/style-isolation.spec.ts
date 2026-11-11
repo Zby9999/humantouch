@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
 test("the editor layer is mounted in a Shadow DOM", async ({ page }) => {
   const inShadow = await page.getByRole("button", { name: TOGGLE_LABEL }).evaluate((el) => {
     const root = el.getRootNode();
-    return root instanceof ShadowRoot && root.host.localName === "third-kind";
+    return root instanceof ShadowRoot && root.host.localName === "human-touch";
   });
 
   expect(inShadow).toBe(true);
@@ -70,7 +70,7 @@ test("editor layer styles do not reach the page", async ({ page }) => {
 
   const editorRulesInDocument = await page.evaluate(() =>
     [...document.styleSheets].some((sheet) =>
-      [...sheet.cssRules].some((rule) => rule.cssText.includes(".tk-")),
+      [...sheet.cssRules].some((rule) => rule.cssText.includes(".ht-")),
     ),
   );
   expect(editorRulesInDocument).toBe(false);

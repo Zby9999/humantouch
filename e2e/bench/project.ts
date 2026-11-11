@@ -1,7 +1,7 @@
 /**
  * The project an Agent applies a round in: a copy of one of the examples
  * (the Vite + React 19 + Tailwind v4 one, unless the scenario names another)
- * in the system's temporary folder, with 03Kind installed by `init` from the
+ * in the system's temporary folder, with Human Touch installed by `init` from the
  * package as it would be published, and committed. Each run gets a clone of
  * it of its own, so no run sees another's code, and the Agent never works in
  * this repository.
@@ -10,52 +10,52 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CLI, copyWithoutThirdKind, pack, replaceIn, sh, startServer } from "../tests/install-copy.ts";
+import { CLI, copyWithoutHumanTouch, pack, replaceIn, sh, startServer } from "../tests/install-copy.ts";
 import { BENCH_FILES } from "./agents.ts";
 import type { Example } from "./scenarios.ts";
 
 const exampleFolder = (example: Example) => fileURLToPath(new URL(`../../examples/${example}/`, import.meta.url));
 
 /**
- * Takes out of a copy of each example what the repository wires 03Kind in
+ * Takes out of a copy of each example what the repository wires Human Touch in
  * by, by hand, so `init` can put it in as it would in any project: the build
  * plugin and the editor layer's mount.
  */
 const HAND_WIRED: Record<Example, (dir: string) => void> = {
   "vite-react19-tw4": (dir) => {
-    replaceIn(dir, "vite.config.ts", 'import thirdKind from "03kind/vite";\n');
-    replaceIn(dir, "vite.config.ts", "thirdKind(), ");
-    replaceIn(dir, "src/App.tsx", 'import { ThirdKind } from "03kind/react";\n');
-    replaceIn(dir, "src/App.tsx", "      <ThirdKind />\n");
+    replaceIn(dir, "vite.config.ts", 'import humanTouch from "humantouch/vite";\n');
+    replaceIn(dir, "vite.config.ts", "humanTouch(), ");
+    replaceIn(dir, "src/App.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "src/App.tsx", "      <HumanTouch />\n");
   },
   "vite-react18-tw3": (dir) => {
-    replaceIn(dir, "vite.config.ts", 'import thirdKind from "03kind/vite";\n');
-    replaceIn(dir, "vite.config.ts", "thirdKind(), ");
-    replaceIn(dir, "src/App.tsx", 'import { ThirdKind } from "03kind/react";\n');
-    replaceIn(dir, "src/App.tsx", "      <ThirdKind />\n");
+    replaceIn(dir, "vite.config.ts", 'import humanTouch from "humantouch/vite";\n');
+    replaceIn(dir, "vite.config.ts", "humanTouch(), ");
+    replaceIn(dir, "src/App.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "src/App.tsx", "      <HumanTouch />\n");
     // Its big page, for the performance tests, mounts the editor layer too: `init` would see it mounted there, and leave App be.
-    replaceIn(dir, "src/big/BigPage.tsx", 'import { ThirdKind } from "03kind/react";\n');
-    replaceIn(dir, "src/big/BigPage.tsx", "      <ThirdKind />\n");
+    replaceIn(dir, "src/big/BigPage.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "src/big/BigPage.tsx", "      <HumanTouch />\n");
   },
   // As `next-install.spec.ts` takes it out.
   "next-app-css-modules": (dir) => {
-    replaceIn(dir, "next.config.ts", 'import { withThirdKind } from "03kind/next";\n');
-    replaceIn(dir, "next.config.ts", "withThirdKind(nextConfig)", "nextConfig");
-    replaceIn(dir, "app/layout.tsx", 'import { ThirdKind } from "03kind/react";\n');
-    replaceIn(dir, "app/layout.tsx", "        <ThirdKind />\n");
+    replaceIn(dir, "next.config.ts", 'import { withHumanTouch } from "humantouch/next";\n');
+    replaceIn(dir, "next.config.ts", "withHumanTouch(nextConfig)", "nextConfig");
+    replaceIn(dir, "app/layout.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "app/layout.tsx", "        <HumanTouch />\n");
   },
 };
 const COMMIT = ["-c", "user.name=bench", "-c", "user.email=bench@example.com", "commit", "-qm"];
 
 /** Where `init` puts the Skill, and the line of AGENTS.md that points to it. */
-const SKILL_FOLDERS = [".agents/skills/03kind", ".claude/skills/03kind"];
-const SKILL_LINE = /^03Kind: .*skills\/03kind\/SKILL\.md`\.\n/m;
+const SKILL_FOLDERS = [".agents/skills/humantouch", ".claude/skills/humantouch"];
+const SKILL_LINE = /^Human Touch: .*skills\/humantouch\/SKILL\.md`\.\n/m;
 
 /**
  * Takes out of the project in `dir` what `init` put there for the Agent to
  * find the Skill by: the Skill, its folders when left empty, and its line in
  * AGENTS.md (the file too, when that was all of it), and that line in what
- * `init` recorded in `.03kind/install.json`. The package keeps its own copy.
+ * `init` recorded in `.humantouch/install.json`. The package keeps its own copy.
  */
 export function withoutSkill(dir: string) {
   for (const folder of SKILL_FOLDERS) {
@@ -65,7 +65,7 @@ export function withoutSkill(dir: string) {
     }
   }
   // What `init` recorded of that line goes too: `doctor` and `remove` find nothing of it to stand on (ticket 63).
-  const record = join(dir, ".03kind/install.json");
+  const record = join(dir, ".humantouch/install.json");
   if (existsSync(record)) {
     const installed = JSON.parse(readFileSync(record, "utf8"));
     installed.edits = installed.edits.filter((edit: { file: string }) => edit.file !== "AGENTS.md");
@@ -81,17 +81,17 @@ export function withoutSkill(dir: string) {
 
 /**
  * The project every run on `example` starts from, in a folder of its own
- * beside the package it installs: 03Kind installed by `init`, committed. With
+ * beside the package it installs: Human Touch installed by `init`, committed. With
  * `skill: false`, the Skill is taken out before the commit, so it is in none
  * of the project's history either.
  */
 export async function prepareBase({ skill = true, example = "vite-react19-tw4" }: { skill?: boolean; example?: Example } = {}): Promise<{ base: string; remove(): void }> {
-  const packed = await pack(mkdtempSync(join(tmpdir(), "03kind-bench-pack-")));
-  const base = await copyWithoutThirdKind(exampleFolder(example), HAND_WIRED[example]);
-  await sh(process.execPath, [CLI, "init"], base, { TK_INSTALL_FROM: packed });
+  const packed = await pack(mkdtempSync(join(tmpdir(), "humantouch-bench-pack-")));
+  const base = await copyWithoutHumanTouch(exampleFolder(example), HAND_WIRED[example]);
+  await sh(process.execPath, [CLI, "init"], base, { HT_INSTALL_FROM: packed });
   if (!skill) withoutSkill(base);
   await sh("git", ["add", "-A"], base);
-  await sh("git", [...COMMIT, "With 03Kind"], base);
+  await sh("git", [...COMMIT, "With Human Touch"], base);
   return {
     base,
     remove() {
@@ -103,7 +103,7 @@ export async function prepareBase({ skill = true, example = "vite-react19-tw4" }
 
 export interface RunProject {
   dir: string;
-  /** Runs the project's own `npx 03kind …`. */
+  /** Runs the project's own `npx humantouch …`. */
   cli(...args: string[]): Promise<string>;
   edit(file: string, from: string, to: string): Promise<void>;
   /** Commits what is in the project now: the code the round starts from. */
@@ -122,7 +122,7 @@ export interface RunProject {
  * permissions in `.cursor/`) is kept out of git.
  */
 export async function cloneBase(base: string): Promise<RunProject> {
-  const dir = mkdtempSync(join(tmpdir(), "03kind-bench-run-"));
+  const dir = mkdtempSync(join(tmpdir(), "humantouch-bench-run-"));
   await sh("git", ["clone", "-q", base, dir], tmpdir());
   writeFileSync(join(dir, ".git/info/exclude"), BENCH_FILES.map((path) => `/${path}\n`).join(""));
   await sh("pnpm", ["install", "--offline", "--frozen-lockfile"], dir);
@@ -135,7 +135,7 @@ export async function cloneBase(base: string): Promise<RunProject> {
   };
   return {
     dir,
-    cli: (...args) => sh(process.execPath, [join(dir, "node_modules/03kind/dist/cli.js"), ...args], dir),
+    cli: (...args) => sh(process.execPath, [join(dir, "node_modules/humantouch/dist/cli.js"), ...args], dir),
     edit: async (file, from, to) => replaceIn(dir, file, from, to),
     settle: async (message) => {
       await sh("git", ["add", "-A"], dir);
@@ -143,10 +143,10 @@ export async function cloneBase(base: string): Promise<RunProject> {
     },
     head: async () => (await sh("git", ["rev-parse", "HEAD"], dir)).trim(),
     changeSet: () => {
-      const text = read(".03kind/changeset.json");
+      const text = read(".humantouch/changeset.json");
       return text === null ? null : JSON.parse(text);
     },
-    // The dev server, just stopped, may still be writing into it (its service, `.03kind/`): the removal is tried again for that.
+    // The dev server, just stopped, may still be writing into it (its service, `.humantouch/`): the removal is tried again for that.
     remove: () => rmSync(dir, { recursive: true, force: true, maxRetries: 5 }),
   };
 }

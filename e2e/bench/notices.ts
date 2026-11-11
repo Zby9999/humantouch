@@ -5,7 +5,7 @@
 import type { BrowserContext, Page } from "@playwright/test";
 
 /**
- * Each notice by what the editor layer marks it with (`data-tk-notice`: in
+ * Each notice by what the editor layer marks it with (`data-ht-notice`: in
  * `PageToast.tsx` and `StalledNotice.tsx`, which cannot be imported here:
  * they run on a page), not by its words, which may change; and where
  * the page keeps when it showed: on its window, and in its session's storage,
@@ -13,13 +13,13 @@ import type { BrowserContext, Page } from "@playwright/test";
  */
 const NOTICES = {
   /** In edit mode: the code is changing, but no Agent has claimed the changes (ticket 66; gone since ticket 78, kept to measure the code before it). */
-  unclaimed: { selector: '[role="alertdialog"][data-tk-notice="unclaimed"]', key: "__tkBenchUnclaimedNotices" },
+  unclaimed: { selector: '[role="alertdialog"][data-ht-notice="unclaimed"]', key: "__htBenchUnclaimedNotices" },
   /** In edit mode, at the canvas's bottom left: the page changed and the canvas, with no changes on it, was frozen afresh (ticket 78). */
-  canvasUpdated: { selector: '[data-tk-notice="canvas-updated"]', key: "__tkBenchCanvasUpdatedNotices" },
+  canvasUpdated: { selector: '[data-ht-notice="canvas-updated"]', key: "__htBenchCanvasUpdatedNotices" },
   /** In edit mode, at the canvas's bottom left: the page changed since the canvas, with changes on it, was frozen (ticket 78). */
-  pageChanged: { selector: '[data-tk-notice="page-changed"]', key: "__tkBenchPageChangedNotices" },
+  pageChanged: { selector: '[data-ht-notice="page-changed"]', key: "__htBenchPageChangedNotices" },
   /** On the locked toggle: the Agent seems to have stopped (ticket 67). */
-  stalled: { selector: '[role="alert"][data-tk-notice="stalled"]', key: "__tkBenchStalledNotices" },
+  stalled: { selector: '[role="alert"][data-ht-notice="stalled"]', key: "__htBenchStalledNotices" },
 };
 
 export const unclaimedNotice = (page: Page) => page.locator(NOTICES.unclaimed.selector);
@@ -37,7 +37,7 @@ export const stalledNotice = (page: Page) => page.locator(NOTICES.stalled.select
 export async function recordNotices(on: Page | BrowserContext) {
   await on.addInitScript((notices) => {
     // Asked for again on the same page (a playbook that designs a second round): once is enough.
-    const recording = "__tkBenchNoticesRecorded";
+    const recording = "__htBenchNoticesRecorded";
     if (window.top !== window || recording in window) return;
     (window as unknown as Record<string, boolean>)[recording] = true;
     const looks = notices.map(({ key, selector }) => {
@@ -61,7 +61,7 @@ export async function recordNotices(on: Page | BrowserContext) {
     const look = (root: ShadowRoot) => looks.forEach((one) => one(root));
     // The editor layer's host comes once the page's code mounts it: then its Shadow DOM is watched.
     const findHost = new MutationObserver(() => {
-      const root = document.querySelector("third-kind")?.shadowRoot;
+      const root = document.querySelector("human-touch")?.shadowRoot;
       if (!root) return;
       findHost.disconnect();
       new MutationObserver(() => look(root)).observe(root, { childList: true, subtree: true });

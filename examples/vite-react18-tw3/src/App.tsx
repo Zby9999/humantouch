@@ -1,5 +1,5 @@
 import { Badge, Surface } from "acme-ui";
-import { ThirdKind } from "03kind/react";
+import { HumanTouch } from "humantouch/react";
 import { Button } from "./components/Button";
 import { Card } from "./components/Card";
 import { cn } from "./lib/utils";
@@ -44,7 +44,7 @@ export function App() {
           <Button variant="secondary">Talk to us</Button>
         </div>
       </section>
-      <ThirdKind />
+      <HumanTouch />
     </main>
   );
 }

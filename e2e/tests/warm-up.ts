@@ -35,7 +35,7 @@ export default async function warmUp() {
       SERVERS.map(async ({ name, url }) => {
         try {
           const context = await browser.newContext();
-          // The round stays in memory, as in the tests: nothing is written to the example's `.03kind/`.
+          // The round stays in memory, as in the tests: nothing is written to the example's `.humantouch/`.
           await keepRoundIn(context);
           const page = await context.newPage();
           await page.goto(url, { timeout: timeout() });

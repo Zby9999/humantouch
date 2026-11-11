@@ -13,7 +13,7 @@
 - [ ] 写完照 115 的流程核对、归档、能撤回；对不上时不写，留给 Agent
 - [ ] Next.js CSS Modules 示例和一个普通 CSS 的页面上各有测试：改颜色、间距、断点上的间距，按按钮，源码对、页面对，`last` 撤回后复原
 - [ ] 不按按钮时一切照旧：`--dry` 24/24、`--scripted` 全过，改动说明逐字不变；切换按钮的包逐字节不变
-- [ ] 性能 headless 前后对比（`TK_PERF_HEADLESS=1`）：进入编辑模式、改数值不变差
+- [ ] 性能 headless 前后对比（`HT_PERF_HEADLESS=1`）：进入编辑模式、改数值不变差
 - [ ] e2e 全过；spec、docs/roadmap.md 相应更新
 
 ## 背景

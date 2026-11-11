@@ -7,9 +7,9 @@
  * headless shell only: nothing takes the designer's focus.
  *
  *   pnpm bench:install [--agents claude,pi,scripted] [--starts id,…] [--runs 1]
- *                      [--package npm|local]   03kind@latest from the registry (the steps as README has them), or this
+ *                      [--package npm|local]   humantouch@latest from the registry (the steps as README has them), or this
  *                                              repository's package, packed: step 1 then runs `npx -y file:<the .tgz> init`,
- *                                              and the Agent's environment has TK_INSTALL_FROM=<the .tgz> for `init`
+ *                                              and the Agent's environment has HT_INSTALL_FROM=<the .tgz> for `init`
  *                      [--plant no-dev-server|extra-edit|asks|leaves-file]   the scripted Agent goes wrong in that way
  *                      [--out <dir>]
  *   pnpm bench:install summary <dir>   judge the raw results in <dir> again, and sum them up
@@ -65,7 +65,7 @@ const runAs = (agent: InstallAgent) => (agent === "pi" ? "pi" : "claude");
  */
 function installEnv(tarball: string | null): NodeJS.ProcessEnv {
   const env = cleanEnv();
-  return { ...env, PATH: [...packageManagerPath(), env.PATH].join(delimiter), COREPACK_ENABLE_DOWNLOAD_PROMPT: "0", BROWSER: "none", ...(tarball && { TK_INSTALL_FROM: tarball }) };
+  return { ...env, PATH: [...packageManagerPath(), env.PATH].join(delimiter), COREPACK_ENABLE_DOWNLOAD_PROMPT: "0", BROWSER: "none", ...(tarball && { HT_INSTALL_FROM: tarball }) };
 }
 
 /**
@@ -154,7 +154,7 @@ async function main(argv: string[]) {
   if (plant && agents.some((agent) => agent !== "scripted")) throw new Error("--plant is for the scripted Agent only: --agents scripted");
   const specs = Object.fromEntries(agents.map((agent) => [agent, installSpec(agent, plant)]));
 
-  const packDir = source === "local" ? mkdtempSync(join(tmpdir(), "03kind-install-pack-")) : null;
+  const packDir = source === "local" ? mkdtempSync(join(tmpdir(), "humantouch-install-pack-")) : null;
   const removePack = () => packDir && rmSync(packDir, { recursive: true, force: true });
   underWay.add(removePack);
   try {
@@ -162,7 +162,7 @@ async function main(argv: string[]) {
     const steps = forAgents(readFileSync(README, "utf8"));
     const prompt = tarball ? withLocalPackage(steps, tarball) : steps;
     const out = option("out") ?? join(RESULTS, new Date().toISOString().replace(/[:.]/g, "-"));
-    console.log(`${agents.length * starts.length * runs} installs: ${agents.join(", ")} × ${starts.length} starts × ${runs}, 03kind from ${tarball ?? "npm (03kind@latest)"}${plant ? `, planted ${plant}` : ""}. Raw results in ${out}`);
+    console.log(`${agents.length * starts.length * runs} installs: ${agents.join(", ")} × ${starts.length} starts × ${runs}, humantouch from ${tarball ?? "npm (humantouch@latest)"}${plant ? `, planted ${plant}` : ""}. Raw results in ${out}`);
 
     const versions: Partial<Record<InstallAgent, string>> = {};
     for (const agent of agents) versions[agent] = agent === "scripted" ? `scripted-agent.ts, node ${process.version}` : await agentVersion(agent);
@@ -229,8 +229,8 @@ async function gitState(dir: string): Promise<{ status: string; diff: string }> 
 
 /** What the project's own command line prints for `command` (`doctor`, `remove`), whether it passes or not. */
 async function projectCli(dir: string, command: string, env: NodeJS.ProcessEnv): Promise<string> {
-  const cli = join(dir, "node_modules/03kind/dist/cli.js");
-  if (!existsSync(cli)) return `node_modules/03kind/dist/cli.js is not there: 03kind is not installed.\n`;
+  const cli = join(dir, "node_modules/humantouch/dist/cli.js");
+  if (!existsSync(cli)) return `node_modules/humantouch/dist/cli.js is not there: humantouch is not installed.\n`;
   return new Promise((resolve) =>
     execFile(process.execPath, [cli, command], { cwd: dir, env, maxBuffer: 64 * 1024 * 1024, timeout: 5 * 60_000 }, (error, stdout, stderr) =>
       resolve(`${stdout}${stderr}${error ? `\n(exit code ${error.code ?? "?"}${error.killed ? ", stopped after 5 minutes" : ""})\n` : ""}`),
@@ -454,7 +454,7 @@ function writeSummary(out: string) {
       models: [...new Set(mine.map((raw) => raw.model ?? "?"))],
       extensions: [...new Set(mine.flatMap((raw) => Object.entries(raw.extensions ?? {}).map(([name, version]) => `${name} ${version ?? "（没装）"}`)))],
       efforts: [...new Set(mine.map((raw) => (raw.effort ? `${raw.effort.set}${raw.effort.seen ? `, seen ${raw.effort.seen}` : ""}` : "–")))],
-      packages: [...new Set(mine.map((raw) => raw.package.tarball ?? "03kind@latest"))],
+      packages: [...new Set(mine.map((raw) => raw.package.tarball ?? "humantouch@latest"))],
       plants: [...new Set(mine.map((raw) => raw.plant ?? "none"))],
       runs: mine.length,
       successes: mine.filter((raw) => raw.success).length,

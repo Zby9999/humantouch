@@ -32,7 +32,7 @@ const read = (file: string) => readFileSync(join(unpacked, "package", file), "ut
 
 test.beforeAll(async () => {
   test.setTimeout(120_000);
-  unpacked = mkdtempSync(join(tmpdir(), "03kind-pack-"));
+  unpacked = mkdtempSync(join(tmpdir(), "humantouch-pack-"));
   const packed = await pack(unpacked);
   await sh("tar", ["-xzf", packed], unpacked);
   const root = join(unpacked, "package");

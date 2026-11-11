@@ -1,0 +1,991 @@
+{
+  "lastId": 13,
+  "changes": [
+    {
+      "id": 1,
+      "kind": "style",
+      "layer": "1",
+      "target": {
+        "loc": "src/Card.tsx:3:5",
+        "chain": [
+          {
+            "component": "Card",
+            "usage": "src/App.tsx:6:9",
+            "thirdParty": false
+          },
+          {
+            "component": "App",
+            "usage": null,
+            "thirdParty": false
+          }
+        ],
+        "component": "Card",
+        "instances": 4,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "App",
+            "Card"
+          ],
+          "element": "<article>"
+        }
+      },
+      "scope": "usage",
+      "property": "fill",
+      "before": {
+        "type": "solid",
+        "color": "#FFFFFF",
+        "opacity": 1
+      },
+      "after": {
+        "type": "solid",
+        "color": "#FF0000",
+        "opacity": 1
+      },
+      "style": {
+        "background-color": "rgb(255 0 0 / 1)"
+      },
+      "sources": [
+        {
+          "properties": [
+            "background-color"
+          ],
+          "kind": "inline",
+          "selector": null,
+          "file": null,
+          "layer": null,
+          "important": false,
+          "className": null,
+          "declaration": "background-color: rgb(255, 255, 255)"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "kind": "style",
+      "layer": "1",
+      "target": {
+        "loc": "src/Card.tsx:3:5",
+        "chain": [
+          {
+            "component": "Card",
+            "usage": "src/App.tsx:6:9",
+            "thirdParty": false
+          },
+          {
+            "component": "App",
+            "usage": null,
+            "thirdParty": false
+          }
+        ],
+        "component": "Card",
+        "instances": 4,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "App",
+            "Card"
+          ],
+          "element": "<article>"
+        }
+      },
+      "scope": "usage",
+      "property": "radius",
+      "before": 12,
+      "after": 4,
+      "style": {
+        "border-radius": "4px"
+      },
+      "sources": [
+        {
+          "properties": [
+            "border-top-left-radius",
+            "border-top-right-radius",
+            "border-bottom-right-radius",
+            "border-bottom-left-radius"
+          ],
+          "kind": "inline",
+          "selector": null,
+          "file": null,
+          "layer": null,
+          "important": false,
+          "className": null,
+          "declaration": "border-radius: 12px"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "kind": "style",
+      "layer": "1",
+      "breakpoint": {
+        "min": null,
+        "max": 600
+      },
+      "target": {
+        "loc": "src/Card.tsx:3:5",
+        "chain": [
+          {
+            "component": "Card",
+            "usage": "src/App.tsx:6:9",
+            "thirdParty": false
+          },
+          {
+            "component": "App",
+            "usage": null,
+            "thirdParty": false
+          }
+        ],
+        "component": "Card",
+        "instances": 4,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "App",
+            "Card"
+          ],
+          "element": "<article>"
+        }
+      },
+      "scope": "usage",
+      "property": "radius",
+      "before": 4,
+      "after": 20,
+      "style": {
+        "border-radius": "20px"
+      },
+      "sources": [
+        {
+          "properties": [
+            "border-top-left-radius",
+            "border-top-right-radius",
+            "border-bottom-right-radius",
+            "border-bottom-left-radius"
+          ],
+          "kind": "inline",
+          "selector": null,
+          "file": null,
+          "layer": null,
+          "important": false,
+          "className": null,
+          "declaration": "border-radius: 12px"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "kind": "style",
+      "layer": "1",
+      "breakpoint": {
+        "min": null,
+        "max": 600
+      },
+      "target": {
+        "loc": "src/Card.tsx:3:5",
+        "chain": [
+          {
+            "component": "Card",
+            "usage": "src/App.tsx:6:9",
+            "thirdParty": false
+          },
+          {
+            "component": "App",
+            "usage": null,
+            "thirdParty": false
+          }
+        ],
+        "component": "Card",
+        "instances": 4,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "App",
+            "Card"
+          ],
+          "element": "<article>"
+        }
+      },
+      "scope": "usage",
+      "property": "opacity",
+      "before": 1,
+      "after": 0.8,
+      "style": {
+        "opacity": "0.8"
+      },
+      "sources": [
+        {
+          "properties": [
+            "opacity"
+          ],
+          "kind": "none",
+          "selector": null,
+          "file": null,
+          "layer": null,
+          "important": false,
+          "className": null,
+          "declaration": null
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "kind": "style",
+      "layer": "1",
+      "breakpoint": {
+        "min": 600,
+        "max": 800
+      },
+      "target": {
+        "loc": "src/Card.tsx:3:5",
+        "chain": [
+          {
+            "component": "Card",
+            "usage": "src/App.tsx:6:9",
+            "thirdParty": false
+          },
+          {
+            "component": "App",
+            "usage": null,
+            "thirdParty": false
+          }
+        ],
+        "component": "Card",
+        "instances": 4,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "App",
+            "Card"
+          ],
+          "element": "<article>"
+        }
+      },
+      "scope": "usage",
+      "property": "fill",
+      "before": {
+        "type": "solid",
+        "color": "#FF0000",
+        "opacity": 1
+      },
+      "after": {
+        "type": "solid",
+        "color": "#0000FF",
+        "opacity": 1
+      },
+      "style": {
+        "background-color": "rgb(0 0 255 / 1)"
+      },
+      "sources": [
+        {
+          "properties": [
+            "background-color"
+          ],
+          "kind": "inline",
+          "selector": null,
+          "file": null,
+          "layer": null,
+          "important": false,
+          "className": null,
+          "declaration": "background-color: rgb(255, 255, 255)"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "kind": "style",
+      "layer": "2",
+      "target": {
+        "loc": "src/App.tsx:2:5",
+        "chain": [
+          {
+            "component": "App",
+            "usage": null,
+            "thirdParty": false
+          }
+        ],
+        "component": "App",
+        "instances": 1,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "App"
+          ],
+          "element": "<main>"
+        }
+      },
+      "scope": "usage",
+      "property": "radius",
+      "before": 0,
+      "after": 6,
+      "style": {
+        "border-radius": "6px"
+      },
+      "sources": [
+        {
+          "properties": [
+            "border-top-left-radius",
+            "border-top-right-radius",
+            "border-bottom-right-radius",
+            "border-bottom-left-radius"
+          ],
+          "kind": "none",
+          "selector": null,
+          "file": null,
+          "layer": null,
+          "important": false,
+          "className": null,
+          "declaration": null
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "kind": "move",
+      "layer": "1",
+      "target": {
+        "loc": "src/Card.tsx:3:5",
+        "chain": [
+          {
+            "component": "Card",
+            "usage": "src/App.tsx:6:9",
+            "thirdParty": false
+          },
+          {
+            "component": "App",
+            "usage": null,
+            "thirdParty": false
+          }
+        ],
+        "component": "Card",
+        "instances": 4,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "App",
+            "Card"
+          ],
+          "element": "<article>"
+        }
+      },
+      "scope": "usage",
+      "property": "move 1",
+      "sources": [],
+      "data": true,
+      "reference": true,
+      "before": {
+        "container": {
+          "layer": "2",
+          "target": {
+            "loc": "src/App.tsx:2:5",
+            "chain": [
+              {
+                "component": "App",
+                "usage": null,
+                "thirdParty": false
+              }
+            ],
+            "component": "App",
+            "instances": 1,
+            "locked": false,
+            "unlocated": false,
+            "context": {
+              "path": [
+                "Page",
+                "App"
+              ],
+              "element": "<main>"
+            }
+          },
+          "grid": true
+        },
+        "nth": 4,
+        "slot": 3,
+        "absolute": null
+      },
+      "after": {
+        "container": {
+          "layer": "2",
+          "target": {
+            "loc": "src/App.tsx:2:5",
+            "chain": [
+              {
+                "component": "App",
+                "usage": null,
+                "thirdParty": false
+              }
+            ],
+            "component": "App",
+            "instances": 1,
+            "locked": false,
+            "unlocated": false,
+            "context": {
+              "path": [
+                "Page",
+                "App"
+              ],
+              "element": "<main>"
+            }
+          },
+          "grid": true
+        },
+        "nth": 6,
+        "slot": 5,
+        "absolute": {
+          "x": 10,
+          "y": 400
+        }
+      },
+      "style": {
+        "position": "absolute",
+        "left": "10px",
+        "top": "400px",
+        "right": "auto",
+        "bottom": "auto",
+        "width": "142px",
+        "height": "80px"
+      }
+    },
+    {
+      "id": 8,
+      "kind": "delete",
+      "layer": "1",
+      "target": {
+        "loc": "src/Card.tsx:3:5",
+        "chain": [
+          {
+            "component": "Card",
+            "usage": "src/App.tsx:6:9",
+            "thirdParty": false
+          },
+          {
+            "component": "App",
+            "usage": null,
+            "thirdParty": false
+          }
+        ],
+        "component": "Card",
+        "instances": 4,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "App",
+            "Card"
+          ],
+          "element": "<article>"
+        }
+      },
+      "scope": "usage",
+      "property": "delete-1",
+      "before": {
+        "container": {
+          "layer": "2",
+          "target": {
+            "loc": "src/App.tsx:2:5",
+            "chain": [
+              {
+                "component": "App",
+                "usage": null,
+                "thirdParty": false
+              }
+            ],
+            "component": "App",
+            "instances": 1,
+            "locked": false,
+            "unlocated": false,
+            "context": {
+              "path": [
+                "Page",
+                "App"
+              ],
+              "element": "<main>"
+            }
+          },
+          "grid": true
+        },
+        "nth": 4,
+        "slot": 3,
+        "absolute": null
+      },
+      "after": null,
+      "style": {
+        "display": "none"
+      },
+      "sources": [],
+      "data": true
+    },
+    {
+      "id": 9,
+      "kind": "duplicate",
+      "layer": "4",
+      "target": {
+        "loc": "src/Card.tsx:4:7",
+        "chain": [
+          {
+            "component": "Card",
+            "usage": "src/App.tsx:6:9",
+            "thirdParty": false
+          },
+          {
+            "component": "App",
+            "usage": null,
+            "thirdParty": false
+          }
+        ],
+        "component": "Card",
+        "instances": 3,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "App",
+            "Card",
+            "Card 1"
+          ],
+          "element": "<h3>",
+          "text": "Card 1"
+        }
+      },
+      "scope": "usage",
+      "property": "copy",
+      "before": {
+        "container": {
+          "layer": "1",
+          "target": {
+            "loc": "src/Card.tsx:3:5",
+            "chain": [
+              {
+                "component": "Card",
+                "usage": "src/App.tsx:6:9",
+                "thirdParty": false
+              },
+              {
+                "component": "App",
+                "usage": null,
+                "thirdParty": false
+              }
+            ],
+            "component": "Card",
+            "instances": 3,
+            "locked": false,
+            "unlocated": false,
+            "context": {
+              "path": [
+                "Page",
+                "App",
+                "Card"
+              ],
+              "element": "<article>"
+            }
+          }
+        },
+        "nth": 1,
+        "slot": 0,
+        "absolute": null
+      },
+      "after": {
+        "container": {
+          "layer": "1",
+          "target": {
+            "loc": "src/Card.tsx:3:5",
+            "chain": [
+              {
+                "component": "Card",
+                "usage": "src/App.tsx:6:9",
+                "thirdParty": false
+              },
+              {
+                "component": "App",
+                "usage": null,
+                "thirdParty": false
+              }
+            ],
+            "component": "Card",
+            "instances": 3,
+            "locked": false,
+            "unlocated": false,
+            "context": {
+              "path": [
+                "Page",
+                "App",
+                "Card"
+              ],
+              "element": "<article>"
+            }
+          }
+        },
+        "nth": 2,
+        "slot": 1,
+        "absolute": null
+      },
+      "style": {},
+      "sources": []
+    },
+    {
+      "id": 10,
+      "kind": "style",
+      "layer": "component src/Button.tsx:2:3",
+      "target": {
+        "loc": "src/Button.tsx:2:3",
+        "chain": [
+          {
+            "component": "Button",
+            "usage": "src/Card.tsx:5:7",
+            "thirdParty": false
+          },
+          {
+            "component": "Card",
+            "usage": "src/App.tsx:6:9",
+            "thirdParty": false
+          },
+          {
+            "component": "App",
+            "usage": null,
+            "thirdParty": false
+          }
+        ],
+        "component": "Button",
+        "instances": 6,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "App",
+            "Card",
+            "Button"
+          ],
+          "element": "<button>",
+          "text": "Open"
+        }
+      },
+      "scope": "component",
+      "property": "fill",
+      "before": {
+        "type": "solid",
+        "color": "#C8C8C8",
+        "opacity": 1
+      },
+      "after": {
+        "type": "solid",
+        "color": "#00FF00",
+        "opacity": 1
+      },
+      "style": {
+        "background-color": "rgb(0 255 0 / 1)"
+      },
+      "sources": [
+        {
+          "properties": [
+            "background-color"
+          ],
+          "kind": "inline",
+          "selector": null,
+          "file": null,
+          "layer": null,
+          "important": false,
+          "className": null,
+          "declaration": "background-color: rgb(200, 200, 200)"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "kind": "delete",
+      "layer": "7",
+      "target": {
+        "loc": "src/App.tsx:10:5",
+        "chain": [
+          {
+            "component": "App",
+            "usage": null,
+            "thirdParty": false
+          }
+        ],
+        "component": "App",
+        "instances": 1,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "App"
+          ],
+          "element": "<aside>"
+        }
+      },
+      "scope": "usage",
+      "property": "delete",
+      "before": {
+        "container": {
+          "layer": "6",
+          "target": {
+            "loc": null,
+            "chain": [],
+            "component": null,
+            "instances": 1,
+            "locked": false,
+            "unlocated": true,
+            "context": {
+              "path": [
+                "Page"
+              ],
+              "element": "<body>"
+            }
+          }
+        },
+        "nth": 2,
+        "slot": 1,
+        "absolute": null
+      },
+      "after": null,
+      "style": {
+        "display": "none"
+      },
+      "sources": [],
+      "offCanvas": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "id": 12,
+      "kind": "putBack",
+      "layer": "8",
+      "target": {
+        "loc": "src/App.tsx:2:5",
+        "chain": [
+          {
+            "component": "App",
+            "usage": null,
+            "thirdParty": false
+          }
+        ],
+        "component": "App",
+        "instances": 1,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "App"
+          ],
+          "element": "<main>"
+        }
+      },
+      "scope": "usage",
+      "property": "put back",
+      "before": null,
+      "after": {
+        "place": {
+          "container": {
+            "layer": "2",
+            "target": {
+              "loc": "src/App.tsx:2:5",
+              "chain": [
+                {
+                  "component": "App",
+                  "usage": null,
+                  "thirdParty": false
+                }
+              ],
+              "component": "App",
+              "instances": 1,
+              "locked": false,
+              "unlocated": false,
+              "context": {
+                "path": [
+                  "Page",
+                  "App"
+                ],
+                "element": "<main>"
+              }
+            },
+            "grid": true
+          },
+          "nth": 2,
+          "slot": 1,
+          "absolute": null
+        },
+        "layer": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "x": -400,
+          "y": 0,
+          "look": "<!DOCTYPE html><html><head><style data-ht-edit-styles=\"order\">@layer human-touch-edits;</style><style data-ht-look-styles=\"base\">html,body{margin:0;padding:0;background:transparent}body{width:max-content}</style><style data-ht-look-styles=\"\">[data-ht-look=\"0\"]{column-gap:4px;display:flex;height:auto;perspective-origin:400px 11px;row-gap:4px;transform-origin:400px 11px;unicode-bidi:isolate;width:800px;top:auto;right:auto;bottom:auto;left:auto;margin-top:0px;margin-right:0px;margin-bottom:0px;margin-left:0px;float:none}[data-ht-look=\"1\"]{background-color:rgb(230, 230, 230);column-gap:normal;display:block;height:auto;min-height:auto;min-width:auto;padding-bottom:2px;padding-left:2px;padding-right:2px;padding-top:2px;perspective-origin:23.5625px 11px;row-gap:normal;transform-origin:23.5625px 11px;unicode-bidi:normal;width:auto}[data-ht-look=\"2\"]{background-color:rgb(230, 230, 230);column-gap:normal;display:block;height:auto;min-height:auto;min-width:auto;padding-bottom:2px;padding-left:2px;padding-right:2px;padding-top:2px;perspective-origin:23.5625px 11px;row-gap:normal;transform-origin:23.5625px 11px;unicode-bidi:normal;width:auto}[data-ht-look=\"3\"]{background-color:rgb(230, 230, 230);column-gap:normal;display:block;height:auto;min-height:auto;min-width:auto;padding-bottom:2px;padding-left:2px;padding-right:2px;padding-top:2px;perspective-origin:23.5625px 11px;row-gap:normal;transform-origin:23.5625px 11px;unicode-bidi:normal;width:auto}</style><style data-ht-edit-styles=\"\" data-ht-rules-for=\"1\" data-ht-rules=\"{&quot;lifted&quot;:{},&quot;edits&quot;:{&quot;base&quot;:{&quot;style&quot;:{&quot;background-color&quot;:&quot;rgb(255 0 0 / 1)&quot;}},&quot;at&quot;:[]}}\">@layer human-touch-edits{[data-ht-style=\"1\"]{background-color:rgb(255 0 0 / 1)!important}}</style><style data-ht-edit-styles=\"\" data-ht-rules-for=\"2\" data-ht-rules=\"{&quot;lifted&quot;:{},&quot;edits&quot;:{&quot;base&quot;:{&quot;style&quot;:{&quot;background-color&quot;:&quot;rgb(255 0 0 / 1)&quot;}},&quot;at&quot;:[]}}\">@layer human-touch-edits{[data-ht-style=\"2\"]{background-color:rgb(255 0 0 / 1)!important}}</style><style data-ht-edit-styles=\"\" data-ht-rules-for=\"3\" data-ht-rules=\"{&quot;lifted&quot;:{},&quot;edits&quot;:{&quot;base&quot;:{&quot;style&quot;:{&quot;background-color&quot;:&quot;rgb(255 0 0 / 1)&quot;}},&quot;at&quot;:[]}}\">@layer human-touch-edits{[data-ht-style=\"3\"]{background-color:rgb(255 0 0 / 1)!important}}</style></head><body><aside data-ht-loc=\"src/App.tsx:10:5\" data-ht-chain=\"[{&quot;component&quot;:&quot;App&quot;,&quot;usage&quot;:null,&quot;thirdParty&quot;:false}]\" data-ht-look=\"0\">\n    <span data-ht-loc=\"src/Chip.tsx:2:3\" data-ht-chain=\"[{&quot;component&quot;:&quot;Chip&quot;,&quot;usage&quot;:&quot;src/App.tsx:11:9&quot;,&quot;thirdParty&quot;:false},{&quot;component&quot;:&quot;App&quot;,&quot;usage&quot;:null,&quot;thirdParty&quot;:false}]\" data-ht-look=\"1\" data-ht-original-style=\"\" data-ht-style=\"1\" data-ht-layer=\"1\">Chip 1</span><span data-ht-loc=\"src/Chip.tsx:2:3\" data-ht-chain=\"[{&quot;component&quot;:&quot;Chip&quot;,&quot;usage&quot;:&quot;src/App.tsx:11:9&quot;,&quot;thirdParty&quot;:false},{&quot;component&quot;:&quot;App&quot;,&quot;usage&quot;:null,&quot;thirdParty&quot;:false}]\" data-ht-look=\"2\" data-ht-original-style=\"\" data-ht-style=\"2\" data-ht-layer=\"1\">Chip 2</span><span data-ht-loc=\"src/Chip.tsx:2:3\" data-ht-chain=\"[{&quot;component&quot;:&quot;Chip&quot;,&quot;usage&quot;:&quot;src/App.tsx:11:9&quot;,&quot;thirdParty&quot;:false},{&quot;component&quot;:&quot;App&quot;,&quot;usage&quot;:null,&quot;thirdParty&quot;:false}]\" data-ht-look=\"3\" data-ht-original-style=\"\" data-ht-style=\"3\" data-ht-layer=\"1\">Chip 3</span>\n  </aside></body></html>",
+          "origin": {
+            "target": {
+              "loc": "src/App.tsx:10:5",
+              "chain": [
+                {
+                  "component": "App",
+                  "usage": null,
+                  "thirdParty": false
+                }
+              ],
+              "component": "App",
+              "instances": 1,
+              "locked": false,
+              "unlocated": false,
+              "context": {
+                "path": [
+                  "Page",
+                  "App"
+                ],
+                "element": "<aside>"
+              }
+            },
+            "place": {
+              "container": {
+                "layer": "6",
+                "target": {
+                  "loc": null,
+                  "chain": [],
+                  "component": null,
+                  "instances": 1,
+                  "locked": false,
+                  "unlocated": true,
+                  "context": {
+                    "path": [
+                      "Page"
+                    ],
+                    "element": "<body>"
+                  }
+                }
+              },
+              "nth": 2,
+              "slot": 1,
+              "absolute": null
+            },
+            "written": null,
+            "at": "2026-10-29T00:00:00.000Z"
+          },
+          "edits": {
+            "lastId": 1,
+            "changes": [
+              {
+                "id": 1,
+                "kind": "style",
+                "layer": "1",
+                "target": {
+                  "loc": "src/Chip.tsx:2:3",
+                  "chain": [
+                    {
+                      "component": "Chip",
+                      "usage": "src/App.tsx:11:9",
+                      "thirdParty": false
+                    },
+                    {
+                      "component": "App",
+                      "usage": null,
+                      "thirdParty": false
+                    }
+                  ],
+                  "component": "Chip",
+                  "instances": 3,
+                  "locked": false,
+                  "unlocated": false,
+                  "context": {
+                    "path": [
+                      "Page",
+                      "App",
+                      "Chip"
+                    ],
+                    "element": "<span>",
+                    "text": "Chip 1"
+                  }
+                },
+                "scope": "usage",
+                "property": "fill",
+                "before": {
+                  "type": "solid",
+                  "color": "#E6E6E6",
+                  "opacity": 1
+                },
+                "after": {
+                  "type": "solid",
+                  "color": "#FF0000",
+                  "opacity": 1
+                },
+                "style": {
+                  "background-color": "rgb(255 0 0 / 1)"
+                },
+                "sources": []
+              }
+            ]
+          }
+        }
+      },
+      "style": {},
+      "sources": []
+    },
+    {
+      "id": 13,
+      "kind": "delete",
+      "layer": "9",
+      "target": {
+        "loc": "src/App.tsx:14:5",
+        "chain": [
+          {
+            "component": "App",
+            "usage": null,
+            "thirdParty": false
+          }
+        ],
+        "component": "App",
+        "instances": 1,
+        "locked": false,
+        "unlocated": false,
+        "context": {
+          "path": [
+            "Page",
+            "App"
+          ],
+          "element": "<section>"
+        }
+      },
+      "scope": "usage",
+      "property": "delete",
+      "before": {
+        "container": {
+          "layer": "6",
+          "target": {
+            "loc": null,
+            "chain": [],
+            "component": null,
+            "instances": 1,
+            "locked": false,
+            "unlocated": true,
+            "context": {
+              "path": [
+                "Page"
+              ],
+              "element": "<body>"
+            }
+          }
+        },
+        "nth": 2,
+        "slot": 2,
+        "absolute": null
+      },
+      "after": null,
+      "style": {
+        "display": "none"
+      },
+      "sources": [],
+      "offCanvas": "00000000-0000-4000-8000-000000000002"
+    }
+  ]
+}

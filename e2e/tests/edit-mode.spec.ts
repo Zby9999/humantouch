@@ -46,7 +46,7 @@ test("the toggle freezes the current page state into a canvas inside the editor 
   await expect(canvas.locator("script")).toHaveCount(0);
   // Scripts are off in the canvas; fallbacks for that must not show up.
   await expect(canvas.getByText("You need to enable JavaScript")).toHaveCount(0);
-  await expect(canvas.locator("third-kind")).toHaveCount(0);
+  await expect(canvas.locator("human-touch")).toHaveCount(0);
 });
 
 test("the canvas looks the same as the page: fonts, fixed elements and injected styles", async ({ page }) => {
@@ -115,10 +115,10 @@ test("animations in progress jump to their end state on the canvas", async ({ pa
   await page.evaluate(() => {
     const style = document.createElement("style");
     style.textContent = `
-      @keyframes tk-test-fade { from { opacity: 0 } to { opacity: 1 } }
-      @keyframes tk-test-spin { to { rotate: 1turn } }
-      #fade { animation: tk-test-fade 60s forwards }
-      #spin { animation: tk-test-spin 1s linear infinite }
+      @keyframes ht-test-fade { from { opacity: 0 } to { opacity: 1 } }
+      @keyframes ht-test-spin { to { rotate: 1turn } }
+      #fade { animation: ht-test-fade 60s forwards }
+      #spin { animation: ht-test-spin 1s linear infinite }
     `;
     document.head.append(style);
     for (const id of ["fade", "spin", "slide"]) {
@@ -286,7 +286,7 @@ test.describe("canvas navigation", () => {
 
     /** Every view, side by side: the box round them all. */
     const views = async () => {
-      const boxes = await page.locator("iframe.tk-canvas").evaluateAll((frames) => frames.map((frame) => frame.getBoundingClientRect().toJSON() as DOMRect));
+      const boxes = await page.locator("iframe.ht-canvas").evaluateAll((frames) => frames.map((frame) => frame.getBoundingClientRect().toJSON() as DOMRect));
       const x = Math.min(...boxes.map((b) => b.left));
       const y = Math.min(...boxes.map((b) => b.top));
       return { x, y, width: Math.max(...boxes.map((b) => b.right)) - x, height: Math.max(...boxes.map((b) => b.bottom)) - y };
@@ -326,10 +326,10 @@ for (const [scheme, panel, area] of [
 test("the Design panel's top: its label at the left, the count and the way back at the right", async ({ page }) => {
   await enterEditMode(page);
   const panel = page.getByRole("complementary", { name: "Design" });
-  const header = panel.locator(".tk-panel-header");
+  const header = panel.locator(".ht-panel-header");
   const label = header.getByRole("heading");
   const back = header.getByRole("button", { name: EXIT_LABEL });
-  const count = header.locator(".tk-count");
+  const count = header.locator(".ht-count");
 
   /** With nothing after the Play button that went, the count and the way back sat by the label (designer, 2026-11-08). */
   async function atTheEnds() {

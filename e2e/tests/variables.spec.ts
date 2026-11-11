@@ -143,9 +143,9 @@ test("the menu of Effects' + is two panels: the effect types nearer the button, 
   const add = design(page).getByRole("group", { name: "Effects" }).getByRole("button", { name: "Add effect" });
   await add.click();
   const menu = page.getByRole("dialog", { name: "Add effect" });
-  const [variables, types] = [menu.locator(".tk-menu-column").nth(0), menu.locator(".tk-menu-column").nth(1)];
+  const [variables, types] = [menu.locator(".ht-menu-column").nth(0), menu.locator(".ht-menu-column").nth(1)];
   await expect(types.getByRole("option")).toHaveText(["Drop shadow", "Inner shadow", "Layer blur", "Background blur"]);
-  await expect(variables.locator(".tk-menu-heading")).toHaveText("Variables");
+  await expect(variables.locator(".ht-menu-heading")).toHaveText("Variables");
   await expect(variables.getByRole("option", { name: "md", exact: true })).toBeVisible();
 
   // Two panels, each its own white card, 8px apart, the menu itself none; the types' right edge at the button's.
@@ -166,7 +166,7 @@ test("the menu of Effects' + is two panels: the effect types nearer the button, 
   expect(box.y + box.height).toBeLessThanOrEqual(window.height);
 
   // ↑ / ↓ keep to a panel, ← / → go across at the nearest row, Esc closes.
-  const active = menu.locator(".tk-menu-option.is-active");
+  const active = menu.locator(".ht-menu-option.is-active");
   await expect(active).toHaveText("Drop shadow");
   await page.keyboard.press("ArrowLeft");
   await expect(active).toHaveText(await variables.getByRole("option").first().innerText());
@@ -176,11 +176,11 @@ test("the menu of Effects' + is two panels: the effect types nearer the button, 
   await expect(active).toHaveText("Inner shadow");
 
   // A shadow Variable pointed at shows its layers, as the Variables tab does, at its panel's left.
-  const details = page.locator(".tk-variants-details");
+  const details = page.locator(".ht-variants-details");
   const md = variables.getByRole("option", { name: "md", exact: true });
   await md.hover();
-  await expect(details.locator(".tk-variants-details-name")).toHaveText("md");
-  await expect(details.locator(".tk-variants-details-title")).toHaveText(["Shadow 1", "Shadow 2"]);
+  await expect(details.locator(".ht-variants-details-name")).toHaveText("md");
+  await expect(details.locator(".ht-variants-details-title")).toHaveText(["Shadow 1", "Shadow 2"]);
   const shown = await steadyBox(details);
   expect(Math.round(shown.x + shown.width)).toBe(Math.round(left.x) - 8);
   // Level with it, or risen to be whole in the window.
@@ -213,7 +213,7 @@ test("with very many shadow Variables, Effects' + keeps its types by the button:
   const add = design(page).getByRole("group", { name: "Effects" }).getByRole("button", { name: "Add effect" });
   await add.click();
   const menu = page.getByRole("dialog", { name: "Add effect" });
-  const [variables, types] = [menu.locator(".tk-menu-column").nth(0), menu.locator(".tk-menu-column").nth(1)];
+  const [variables, types] = [menu.locator(".ht-menu-column").nth(0), menu.locator(".ht-menu-column").nth(1)];
   await expect(variables.getByRole("option", { name: "elevation-40" })).toHaveCount(1);
   const button = await steadyBox(add);
   const typesBox = await steadyBox(types);
@@ -247,22 +247,22 @@ test("in Effects' + with very many shadow Variables, ↓ goes down their panel t
   await selectRow(page, "Card");
   await design(page).getByRole("group", { name: "Effects" }).getByRole("button", { name: "Add effect" }).click();
   const menu = page.getByRole("dialog", { name: "Add effect" });
-  const variables = menu.locator(".tk-menu-column").nth(0);
+  const variables = menu.locator(".ht-menu-column").nth(0);
   const options = variables.getByRole("option");
   await expect(variables.getByRole("option", { name: "elevation-40" })).toHaveCount(1);
   const box = await steadyBox(variables);
   expect(await variables.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
 
   // The pointer moved into the Variables' panel, near its top: the Variable under it is the one the keys are on, its layers shown. Then left there.
-  const details = page.locator(".tk-variants-details");
+  const details = page.locator(".ht-variants-details");
   await page.mouse.move(box.x + box.width / 2, box.y + 96);
-  const active = menu.locator(".tk-menu-option.is-active");
+  const active = menu.locator(".ht-menu-option.is-active");
   await expect(active).toHaveCount(1);
   const ids = await options.evaluateAll((all) => all.map((o) => o.id));
   const from = ids.indexOf((await active.getAttribute("id"))!);
   expect(from).toBeGreaterThan(0);
   expect(from).toBeLessThan(ids.length - 1);
-  await expect(details.locator(".tk-variants-details-name")).toHaveText(await active.innerText());
+  await expect(details.locator(".ht-variants-details-name")).toHaveText(await active.innerText());
   // ↓ to the end: each a step down, the panel scrolling under the pointer, which takes none of them back.
   for (let i = from + 1; i < ids.length; i++) {
     await page.keyboard.press("ArrowDown");
@@ -282,7 +282,7 @@ test("in Effects' + with very many shadow Variables, ↓ goes down their panel t
   await page.mouse.move(box.x + box.width / 2, box.y + box.height - 48);
   await expect(active).toHaveAttribute("id", ids.at(-2)!);
   await expect(active).toHaveText("elevation-39");
-  await expect(details.locator(".tk-variants-details-name")).toHaveText("elevation-39");
+  await expect(details.locator(".ht-variants-details-name")).toHaveText("elevation-39");
   await page.keyboard.press("Enter");
   await expect(menu).toBeHidden();
 });
@@ -352,14 +352,14 @@ test("in a field's list of very many matching Variables, ↓ goes down to its en
 test("corner radius, shadows, size and font size take Variables of their own groups", async ({ page }) => {
   await enterEditMode(page);
   await selectRow(page, "Card");
-  const radiusIcon = await design(page).locator('.tk-field:has([aria-label="Corner radius"]) .tk-icon').first().innerHTML();
+  const radiusIcon = await design(page).locator('.ht-field:has([aria-label="Corner radius"]) .ht-icon').first().innerHTML();
 
   await (await variablesOf(page, "Corner radius")).getByRole("option", { name: "pill" }).click();
   await expect.poll(async () => (await cardStyles(page, "borderTopLeftRadius"))[0]).toBe("999px");
   await expect(design(page).getByRole("button", { name: "Corner radius variable", exact: true })).toHaveText("pill");
   // The field keeps its own icon by the Variable's name; its detach and its reset side by side (designer, 2026-11-08).
-  const chip = design(page).locator('.tk-variable-chip:has([aria-label="Corner radius variable"])');
-  expect(await chip.locator("> .tk-icon").first().innerHTML()).toBe(radiusIcon);
+  const chip = design(page).locator('.ht-variable-chip:has([aria-label="Corner radius variable"])');
+  expect(await chip.locator("> .ht-icon").first().innerHTML()).toBe(radiusIcon);
   const detach = (await chip.getByRole("button", { name: "Detach corner radius variable" }).boundingBox())!;
   const reset = (await chip.getByRole("button", { name: "Reset corner radius" }).boundingBox())!;
   expect(Math.round(reset.x - (detach.x + detach.width))).toBe(0);
@@ -564,8 +564,8 @@ test("with nothing selected, the Variables tab shows the project's own Variables
   await enterEditMode(page);
   const filter = design(page).getByRole("combobox", { name: "Variables shown" });
   await expect(filter).toHaveValue("own");
-  await expect(design(page).locator(".tk-variants-subtitle").first()).toHaveText("Project");
-  await expect(design(page).locator(".tk-variants-subtitle").filter({ hasText: "Tailwind" })).toHaveCount(0);
+  await expect(design(page).locator(".ht-variants-subtitle").first()).toHaveText("Project");
+  await expect(design(page).locator(".ht-variants-subtitle").filter({ hasText: "Tailwind" })).toHaveCount(0);
 
   await enterEditMode(page, DEV_URL);
   await expect(filter).toHaveValue("tailwind");
@@ -577,20 +577,20 @@ test("with nothing selected, a spacing Variable's bar is as long as it is; one t
   await showAll(page);
   const panel = design(page);
   const spacing = panel.getByRole("region", { name: "Spacing" });
-  const row = (name: string) => spacing.locator(".tk-variants-row").filter({ has: page.locator(".tk-variants-name").getByText(name, { exact: true }) });
-  const whole = page.locator(".tk-variants-whole");
+  const row = (name: string) => spacing.locator(".ht-variants-row").filter({ has: page.locator(".ht-variants-name").getByText(name, { exact: true }) });
+  const whole = page.locator(".ht-variants-whole");
 
   // 1px of bar a px.
   const short = row("4");
   await short.scrollIntoViewIfNeeded();
-  expect((await steadyBox(short.locator(".tk-variants-bar"))).width).toBe(16);
+  expect((await steadyBox(short.locator(".ht-variants-bar"))).width).toBe(16);
 
   // Longer than its track, a bar runs on past the value's right up to the row's edge, however little longer (44, 176px) or much (96, 384px);
   // the panel does not scroll sideways.
   const long = row("96");
   for (const over of [row("44"), long]) {
     await over.scrollIntoViewIfNeeded();
-    const [bar, value, track, edge] = await Promise.all([".tk-variants-bar", ".tk-variants-value", ".tk-variants-track"].map((part) => steadyBox(over.locator(part))).concat(steadyBox(over)));
+    const [bar, value, track, edge] = await Promise.all([".ht-variants-bar", ".ht-variants-value", ".ht-variants-track"].map((part) => steadyBox(over.locator(part))).concat(steadyBox(over)));
     expect(bar.width).toBeGreaterThan(track.width);
     expect(bar.x + bar.width).toBeGreaterThanOrEqual(edge.x + edge.width);
     expect(edge.x + edge.width).toBeGreaterThan(value.x + value.width + 2);
@@ -600,7 +600,7 @@ test("with nothing selected, a spacing Variable's bar is as long as it is; one t
   // Pointed at, it shows whole, on white, out over the canvas, and nothing else.
   await long.hover();
   await expect(whole).toBeVisible();
-  await expect.poll(async () => (await whole.locator(".tk-variants-bar").boundingBox())?.width).toBe(384);
+  await expect.poll(async () => (await whole.locator(".ht-variants-bar").boundingBox())?.width).toBe(384);
   expect(await whole.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(255, 255, 255)");
   expect((await steadyBox(whole)).x).toBeLessThan((await steadyBox(panel)).x);
   await expect(page.getByRole("tooltip")).toHaveCount(0);
@@ -617,12 +617,12 @@ test("with nothing selected, a step a ramp has no color for shows as a placehold
   // brand has 50, 100, 500 and 700 only: 200 is its first gap (designer, 2026-11-08).
   const brand = design(page)
     .getByRole("region", { name: "Color" })
-    .locator(".tk-variants-ramp")
-    .filter({ has: page.locator(".tk-variants-ramp-name").getByText("brand", { exact: true }) });
+    .locator(".ht-variants-ramp")
+    .filter({ has: page.locator(".ht-variants-ramp-name").getByText("brand", { exact: true }) });
   await brand.scrollIntoViewIfNeeded();
-  const cells = brand.locator(".tk-variants-swatch, .tk-variants-empty");
+  const cells = brand.locator(".ht-variants-swatch, .ht-variants-empty");
   await expect(cells).toHaveCount(11);
-  expect(await cells.nth(2).getAttribute("class")).toBe("tk-variants-empty");
+  expect(await cells.nth(2).getAttribute("class")).toBe("ht-variants-empty");
   const [swatch, empty] = await Promise.all([steadyBox(cells.nth(1)), steadyBox(cells.nth(2))]);
   expect(empty.width).toBeCloseTo(swatch.width, 0);
   expect(empty.height).toBeCloseTo(swatch.height, 0);
@@ -647,14 +647,14 @@ test("with nothing selected, a radius tile has its name over its value, in it wh
   await showAll(page);
   const radius = design(page).getByRole("region", { name: "Radius" });
   await radius.scrollIntoViewIfNeeded();
-  const tiles = radius.locator(".tk-variants-tile");
-  const tile = (name: string) => tiles.filter({ has: page.locator(".tk-variants-tile-name").getByText(name, { exact: true }) });
+  const tiles = radius.locator(".ht-variants-tile");
+  const tile = (name: string) => tiles.filter({ has: page.locator(".ht-variants-tile-name").getByText(name, { exact: true }) });
   await expect(tile(LONG)).toHaveCount(1);
   await expect(tile("full")).toHaveCount(1);
 
   // The name over the value, both centered in the tile (a cut name fills it, so it is centered too); nothing past the tile's right, the longest name and value (9999px) included.
   for (const t of await tiles.all()) {
-    const [edge, label, name, value] = await Promise.all([t, t.locator(".tk-variants-label"), t.locator(".tk-variants-tile-name"), t.locator(".tk-variants-value")].map(steadyBox));
+    const [edge, label, name, value] = await Promise.all([t, t.locator(".ht-variants-label"), t.locator(".ht-variants-tile-name"), t.locator(".ht-variants-value")].map(steadyBox));
     expect(label.x + label.width).toBeLessThanOrEqual(edge.x + edge.width);
     expect(name.x + name.width).toBeLessThanOrEqual(edge.x + edge.width);
     expect(value.x + value.width).toBeLessThanOrEqual(edge.x + edge.width);
@@ -666,7 +666,7 @@ test("with nothing selected, a radius tile has its name over its value, in it wh
   expect(await design(page).evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0);
 
   // The long name is cut with an ellipsis; pointed at, its tile tells the name and value whole.
-  const longName = tile(LONG).locator(".tk-variants-tile-name");
+  const longName = tile(LONG).locator(".ht-variants-tile-name");
   expect(await longName.evaluate((el) => el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow === "ellipsis")).toBe(true);
   await tile(LONG).hover();
   const tip = page.getByRole("tooltip");
@@ -686,7 +686,7 @@ const frames = (page: Page) => page.evaluate(() => new Promise((done) => request
 test("with nothing selected, a font size's row tells nothing pointed at: its name and value are on it; a color swatch, showing neither, tells them", async ({ page }) => {
   await enterEditMode(page);
   const tip = page.getByRole("tooltip");
-  const swatch = design(page).getByRole("region", { name: "Color" }).locator(".tk-variants-swatch").first();
+  const swatch = design(page).getByRole("region", { name: "Color" }).locator(".ht-variants-swatch").first();
   await swatch.scrollIntoViewIfNeeded();
   const name = (await swatch.getAttribute("aria-label"))!.split(",")[0];
   await swatch.hover();
@@ -695,7 +695,7 @@ test("with nothing selected, a font size's row tells nothing pointed at: its nam
 
   const sizes = design(page).getByRole("region", { name: "Font size" });
   await sizes.scrollIntoViewIfNeeded();
-  for (const row of await sizes.locator(".tk-variants-row.is-button").all()) {
+  for (const row of await sizes.locator(".ht-variants-row.is-button").all()) {
     await row.hover();
     await frames(page);
     await expect.poll(() => tip.count()).toBe(0);
@@ -706,20 +706,20 @@ test("with nothing selected, a shadow pointed at shows its layers in a white pan
   await enterEditMode(page);
   const shadows = design(page).getByRole("region", { name: "Shadow" });
   await shadows.scrollIntoViewIfNeeded();
-  const card = shadows.locator(".tk-variants-tile").filter({ hasText: /^card$/ });
-  const details = page.locator(".tk-variants-details");
+  const card = shadows.locator(".ht-variants-tile").filter({ hasText: /^card$/ });
+  const details = page.locator(".ht-variants-details");
   await card.hover();
   await expect(details).toBeVisible();
   await expect(page.getByRole("tooltip")).toHaveCount(0);
 
   // `card`: 0 1px 2px rgb(27 29 42 / 0.06), 0 4px 12px rgb(27 29 42 / 0.08), a block each.
-  await expect(details.locator(".tk-variants-details-name")).toHaveText("card");
-  const layers = details.locator(".tk-variants-details-layer");
+  await expect(details.locator(".ht-variants-details-name")).toHaveText("card");
+  const layers = details.locator(".ht-variants-details-layer");
   await expect(layers).toHaveCount(2);
-  const pairs = (n: number) => layers.nth(n).evaluate((layer) => [...layer.querySelectorAll(".tk-variants-details-pair")].map((pair) => pair.textContent!.replace(/\s+/g, "")));
-  await expect(layers.nth(0).locator(".tk-variants-details-head")).toHaveText(/Shadow 1\s*Drop shadow/);
+  const pairs = (n: number) => layers.nth(n).evaluate((layer) => [...layer.querySelectorAll(".ht-variants-details-pair")].map((pair) => pair.textContent!.replace(/\s+/g, "")));
+  await expect(layers.nth(0).locator(".ht-variants-details-head")).toHaveText(/Shadow 1\s*Drop shadow/);
   expect(await pairs(0)).toEqual(["X0", "Y1", "Blur2", "Spread0", "Color1B1D2A6%"]);
-  await expect(layers.nth(1).locator(".tk-variants-details-head")).toHaveText(/Shadow 2\s*Drop shadow/);
+  await expect(layers.nth(1).locator(".ht-variants-details-head")).toHaveText(/Shadow 2\s*Drop shadow/);
   expect(await pairs(1)).toEqual(["X0", "Y4", "Blur12", "Spread0", "Color1B1D2A8%"]);
 
   // White, read-only, wholly left of the Design panel, over the canvas, in the window.
@@ -748,9 +748,9 @@ test("with nothing selected, a ramp on steps of its own (1–12) has a column a 
   await addColors(page, grays.map((value, i) => [`gray-${i + 1}`, value]));
   await enterEditMode(page);
   const colors = design(page).getByRole("region", { name: "Color" });
-  const gray = colors.locator(".tk-variants-ramp").filter({ has: page.locator(".tk-variants-ramp-name").getByText("gray", { exact: true }) });
+  const gray = colors.locator(".ht-variants-ramp").filter({ has: page.locator(".ht-variants-ramp-name").getByText("gray", { exact: true }) });
   await gray.first().scrollIntoViewIfNeeded();
-  const cells = gray.first().locator(".tk-variants-swatch, .tk-variants-empty");
+  const cells = gray.first().locator(".ht-variants-swatch, .ht-variants-empty");
   await expect(cells).toHaveCount(12);
   await expect(cells.first()).toHaveAccessibleName("gray-1, #FCFCFC");
   await expect(cells.last()).toHaveAccessibleName("gray-12, #202020");
@@ -758,8 +758,8 @@ test("with nothing selected, a ramp on steps of its own (1–12) has a column a 
   expect(first.width).toBeGreaterThanOrEqual(12);
   expect(last.x + last.width).toBeLessThanOrEqual(row.x + row.width + 0.5);
   // brand, on Tailwind's steps, keeps its 11.
-  const brand = colors.locator(".tk-variants-ramp").filter({ has: page.locator(".tk-variants-ramp-name").getByText("brand", { exact: true }) });
-  await expect(brand.locator(".tk-variants-swatch, .tk-variants-empty")).toHaveCount(11);
+  const brand = colors.locator(".ht-variants-ramp").filter({ has: page.locator(".ht-variants-ramp-name").getByText("brand", { exact: true }) });
+  await expect(brand.locator(".ht-variants-swatch, .ht-variants-empty")).toHaveCount(11);
 });
 
 test("with nothing selected, colors of no ramp are named: each its swatch and its name, two a row, a name's group together; pointed at, it tells its value", async ({ page }) => {
@@ -772,7 +772,7 @@ test("with nothing selected, colors of no ramp are named: each its swatch and it
   await enterEditMode(page);
   const named = design(page).getByRole("region", { name: "Color" }).getByRole("group", { name: "Named" }).first();
   await named.scrollIntoViewIfNeeded();
-  const items = named.locator(".tk-variants-named-item");
+  const items = named.locator(".ht-variants-named-item");
   // The example's own ink and muted, then the added: none is a ramp, as none has 3 numbered colors.
   await expect(items).toHaveText(["ink", "muted", "primary", "primary-foreground", "brand-hover", "accent-500"]);
   const [ink, muted, primary, foreground, hover] = await Promise.all([0, 1, 2, 3, 4].map((i) => steadyBox(items.nth(i))));
@@ -782,7 +782,7 @@ test("with nothing selected, colors of no ramp are named: each its swatch and it
   // After a group, a row of its own.
   expect(hover.x).toBeCloseTo(primary.x, 0);
   expect(hover.y).toBeGreaterThan(primary.y);
-  await expect(items.nth(2).locator(".tk-variants-named-swatch")).toHaveCSS("background-color", "rgb(24, 24, 27)");
+  await expect(items.nth(2).locator(".ht-variants-named-swatch")).toHaveCSS("background-color", "rgb(24, 24, 27)");
 
   const tip = page.getByRole("tooltip");
   await items.nth(2).hover();
@@ -796,10 +796,10 @@ test("with nothing selected, the Design panel widened, a ramp's swatches keep th
   await enterEditMode(page);
   const brand = design(page)
     .getByRole("region", { name: "Color" })
-    .locator(".tk-variants-ramp")
-    .filter({ has: page.locator(".tk-variants-ramp-name").getByText("brand", { exact: true }) });
+    .locator(".ht-variants-ramp")
+    .filter({ has: page.locator(".ht-variants-ramp-name").getByText("brand", { exact: true }) });
   await brand.scrollIntoViewIfNeeded();
-  const first = brand.locator(".tk-variants-swatch").first();
+  const first = brand.locator(".ht-variants-swatch").first();
   const [row, before] = await Promise.all([steadyBox(brand), steadyBox(first)]);
 
   const edge = await steadyBox(page.getByRole("separator", { name: "Resize the Design panel" }));

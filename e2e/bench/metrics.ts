@@ -234,7 +234,7 @@ export interface ToolCallStats {
   dones: number;
   /** Whether it ran `finish`. */
   finished: boolean;
-  /** Calls that read the 03Kind package itself, in `node_modules` (its built code, its own Skill), rather than run its command line (ticket 65). */
+  /** Calls that read the Human Touch package itself, in `node_modules` (its built code, its own Skill), rather than run its command line (ticket 65). */
   packageReads: number;
   /**
    * Characters the Agent read: of the Skill (loaded, or read as a file), of
@@ -243,9 +243,9 @@ export interface ToolCallStats {
   charsRead: { skill: number; claim: number; total: number };
 }
 
-/** The command line's commands in a shell command, each time it runs one: `npx 03kind done 2 && npx 03kind finish` runs two. */
-function thirdKindCommands(command: string): string[] {
-  return [...command.matchAll(/03kind(?:\.js)?\s+(claim|done|finish|last)\b/g)].map((match) => match[1]);
+/** The command line's commands in a shell command, each time it runs one: `npx humantouch done 2 && npx humantouch finish` runs two. */
+function humanTouchCommands(command: string): string[] {
+  return [...command.matchAll(/humantouch(?:\.js)?\s+(claim|done|finish|last)\b/g)].map((match) => match[1]);
 }
 
 const SEARCH_TOOLS = /^(grep|glob|search|codebase_?search|semantic_?search|file_?search|ripgrep|find)$/i;
@@ -301,25 +301,25 @@ export function fffProblem(extensions: Record<string, string | null> | undefined
   return null;
 }
 
-/** The Skill as `init` puts it in the project, or the package's own copy (`node_modules/03kind/skill/SKILL.md`), which an Agent with none in the project may find. */
-const SKILL_FILE = /(skills\/03kind|03kind\/skill)\/SKILL\.md\b/;
+/** The Skill as `init` puts it in the project, or the package's own copy (`node_modules/humantouch/skill/SKILL.md`), which an Agent with none in the project may find. */
+const SKILL_FILE = /(skills\/humantouch|humantouch\/skill)\/SKILL\.md\b/;
 
 /** The Skill, loaded by name, read as a file, or printed in the shell (`cat …/SKILL.md`). */
 function readsTheSkill(call: ToolCall): boolean {
-  return call.skill === "03kind" || SKILL_FILE.test(call.path ?? "") || (/^\s*(cat|head|sed|less)\b/.test(call.command ?? "") && SKILL_FILE.test(call.command ?? ""));
+  return call.skill === "humantouch" || SKILL_FILE.test(call.path ?? "") || (/^\s*(cat|head|sed|less)\b/.test(call.command ?? "") && SKILL_FILE.test(call.command ?? ""));
 }
 
 /** The package in the project's `node_modules`, as linked or in pnpm's store. */
-const IN_PACKAGE = /node_modules\/(?:\.pnpm\/[^\s"'`]*?\/node_modules\/)?03kind(?:[\/\s"'`]|$)/;
+const IN_PACKAGE = /node_modules\/(?:\.pnpm\/[^\s"'`]*?\/node_modules\/)?humantouch(?:[\/\s"'`]|$)/;
 
 /** A call that reads the package itself: not one that runs its command line, by `npx` or by its file. */
 function readsThePackage(call: ToolCall): boolean {
-  if (call.command !== undefined) return IN_PACKAGE.test(call.command) && !thirdKindCommands(call.command).length && !/03kind\/dist\/cli\.js["'\s]+(claim|done|finish|last)\b/.test(call.command);
+  if (call.command !== undefined) return IN_PACKAGE.test(call.command) && !humanTouchCommands(call.command).length && !/humantouch\/dist\/cli\.js["'\s]+(claim|done|finish|last)\b/.test(call.command);
   return IN_PACKAGE.test(call.path ?? call.folder ?? "");
 }
 
 export function toolCallStats(calls: ToolCall[]): ToolCallStats {
-  const commands = calls.flatMap((call) => (call.command ? thirdKindCommands(call.command) : []));
+  const commands = calls.flatMap((call) => (call.command ? humanTouchCommands(call.command) : []));
   const sum = (some: ToolCall[]) => some.reduce((total, call) => total + (call.size ?? call.output.length), 0);
   return {
     toolCalls: calls.length,
@@ -330,7 +330,7 @@ export function toolCallStats(calls: ToolCall[]): ToolCallStats {
     packageReads: calls.filter(readsThePackage).length,
     charsRead: {
       skill: sum(calls.filter(readsTheSkill)),
-      claim: sum(calls.filter((call) => call.command !== undefined && thirdKindCommands(call.command).includes("claim"))),
+      claim: sum(calls.filter((call) => call.command !== undefined && humanTouchCommands(call.command).includes("claim"))),
       total: sum(calls),
     },
   };

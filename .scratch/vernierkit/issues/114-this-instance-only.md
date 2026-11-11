@@ -17,7 +17,7 @@
 - [ ] `done` 核对这个实例显示了改动，其他实例没跟着变（变了不算显示，照 ticket 77 的思路）
 - [ ] 脚本扮演 Agent（`apply`）走一遍「一组卡片里第二张单独改填色、落地、`done`」，核对是 ✓
 - [ ] 原来的改动说明逐字不变：`--dry` 24/24、`--scripted` 全过；切换按钮的包逐字节不变
-- [ ] 性能 headless 前后对比（`TK_PERF_HEADLESS=1`）：96 个实例的大页面上进入编辑模式、改数值、撤销（ticket 60、73）不变差
+- [ ] 性能 headless 前后对比（`HT_PERF_HEADLESS=1`）：96 个实例的大页面上进入编辑模式、改数值、撤销（ticket 60、73）不变差
 - [ ] e2e 全过；GLOSSARY「实例」补上不跟随的例外（需要新词时一并定）；spec 76、docs/roadmap.md、spec 的 Out of Scope 相应更新
 
 ## 背景

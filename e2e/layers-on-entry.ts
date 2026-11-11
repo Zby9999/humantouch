@@ -15,13 +15,13 @@ export async function showLayersOnEntry(context: BrowserContext) {
     const attach = Element.prototype.attachShadow;
     Element.prototype.attachShadow = function (init) {
       const root = attach.call(this, init);
-      if (this.localName === "third-kind") roots.add(root);
+      if (this.localName === "human-touch") roots.add(root);
       return root;
     };
     const press = (node: Node, parent: Node) => {
       if (!(node instanceof Element) || !roots.has(parent.getRootNode())) return;
-      const shell = node.matches(".tk-shell") ? node : node.querySelector(".tk-shell");
-      const show = shell?.querySelector<HTMLButtonElement>(":scope > .tk-show-layers");
+      const shell = node.matches(".ht-shell") ? node : node.querySelector(".ht-shell");
+      const show = shell?.querySelector<HTMLButtonElement>(":scope > .ht-show-layers");
       if (!show || shells.has(shell!)) return;
       shells.add(shell!);
       const root = parent.getRootNode();

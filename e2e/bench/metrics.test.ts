@@ -10,8 +10,8 @@ test("a Claude Code transcript gives its model, the skills it was given, each to
   const transcript = parseTranscript(
     "claude",
     lines(
-      { type: "system", subtype: "init", model: "claude-test-1", claude_code_version: "9.9.9", skills: ["03kind", "debug"] },
-      { type: "assistant", message: { content: [{ type: "text", text: "Claiming." }, { type: "tool_use", id: "a", name: "Bash", input: { command: "npx 03kind claim" } }] } },
+      { type: "system", subtype: "init", model: "claude-test-1", claude_code_version: "9.9.9", skills: ["humantouch", "debug"] },
+      { type: "assistant", message: { content: [{ type: "text", text: "Claiming." }, { type: "tool_use", id: "a", name: "Bash", input: { command: "npx humantouch claim" } }] } },
       { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "a", content: "# Design changes\n" }] } },
       { type: "system", subtype: "api_retry", attempt: 1, no_response: { waited_ms: 181000 } },
       { type: "assistant", message: { content: [{ type: "tool_use", id: "b", name: "Read", input: { file_path: "/p/src/App.tsx" } }] } },
@@ -23,11 +23,11 @@ test("a Claude Code transcript gives its model, the skills it was given, each to
   assert.deepEqual(transcript, {
     model: "claude-test-1",
     responseModels: [],
-    skills: ["03kind", "debug"],
+    skills: ["humantouch", "debug"],
     tools: [],
     fffTools: [],
     toolCalls: [
-      { name: "Bash", command: "npx 03kind claim", output: "# Design changes\n" },
+      { name: "Bash", command: "npx humantouch claim", output: "# Design changes\n" },
       { name: "Read", path: "/p/src/App.tsx", output: "export function App" },
     ],
     finalText: "✓ Applied\n- 1. Fill",
@@ -42,12 +42,12 @@ test("a Cursor transcript gives its model, each finished tool call with what it 
     "cursor",
     lines(
       { type: "system", subtype: "init", model: "Composer Test" },
-      { type: "tool_call", subtype: "started", call_id: "a", tool_call: { shellToolCall: { args: { command: "npx 03kind claim" } } } },
+      { type: "tool_call", subtype: "started", call_id: "a", tool_call: { shellToolCall: { args: { command: "npx humantouch claim" } } } },
       {
         type: "tool_call",
         subtype: "completed",
         call_id: "a",
-        tool_call: { shellToolCall: { args: { command: "npx 03kind claim" }, result: { success: { stdout: "# Design changes\n", stderr: "", exitCode: 0 } } } },
+        tool_call: { shellToolCall: { args: { command: "npx humantouch claim" }, result: { success: { stdout: "# Design changes\n", stderr: "", exitCode: 0 } } } },
       },
       {
         type: "tool_call",
@@ -60,7 +60,7 @@ test("a Cursor transcript gives its model, each finished tool call with what it 
         type: "tool_call",
         subtype: "completed",
         call_id: "d",
-        tool_call: { readToolCall: { args: { path: ".claude/skills/03kind/SKILL.md" }, result: { success: { isEmpty: false, totalLines: 147, fileSize: 24653 } } } },
+        tool_call: { readToolCall: { args: { path: ".claude/skills/humantouch/SKILL.md" }, result: { success: { isEmpty: false, totalLines: 147, fileSize: 24653 } } } },
       },
       { type: "assistant", message: { content: [{ type: "text", text: "✓ Applied" }] } },
       { type: "result", subtype: "success", result: "Claiming.✓ Applied" },
@@ -74,10 +74,10 @@ test("a Cursor transcript gives its model, each finished tool call with what it 
     tools: [],
     fffTools: [],
     toolCalls: [
-      { name: "shell", command: "npx 03kind claim", output: "# Design changes\n" },
+      { name: "shell", command: "npx humantouch claim", output: "# Design changes\n" },
       { name: "read", path: "src/App.tsx", output: "export function App" },
       { name: "grep", output: '{"error":{"message":"no"}}' },
-      { name: "read", path: ".claude/skills/03kind/SKILL.md", output: "", size: 24653 },
+      { name: "read", path: ".claude/skills/humantouch/SKILL.md", output: "", size: 24653 },
     ],
     finalText: "✓ Applied",
     permissionDenials: 0,
@@ -92,23 +92,23 @@ test("a pi transcript (--mode json) gives its provider and model, the model the 
 
   assert.equal(transcript.model, "command-code/deepseek/deepseek-v4.1-flash");
   assert.deepEqual(transcript.responseModels, ["deepseek/deepseek-v4.1-flash-1017-cm"]);
-  assert.deepEqual(transcript.skills, ["03kind"]);
+  assert.deepEqual(transcript.skills, ["humantouch"]);
   // That run's tools, before the review took find out (ticket 85) and before fff (ticket 92).
   assert.deepEqual(transcript.tools, ["read", "bash", "edit", "write", "grep", "find", "ls"]);
   assert.deepEqual(
     transcript.toolCalls.map(({ output, ...call }) => call),
     [
-      { name: "read", path: "/t/run/.agents/skills/03kind/SKILL.md" },
-      { name: "bash", command: "cd /t/run && npx 03kind claim 2>&1" },
+      { name: "read", path: "/t/run/.agents/skills/humantouch/SKILL.md" },
+      { name: "bash", command: "cd /t/run && npx humantouch claim 2>&1" },
       { name: "read", path: "/t/run/src/App.tsx" },
       { name: "read", path: "/t/run/src/index.css" },
       { name: "read", path: "/t/run/src/components/Dialog.tsx" },
       { name: "edit", path: "/t/run/src/App.tsx" },
-      { name: "bash", command: "cd /t/run && npx 03kind done 1 2 2>&1" },
-      { name: "bash", command: "cd /t/run && npx 03kind finish 2>&1" },
+      { name: "bash", command: "cd /t/run && npx humantouch done 1 2 2>&1" },
+      { name: "bash", command: "cd /t/run && npx humantouch finish 2>&1" },
     ],
   );
-  assert.match(transcript.toolCalls[0].output, /^---\nname: 03kind\n/);
+  assert.match(transcript.toolCalls[0].output, /^---\nname: humantouch\n/);
   assert.equal(transcript.toolCalls[5].output, "Successfully replaced 1 block(s) in /t/run/src/App.tsx.");
   assert.match(transcript.toolCalls[6].output, /^Changes 1 and 2 done: 2 of 2 changes applied\./);
   assert.match(transcript.finalText, /^Applied both changes/);
@@ -129,18 +129,18 @@ test("a pi transcript with fff (--fff-mode override) declares fff's grep and fin
   assert.deepEqual(transcript.tools, ["read", "bash", "edit", "write", "ls", "grep", "find"]);
   assert.deepEqual(transcript.fffTools, ["grep", "find"]);
   assert.equal(transcript.model, "command-code/deepseek/deepseek-v4.1-flash");
-  assert.deepEqual(transcript.skills, ["03kind"]);
+  assert.deepEqual(transcript.skills, ["humantouch"]);
   assert.deepEqual(
     transcript.toolCalls.map(({ output, ...call }) => call),
     [
-      { name: "read", path: "/t/run/.agents/skills/03kind/SKILL.md" },
-      { name: "bash", command: "cd /t/run && npx 03kind claim 2>&1" },
+      { name: "read", path: "/t/run/.agents/skills/humantouch/SKILL.md" },
+      { name: "bash", command: "cd /t/run && npx humantouch claim 2>&1" },
       { name: "read", path: "/t/run/src/App.tsx" },
       { name: "read", path: "/t/run/src/index.css" },
       { name: "bash", command: 'cd /t/run && grep -rn "<button" src/ | head -20' },
       { name: "edit", path: "/t/run/src/App.tsx" },
-      { name: "bash", command: "cd /t/run && npx 03kind done 1 2 2>&1" },
-      { name: "bash", command: "cd /t/run && npx 03kind finish 2>&1" },
+      { name: "bash", command: "cd /t/run && npx humantouch done 1 2 2>&1" },
+      { name: "bash", command: "cd /t/run && npx humantouch finish 2>&1" },
     ],
   );
   const stats = toolCallStats(transcript.toolCalls);
@@ -246,13 +246,13 @@ test("fff's searches are over the project, or a folder of it, unless held to one
   }
 });
 
-test("fff-multi-grep's constraints are the path it searches, as far as the bench looks: one into the 03Kind package reads it", () => {
+test("fff-multi-grep's constraints are the path it searches, as far as the bench looks: one into the Human Touch package reads it", () => {
   const transcript = parseTranscript(
     "pi",
-    lines({ type: "message_end", message: { role: "assistant", provider: "command-code", model: "m", content: [{ type: "toolCall", id: "a", name: "fff-multi-grep", arguments: { patterns: ["claim"], constraints: "node_modules/03kind/" } }] } }),
+    lines({ type: "message_end", message: { role: "assistant", provider: "command-code", model: "m", content: [{ type: "toolCall", id: "a", name: "fff-multi-grep", arguments: { patterns: ["claim"], constraints: "node_modules/humantouch/" } }] } }),
   );
 
-  assert.deepEqual(transcript.toolCalls.map(({ output, ...call }) => call), [{ name: "fff-multi-grep", path: "node_modules/03kind/" }]);
+  assert.deepEqual(transcript.toolCalls.map(({ output, ...call }) => call), [{ name: "fff-multi-grep", path: "node_modules/humantouch/" }]);
   assert.equal(toolCallStats(transcript.toolCalls).packageReads, 1);
 });
 
@@ -285,10 +285,10 @@ test("a pi transcript with an answer from another model than its first names bot
 
 test("tool calls are counted: searches over the project, the command line's commands, and what the Agent read, the Skill (loaded, read, or printed in the shell) and claim apart", () => {
   const calls: ToolCall[] = [
-    { name: "Skill", skill: "03kind", output: "S".repeat(30) },
-    { name: "Read", path: "/p/.agents/skills/03kind/SKILL.md", output: "", size: 14 },
-    { name: "Bash", command: "npx 03kind claim", output: "notes!" },
-    { name: "Bash", command: "cd /p && npx 03kind claim", output: "again" },
+    { name: "Skill", skill: "humantouch", output: "S".repeat(30) },
+    { name: "Read", path: "/p/.agents/skills/humantouch/SKILL.md", output: "", size: 14 },
+    { name: "Bash", command: "npx humantouch claim", output: "notes!" },
+    { name: "Bash", command: "cd /p && npx humantouch claim", output: "again" },
     { name: "Grep", output: "src/App.tsx:3" },
     { name: "Grep", path: "/p/src", output: "" },
     { name: "Grep", path: "/p/src/App.tsx", output: "" },
@@ -297,9 +297,9 @@ test("tool calls are counted: searches over the project, the command line's comm
     { name: "Bash", command: "grep -rn Card src/", output: "" },
     { name: "Bash", command: "grep -n Card src/App.tsx", output: "" },
     { name: "Bash", command: "find . -name '*.css'", output: "" },
-    { name: "Bash", command: "npx 03kind done 1", output: "Change 1 done" },
-    { name: "Bash", command: "npx 03kind done 2 && npx 03kind finish", output: "Round finished" },
-    { name: "shell", command: "cat .agents/skills/03kind/SKILL.md", output: "C".repeat(20) },
+    { name: "Bash", command: "npx humantouch done 1", output: "Change 1 done" },
+    { name: "Bash", command: "npx humantouch done 2 && npx humantouch finish", output: "Round finished" },
+    { name: "shell", command: "cat .agents/skills/humantouch/SKILL.md", output: "C".repeat(20) },
   ];
 
   assert.deepEqual(toolCallStats(calls), {
@@ -317,13 +317,13 @@ test("in Claude Code, a Skill's text comes as a message after the Skill tool's a
   const transcript = parseTranscript(
     "claude",
     lines(
-      { type: "assistant", message: { content: [{ type: "tool_use", id: "s", name: "Skill", input: { skill: "03kind" } }] } },
-      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "s", content: "Launching skill: 03kind" }] } },
+      { type: "assistant", message: { content: [{ type: "tool_use", id: "s", name: "Skill", input: { skill: "humantouch" } }] } },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "s", content: "Launching skill: humantouch" }] } },
       { type: "user", message: { content: [{ type: "text", text: "Base directory for this skill: /p\n\n# Applying" }] } },
     ),
   );
 
-  assert.deepEqual(transcript.toolCalls, [{ name: "Skill", skill: "03kind", output: "Launching skill: 03kindBase directory for this skill: /p\n\n# Applying" }]);
+  assert.deepEqual(transcript.toolCalls, [{ name: "Skill", skill: "humantouch", output: "Launching skill: humantouchBase directory for this skill: /p\n\n# Applying" }]);
 });
 
 test("a report in the Skill's form lists each change once, under ✓ or under ⚠️ with why and instead", () => {
@@ -482,23 +482,23 @@ test("subagents are counted apart: Claude Code's Task or Agent calls and the oth
 
 test("the Skill read from the package's own copy, as an Agent with none in the project may find it, is the Skill read too (ticket 65)", () => {
   const calls: ToolCall[] = [
-    { name: "Read", path: "/p/node_modules/03kind/skill/SKILL.md", output: "S".repeat(12) },
-    { name: "Bash", command: "cat node_modules/03kind/skill/SKILL.md", output: "C".repeat(5) },
+    { name: "Read", path: "/p/node_modules/humantouch/skill/SKILL.md", output: "S".repeat(12) },
+    { name: "Bash", command: "cat node_modules/humantouch/skill/SKILL.md", output: "C".repeat(5) },
     { name: "Read", path: "/p/src/skill/SKILL.md", output: "x" },
   ];
 
   assert.equal(toolCallStats(calls).charsRead.skill, 17);
 });
 
-test("calls that read the 03Kind package itself are counted, not those that run its command line (ticket 65)", () => {
+test("calls that read the Human Touch package itself are counted, not those that run its command line (ticket 65)", () => {
   const calls: ToolCall[] = [
-    { name: "read", path: "/t/run/node_modules/03kind/dist/cli.js", output: "x" },
-    { name: "grep", path: "/t/run/node_modules/.pnpm/03kind@file+..+pack/node_modules/03kind/dist", output: "" },
-    { name: "shell", command: "node -e 'require(\"fs\").readFileSync(\"node_modules/03kind/dist/editor.dev.js\")'", output: "" },
-    { name: "Read", path: "/p/node_modules/03kind/skill/SKILL.md", output: "" },
-    { name: "Bash", command: "npx 03kind done 1", output: "" },
-    { name: "Bash", command: "node node_modules/03kind/dist/cli.js claim", output: "" },
-    { name: "Read", path: "/p/node_modules/03kindred/index.js", output: "" },
+    { name: "read", path: "/t/run/node_modules/humantouch/dist/cli.js", output: "x" },
+    { name: "grep", path: "/t/run/node_modules/.pnpm/humantouch@file+..+pack/node_modules/humantouch/dist", output: "" },
+    { name: "shell", command: "node -e 'require(\"fs\").readFileSync(\"node_modules/humantouch/dist/editor.dev.js\")'", output: "" },
+    { name: "Read", path: "/p/node_modules/humantouch/skill/SKILL.md", output: "" },
+    { name: "Bash", command: "npx humantouch done 1", output: "" },
+    { name: "Bash", command: "node node_modules/humantouch/dist/cli.js claim", output: "" },
+    { name: "Read", path: "/p/node_modules/humantouchred/index.js", output: "" },
     { name: "Read", path: "/p/src/App.tsx", output: "" },
   ];
 
@@ -508,10 +508,10 @@ test("calls that read the 03Kind package itself are counted, not those that run 
 test("Cursor's glob in a folder of the package is a call there, by its target folder (ticket 65)", () => {
   const transcript = parseTranscript(
     "cursor",
-    lines({ type: "tool_call", subtype: "completed", tool_call: { globToolCall: { args: { targetDirectory: "/t/node_modules/03kind", globPattern: "**/*" }, result: { success: { content: "" } } } } }),
+    lines({ type: "tool_call", subtype: "completed", tool_call: { globToolCall: { args: { targetDirectory: "/t/node_modules/humantouch", globPattern: "**/*" }, result: { success: { content: "" } } } } }),
   );
 
-  assert.equal(transcript.toolCalls[0].folder, "/t/node_modules/03kind");
+  assert.equal(transcript.toolCalls[0].folder, "/t/node_modules/humantouch");
   assert.equal(toolCallStats(transcript.toolCalls).packageReads, 1);
 });
 

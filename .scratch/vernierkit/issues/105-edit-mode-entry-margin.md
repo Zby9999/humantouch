@@ -10,7 +10,7 @@
 
 **Status:** ready-for-agent
 
-- [ ] 先量：headless 前后对比（`TK_PERF_HEADLESS=1 … pnpm test:perf`），看进入编辑模式里建图层树、Layers 第一次渲染各占多少
+- [ ] 先量：headless 前后对比（`HT_PERF_HEADLESS=1 … pnpm test:perf`），看进入编辑模式里建图层树、Layers 第一次渲染各占多少
 - [ ] 建图层树和 Layers 面板的第一次渲染挪到进场动画期间；Layers 的内容在动画结束前一定出来；进场动画本身、画布、三个视图的样子不变
 - [ ] 进入编辑模式时马上按键、点 Layers、选图层（动画还没结束）都照常起作用，不丢操作
 - [ ] e2e 全过；改数值、拖动、核对那几项性能不变差
