@@ -1,4 +1,5 @@
 import type { Plugin } from "vite";
+import { DEFINITIONS_SCRIPT } from "./definitions";
 import { CODE_EVENT, CODE_GLOBAL, SERVICE_GLOBAL, type ServiceConfig } from "./service-protocol";
 import { startService, type Service } from "./service";
 import { markSource } from "./source-marker";
@@ -66,7 +67,8 @@ export default function humanTouch(): Plugin {
       const config: ServiceConfig = { url, token };
       return [
         // Before any module runs, so the editor layer finds it when it mounts.
-        { tag: "script", children: `window.${SERVICE_GLOBAL} = ${JSON.stringify(config)};`, injectTo: "head-prepend" },
+        // Which module defines each custom element, as the page runs (ticket 137): one from a dependency draws layers locked as a third-party component's.
+        { tag: "script", children: `window.${SERVICE_GLOBAL} = ${JSON.stringify(config)};${DEFINITIONS_SCRIPT}`, injectTo: "head-prepend" },
         // How the code the page has stands, for the check to wait for an edit to reach it (ADR 0013).
         // A module of its own, as Vite serves one by its id: an inline one gets no `import.meta.hot`, nor do tags added here have their imports resolved.
         { tag: "script", attrs: { type: "module", src: `${base}@id/__x00__${CODE_MODULE}` }, injectTo: "head-prepend" },

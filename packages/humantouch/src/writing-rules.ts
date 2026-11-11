@@ -32,11 +32,28 @@ const HOW_TO_WRITE: HowToWrite[] = [
   {
     // Said only for a layer a third-party component draws (ticket 120): an Agent reached into one from its usage, and the notes of every other round stay as they were.
     name: "Third-party components",
-    calledFor: (change) => layersStyled(change).some(drawnByThirdParty),
+    calledFor: (change) => layersStyled(change).some((target) => drawnByThirdParty(target) && !inThirdPartyWebComponent(target)),
     text:
       "change a layer a third-party component draws by what the component takes from its usage (a prop, a `className` or `style` it passes on); " +
       "an element around it may place or size it as a whole, but do not reach into its elements from the usage: no child or descendant selectors on any element around it (`[&>span]:w-[90px]`, `*:…`, `:has()`), no global rule on its class names. " +
       "Those depend on how the library draws its elements, and stop working, with no error, once it draws them otherwise: a change that cannot be made without them is left out and reported.",
+  },
+  {
+    // Said only for a layer in an open shadow root (ticket 137, ADR 0017): no rounds before had one.
+    name: "Shadow roots",
+    calledFor: (change) => layersStyled(change).some((target) => !!target.shadowRoot && !inThirdPartyWebComponent(target)),
+    text:
+      "a layer in a shadow root (its **Shadow root** line) is styled by the styles of the component that renders into that shadow root, not by the page's CSS: no global stylesheet, Tailwind class on an element around it, or CSS Module of the page reaches into it. " +
+      "Change the rule **Currently set by** names where the component writes it: the `<style>` it renders into its shadow root, or the styles it adopts there (a `static styles`, a constructed stylesheet); with no rule to change, add one there for the layer, " +
+      "or style the layer's element itself at Location as the component already styles its elements. Leave global CSS as it is.",
+  },
+  {
+    // Said only for a layer a third-party Web Component draws in its shadow root (ticket 137): as a third-party React component's, from its usage.
+    name: "Third-party Web Components",
+    calledFor: (change) => layersStyled(change).some(inThirdPartyWebComponent),
+    text:
+      "a layer in the shadow root of a custom element a dependency defines is changed by what the element takes from its usage, where it is written in the project: its attributes, the content slotted into it, " +
+      "the CSS custom properties it reads, and `::part()` rules for the parts it exposes (`part=\"…\"`), in the project's own CSS. Never change the dependency, nor reach into its shadow root otherwise: a change that cannot be made so is left out and reported.",
   },
   {
     name: "What sets the value now",
@@ -57,7 +74,8 @@ const HOW_TO_WRITE: HowToWrite[] = [
   },
   {
     name: "A rule in no CSS layer",
-    calledFor: (change) => !!change.sources?.some((source) => source.kind === "rule" && source.layer === null),
+    // Not for a shadow root's own rule (ticket 137): no utility class of the page's reaches in to be beaten by it.
+    calledFor: (change) => !!change.sources?.some((source) => source.kind === "rule" && source.layer === null && !source.shadowRoot),
     text:
       "it beats every class in a CSS layer, whatever their specificity. Tailwind v4 puts its utilities in one, so a utility class added over the rule does not show: " +
       "one that overrides it for this layer only takes its important form (`bg-[#2563EB]!`, `rounded-lg!`).",
@@ -302,6 +320,9 @@ interface HowChecked {
 
 /** Whether a third-party component draws the layer (ticket 120): the innermost level of its usage chain is a dependency's. */
 const drawnByThirdParty = (target: Target) => !!target.chain[0]?.thirdParty;
+
+/** Whether the layer is in the shadow root of a custom element a dependency defines (ticket 137): not a third-party React component's, though in a shadow root. */
+const inThirdPartyWebComponent = (target: Target) => !!target.chain[0]?.webComponent;
 
 /**
  * The layers a change styles (ticket 120): its own, and those it gives styles

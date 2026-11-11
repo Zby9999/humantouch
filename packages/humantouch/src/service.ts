@@ -13,6 +13,7 @@ import { existsSync, unwatchFile, watchFile } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { gunzipSync } from "node:zlib";
 import type { PutBack } from "./client/changeset";
 import { CLAIM_PATH, CODE_QUIET_MS, OTHER_USAGES_PATH } from "./client/code-changes";
 import { PAGE_PATH, type PageCode, type PagePrint } from "./client/page-print";
@@ -360,7 +361,7 @@ function allowLocalPages(req: IncomingMessage, res: ServerResponse) {
   if (!origin || !isLocal(origin)) return;
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Methods", "GET, PUT, DELETE, POST");
-  res.setHeader("Access-Control-Allow-Headers", `${TOKEN_HEADER}, Content-Type`);
+  res.setHeader("Access-Control-Allow-Headers", `${TOKEN_HEADER}, Content-Type, Content-Encoding`);
   res.setHeader("Vary", "Origin");
 }
 
@@ -391,7 +392,15 @@ function readBody(req: IncomingMessage): Promise<string> {
       }
       chunks.push(chunk);
     });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("end", () => {
+      const body = Buffer.concat(chunks);
+      // A save sent as the page went, gzipped to go within what the browser carries on (ticket 160).
+      try {
+        resolve((req.headers["content-encoding"] === "gzip" ? gunzipSync(body, { maxOutputLength: MAX_BODY }) : body).toString("utf8"));
+      } catch (error) {
+        reject(error);
+      }
+    });
     req.on("error", reject);
   });
 }
