@@ -580,6 +580,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 .ht-shell:is(.is-layers-hidden, .is-playing) > .ht-page-toasts { left: 16px; max-width: calc(100% - var(--ht-design-width) - 32px); }
 .ht-toast.is-page { display: flex; align-items: center; gap: 8px; }
 .ht-toast.is-page > span { overflow: hidden; text-overflow: ellipsis; }
+.ht-toast.is-page > span.is-wrapped { white-space: normal; }
 .ht-toast.is-page:has(.ht-button) { padding-block: 4px; padding-right: 4px; }
 .ht-toast.is-page .ht-button { flex: none; }
 @keyframes ht-toast-fade-in { from { opacity: 0; } }
