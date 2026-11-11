@@ -436,12 +436,18 @@ function follow(canvas: Document, copy: Document, typed: () => void, lags: () =>
   /** Each canvas node's node in the copy, and back. */
   const inCopy = new WeakMap<Node, Node>();
   const onCanvas = new WeakMap<Node, Node>();
-  const pair = (from: Node, to: Node) => {
-    inCopy.set(from, to);
-    onCanvas.set(to, from);
-    for (let a = from.firstChild, b = to.firstChild; a && b; a = a.nextSibling, b = b.nextSibling) pair(a, b);
+  /** Pairs `from` and `to`, made the same, and every node in them, those in their open shadow roots too, one way and back. */
+  const pair = (from: Node, to: Node, way: Way) => {
+    way.to.set(from, to);
+    way.back.set(to, from);
+    for (let a = from.firstChild, b = to.firstChild; a && b; a = a.nextSibling, b = b.nextSibling) pair(a, b, way);
+    const shadow = (from as Element).shadowRoot;
+    const copied = (to as Element).shadowRoot;
+    if (!shadow || !copied) return;
+    // What changes in a shadow root of the canvas is taken in as what changes outside them (ticket 135).
+    if (way === down) observer.observe(shadow, EVERYTHING);
+    pair(shadow, copied, way);
   };
-  pair(canvas.documentElement, copy.documentElement);
   /** From the canvas to the copy, and, for the element typed in, back. */
   const down: Way = { to: inCopy, back: onCanvas, doc: copy };
   const up: Way = { to: onCanvas, back: inCopy, doc: canvas };
@@ -451,9 +457,16 @@ function follow(canvas: Document, copy: Document, typed: () => void, lags: () =>
   /** A new node of `way`'s source, made in its other document: the nodes in it it has already go in it. */
   const copyOf = (node: Node, way: Way): Node => {
     const template = isTemplate(node);
+    // Its open shadow root, if it hosts one, comes whole with it (`shadow-roots.ts`).
     const made = way.doc.importNode(node, template);
     way.to.set(node, made);
     way.back.set(made, node);
+    const shadow = (node as Element).shadowRoot;
+    const copied = (made as Element).shadowRoot;
+    if (shadow && copied) {
+      if (way === down) observer.observe(shadow, EVERYTHING);
+      pair(shadow, copied, way);
+    }
     if (node.nodeName.toLowerCase() === "canvas") drawInto(made as HTMLCanvasElement, node as HTMLCanvasElement);
     if (!template) update(node, made, false, way);
     return made;
@@ -487,6 +500,10 @@ function follow(canvas: Document, copy: Document, typed: () => void, lags: () =>
       if (children[i] !== child) to.insertBefore(child, children[i] ?? null);
     });
     while (children.length > wanted.length) to.removeChild(to.lastChild!);
+    // What is in its shadow root may have changed with it.
+    const shadow = deep ? (from as Element).shadowRoot : null;
+    const copied = shadow && way.to.get(shadow);
+    if (copied) update(shadow, copied, true, way);
   };
   const takeIn = (records: MutationRecord[], way: Way) => {
     const lists = new Set<Node>();
@@ -521,6 +538,7 @@ function follow(canvas: Document, copy: Document, typed: () => void, lags: () =>
   };
   const observer = new MutationObserver(keepUpWith);
   observer.observe(canvas.documentElement, EVERYTHING);
+  pair(canvas.documentElement, copy.documentElement, down);
   const catchUp = () => catchUpWith(observer.takeRecords());
   const doneTyping = () => {
     if (!typing) return;

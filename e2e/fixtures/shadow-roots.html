@@ -1,0 +1,21 @@
+<!--
+  Put at the top of the example's page by shadow-roots.spec.ts (ticket 135), so the example itself is left as it is.
+  An open shadow root, styled by a style element in it and by a constructable stylesheet, each answering to the width.
+-->
+<div id="shadow-host"></div>
+<script>
+  (() => {
+    const shadow = document.getElementById("shadow-host").attachShadow({ mode: "open" });
+    shadow.innerHTML = `<style>
+  .title { margin: 0; font: 700 24px/32px sans-serif; color: rgb(200, 0, 0) }
+  @media (max-width: 1000px) { .title { color: rgb(0, 150, 0) } }
+  @media (max-width: 500px) { .title { color: rgb(0, 0, 200) } }
+</style>
+<div class="panel"><h2 class="title">Shadow title</h2><p class="body">Shadow body</p></div>`;
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(`:host { display: block; padding: 12px }
+.panel { padding: 16px; border-radius: 16px; background: rgb(255, 230, 0) }
+@media (max-width: 500px) { .panel { border-radius: 4px } }`);
+    shadow.adoptedStyleSheets = [sheet];
+  })();
+</script>

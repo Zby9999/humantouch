@@ -7,6 +7,7 @@ import { dropUnusedRules, orderEditStyles, syncEditStyles, upgradeEditStyles } f
 import { containingBlockOf } from "./containing-block";
 import { HOST_TAG } from "./host";
 import { EDIT_STYLES_ATTR } from "./style-marks";
+import { attachDeclared, elementsWithin, htmlOf, NOT_THE_PAGES, ON_CANVAS } from "./shadow-roots";
 import { PIN_OFFSET_ATTR, PINNED_ATTR, SHEET_HREF_ATTR } from "./style-source";
 import { FONT_STACK } from "./toggle-styles";
 import { CHAIN_ATTR, readUsageChain } from "./usage-chain";
@@ -64,11 +65,14 @@ const SETTLE_TIMEOUT_MS = 500;
  * Freezes the page shown in `page` into `iframe`. The iframe must already be in
  * the document and should carry `sandbox="allow-same-origin"`, so nothing in
  * the copy can run. The page is copied before this returns its promise; the
- * promise settles once the copy is laid out.
+ * promise settles once the copy is laid out. Open shadow roots are copied
+ * too, with their styles (`shadow-roots.ts`, ticket 135).
  */
 export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas> {
   const live = page.document;
   const root = live.documentElement;
+  const doc = iframe.contentDocument;
+  if (!doc) return Promise.reject(new Error("Human Touch: the canvas iframe is not in the document"));
   const viewport: Viewport = { scrollX: page.scrollX, scrollY: page.scrollY };
   const frozen: FrozenWindow = {
     height: page.innerHeight,
@@ -76,70 +80,86 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
     matches: (query) => page.matchMedia(query).matches,
   };
   const animationEnds = readAnimationEnds(live);
-  const copy = root.cloneNode(true) as HTMLElement;
-  copy.setAttribute(PAGE_ATTR, page.location.pathname + page.location.search);
-
-  // The clone has the same tree as the page, so the two lists line up one to one.
-  const liveEls = [root, ...root.getElementsByTagName("*")];
-  const copyEls = [copy, ...copy.getElementsByTagName("*")];
-  for (let i = 0; i < liveEls.length; i++) {
-    const from = liveEls[i] as HTMLElement;
-    let to = copyEls[i] as HTMLElement;
-    switch (from.localName) {
-      case "script":
-      case "noscript": // Scripts are off in the canvas, so this would show.
-      case HOST_TAG:
-        to.remove();
-        continue;
-      case "style":
-        copyStyleRules(from as HTMLStyleElement, to);
-        if ((from as HTMLStyleElement).media) to.setAttribute("media", mediaForViews((from as HTMLStyleElement).media, frozen));
-        continue;
-      case "link":
-        inlineStylesheet(from as HTMLLinkElement, to, frozen);
-        continue;
-      case "canvas":
-        drawInto(to as HTMLCanvasElement, from as HTMLCanvasElement);
-        break;
-      case "video":
-        to = stillOf(from as HTMLVideoElement, to);
-        break;
-      case "iframe":
-        if (!(from as HTMLIFrameElement).contentDocument) to = placeholderFor(from as HTMLIFrameElement, to);
-        break;
-    }
-    // Read once, here on the live page: editing reads only the copy.
-    const chain = readUsageChain(from);
-    if (chain.length) to.setAttribute(CHAIN_ATTR, JSON.stringify(chain));
-    const ends = animationEnds.get(from);
-    if (ends) for (const [name, value] of ends) setImportant(to, name, value);
-    if (to.hasAttribute("style")) resolveViewportUnits(to.style, frozen);
-    const style = getComputedStyle(from);
-    pinToViewport(from, to, style, viewport);
-    // The document's own scroll is shown by the canvas view instead.
-    if (canScroll(from, style) && (from.scrollTop || from.scrollLeft) && from !== live.scrollingElement) {
-      to.setAttribute(SCROLL_ATTR, `${from.scrollLeft} ${from.scrollTop}`);
-    }
-    if (from.matches(":modal")) to.setAttribute(TOP_LAYER_ATTR, "modal");
-    else if (from.matches(":popover-open")) to.setAttribute(TOP_LAYER_ATTR, "popover");
-  }
-  // Constructable stylesheets come after all the others in the cascade.
-  for (const sheet of live.adoptedStyleSheets) {
-    copy.append(Object.assign(live.createElement("style"), { textContent: serialize(sheet.cssRules, null) }));
-  }
-  // The page's height chain (`height: 100%` on html, body, …) ends at the window, which the canvas is taller than.
-  const rootHeight = root.getBoundingClientRect().height;
-  if (Math.abs(rootHeight - root.clientHeight) < 1) setImportant(copy, "height", `${rootHeight}px`);
-
-  const doc = iframe.contentDocument;
-  if (!doc) return Promise.reject(new Error("Human Touch: the canvas iframe is not in the document"));
   // Writing a doctype puts the copy in the same rendering mode as the page.
   doc.open();
   doc.write(doctypeOf(live));
   doc.close();
-  doc.replaceChild(doc.adoptNode(copy), doc.documentElement);
+  // Made in the canvas's document, where none of the page's custom elements is defined: none of their code runs in the copy.
+  const copy = doc.importNode(root, true) as HTMLElement;
+  copy.setAttribute(PAGE_ATTR, page.location.pathname + page.location.search);
+  /** The open shadow roots copied, on the copy (ticket 135). */
+  const shadowRoots: ShadowRoot[] = [];
+
+  /** Copies what the page shows in `liveEls` into `copyEls`, made from the same tree, so the two lists line up one to one. */
+  const copyEach = (liveEls: Element[], copyEls: Element[]) => {
+    for (let i = 0; i < liveEls.length; i++) {
+      const from = liveEls[i] as HTMLElement;
+      let to = copyEls[i] as HTMLElement;
+      switch (from.localName) {
+        case "script":
+        case "noscript": // Scripts are off in the canvas, so this would show.
+        case HOST_TAG:
+          to.remove();
+          continue;
+        case "style":
+          copyStyleRules(from as HTMLStyleElement, to);
+          if ((from as HTMLStyleElement).media) to.setAttribute("media", mediaForViews((from as HTMLStyleElement).media, frozen));
+          continue;
+        case "link":
+          inlineStylesheet(from as HTMLLinkElement, to, frozen);
+          continue;
+        case "canvas":
+          drawInto(to as HTMLCanvasElement, from as HTMLCanvasElement);
+          break;
+        case "video":
+          to = stillOf(from as HTMLVideoElement, to);
+          break;
+        case "iframe":
+          if (!(from as HTMLIFrameElement).contentDocument) to = placeholderFor(from as HTMLIFrameElement, to);
+          break;
+      }
+      // Read once, here on the live page: editing reads only the copy.
+      const chain = readUsageChain(from);
+      if (chain.length) to.setAttribute(CHAIN_ATTR, JSON.stringify(chain));
+      const ends = animationEnds.get(from);
+      if (ends) for (const [name, value] of ends) setImportant(to, name, value);
+      if (to.hasAttribute("style")) resolveViewportUnits(to.style, frozen);
+      const style = getComputedStyle(from);
+      pinToViewport(from, to, style, viewport);
+      // The document's own scroll is shown by the canvas view instead.
+      if (canScroll(from, style) && (from.scrollTop || from.scrollLeft) && from !== live.scrollingElement) {
+        to.setAttribute(SCROLL_ATTR, `${from.scrollLeft} ${from.scrollTop}`);
+      }
+      if (from.matches(":modal")) to.setAttribute(TOP_LAYER_ATTR, "modal");
+      else if (from.matches(":popover-open")) to.setAttribute(TOP_LAYER_ATTR, "popover");
+      // A closed one cannot be read: the host shows as one with none.
+      if (from.shadowRoot && !NOT_THE_PAGES.has(from.localName)) copyShadowRoot(from.shadowRoot, to);
+    }
+  };
+  /** Copies `shadow`, an open shadow root of the page, what is in it and its styles, onto `host`, its host's copy. */
+  const copyShadowRoot = (shadow: ShadowRoot, host: Element) => {
+    let copied: ShadowRoot;
+    try {
+      copied = host.attachShadow(ON_CANVAS);
+    } catch {
+      return; // Not an element that can host one: shown as one with none.
+    }
+    for (const node of shadow.childNodes) copied.append(doc.importNode(node, true));
+    copyEach([...shadow.querySelectorAll("*")], [...copied.querySelectorAll("*")]);
+    // Constructable stylesheets come after all the others in the cascade.
+    for (const sheet of shadow.adoptedStyleSheets) copied.append(styleOf(doc, sheet));
+    shadowRoots.push(copied);
+  };
+  copyEach([root, ...root.getElementsByTagName("*")], [copy, ...copy.getElementsByTagName("*")]);
+  // Constructable stylesheets come after all the others in the cascade.
+  for (const sheet of live.adoptedStyleSheets) copy.append(styleOf(doc, sheet));
+  // The page's height chain (`height: 100%` on html, body, …) ends at the window, which the canvas is taller than.
+  const rootHeight = root.getBoundingClientRect().height;
+  if (Math.abs(rootHeight - root.clientHeight) < 1) setImportant(copy, "height", `${rootHeight}px`);
+
+  doc.replaceChild(copy, doc.documentElement);
   // Written back as text: every view, and the canvas saved with the round, takes the sheets from their text.
-  for (const sheet of [...doc.styleSheets]) {
+  for (const sheet of [...doc.styleSheets, ...shadowRoots.flatMap((shadow) => [...shadow.styleSheets])]) {
     const rules = readRules(sheet);
     const owner = sheet.ownerNode;
     if (!rules || !owner || !VIEWPORT_DEPENDENT.test(owner.textContent ?? "")) continue;
@@ -147,6 +167,11 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
     owner.textContent = serialize(rules, null);
   }
   return present(doc, iframe, { width: root.clientWidth, height: frozen.height, windowHeight: frozen.height, scrollY: viewport.scrollY });
+}
+
+/** A constructable stylesheet as a style element of `doc`, its rules as text. */
+function styleOf(doc: Document, sheet: CSSStyleSheet): HTMLStyleElement {
+  return Object.assign(doc.createElement("style"), { textContent: serialize(sheet.cssRules, null) });
 }
 
 /**
@@ -157,9 +182,10 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
 export function serializeCanvas(canvas: Canvas): string {
   const doc = canvas.document;
   const root = doc.documentElement;
+  // Its open shadow roots come with it, and are written out with it (`shadow-roots.ts`).
   const copy = root.cloneNode(true) as HTMLElement;
-  const els = [root, ...root.getElementsByTagName("*")];
-  const copyEls = [copy, ...copy.getElementsByTagName("*")];
+  const els = elementsWithin(root);
+  const copyEls = elementsWithin(copy);
   for (let i = 0; i < els.length; i++) {
     const from = els[i];
     const to = copyEls[i];
@@ -198,7 +224,7 @@ export function serializeCanvas(canvas: Canvas): string {
   syncEditStyles(copy);
   const layout: Layout = { width: canvas.width, height: canvas.height, windowHeight: canvas.windowHeight, scrollY: canvas.scrollY };
   copy.setAttribute(LAYOUT_ATTR, JSON.stringify(layout));
-  return doctypeOf(doc) + copy.outerHTML;
+  return doctypeOf(doc) + htmlOf(copy);
 }
 
 /** The doctype that puts a document in `doc`'s rendering mode. */
@@ -213,6 +239,8 @@ export function restore(html: string, iframe: HTMLIFrameElement, takeIn?: (doc: 
   doc.open();
   doc.write(html);
   doc.close();
+  // Its shadow roots, written out as declarative ones, where the parser left them templates.
+  attachDeclared(doc);
   const root = doc.documentElement;
   const saved = JSON.parse(root.getAttribute(LAYOUT_ATTR) ?? "null") as (Omit<Layout, "windowHeight"> & Partial<Layout>) | null;
   if (!saved) return Promise.reject(new Error("Human Touch: the saved canvas has no layout"));
@@ -257,7 +285,7 @@ export function serializeEditable(doc: Document): string {
   const copy = doc.documentElement.cloneNode(true) as HTMLElement;
   for (const el of copy.querySelectorAll(`style[${CANVAS_STYLES_ATTR}]`)) el.remove();
   syncEditStyles(copy);
-  return doctypeOf(doc) + copy.outerHTML;
+  return doctypeOf(doc) + htmlOf(copy);
 }
 
 /**
@@ -278,8 +306,8 @@ export function copyCanvas(canvas: Canvas, iframe: HTMLIFrameElement, width: num
   syncEditStyles(copy);
   doc.replaceChild(copy, doc.documentElement);
   // What lives outside the markup: the pixels of stills, the options chosen.
-  const froms = from.documentElement.getElementsByTagName("*");
-  const copies = copy.getElementsByTagName("*");
+  const froms = elementsWithin(from.documentElement);
+  const copies = elementsWithin(copy);
   for (let i = 0; i < froms.length; i++) {
     if (froms[i].localName === "canvas") drawInto(copies[i] as HTMLCanvasElement, froms[i] as HTMLCanvasElement);
     else if (froms[i].localName === "option") (copies[i] as HTMLOptionElement).selected = (froms[i] as HTMLOptionElement).selected;
