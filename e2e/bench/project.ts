@@ -27,6 +27,9 @@ const HAND_WIRED: Record<Example, (dir: string) => void> = {
     replaceIn(dir, "vite.config.ts", "humanTouch(), ");
     replaceIn(dir, "src/App.tsx", 'import { HumanTouch } from "humantouch/react";\n');
     replaceIn(dir, "src/App.tsx", "      <HumanTouch />\n");
+    // Its page of declared font weights mounts the editor layer too (ticket 140): `init` would see it mounted there, and leave App be.
+    replaceIn(dir, "src/fonts/FontsPage.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "src/fonts/FontsPage.tsx", "      <HumanTouch />\n");
   },
   "vite-react18-tw3": (dir) => {
     replaceIn(dir, "vite.config.ts", 'import humanTouch from "humantouch/vite";\n');
