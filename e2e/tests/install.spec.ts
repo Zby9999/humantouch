@@ -27,6 +27,9 @@ test.beforeAll(async () => {
     // Its page of declared font weights mounts it too (ticket 140): `init` would see it mounted there, and leave App be.
     replaceIn(dir, "src/fonts/FontsPage.tsx", 'import { HumanTouch } from "humantouch/react";\n');
     replaceIn(dir, "src/fonts/FontsPage.tsx", "      <HumanTouch />\n");
+    // So does its page that moves (ticket 141).
+    replaceIn(dir, "src/motion/MotionPage.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "src/motion/MotionPage.tsx", "      <HumanTouch />\n");
   });
 });
 
