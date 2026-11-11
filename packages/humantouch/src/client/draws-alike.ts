@@ -142,15 +142,28 @@ export function drawsAlike(restyled: Restyled[], noting: Element[] = [], look = 
     return rule ? [...rule.style] : [];
   });
   if (longhands.some((names) => !names.length)) return drawing;
-  // The page's own important declarations that would win over these (its style attribute's, those in a CSS layer, or by an id): what they draw would not be the change's.
-  const winsOver = (source: StyleSource) => source.important && (source.kind === "inline" || source.layer !== null || (source.selector ?? "").includes("#"));
-  if (restyled.some(({ el }, i) => sourcesOf(el, longhands[i]).some(winsOver))) return drawing;
-
   const els = [...new Set(restyled.flatMap(({ el }) => around(el)))];
   // Past as many as are looked at, what is not looked at may move; a field's words have no node of their own to see them move by.
   if (els.length > MAX_ELEMENTS || els.some((el) => UNSEEN_WORDS.has(el.localName))) return drawing;
   const texts = [...new Set(restyled.flatMap(({ el }) => textsIn(el)))].slice(0, MAX_TEXTS);
-  const before = look ? drawnOf(els, texts, win) : null;
+  // Paint, of the layers and what is in them: the style on them paints nothing else, but may move it.
+  const painted = (el: Element) => restyled.some((one) => one.el.contains(el));
+  const before = look ? drawnOf(els, texts, win, painted) : null;
+  // Looked at as it was drawn when last looked at, with the same style: as it was then, with nothing put on it again.
+  const print = look && !noting.length ? JSON.stringify([rules, before, restyled.map(({ el }, i) => longhands[i].map((name) => getComputedStyle(el).getPropertyValue(name))), win.innerWidth]) : null;
+  const last = print ? lastLooked.get(first.el) : undefined;
+  if (print && last?.print === print) return { alike: last.alike, moved: new Map() };
+  // The page's own important declarations that would win over these (its style attribute's, those in a CSS layer, or by an id): what they draw would not be the change's.
+  const winsOver = (source: StyleSource) => source.important && (source.kind === "inline" || source.layer !== null || (source.selector ?? "").includes("#"));
+  // Read once for elements alike (a loop's instances): the same tag, classes and style attribute are set alike.
+  const told = new Map<string, boolean>();
+  const isHeld = (el: Element, names: string[]) => {
+    const key = `${el.localName} ${el.getAttribute("class")} ${el.getAttribute("style")} ${names.join(",")}`;
+    if (!told.has(key)) told.set(key, sourcesOf(el, names).some(winsOver));
+    return told.get(key)!;
+  };
+  if (restyled.some(({ el }, i) => isHeld(el, longhands[i]))) return remembered(drawing);
+
   const laidOut = noting.map(layoutOf);
   // A transition on any of them would start as the style goes on, or comes off: it is held off meanwhile.
   const transitions = els.some((el) => /[1-9]/.test(getComputedStyle(el).transitionDuration));
@@ -162,7 +175,7 @@ export function drawsAlike(restyled: Restyled[], noting: Element[] = [], look = 
   doc.adoptedStyleSheets = [...doc.adoptedStyleSheets, sheet];
   try {
     if (!restyled.some(({ el, style }, i) => inertOn(el, longhands[i]) || heldBack(el, style))) {
-      drawing.alike = !!before && same(before, drawnOf(els, texts, win), doc);
+      drawing.alike = !!before && same(before, drawnOf(els, texts, win, painted), doc);
       noting.forEach((el, i) => drawing.moved.set(el, movedBetween(laidOut[i], layoutOf(el))));
     }
   } finally {
@@ -175,8 +188,22 @@ export function drawsAlike(restyled: Restyled[], noting: Element[] = [], look = 
     if (win.scrollX !== scroll[0] || win.scrollY !== scroll[1]) win.scrollTo(scroll[0], scroll[1]);
     for (const [box, left, top] of scrolled) if (box.scrollLeft !== left || box.scrollTop !== top) box.scrollTo(left, top);
   }
-  return drawing;
+  return remembered(drawing);
+
+  function remembered(found: Drawing): Drawing {
+    if (print) lastLooked.set(first.el, { print, alike: found.alike });
+    return found;
+  }
 }
+
+/**
+ * What was found of an element the last time it was looked at (`drawsAlike`),
+ * and how it was drawn then, with the style it was given: as the page's
+ * checks look again at a change not applied yet each time the code changes,
+ * where nothing round its layer has changed, putting the style on again
+ * finds the same, and costs the whole page's styles worked out anew.
+ */
+const lastLooked = new WeakMap<Element, { print: string; alike: boolean }>();
 
 /** Elements whose words are drawn with no text node to measure: a field's. */
 const UNSEEN_WORDS = new Set(["input", "textarea", "select"]);
@@ -255,6 +282,38 @@ export function movedAsNoted(el: Element, moved: Moved): boolean {
   });
 }
 
+/**
+ * What a change's style moves of each of `others`, from what it moved of one
+ * of `noted` (`moved`) laid out alike, now, as it is not applied yet: a
+ * loop's instances, each a layer of the same, so the page need not put the
+ * style on every one to note them. Laid out alike: what is in them, the
+ * layer's size, and its container's, the same within half a px; where it is
+ * in its container is its own, and the others there are not looked at. What
+ * the layer itself moved to, so, from where it is.
+ */
+export function movedAlike(noted: Element[], moved: Map<Element, Moved>, others: Element[]): Map<Element, Moved> {
+  const own = (layout: Moved) => {
+    const kept = [...layout].filter(([key]) => !key.startsWith("s")).map(([key, box]): [string, number[]] => [key, key === "layer" ? [0, 0, box[2], box[3]] : box]);
+    return new Map(kept);
+  };
+  const sameAs = (a: Moved, b: Moved) => a.size === b.size && [...a].every(([key, box]) => !!b.get(key) && alike(box, b.get(key)!));
+  const laidOut = noted.map((el) => ({ layout: layoutOf(el), moved: moved.get(el) })).filter((one) => one.moved?.size);
+  const out = new Map<Element, Moved>();
+  for (const el of others) {
+    const layout = layoutOf(el);
+    const like = laidOut.find((one) => sameAs(own(one.layout), own(layout)));
+    if (!like) continue;
+    const [from, to] = [like.layout.get("layer")!, layout.get("layer")!];
+    const shifted: Moved = new Map();
+    for (const [key, box] of like.moved!) {
+      if (key.startsWith("s")) continue;
+      shifted.set(key, key === "layer" ? [box[0] - from[0] + to[0], box[1] - from[1] + to[1], box[2], box[3]] : box);
+    }
+    if (shifted.size) out.set(el, shifted);
+  }
+  return out;
+}
+
 /** Two boxes, x, y, width and height, the same within half a px: where neither has an area, by their size alone. */
 function alike(a: number[], b: number[]): boolean {
   const nowhere = (box: number[]) => box[2] * box[3] === 0;
@@ -321,13 +380,14 @@ function textsIn(el: Element): Text[] {
   return texts;
 }
 
-/** What is drawn of `els` and `texts` now. */
-function drawnOf(els: Element[], texts: Text[], win: Window): { els: Drawn[]; texts: number[][] } {
+/** What is drawn of `els` and `texts` now: how those `painted` picks are painted too. */
+function drawnOf(els: Element[], texts: Text[], win: Window, painted: (el: Element) => boolean): { els: Drawn[]; texts: number[][] } {
   const [sx, sy] = [win.scrollX, win.scrollY];
   const box = (r: DOMRect) => [r.left + sx, r.top + sy, r.width, r.height];
   const range = win.document.createRange();
   const drawn = {
     els: els.map((el) => {
+      if (!painted(el)) return { box: box(el.getBoundingClientRect()), paint: [] };
       const style = getComputedStyle(el);
       return { box: box(el.getBoundingClientRect()), paint: PAINTED.map((name) => style.getPropertyValue(name)) };
     }),

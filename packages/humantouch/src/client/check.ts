@@ -29,7 +29,7 @@ import type { Axis } from "./snap";
 import { readUsageChain } from "./usage-chain";
 import { colorReader } from "./paint";
 import { drawnStroke, showsStroke } from "./stroke-weight";
-import { drawsAlike, movedAsNoted, type Moved, type Restyled } from "./draws-alike";
+import { drawsAlike, movedAlike, movedAsNoted, type Moved, type Restyled } from "./draws-alike";
 
 /**
  * Properties the browser draws otherwise than written: compared as the code
@@ -686,6 +686,9 @@ const WEIGHED_AS_WRITTEN = new Set<Property>(["stroke"]);
  */
 export type EffectNotes = Map<string, (Moved | null)[]>;
 
+/** Of a layer's elements (a loop's instances), how many the page notes what a change's style moves of, by putting it on: the rest, by one of them laid out alike. */
+const NOTED_AT_MOST = 4;
+
 const effectKey = (change: Change, at: PageWidth) => `${change.id}@${at.width}`;
 
 /** Of a change the page shows at `at` by its value alone, as it first looks: nothing to note, nor to note later. */
@@ -700,7 +703,7 @@ function seenAt(change: Change, at: PageWidth, els: Element[]) {
  * each of them, moved as that style moved it before the change was applied
  * (`movedAsNoted`), as the page noted the first time it looked, at this
  * width. Then too, what the style moves is noted, of each of `off`: but for
- * a change that paints alone, which moves nothing. Else the first alone,
+ * a change that paints alone, which moves nothing (`NOTED_AT_MOST`). Else the first alone,
  * which settles most changes not applied yet at the cost of one, then the
  * rest together.
  */
@@ -708,10 +711,14 @@ function drawnAsCanvas(change: Change, els: Element[], off: Element[], at: PageW
   const key = effectKey(change, at);
   const noted = at.notes?.get(key);
   if (at.notes && !noted) {
-    const noting = PAINT.has(change.property) ? [] : off;
+    const noting = PAINT.has(change.property) ? [] : off.slice(0, NOTED_AT_MOST);
     const first = drawsAlike(restyle(off[0]), noting.slice(0, 1));
-    const rest = off.length > 1 ? drawsAlike(off.slice(1).flatMap(restyle), noting.slice(1), first.alike) : null;
+    // The rest: all looked at only where the first draws alike; else those to note alone, where the change moves things.
+    const others = first.alike ? off.slice(1) : noting.slice(1);
+    const rest = others.length ? drawsAlike(others.flatMap(restyle), noting.slice(1), first.alike) : null;
     const moved = new Map([...first.moved, ...(rest?.moved ?? [])]);
+    // Past those noted, an element laid out as one of them was (a loop's instances, alike) is moved alike.
+    if (noting.length && off.length > noting.length) for (const [el, alike] of movedAlike(noting, moved, off.slice(noting.length))) moved.set(el, alike);
     at.notes.set(key, els.map((el) => moved.get(el) ?? null));
     return first.alike && (!rest || rest.alike);
   }

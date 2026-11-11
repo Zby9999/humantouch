@@ -103,6 +103,18 @@ describe("written otherwise, drawn the same: shown (ADR 0016)", () => {
     expect(checkNoted(page(), page({ section: "gap: 24px" }), round)).toEqual({ outcome: "shown" });
   });
 
+  test("a loop's instances: past the first few noted, each laid out as one of those moves alike", () => {
+    const cards = (words: string) => `<!DOCTYPE html>
+<body style="margin: 0">
+  <main data-ht-loc="app/page.tsx:20:5" style="width: 800px">
+    ${Array.from({ length: 7 }, () => `<section data-ht-loc="app/page.tsx:22:7" style="display: flex; height: 40px"><p data-ht-loc="app/page.tsx:24:9" style="margin: 0; ${words}">Freeze</p></section>`).join("\n    ")}
+  </main>
+</body>`;
+    const round = changed(cards(""), "section", "padding", [0, 0, 0, 24]);
+    expect(checkNoted(cards(""), cards("margin-left: 24px"), round)).toEqual({ outcome: "shown" });
+    expect(checkNoted(cards(""), cards("margin-left: 20px"), round).outcome).toBe("not shown");
+  });
+
   test("a gap drawn by a margin of the layer after", () => {
     const round = changed(page({ slot: "width: 40px; height: 40px" }), "section", "gap", 16);
     const before = page({ slot: "width: 40px; height: 40px" });
