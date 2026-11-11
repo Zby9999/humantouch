@@ -108,3 +108,9 @@
   - 再把第 1 个改成 6，三个视图都是 [6px, 2px, 6px]：别的按钮跟着变，第 2 个保持自己的值。
   - 改动列表是「Corner radius · Button · 2nd alone」和「Corner radius · Button」。
   - ⌘Z 逐步退回，⌘⇧Z 重做照常，没有页面报错。
+- 风险 6 已核对：main 9c923ae（含 114）上，有窗口的 perf 在机器空闲时达标。
+  - 进编辑态中位 139ms，7969441 上是 127ms，目标 ≤ 150ms。
+  - Stack 间距 ⌘Z p95 24.8ms，目标 ≤ 33.3ms。
+  - 拖角改尺寸 58.3fps 仍不达标，114 之前就这样，由 ticket 153 处理。
+  - headless 的报告值偏高，只作参考。
+- 合入后 main 上发现一处回归：applying-bench.spec.ts:1527（ticket 77 的 Promote 测试）在 9c923ae 上 3/3 失败，114 合入前的 44c4721 上 2 次失败 1 次。已请 114 线诊断、修复。

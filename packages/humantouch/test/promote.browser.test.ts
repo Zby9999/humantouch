@@ -676,6 +676,30 @@ describe("new words, looked at in every instance and at the component's other us
     expect(check()).toEqual({ outcome: "not shown", actual: "Plan Ahead" });
   });
 
+  test("new words with a line break: shown once every instance breaks its line there, by a <br> or a new line its white space keeps; one missing, one more, or a new line drawn as a space is not shown (ticket 144)", () => {
+    const html = PAGE.replace(/>Card \d</g, ">Card<");
+    const { editor, changes, cards, layerOf } = openCanvas(html);
+    editor.setText(layerOf(cards[0].querySelector("h3")!), "Plan\nahead");
+    const { page, titles } = livePage(html);
+    const check = () => checkChange(page, changes.list()[0], onCanvas(changes.list()));
+    const loop = titles.slice(0, 3);
+
+    for (const title of loop) title.innerHTML = "Plan<br>ahead";
+    expect(check()).toEqual({ outcome: "shown" });
+    // The break missing: the words alone are not enough.
+    loop[1].textContent = "Plan ahead";
+    expect(check()).toEqual({ outcome: "not shown", actual: "Plan ahead" });
+    // One break more.
+    loop[1].innerHTML = "Plan<br>a<br>head";
+    expect(check()).toEqual({ outcome: "not shown", actual: "Plan\na\nhead" });
+    // A new line the white space keeps is a break; one it runs together, a space.
+    loop[1].style.whiteSpace = "pre-line";
+    loop[1].textContent = "Plan\nahead";
+    expect(check()).toEqual({ outcome: "shown" });
+    loop[1].style.whiteSpace = "normal";
+    expect(check()).toEqual({ outcome: "not shown", actual: "Plan ahead" });
+  });
+
   test("written into the Card itself, every card reads the new words: not shown, the page says where and from what to what; put back, shown", async () => {
     const round = yourMove();
     const { page, titles } = livePage();

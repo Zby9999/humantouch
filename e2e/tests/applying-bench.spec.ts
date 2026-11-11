@@ -1234,7 +1234,7 @@ async function drawTextInTheCards(page: Page) {
   const body = (await canvas(page).locator("article p").first().boundingBox())!;
   await drawWith(page, "t", { x: body.x + 10, y: body.y + body.height - 2 }, { width: 120, height: 12 });
   await page.keyboard.type("Fresh");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect.poll(() => changesNow().map((change) => change.kind)).toEqual(["create"]);
 }
@@ -1276,7 +1276,7 @@ test("a page opened only once the round is claimed, in a browser of its own, fin
   const intro = (await canvas(page).locator('[data-testid="hero"] > p').boundingBox())!;
   await drawWith(page, "t", { x: intro.x + 20, y: intro.y + intro.height - 2 }, { width: 120, height: 12 });
   await page.keyboard.type("Fresh line");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   const area = (await page.getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
   await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
@@ -1760,7 +1760,7 @@ test.describe("a text change (ticket 90)", () => {
         )
         .toBe(true);
       await page.keyboard.type(words);
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("Escape");
       await expect(where(page)).toHaveText(words);
     }
     await expect.poll(() => changesNow().map((change) => change.kind)).toEqual(edits.map(() => "text"));

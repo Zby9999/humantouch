@@ -98,6 +98,23 @@ export function quoted(text: string): string {
   return `“${text}”`;
 }
 
+/** A layer's words as quoted in the notes and the change list, a line break in them as ↵ (ticket 144). */
+export function quotedWords(text: string): string {
+  return quoted(text.replaceAll("\n", "↵"));
+}
+
+/** Words with a line break, line by line: "in 2 lines: “Third” and “Kind”"; with none, "on one line" (ticket 144). */
+export function inLines(text: string): string {
+  const lines = text.split("\n");
+  return lines.length === 1 ? "on one line" : `in ${lines.length} lines: ${listed(lines.map((line) => (line ? quoted(line) : "an empty line")))}`;
+}
+
+/** Whether the change gives a layer's words a line break, or takes one out (ticket 144): only these say so in the notes, and are checked by where the page breaks their lines. */
+export function breaksLines(change: Change): boolean {
+  if (change.kind === "text") return [change.before, change.after].some((words) => typeof words === "string" && words.includes("\n"));
+  return change.kind === "create" && !!(change.after as Created).text?.includes("\n");
+}
+
 /** How a Stack lays its layers out, in a sentence: "horizontal, with a gap of 24px, no padding, aligned top left". */
 export function stackSettings({ direction, gap, padding, align }: StackSettings): string {
   const room = padding.some((p) => p) ? `padding ${value("padding", padding)}` : "no padding";
@@ -118,11 +135,11 @@ export function changeValues(change: Change): string {
   if (change.kind === "unstack") return dissolvesGrid(change) ? "Grid → Frame" : `${(change.before as StackSettings).direction} Stack → Frame`;
   if (change.kind === "create") {
     const { type, text, width, height, brief } = change.after as Created;
-    if (type === "text") return quoted(text ?? "");
+    if (type === "text") return quotedWords(text ?? "");
     return `${width} × ${height}px${brief ? `, ${briefShown(brief)}` : ""}`;
   }
   if (change.kind === "brief") return change.after ? briefShown(change.after as string) : "taken off";
-  if (change.kind === "text") return `${quoted(change.before as string)} → ${quoted(change.after as string)}`;
+  if (change.kind === "text") return `${quotedWords(change.before as string)} → ${quotedWords(change.after as string)}`;
   const name = (place: Place) => place.container.target.context.path.at(-1);
   if (change.kind === "delete") return `from ${name(change.before as Place)}`;
   if (change.kind === "putBack") {
@@ -195,7 +212,7 @@ export function otherUsagesWord(change: Change, usages: OtherUsageChanged[]): st
 /** What other usages of a change's component show of its property now, and showed as the round was claimed (ticket 77): each `Card used at …, its fill from … to …`; of new words, `its words from “…” to “…”` (ticket 90). */
 export function otherUsagesWords(property: string, usages: OtherUsageChanged[], outer = true): string {
   const words = property === "text";
-  const from = (was: unknown, is: unknown) => (words ? `words from ${quoted(was as string)} to ${quoted(is as string)}` : `${propertyName(property)} from ${value(property, was)} to ${value(property, is)}`);
+  const from = (was: unknown, is: unknown) => (words ? `words from ${quotedWords(was as string)} to ${quotedWords(is as string)}` : `${propertyName(property)} from ${value(property, was)} to ${value(property, is)}`);
   return usages.map(({ chain, was, is, nth }) => `${nth ? `the ${ordinal(nth)} instance` : usageWhere(chain, outer)}, its ${from(was, is)}`).join("; ");
 }
 

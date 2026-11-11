@@ -46,7 +46,7 @@ export function insertNew(doc: Document, id: string, created: Created, style: Re
     // Written in the JSX its container is written in.
     const chain = container.getAttribute(CHAIN_ATTR);
     if (chain) el.setAttribute(CHAIN_ATTR, chain);
-    if (created.text !== undefined) el.textContent = created.text;
+    if (created.text !== undefined) writeWords(el, created.text);
     if (created.brief) el.setAttribute(BRIEF_ATTR, created.brief);
     keepOriginal(el);
     container.insertBefore(el, slotsOf(container)[created.place.slot] ?? null);
@@ -199,11 +199,16 @@ export function writeText(doc: Document, id: string, property: string, text: str
     if (!el.hasAttribute(ORIGINAL_TEXT_ATTR)) el.setAttribute(ORIGINAL_TEXT_ATTR, words.innerHTML);
     // The white space around the words stays: loose text keeps its distance from what it runs on beside.
     const [, before, , after] = /^(\s*)([\s\S]*?)(\s*)$/.exec(words.textContent!)!;
-    words.textContent = before + text + after;
+    writeWords(words, before + text + after);
   }
 }
 
-/** An element's words, as one reads them: white space between them as one space. */
-export function wordsOf(el: Element): string {
-  return el.textContent!.replace(/\s+/g, " ").trim();
+/** Gives `el` the words `text`, in place of all it holds: each line break in them ("\n") a `<br>`, as JSX writes one. */
+export function writeWords(el: Element, text: string) {
+  const lines = text.split("\n");
+  if (lines.length === 1) {
+    el.textContent = text;
+    return;
+  }
+  el.replaceChildren(...lines.flatMap((line, i) => (i ? [el.ownerDocument.createElement("br"), line] : [line])).filter((part) => part !== ""));
 }
