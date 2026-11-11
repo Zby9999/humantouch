@@ -152,19 +152,21 @@ body {
   }
 }
 /*
- * The home page's opening words and button, rising in from a blur, one after the other (page.tsx). A CSS animation,
- * so it runs as the page paints, off the main thread while the scripts come in; "backwards" holds the start through
- * the delay and leaves nothing behind after (no filter left on the button's hover card).
+ * The home page's opening words and button, rising in from a blur, one after the other, once as the page opens
+ * (page.tsx; designer, 2026-11-12: slow and graceful). A CSS animation, so it runs as the page paints, not waiting for
+ * the scripts. It starts 300ms in and eases out gently (easeOutQuart), so its quickest part is past the page's
+ * busiest moments (hydrating, the hero's editor coming in), where a stalled frame showed. "backwards" holds the start
+ * through the delay and leaves nothing behind after (no filter left on the button's hover card).
  */
 @keyframes rise-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
-    filter: blur(4px);
+    transform: translateY(12px);
+    filter: blur(8px);
   }
 }
 .rise-in {
-  animation: rise-in 700ms cubic-bezier(0.23, 1, 0.32, 1) var(--rise-delay, 0ms) backwards;
+  animation: rise-in 1200ms cubic-bezier(0.25, 1, 0.5, 1) var(--rise-delay, 300ms) backwards;
 }
 @media (prefers-reduced-motion: reduce) {
   /* A fade alone, no rise or blur. */

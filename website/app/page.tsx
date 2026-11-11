@@ -30,7 +30,7 @@ export default function Home() {
             <p className="text-balance">then have your Agent write the changes into the code.</p>
           </div>
         </div>
-        <div className="rise-in flex self-start [--rise-delay:80ms]">
+        <div className="rise-in flex self-start [--rise-delay:480ms]">
           <InstallButton surface={BUTTON_ACCENT} />
         </div>
       </section>
