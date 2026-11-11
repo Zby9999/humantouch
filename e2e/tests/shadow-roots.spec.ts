@@ -67,6 +67,9 @@ test("an open shadow root shows on the canvas as on the page, its style element'
   expect(atPhone[3]["border-top-left-radius"]).toBe("4px");
   expect(atPhone[3]["background-color"]).toBe("rgb(255, 230, 0)");
   expect(atPhone.slice(0, 2)).toEqual(["Shadow title", "Shadow body"]);
+  // The script's animation in it at its end, in every view; the page's carries on.
+  for (const view of [desktop(page), tablet(page), phone(page)]) await expect(view.contentFrame().locator("#shadow-host .fade")).toHaveCSS("opacity", "0.4");
+  expect(Number(await page.locator("#shadow-host .fade").evaluate((el) => getComputedStyle(el).opacity))).toBeGreaterThan(0.9);
 });
 
 test("a press on what the shadow root shows selects its host, as before (ticket 136 goes in)", async ({ page }) => {

@@ -21,6 +21,7 @@ import { editable, fitHeight } from "./freezer";
 import type { Layer } from "./layers";
 import { blankLook, freezeLook, serializeLook } from "./look";
 import type { Property, PropertyValues } from "./property-table";
+import { attachDeclared } from "./shadow-roots";
 import { pickedIn } from "./variables";
 import { createViews, type View } from "./views";
 
@@ -177,6 +178,8 @@ export function createOffCanvas(host: HTMLElement, saved: SavedOffCanvasLayer[],
       doc.open();
       doc.write(layer.look);
       doc.close();
+      // Its shadow roots, written out as declarative ones, where the parser left them templates.
+      attachDeclared(doc);
       editable(doc);
     });
   for (const layer of saved) put(bring(layer));

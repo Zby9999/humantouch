@@ -138,6 +138,8 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
   };
   /** Copies `shadow`, an open shadow root of the page, what is in it and its styles, onto `host`, its host's copy. */
   const copyShadowRoot = (shadow: ShadowRoot, host: Element) => {
+    // Already copied with it, as a clonable one is, but as it is: copied afresh, as any other.
+    if (host.shadowRoot) host = withoutShadowRoot(host);
     let copied: ShadowRoot;
     try {
       copied = host.attachShadow(ON_CANVAS);
@@ -162,11 +164,24 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
   for (const sheet of [...doc.styleSheets, ...shadowRoots.flatMap((shadow) => [...shadow.styleSheets])]) {
     const rules = readRules(sheet);
     const owner = sheet.ownerNode;
-    if (!rules || !owner || !VIEWPORT_DEPENDENT.test(owner.textContent ?? "")) continue;
-    resolveViewport(rules, frozen);
+    const text = owner?.textContent ?? "";
+    const onViewport = VIEWPORT_DEPENDENT.test(text);
+    const onDefined = DEFINED.test(text);
+    if (!rules || !owner || !(onViewport || onDefined)) continue;
+    if (onViewport) resolveViewport(rules, frozen);
+    if (onDefined) resolveDefined(rules);
     owner.textContent = serialize(rules, null);
   }
   return present(doc, iframe, { width: root.clientWidth, height: frozen.height, windowHeight: frozen.height, scrollY: viewport.scrollY });
+}
+
+/** Swaps `el` for an element the same but with no shadow root: its attributes, and what is in it, moved into it. */
+function withoutShadowRoot(el: Element): Element {
+  const next = el.ownerDocument.createElementNS(el.namespaceURI, el.prefix ? `${el.prefix}:${el.localName}` : el.localName);
+  for (const attr of el.attributes) next.setAttributeNS(attr.namespaceURI, attr.name, attr.value);
+  next.append(...el.childNodes);
+  el.replaceWith(next);
+  return next;
 }
 
 /** A constructable stylesheet as a style element of `doc`, its rules as text. */
@@ -330,7 +345,7 @@ function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loadin
     } catch {}
   }
   // The copy restarts the page's CSS animations from scratch.
-  for (const animation of doc.getAnimations()) {
+  for (const animation of animationsIn(doc)) {
     try {
       animation.finish();
     } catch {
@@ -472,7 +487,7 @@ const JUST_BEFORE_END = 0.001;
 function readAnimationEnds(live: Document): Map<Element, Map<string, string>> {
   const properties = new Map<Element, Set<string>>();
   const seeked: [Animation, CSSNumberish | null][] = [];
-  for (const animation of live.getAnimations()) {
+  for (const animation of animationsIn(live)) {
     if (animation instanceof CSSAnimation || animation instanceof CSSTransition) continue;
     const effect = animation.effect;
     if (!(effect instanceof KeyframeEffect) || !effect.target || effect.pseudoElement) continue;
@@ -499,6 +514,23 @@ function readAnimationEnds(live: Document): Map<Element, Map<string, string>> {
   }
   for (const [animation, time] of seeked) animation.currentTime = time;
   return ends;
+}
+
+/**
+ * The animations in `doc`, those in its open shadow roots too, which its own
+ * leave out; not those of the editor layer, nor of a dev server's overlay.
+ */
+function animationsIn(doc: Document): Set<Animation> {
+  const animations = new Set(doc.getAnimations());
+  const add = (root: Document | ShadowRoot) => {
+    for (const el of root.querySelectorAll("*")) {
+      if (!el.shadowRoot || el.localName === HOST_TAG || NOT_THE_PAGES.has(el.localName)) continue;
+      for (const animation of el.shadowRoot.getAnimations()) animations.add(animation);
+      add(el.shadowRoot);
+    }
+  };
+  add(doc);
+  return animations;
 }
 
 /** Rules inserted through the CSSOM (CSS-in-JS) never show up in the element's text. */
@@ -565,6 +597,24 @@ function absolutizeUrls(css: string, base: string): string {
  * width, and to the height of the window the designer had (`viewport.ts`).
  */
 const VIEWPORT_DEPENDENT = /\d[sld]?v(?:h|w|min|max|i|b)\b|@media[^{]*(?:width|height|aspect-ratio|orientation)/i;
+
+/*
+ * The page's custom elements are copied as plain elements, none of their code
+ * run in the canvas, so `:defined` matches none of them there (ticket 135).
+ * On the page it matched those defined by the time it was frozen: a component
+ * hidden till its code loads (`:not(:defined)`) showed. So on the canvas
+ * `:defined` matches every element, as it does any built-in one.
+ */
+const DEFINED = /:defined\b/i;
+
+function resolveDefined(rules: CSSRuleList) {
+  for (const rule of rules) {
+    if ("selectorText" in rule && DEFINED.test(rule.selectorText as string)) {
+      (rule as CSSStyleRule).selectorText = (rule.selectorText as string).replace(/:defined\b/gi, ":is(*)");
+    }
+    if ("cssRules" in rule) resolveDefined(rule.cssRules as CSSRuleList);
+  }
+}
 
 function resolveViewport(rules: CSSRuleList, frozen: FrozenWindow) {
   for (const rule of rules) {

@@ -165,6 +165,51 @@ describe("an open shadow root on the page (ticket 135)", () => {
     expect(inShadow(canvas.document, "title")).not.toBeNull();
   });
 
+  // A script's animation is read on a page in the editor's own window, which a test's page is not: e2e/tests/shadow-roots.spec.ts.
+  test("a CSS animation in a shadow root is at its end on the canvas and in each view", async () => {
+    const live = livePage(SHADOW, (doc) => {
+      withShadowRoots(doc);
+      const style = doc.createElement("style");
+      style.textContent = "@keyframes grow { to { width: 33px } } #units { animation: grow 10s forwards }";
+      doc.getElementById("host")!.shadowRoot!.append(style);
+    });
+    const canvas = await freeze(live, iframe());
+    const phone = await createViews(canvas).add(iframe(), 390);
+    expect(styleIn(canvas.document, "units").width).toBe("33px");
+    expect(styleIn(phone.document, "units").width).toBe("33px");
+  });
+
+  test("a shadow root the page made clonable is copied as any other, its constructable sheet too, and saved", async () => {
+    const live = livePage(SHADOW, (doc) => {
+      withShadowRoots(doc);
+      const other = doc.createElement("div");
+      other.id = "clonable";
+      const shadow = other.attachShadow({ mode: "open", clonable: true });
+      shadow.innerHTML = '<p id="in-clonable">Clonable</p>';
+      const sheet = new (doc.defaultView as Window & typeof globalThis).CSSStyleSheet();
+      sheet.replaceSync("p { color: rgb(9, 9, 9) }");
+      shadow.adoptedStyleSheets = [sheet];
+      doc.body.append(other);
+    });
+    const canvas = await freeze(live, iframe());
+    const read = (doc: Document) => getComputedStyle(doc.getElementById("clonable")!.shadowRoot!.getElementById("in-clonable")!).color;
+    expect(read(canvas.document)).toBe("rgb(9, 9, 9)");
+    expect(read((await restore(serializeCanvas(canvas), iframe())).document)).toBe("rgb(9, 9, 9)");
+  });
+
+  test("a custom element hidden till it is defined, defined on the page, shows on the canvas and in each view", async () => {
+    const live = livePage(`<!DOCTYPE html><style>x-late:not(:defined) { display: none } x-late:defined { color: rgb(0, 99, 0) }</style><x-late id="late">Late</x-late>`, (doc) => {
+      const win = doc.defaultView as Window & typeof globalThis;
+      win.customElements.define("x-late", class extends win.HTMLElement {});
+    });
+    const canvas = await freeze(live, iframe());
+    const phone = await createViews(canvas).add(iframe(), 390);
+    for (const doc of [canvas.document, phone.document]) {
+      expect(getComputedStyle(doc.getElementById("late")!).display).toBe("inline");
+      expect(getComputedStyle(doc.getElementById("late")!).color).toBe("rgb(0, 99, 0)");
+    }
+  });
+
   test("a custom element of the page's is copied as it is, none of its code run in the copy", async () => {
     let made = 0;
     const live = livePage(SHADOW, (doc) => {

@@ -466,6 +466,8 @@ function follow(canvas: Document, copy: Document, typed: () => void, lags: () =>
     if (shadow && copied) {
       if (way === down) observer.observe(shadow, EVERYTHING);
       pair(shadow, copied, way);
+      // The pixels of the stills in it, which no copy of them takes.
+      for (const still of shadow.querySelectorAll("canvas")) drawInto(way.to.get(still) as HTMLCanvasElement, still);
     }
     if (node.nodeName.toLowerCase() === "canvas") drawInto(made as HTMLCanvasElement, node as HTMLCanvasElement);
     if (!template) update(node, made, false, way);
