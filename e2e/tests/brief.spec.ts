@@ -536,6 +536,37 @@ test.describe("beside every view, the same size at any zoom (ticket 134)", () =>
     await expect.poll(() => gaps(page)).toEqual([80, 80]);
   });
 
+  test("a layer made in the blank space under the tablet view moves with it as the page's first brief widens the gaps, and back as its last is taken off, so no view comes over it (designer, 2026-11-11)", async ({ page }) => {
+    await enterEditMode(page);
+    const tabletView = page.locator('iframe[title^="Tablet"]');
+    const made = page.locator('iframe[title="Off canvas"]:visible');
+    const view = await steadyBox(tabletView);
+    await page.keyboard.press("f");
+    await page.mouse.move(view.x + 20, view.y + view.height + 30);
+    await page.mouse.down();
+    await page.mouse.move(view.x + 80, view.y + view.height + 70, { steps: 6 });
+    await page.mouse.up();
+    await expect(made).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    const from = async () => {
+      const [v, m] = await Promise.all([steadyBox(tabletView), steadyBox(made)]);
+      return [Math.round(m.x - v.x), Math.round(m.y - v.y)];
+    };
+    const before = await from();
+
+    await writeBrief(page, canvas(page).locator("h1"), "A larger title");
+    await page.keyboard.press("Escape");
+    await expect.poll(() => gaps(page)).toEqual([600, 600]);
+    expect(await from()).toEqual(before);
+
+    await pressCard(page, "Third Kind");
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.press("Backspace");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => gaps(page)).toEqual([80, 80]);
+    expect(await from()).toEqual(before);
+  });
+
   test("a card is 220px wide in 11px type on the screen at any zoom from 50% up; below, it shrinks with the canvas, full size again as it is opened (designer, 2026-11-11)", async ({ page }) => {
     await enterEditMode(page);
     await writeBrief(page, canvas(page).locator("h1"), "A larger title");

@@ -252,23 +252,29 @@ export function CanvasView(props: Props) {
   const placed: Placed[] = canvas ? layoutViews(canvas.width, desktop!, widths, beside, gap) : [];
   /** The view a brief was just written in, or taken off in: as the gaps between the views change, it stays where it is on the screen. */
   const keepInPlace = useRef<string | null>(null);
-  /** The views as last laid out, and how far apart. */
-  const lastLaidOut = useRef<{ gap: number | undefined; placed: Placed[] } | null>(null);
+  /** The views as last laid out, how far apart, and the page they show. */
+  const lastLaidOut = useRef<{ gap: number | undefined; placed: Placed[]; doc: Document | null } | null>(null);
   /**
    * The page's first brief set, or its last taken off, the gaps between the views change (ticket 134): the camera moves
    * with the view written in, or else the one in the middle of the viewport, so it stays where it is on the screen and
-   * the others move away from it or toward it (designer, 2026-11-11).
+   * the others move away from it or toward it; each layer off the canvas moves with the view nearest it on its left, so
+   * none comes to be under a view (designer, 2026-11-11).
    */
   useLayoutEffect(() => {
     const was = lastLaidOut.current;
-    lastLaidOut.current = { gap, placed };
-    if (!was || was.gap === gap || !placed.length) return;
+    lastLaidOut.current = { gap, placed, doc: canvas?.document ?? null };
+    if (!was || was.gap === gap || !placed.length || !was.placed.length || was.doc !== canvas?.document) return;
+    const movedBy = (p: Placed) => (placed.find((q) => keyOf(q) === keyOf(p))?.x ?? p.x) - p.x;
+    for (const o of outside) {
+      const left = was.placed.filter((p) => p.x <= o.x).sort((a, b) => b.x - a.x)[0];
+      const dx = left ? movedBy(left) : 0;
+      if (dx) offCanvas!.place(o.offCanvasLayer!, o.x + dx, o.y);
+    }
     const middle = (viewportSize.current.width / 2 - camera.x) / camera.zoom;
     const distance = (p: Placed) => Math.abs(p.x + p.width / 2 - middle);
     const anchor = was.placed.find((p) => keyOf(p) === keepInPlace.current) ?? [...was.placed].sort((a, b) => distance(a) - distance(b))[0];
     keepInPlace.current = null;
-    const now = anchor && placed.find((p) => keyOf(p) === keyOf(anchor));
-    const dx = now ? now.x - anchor.x : 0;
+    const dx = anchor ? movedBy(anchor) : 0;
     if (dx) setCamera((v) => ({ ...v, x: v.x - dx * v.zoom }));
   });
   const bounds: Bounds | null = canvas && boundsOf(placed);
