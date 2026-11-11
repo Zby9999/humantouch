@@ -39,12 +39,55 @@
 
 **Status:** ready-for-agent
 
-- [ ] 测试：一个只接连接、不应答的端口和起点端口同时在，按钮 1 s 后出现在起点端口上，测到的时间远小于 60 s（比如 < 10 s）。改前失败。
-- [ ] 测试：起点端口第一次编译要 20 s 以上的，照样能找到按钮。
-- [ ] 白名单测试（install 用的那份）：
+- [x] 测试：一个只接连接、不应答的端口和起点端口同时在，按钮 1 s 后出现在起点端口上，测到的时间远小于 60 s（比如 < 10 s）。改前失败。
+- [x] 测试：起点端口第一次编译要 20 s 以上的，照样能找到按钮。
+- [x] 白名单测试（install 用的那份）：
   - 允许：项目里未跟踪的 `rm ht-check.mjs`、`rm -f ht-check.mjs`。
   - 不许：`rm -rf src`、已跟踪的 `rm src/App.tsx`、`rm ../x`、`rm *.mjs`、`rm -r tmp`。
   - applying 测量台的白名单测试逐条不变。
-- [ ] `pnpm bench:install --agents scripted` 全过。
-- [ ] `pnpm typecheck`、`pnpm test` 过。
+- [x] `pnpm bench:install --agents scripted` 全过。
+- [x] `pnpm typecheck`、`pnpm test` 过。
 - [ ] 合进 main 后，经设计师同意（用设计师的 pi 额度），用 pi 重跑这两个起点各一次。
+
+## Comments
+
+**2026-11-12，实现（分支 worktree-agent-abeaff2f65e54e5b5）**
+
+改了什么：
+
+- 找按钮：`watchForToggle` 从 `run-install.ts` 挪到新文件 `e2e/bench/toggle-watch.ts`，好单独测。逻辑改成：起点端口上有服务时，只看起点端口，goto 超时照旧 60 s，够 Next webpack 第一次编译。起点端口没有服务时，才看别的端口，每个 goto 只等 3 s。别的端口上编译慢的页面，下一轮再看，不会永远找不到。
+- 删除：pi 的安装白名单（`install-list.json`）多了 `remove: true`。`allowlist.ts` 的 `shellAllowed` 多了一个参数 `removeIn`：给了它，`rm` 就照 `removesUntracked` 判。只许 `rm` 或 `rm -f`；每个文件写全名，不带通配符和花括号；是文件或链接，不是目录；所在目录的真实路径在项目里，不在 `.git` 里；git 既没跟踪也没忽略（`git ls-files --others --exclude-standard`）。同一行里 `rm` 前面有 `cd` 的，不许。被拒时，理由里会写这条规则。
+- applying 测量台（`bench:agents`）没变：它的列表没有 `remove`，`rm` 照旧不许，理由也不提。`allowlist.test.ts`、`pi-extension.test.ts` 一行没改。
+- Claude 的安装列表没变，`rm` 照旧在 deny 里（代定 1）。
+- `install-judge.ts` 没改：删掉的文件 git status 里本来就没有。第 3 条（Agent 自己的日志）照旧。
+
+测试：
+
+- 新文件 `e2e/bench/toggle-watch.test.ts`，用真的 headless Chromium 和本机端口 7100–7102：
+  - 一个只接连接、不应答的端口先在，起点端口 1 s 后才有服务。改前（逻辑原样挪过去时）测到 60.3 s，失败；改后 3.4 s 找到。
+  - 起点端口第一次编译要 21 s（这之前的请求都等到 21 s 才答）。改前改后都在 ~21 s 找到。
+- `install-allowlist.test.ts` 新加一条，用一个真的 git 项目：
+  - 允许：`rm ht-check.mjs`、`rm -f ht-check.mjs`、两个新文件一起删、绝对路径、`rm -f ht-check.mjs && git status`。
+  - 不许：`rm -rf src`、`rm src/App.tsx`、`rm ../x`、`rm *.mjs`、`rm -r tmp`，以及目录、`-rf`/`-i`/`--`、`?` 和花括号、git 忽略的文件、`.git/HEAD`、不存在的文件、光一个 `rm`、`cd src && rm …`、新文件和已跟踪的一起删、`rm … &`。
+  - 没有安装列表时（applying 的）`rm ht-check.mjs` 照旧不许。改前第一条就失败。
+
+数字：
+
+- `pnpm typecheck` 过。`pnpm test`：vitest 1232 过、1 跳过；node 132 过。
+- `pnpm bench:install --agents scripted --package local`：10/10。按钮中位数 7.3 s，最长 31.4 s（next-webpack-src-pnpm-modules）。会话中位数 8.8 s。
+- 不带 `--package local`（默认 npm）跑过一次，10 个都失败：humantouch 还没发布，`init` 装不上，跟这次的改动无关。
+
+代定：
+
+1. Claude 的安装列表不放开 `rm`。Claude Code 的规则只按前缀匹配，分不出文件有没有被 git 跟踪；放开 `Bash(rm:*)` 就等于什么都能删。Claude 遇到同样的情况，还会留下文件，判失败。要放开，得用 PreToolUse hook 照 pi 的规则检查，另开票。
+2. 只许删 git 既没跟踪、也没忽略的文件。被忽略的（比如 `node_modules` 里的、Agent 自己的 `dev.log`）不许删，日志本来也只记成 note。
+3. 别的端口每个只等 3 s。起点端口上有服务时，别的端口完全不看。
+4. 只要求文件是 git 没跟踪的，不查是不是这次 Agent 建的。起点刚 scaffold 完，所有文件都提交过，所以没跟踪的就是这次新建的（`init` 加的文件也算）。
+
+风险：
+
+1. 起点端口上要是有个只接连接、不应答的服务，别的端口就一直不看，每轮卡 60 s。真碰上的话，测到的时间会超 60 s，判失败，记录里能看出来。
+2. Agent 可以删掉 `init` 加的、git 没跟踪的文件，比如 Skill 的文件。这样 doctor 会判失败，不会漏报。
+3. 每个要删的文件都会跑一次 `git ls-files`。命令行里文件多的话会慢一点，不影响结果。
+
+后续提议（编号在 main 上给）：Claude 的安装测量台用 PreToolUse hook，照 pi 的规则放开删除没跟踪的文件（见代定 1）。
