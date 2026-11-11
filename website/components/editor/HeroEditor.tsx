@@ -43,6 +43,9 @@ const SITE_CSS = `
 .ht-shell { position: absolute; }
 .ht-canvas { position: absolute; top: 0; pointer-events: auto; }
 .ht-panel { position: relative; }
+/* Nothing in the hero scrolls of its own: a wheel or a swipe over it scrolls the page on (designer, 2026-11-11). */
+.ht-panel, .ht-tree { overflow: hidden; overscroll-behavior: auto; }
+.ht-viewport { touch-action: auto; }
 /* The panels' headers 16px from the top, as their buttons are from the side (designer, 2026-11-11); the product's are 12px. */
 .ht-panel-header { padding-top: 16px; }
 .ht-pop { position: absolute; z-index: 30; max-height: 260px; overflow: auto; padding: 4px; border-radius: 12px; background: var(--ht-panel); box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.06), 0 8px 24px -4px rgb(0 0 0 / 0.12); }
@@ -264,7 +267,7 @@ function EditMode({ shown, travel, onTravelled, onLeave, scale, root }: { shown:
         onHover={setHover}
       />
       <Tools />
-      <DesignPanel key={selected ? layerId(selected) : "none"} view={view} selected={selected} root={root} onLeave={onLeave} />
+      <DesignPanel key={selected ? layerId(selected) : "none"} view={view} selected={selected} root={root} atRest={shown && !travel} onLeave={onLeave} />
       <Tips root={root} box={shell} scale={scale} />
     </div>
   );
@@ -695,14 +698,15 @@ function Handles({ box, kind }: { box: Box; kind?: string }) {
  * The Design panel, in the product's markup. Everything in it can be pointed at, opened, dragged and typed into, but it
  * keeps nothing: a number rolls back once let go, a choice stays as it was, a Variable picked leaves the one bound.
  */
-function DesignPanel({ view, selected, root, onLeave }: { view: ViewName; selected: Selection; root: ShadowRoot; onLeave: () => void }) {
+function DesignPanel({ view, selected, root, atRest, onLeave }: { view: ViewName; selected: Selection; root: ShadowRoot; atRest: boolean; onLeave: () => void }) {
   const [size, setSize] = useState<[number, number]>([0, 0]);
 
   useLayoutEffect(() => {
     if (!selected) return;
     const found = root.querySelector(`[data-view="${view}"] [data-ht="${layerId(selected)}"]`) as HTMLElement | null;
     if (found) setSize([found.offsetWidth, found.offsetHeight]);
-  }, [root, selected, view]);
+    // Measured again once edit mode shows at rest: hidden in preview mode, every layer measures 0.
+  }, [root, selected, view, atRest]);
 
   const header = (
     <div className="ht-panel-header">

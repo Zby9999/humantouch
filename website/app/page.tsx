@@ -21,7 +21,7 @@ export default function Home() {
             <p className="text-balance">Edit the page itself, visually, on a canvas, then have your Agent write the changes into the code.</p>
           </div>
         </div>
-        <CopyButton text={prompt} label="Copy prompt to install" className="self-start" />
+        <CopyButton text={prompt} label="Copy prompt to install" size="h-8 px-3.5" className="self-start" />
       </section>
 
       <HeroEditor />
