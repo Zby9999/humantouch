@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { EDITOR_CSS } from "@/components/editor/editor-css.generated";
-import { NumberField } from "@/components/editor/fields";
 import { Icon } from "@/components/editor/Icon";
-import type { IconName } from "@/components/editor/icon-paths";
-import { ACME_COLORS } from "@/components/editor/model";
+import { DesignSections } from "@/components/editor/DesignSections";
+import type { Layer } from "@/components/editor/model";
+import { VariablesPanel } from "@/components/editor/VariablesPanel";
 import { usePhases } from "./usePhases";
 
 /*
@@ -41,7 +41,9 @@ const PARTS: Part[] = ["eyebrow", "title", "lede", "button"];
 /** Where each layer is, loose (a little off, as placed by hand) and in the Stack (lined up, 14px apart). */
 const LOOSE: Record<Part, [number, number]> = { eyebrow: [88, 102], title: [82, 124], lede: [90, 210], button: [86, 262] };
 const STACK_AT: [number, number] = [84, 100];
-const STACK_GAP = 14;
+/** The canvas is at 75%: the page is drawn at three quarters of the sizes the panel gives. */
+const ZOOM = 0.75;
+const STACK_GAP = 12;
 
 /**
  * The steps: where the pointer goes in each (a place on the page, or a field in the panel by its label), how long it
@@ -68,8 +70,9 @@ const LAST = STEPS.length - 1;
 const SCENE_CSS = `
 .demo-scene { position: absolute; top: 0; right: 0; width: ${SCENE_W}px; height: ${SCENE_H}px; transform-origin: top right; pointer-events: none; }
 .demo-window { position: absolute; left: ${WINDOW.left}px; top: ${WINDOW.top}px; right: ${WINDOW.right}px; bottom: -40px; overflow: hidden; border-top-right-radius: 12px; box-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15), 0 24px 64px -12px rgb(0 0 0 / 0.5); }
-.demo-window .ht-shell { position: absolute; inset: 0; z-index: auto; }
-.demo-window .ht-panel { position: relative; overflow: hidden; }
+.demo-window .ht-shell { position: absolute; inset: 0; z-index: auto; grid-template-rows: minmax(0, 1fr); }
+/* Room at its foot, under the card's edge, for its last fields to scroll up into sight. */
+.demo-window .ht-panel { position: relative; overflow: hidden; padding-bottom: 240px; }
 .demo-window .ht-panel-header { padding-top: 16px; }
 .demo-window .ht-canvas { position: absolute; }
 .ht-pop { position: absolute; z-index: 30; padding: 4px; border-radius: 12px; background: var(--ht-panel); box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.06), 0 8px 24px -4px rgb(0 0 0 / 0.12); }
@@ -112,9 +115,9 @@ export function CanvasDemo() {
           shadow as unknown as Element,
         )}
 
-      {/* ⇧A, pressed. */}
+      {/* ⇧A, pressed: over the canvas, clear of the panel. */}
       <div
-        className="absolute bottom-[6%] left-1/2 flex -translate-x-1/2 gap-1 transition-[opacity,translate] duration-300"
+        className="absolute bottom-[6%] left-[22%] flex -translate-x-1/2 gap-1 transition-[opacity,translate] duration-300"
         style={{ opacity: keys ? 1 : 0, translate: keys ? "0 0" : "0 6px" }}
       >
         {["⇧", "A"].map((k) => (
@@ -132,13 +135,14 @@ export function CanvasDemo() {
 }
 
 type Size = { w: number; h: number };
+type Sizes = Record<Part | "label", Size>;
 
 function Scene({ phase, scale, root }: { phase: number; scale: number; root: ShadowRoot }) {
   /** The step the pointer last got to the aim of: till it gets to this one's, what shows is the step before's. */
   const [arrivedAt, setArrivedAt] = useState(0);
   const [pressed, setPressed] = useState(false);
   const [cursor, setCursor] = useState(toScene(...(STEPS[0].aim as { page: [number, number] }).page));
-  const [sizes, setSizes] = useState<Record<Part | "label", Size> | null>(null);
+  const [sizes, setSizes] = useState<Sizes | null>(null);
   const page = useRef<HTMLDivElement>(null);
   const scene = useRef<HTMLDivElement>(null);
 
@@ -179,6 +183,14 @@ function Scene({ phase, scale, root }: { phase: number; scale: number; root: Sha
           : "text" in aim
             ? at(page.current?.querySelector('[data-part="label"]'), 0.6, 0.6)
             : at(root.querySelector(`[aria-label="${aim.panel}"]`) ?? [...root.querySelectorAll(".ht-pop button")].find((b) => b.textContent?.startsWith(aim.panel)), 0.5, 0.55);
+    // A field low in the panel, or under the card's edge: the panel scrolls it up to the middle, as a hand would, on the way.
+    const panel = root.querySelector(".ht-panel.is-design");
+    const shown = (root.host as HTMLElement).getBoundingClientRect().height / k;
+    if (target && "panel" in aim && panel && !panel.querySelector(".ht-pop") && target.y > shown * 0.6) {
+      const by = Math.min(Math.round(target.y - shown * 0.45), panel.scrollHeight - panel.clientHeight - panel.scrollTop);
+      panel.scrollTo({ top: panel.scrollTop + by, behavior: "smooth" });
+      target.y -= by;
+    }
     if (target) setCursor(target);
     if (phase === 0 || !step.move) {
       setArrivedAt(phase);
@@ -261,11 +273,11 @@ function Scene({ phase, scale, root }: { phase: number; scale: number; root: Sha
                   once a month.
                 </>,
               )}
-              {layer("lede", { width: 150, fontSize: 11, lineHeight: "16.5px", color: "#6E6C66" }, "Notes from the studio, and nothing else.")}
+              {layer("lede", { width: 150, fontSize: 10.5, lineHeight: "16px", color: "#6E6C66" }, "Notes from the studio, and nothing else.")}
               {layer(
                 "button",
                 {
-                  padding: "9px 16px",
+                  padding: "9px 15px",
                   borderRadius: 9999,
                   background: white ? "#FFFFFF" : "#161614",
                   boxShadow: [stroke ? "inset 0 0 0 0.5px rgb(0 0 0 / 0.1)" : "inset 0 0 0 0.5px rgb(0 0 0 / 0)", dropShadow ? "0 1px 1.5px rgb(0 0 0 / 0.15)" : "0 1px 1.5px rgb(0 0 0 / 0)"].join(", "),
@@ -282,7 +294,7 @@ function Scene({ phase, scale, root }: { phase: number; scale: number; root: Sha
             {union && <Handles box={moved(union)} />}
           </div>
 
-          <DesignPanel shown={shown} fillOpen={fillOpen} white={white} stroke={stroke} dropShadow={dropShadow} ink={ink} />
+          <DesignPanel shown={shown} sizes={sizes} fillOpen={fillOpen} white={white} stroke={stroke} dropShadow={dropShadow} ink={ink} />
         </div>
       </div>
 
@@ -342,203 +354,80 @@ function Cursor({ at, ms, pressed }: { at: { x: number; y: number }; ms: number;
   );
 }
 
-/** The Design panel, in the product's markup, with only the sections the demo uses. */
-function DesignPanel({ shown, fillOpen, white, stroke, dropShadow, ink }: { shown: number; fillOpen: boolean; white: boolean; stroke: boolean; dropShadow: boolean; ink: boolean }) {
+/** The Design panel, the product's, as the hero draws it: the Variables with nothing selected, a layer's design with one. */
+function DesignPanel({ shown, sizes, fillOpen, white, stroke, dropShadow, ink }: { shown: number; sizes: Sizes | null; fillOpen: boolean; white: boolean; stroke: boolean; dropShadow: boolean; ink: boolean }) {
+  const nothing = shown === 0 || shown === LAST;
   const header = (
     <div className="ht-panel-header">
-      <h2 className="ht-panel-title">Design</h2>
+      <h2 className="ht-panel-title">{nothing ? "Variables" : "Design"}</h2>
       <button type="button" className="ht-icon-button" aria-label="Back to preview mode">
         <Icon name="close" />
       </button>
     </div>
   );
-  if (shown === 0 || shown === LAST) return <aside className="ht-panel is-design">{header}</aside>;
-  if (shown === 1)
-    return (
-      <aside className="ht-panel is-design">
-        {header}
-        <section className="ht-layer-info">
-          <div className="ht-layer-head">
-            <h3 className="ht-layer-name">4 layers</h3>
-          </div>
-        </section>
-      </aside>
-    );
+  /** A size as the panel gives it: the canvas is at 75%. */
+  const real = (n: number) => Math.round(n / ZOOM);
+  const sizeOf = (s: Size | undefined): [number, number] => (s ? [real(s.w), real(s.h)] : [0, 0]);
 
-  const text = shown >= 8;
-  const info = (icon: IconName, name: string, type: string, source: string) => (
-    <section className="ht-layer-info">
-      <div className="ht-layer-head">
-        <h3 className="ht-layer-name">
-          <Icon name={icon} />
-          <span>{name}</span>
-        </h3>
-      </div>
-      <dl>
-        <dt>Type</dt>
-        <dd>{type}</dd>
-        <dt>Source</dt>
-        <dd className="ht-source">{source}</dd>
-      </dl>
-    </section>
-  );
-
-  if (shown === 2)
-    return (
-      <aside className="ht-panel is-design">
-        {header}
-        {info("stack-vertical", "Stack", "Vertical Stack", "src/App.tsx:24:7")}
-        <section className="ht-section">
-          <div className="ht-section-header">
-            <h3 className="ht-section-title">Layout</h3>
-            <button type="button" className="ht-icon-button" aria-label="Dissolve Stack">
-              <Icon name="minus" />
-            </button>
-          </div>
-          <div className="ht-row ht-align-row">
-            <div className="ht-align" role="radiogroup">
-              {Array.from({ length: 9 }, (_, i) => (
-                <button key={i} type="button" role="radio" className="ht-align-point" aria-checked={i === 0} />
-              ))}
-            </div>
-            <div className="ht-align-options">
-              <div className="ht-variable-slot">
-                <NumberField tip="Gap" icon="gap" value={STACK_GAP} />
-              </div>
-              <div className="ht-row">
-                <div className="ht-segmented-field" role="radiogroup">
-                  {(["stack-horizontal", "stack-vertical", "grid"] as IconName[]).map((icon) => (
-                    <button key={icon} type="button" role="radio" className="ht-icon-button" aria-checked={icon === "stack-vertical"}>
-                      <Icon name={icon} />
-                    </button>
-                  ))}
-                </div>
-                <button type="button" className="ht-icon-button" aria-pressed="false">
-                  <Icon name="wrap" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-      </aside>
-    );
-
-  const fill = text ? (ink ? "ink" : "paper") : white ? "white" : "ink";
-  return (
-    <aside className="ht-panel is-design">
-      {header}
-      {text ? info("text", "Text", "Text", "src/App.tsx:29:11") : info("frame", "Button", "Frame", "src/App.tsx:28:9")}
-      <section className="ht-section">
-        <div className="ht-section-header">
-          <h3 className="ht-section-title">Fill</h3>
-        </div>
-        <div className={text ? undefined : "ht-row ht-paint-row"} style={{ position: "relative" }}>
-          <ColorRow name="Fill" variable={fill} />
-          {!text && (
-            <button type="button" className="ht-icon-button" aria-label="Remove fill">
-              <Icon name="minus" />
-            </button>
-          )}
-          {fillOpen && (
-            <div className="ht-pop" style={{ top: 28, left: 0, right: 0 }}>
-              {ACME_COLORS.map((v) => (
-                <button key={v.name} type="button" data-on={v.name === fill ? "" : undefined}>
-                  <span className="ht-pop-swatch" style={{ background: v.value }} />
-                  {v.name}
-                  <span className="ht-pop-value">{v.value}</span>
-                </button>
-              ))}
-            </div>
-          )}
+  let content: ReactNode;
+  let key: string;
+  if (nothing) {
+    key = "variables";
+    content = null;
+  } else if (shown === 1) {
+    key = "four";
+    content = (
+      <section className="ht-layer-info" aria-label="Selected layers">
+        <div className="ht-layer-head">
+          <h3 className="ht-layer-name">4 layers</h3>
         </div>
       </section>
-      {!text && (
-        <>
-          <section className="ht-section">
-            <div className="ht-section-header">
-              <h3 className="ht-section-title">Stroke</h3>
-              {!stroke && (
-                <button type="button" className="ht-icon-button" aria-label="Add stroke">
-                  <Icon name="plus" />
-                </button>
-              )}
-            </div>
-            {stroke && (
-              <>
-                <div className="ht-row ht-paint-row">
-                  <ColorRow name="Stroke" hex="000000" opacity={10} />
-                  <button type="button" className="ht-icon-button" aria-label="Remove stroke">
-                    <Icon name="minus" />
-                  </button>
-                </div>
-                <div className="ht-row ht-joined">
-                  <NumberField tip="Stroke weight" icon="stroke-weight" value={0.5} />
-                  <span className="ht-select-field">
-                    <select className="ht-select" aria-label="Stroke style" value="solid" onChange={() => {}}>
-                      <option value="solid">Solid</option>
-                    </select>
-                  </span>
-                  <span className="ht-select-field">
-                    <select className="ht-select" aria-label="Stroke sides" value="All" onChange={() => {}}>
-                      <option>All</option>
-                    </select>
-                  </span>
-                </div>
-              </>
-            )}
-          </section>
-          <section className="ht-section">
-            <div className="ht-section-header">
-              <h3 className="ht-section-title">Effects</h3>
-              <button type="button" className="ht-icon-button" aria-label="Add effect">
-                <Icon name="plus" />
-              </button>
-            </div>
-            {dropShadow && (
-              <div className="ht-effect">
-                <div className="ht-row ht-paint-row">
-                  <button type="button" className="ht-fold" aria-expanded="false">
-                    <Icon name="chevron-down" />
-                  </button>
-                  <span className="ht-select-field ht-effect-type-field">
-                    <select className="ht-select ht-effect-type" aria-label="Shadow 1 type" value="drop" onChange={() => {}}>
-                      <option value="drop">Drop shadow</option>
-                    </select>
-                  </span>
-                  <button type="button" className="ht-icon-button" aria-label="Remove shadow 1">
-                    <Icon name="minus" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </section>
-        </>
-      )}
+    );
+  } else if (shown === 2) {
+    key = "stack";
+    const stack = sizes && { w: Math.max(...PARTS.map((p) => sizes[p].w)), h: PARTS.reduce((h, p) => h + sizes[p].h, 0) + STACK_GAP * (PARTS.length - 1) };
+    content = <DesignSections layer={STACK} style={{ gap: real(STACK_GAP), padding: [0, 0, 0, 0], direction: "column", opacity: 100 }} icon="stack-vertical" size={sizeOf(stack ?? undefined)} />;
+  } else if (shown < 8) {
+    key = "button";
+    content = (
+      <DesignSections
+        layer={{ ...BUTTON, stroke: stroke ? { color: "#000000", opacity: 10, weight: 0.5, sides: "All" } : undefined }}
+        style={{ fill: white ? "#FFFFFF" : "#161614", radius: 9999, padding: [12, 20, 12, 20], opacity: 100 }}
+        icon="frame"
+        size={sizeOf(sizes?.button)}
+        shadows={dropShadow ? 1 : 0}
+        open={fillOpen ? "fill" : undefined}
+      />
+    );
+  } else {
+    key = "label";
+    content = <DesignSections layer={LABEL} style={{ fontSize: 14, color: ink ? "#161614" : "#FAF9F6", opacity: 100 }} icon="text" size={sizeOf(sizes?.label)} open={fillOpen ? "fill" : undefined} />;
+  }
+  return <Panel key_={key} header={header} content={content} variables={nothing} />;
+}
+
+/**
+ * The panel: the Variables, built once and kept, shown with nothing selected (built again each loop, they held the main
+ * thread for some 80ms); a layer's sections, new for each layer, the panel back at its top.
+ */
+function Panel({ key_, header, content, variables }: { key_: string; header: ReactNode; content: ReactNode; variables: boolean }) {
+  const el = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    el.current!.scrollTop = 0;
+  }, [key_]);
+  return (
+    <aside ref={el} className="ht-panel is-design" aria-label="Design">
+      {header}
+      <div style={{ display: variables ? "contents" : "none" }}>
+        <Variables />
+      </div>
+      <Fragment key={key_}>{content}</Fragment>
     </aside>
   );
 }
 
-/** A color row: a Variable by its name, or a hex and its opacity. */
-function ColorRow({ name, variable, hex, opacity = 100 }: { name: string; variable?: string; hex?: string; opacity?: number }) {
-  const value = variable ? ACME_COLORS.find((c) => c.name === variable)!.value : `#${hex}`;
-  return (
-    <div className="ht-color-row">
-      <div className={`ht-field ht-color-field${variable ? "" : " is-joined"}`}>
-        <button type="button" className="ht-swatch ht-swatch-button" aria-label={`${name} color picker`} style={{ ["--ht-swatch" as string]: value }} />
-        {variable ? (
-          <>
-            <button type="button" className="ht-variable-chip-name">
-              {variable}
-            </button>
-            <button type="button" className="ht-icon-button" aria-label={`Detach ${name.toLowerCase()} color variable`}>
-              <Icon name="detach" />
-            </button>
-          </>
-        ) : (
-          <input type="text" className="ht-input" readOnly value={hex} />
-        )}
-      </div>
-      {!variable && <NumberField tip={`${name} opacity`} className="ht-color-opacity" value={opacity} unit="%" max={100} rolls={false} />}
-    </div>
-  );
-}
+const Variables = memo(VariablesPanel);
+
+const STACK: Layer = { name: "Stack", kind: "stack", source: "src/App.tsx:24:7", sizing: ["Hug", "Hug"] };
+const BUTTON: Layer = { name: "Button", kind: "frame", source: "src/App.tsx:28:9", sizing: ["Hug", "Hug"] };
+const LABEL: Layer = { name: "Subscribe", kind: "text", source: "src/App.tsx:29:11", sizing: ["Hug", "Hug"], weight: "Medium", font: "Inter" };

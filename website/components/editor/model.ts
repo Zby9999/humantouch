@@ -52,7 +52,7 @@ export type Layer = {
   instance?: { component: string; usage: string; count: number };
   /** In a component, so repeated in each of its instances. */
   inComponent?: { component: string; count: number };
-  stroke?: { color: string; weight: number; sides: "All" | "Top" | "Bottom" };
+  stroke?: { color: string; weight: number; sides: "All" | "Top" | "Bottom"; opacity?: number };
 };
 
 export const LAYERS: Record<Key, Layer> = {
