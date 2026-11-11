@@ -4,12 +4,15 @@
  * the blank space it is on, with a dashed line to the middle of the side of
  * its layer nearest it. As Figma's annotations on the canvas: the cards of a
  * view in a column at its free side, in the order of their layers from top to
- * bottom, each as level with its layer as the cards above it leave room for;
- * a view with no free side (one between two others) has them in a row above
- * it, in the order of their layers from left to right. No card covers
- * another, a view, its label, or a layer off the canvas: one that would is
- * moved on, down the column or along the row, till it is clear. Pure: what
- * is where on the stage, in canvas px, in; where each card goes, out.
+ * bottom, each as level with its layer as the cards above it leave room for.
+ * With a brief on the page the gaps between the views are wide (ticket 134):
+ * every view has its cards on the side nearer the layer, those of the two
+ * views either side of a gap taking turns down it. Without, a view with no
+ * free side (one between two others) has them in a row above it, in the
+ * order of their layers from left to right. No card covers another, a view,
+ * its label, or a layer off the canvas: one that would is moved on, down the
+ * column or along the row, till it is clear. Pure: what is where on the
+ * stage, in canvas px, and the zoom, in; where each card goes, out.
  */
 
 /** A box on the stage, in canvas px. */
@@ -57,16 +60,30 @@ export interface PlacedCard extends Box {
   key: string;
   side: "left" | "right" | "top";
   line: Line | null;
+  /** How large it is drawn: screen px for each of its own px (1, full size, from `FULL_SIZE_FROM` up, or open). */
+  scale: number;
 }
 
-/** How wide a card is, in canvas px: it scales with the canvas, as a note on it does. */
+/**
+ * A card's own px (ticket 134): it is as large on the screen at any zoom from `FULL_SIZE_FROM` up, as Figma's comments
+ * are; zoomed out further, it shrinks with the canvas, so it stays in the gap between the views, till it is opened
+ * (designer, 2026-11-11). Its width, its offsets and the gaps around it are in its own px; where it is, in canvas px.
+ */
 export const CARD_WIDTH = 220;
-/** Between a card and its host, in canvas px: half the gap between views (`VIEW_GAP`), close to it as Figma's notes are (designer, 2026-11-10). */
+/** Between a card and its host, in its own px: close to it as Figma's notes are (designer, 2026-11-10). */
 export const CARD_OFFSET = 40;
-/** Between the bends of lines side by side, in canvas px, at most. */
+/** Between the bends of lines side by side, in a card's own px, at most. */
 const BEND_STEP = 8;
-/** Between one card and the next, and between a card and anything else, in canvas px. */
+/** Between one card and the next, and between a card and anything else, in a card's own px. */
 export const CARD_GAP = 16;
+/** The zoom from which a card is full size on the screen; below it, it shrinks with the canvas (designer, 2026-11-11). */
+export const FULL_SIZE_FROM = 0.5;
+
+/** How the canvas is seen as the cards are placed: its zoom, and the card opened to be changed, which is full size. */
+export interface PlaceAt {
+  zoom?: number;
+  open?: string | null;
+}
 /** Above a view, the room its label takes, in canvas px: a card in a row above it stays clear of it. */
 export const LABEL_ROOM = 64;
 
@@ -76,7 +93,11 @@ export const LABEL_ROOM = 64;
  * but for the one being written in, `writing`, which is beside its layer
  * (`besideLayer`) till it is set, and moves nothing else meanwhile.
  */
-export function placeCards(cards: CardToPlace[], obstacles: Box[], writing: string | null = null): PlacedCard[] {
+export function placeCards(cards: CardToPlace[], obstacles: Box[], writing: string | null = null, { zoom = 1, open = null }: PlaceAt = {}): PlacedCard[] {
+  // Canvas px for each of a card's own px: closed, and full size.
+  const k = 1 / Math.max(zoom, FULL_SIZE_FROM);
+  const full = 1 / zoom;
+  const offset = CARD_OFFSET * k;
   const taken: Box[] = [...obstacles];
   const sided = cards.map((card, i) => ({ card, i, side: sideOf(card) })).filter(({ card }) => card.key !== writing || !card.layer);
   // Down a column, top to bottom; along a row, left to right; by the layer, then as written.
@@ -88,32 +109,41 @@ export function placeCards(cards: CardToPlace[], obstacles: Box[], writing: stri
     .map((s) => ({ ...s, by: along(s.card, s.side) }))
     .sort((a, b) => a.by[0] - b.by[0] || a.by[1] - b.by[1] || a.i - b.i);
   const placed = new Map<number, PlacedCard>();
+  /** Where each was before it grew, as it was set: its line goes from there, so it does not move as it is written in. */
+  const rests = new Map<number, Box>();
   for (const { card, side, i } of order) {
     const { host, layer, height } = card;
-    const sits = card.restHeight ?? height;
-    const width = CARD_WIDTH;
+    const sits = (card.restHeight ?? height) * k;
+    const width = CARD_WIDTH * k;
+    const gap = CARD_GAP * k;
     let x: number;
     let y: number;
     if (side === "top") {
       const middle = layer ? layer.x + layer.width / 2 : host.x + width / 2;
       x = Math.max(host.x, middle - width / 2);
-      y = host.y - LABEL_ROOM - CARD_OFFSET / 2 - sits;
+      y = host.y - LABEL_ROOM - offset / 2 - sits;
     } else {
-      x = side === "left" ? host.x - CARD_OFFSET - width : host.x + host.width + CARD_OFFSET;
+      x = side === "left" ? host.x - offset - width : host.x + host.width + offset;
       const middle = layer ? layer.y + layer.height / 2 : host.y + sits / 2;
       y = Math.max(host.y, middle - sits / 2);
     }
     // Moved on till it is clear of everything placed so far.
     for (let tries = 0; tries < 1000; tries++) {
       const box = { x, y, width, height: sits };
-      const hit = taken.find((other) => overlaps(box, other, CARD_GAP));
+      const hit = taken.find((other) => overlaps(box, other, gap));
       if (!hit) break;
-      if (side === "top") x = hit.x + hit.width + CARD_GAP;
-      else y = hit.y + hit.height + CARD_GAP;
+      if (side === "top") x = hit.x + hit.width + gap;
+      else y = hit.y + hit.height + gap;
     }
-    const box = { x, y, width, height };
+    // Opened, full size: its edge nearest its host where it was, and as it was set, its middle where it was, so its line
+    // comes to the middle of its side and does not move; it grows down from there as it is written in (designer, 2026-11-11).
+    const opened = card.key === open && full !== k;
+    const box = opened
+      ? { x: side === "left" ? x + width - CARD_WIDTH * full : x, y: y + sits / 2 - (card.restHeight ?? height) * full / 2, width: CARD_WIDTH * full, height: height * full }
+      : { x, y, width, height: height * k };
     taken.push(box);
-    placed.set(i, { key: card.key, side, ...box, line: null });
+    placed.set(i, { key: card.key, side, ...box, line: null, scale: opened ? 1 : Math.min(1, zoom / FULL_SIZE_FROM) });
+    rests.set(i, { x, y, width, height: sits });
   }
   // Their lines, in the same order: each clear of the other layers with briefs and of the lines drawn before it.
   const layers = cards.flatMap((c) => (c.layer ? [c.layer] : []));
@@ -121,14 +151,13 @@ export function placeCards(cards: CardToPlace[], obstacles: Box[], writing: stri
   for (const { card, side, i } of order) {
     if (!card.layer) continue;
     const at = placed.get(i)!;
-    // From where its side's middle was before it grew, so the line does not move as it is written in.
-    const line = lineOf({ ...at, height: card.restHeight ?? at.height }, card.layer, side === "top" ? "down" : "across", CARD_OFFSET / 2, { layers, lines: drawn });
+    const line = lineOf(rests.get(i)!, card.layer, side === "top" ? "down" : "across", offset / 2, { layers, lines: drawn });
     drawn.push(...segmentsOf(line.path));
     placed.set(i, { ...at, line });
   }
-  spreadBends(cards, placed);
+  spreadBends(cards, placed, k);
   cards.forEach((card, i) => {
-    if (!placed.has(i)) placed.set(i, besideLayer(card));
+    if (!placed.has(i)) placed.set(i, besideLayer(card, full));
   });
   return cards.map((_, i) => placed.get(i)!);
 }
@@ -138,26 +167,28 @@ export function placeCards(cards: CardToPlace[], obstacles: Box[], writing: stri
  * beside the view (designer, 2026-11-10): right of it, level with it; else left of it; else, the layer as wide as the
  * view, inside its top right corner. Its line to the layer, unless it is over it.
  */
-function besideLayer(card: CardToPlace): PlacedCard {
-  const { host, height } = card;
+function besideLayer(card: CardToPlace, k: number): PlacedCard {
+  const { host } = card;
   const layer = card.layer!;
-  const width = CARD_WIDTH;
+  const width = CARD_WIDTH * k;
+  const height = card.height * k;
+  const gap = CARD_GAP * k;
   // Level with a layer shorter than it, its line straight; at the top of a taller one.
   const y = layer.height < height ? layer.y + layer.height / 2 - height / 2 : layer.y;
   let box: Box;
   let side: PlacedCard["side"];
-  if (layer.x + layer.width + CARD_GAP + width <= host.x + host.width) {
-    box = { x: layer.x + layer.width + CARD_GAP, y, width, height };
+  if (layer.x + layer.width + gap + width <= host.x + host.width) {
+    box = { x: layer.x + layer.width + gap, y, width, height };
     side = "left";
-  } else if (layer.x - CARD_GAP - width >= host.x) {
-    box = { x: layer.x - CARD_GAP - width, y, width, height };
+  } else if (layer.x - gap - width >= host.x) {
+    box = { x: layer.x - gap - width, y, width, height };
     side = "right";
   } else {
-    box = { x: Math.max(host.x, layer.x + layer.width - CARD_GAP - width), y: layer.y + CARD_GAP, width, height };
+    box = { x: Math.max(host.x, layer.x + layer.width - gap - width), y: layer.y + gap, width, height };
     side = "right";
   }
   const over = box.x < layer.x + layer.width && layer.x < box.x + width && box.y < layer.y + layer.height && layer.y < box.y + height;
-  return { key: card.key, side, ...box, line: over ? null : lineOf(box, layer, "across") };
+  return { key: card.key, side, ...box, line: over ? null : lineOf(box, layer, "across", (CARD_OFFSET / 2) * k), scale: 1 };
 }
 
 /**
@@ -165,7 +196,7 @@ function besideLayer(card: CardToPlace): PlacedCard {
  * further from its card than the one before, in the order that keeps them from crossing (the line of the card further
  * from its layer, further out), about the middle of the space between the cards and their view.
  */
-function spreadBends(cards: CardToPlace[], placed: Map<number, PlacedCard>) {
+function spreadBends(cards: CardToPlace[], placed: Map<number, PlacedCard>, k: number) {
   const groups = new Map<string, { i: number; card: PlacedCard }[]>();
   placed.forEach((card, i) => {
     const path = card.line?.path;
@@ -185,10 +216,10 @@ function spreadBends(cards: CardToPlace[], placed: Map<number, PlacedCard>) {
     const [p1, p2] = [group[0].card.line!.path[1], group[0].card.line!.path[2]];
     const back = across ? p2.y < p1.y : p2.x < p1.x;
     group.sort((a, b) => (back ? at(a.card) - at(b.card) : at(b.card) - at(a.card)));
-    const step = Math.min(BEND_STEP, (CARD_OFFSET - 2 * BEND_STEP) / (group.length - 1));
-    group.forEach(({ i, card }, k) => {
+    const step = Math.min(BEND_STEP, (CARD_OFFSET - 2 * BEND_STEP) / (group.length - 1)) * k;
+    group.forEach(({ i, card }, n) => {
       const line = card.line!;
-      const away = CARD_OFFSET / 2 + (k - (group.length - 1) / 2) * step;
+      const away = (CARD_OFFSET / 2) * k + (n - (group.length - 1) / 2) * step;
       const [from, beyond] = [line.from, line.path[3]];
       const path = line.path.map((p) => ({ ...p }));
       if (across) {
