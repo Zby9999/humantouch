@@ -5,7 +5,8 @@ import { CanvasDemo } from "@/components/demos/CanvasDemo";
 import { DesignPanelDemo } from "@/components/demos/DesignPanelDemo";
 import { ApplyDemo } from "@/components/demos/ApplyDemo";
 import { MiniVideo } from "@/components/demos/MiniVideo";
-import { UPDATES } from "@/lib/updates";
+import Link from "next/link";
+import { Updates } from "@/components/Updates";
 
 /**
  * The two install buttons, at the top and the foot (designer, 2026-11-11): 8px corners, #008FF0 flat, with the hairline
@@ -71,22 +72,13 @@ export default function Home() {
       </section>
 
       <section className="flex w-full max-w-[800px] flex-col gap-3">
-        <h2 className="label font-sans text-base font-medium text-ink leading-normal normal-case tracking-[-0.005em]">Recent update</h2>
-        <ul className="flex flex-col gap-3">
-          {UPDATES.map((update) => (
-            <li key={update.title} className="flex h-[120px] flex-col justify-between rounded-[4px] bg-surface p-5">
-              <div className="flex items-baseline justify-between gap-4">
-                <h3 className="text-[16px] leading-[1.4] font-[500] tracking-[-0.04px] text-ink">{update.title}</h3>
-                <time dateTime={update.date} className="font-mono text-[12px] text-label">
-                  {update.date}
-                </time>
-              </div>
-              <p className="truncate text-[14px] leading-[1.4] font-[440] text-label" title={update.body}>
-                {update.body}
-              </p>
-            </li>
-          ))}
-        </ul>
+        <div className="flex items-baseline justify-between gap-4">
+          <h2 className="label font-sans text-base font-medium text-ink leading-normal normal-case tracking-[-0.005em]">Changelog</h2>
+          <Link href="/changelog" className="text-[14px] leading-[1.4] font-[440] text-label transition-colors hover:text-ink">
+            See all
+          </Link>
+        </div>
+        <Updates count={3} />
       </section>
 
       <div className="flex flex-col items-center gap-40 self-stretch max-xl:gap-32">
