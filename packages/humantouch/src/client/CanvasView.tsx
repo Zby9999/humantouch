@@ -118,6 +118,8 @@ interface Props {
   onSetBrief(layer: Layer, brief: string): Layer;
   /** Promote, from the selection toolbar: the layer's changes made changes to its component. */
   onPromote(layer: Layer): void;
+  /** Edit alone, from the selection toolbar (ticket 114): the instance of a loop the layer is, or is in, stops following the others, or follows them again. */
+  onEditAlone(layer: Layer, alone: boolean): void;
   /** Typing in a text layer begins: returns the layer with an element of its own to type in. */
   onBeginText(layer: Layer): Layer;
   /** Typing in a text layer ends, with these words. */
@@ -143,7 +145,7 @@ interface Props {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, rowHovered, rowHoveredRange, focus, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
+  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, rowHovered, rowHoveredRange, focus, onSelect, editor, onMove, onResize, onCancelResize, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onEditAlone, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, leaving, animate, changed, onLeft } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -1311,7 +1313,7 @@ export function CanvasView(props: Props) {
   /** The layer of the canvas selected alone, with the selection toolbar on its top right, in `toolbarIn`. */
   const toolbar =
     toolbarIn && editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && !travelling && !playing && !drag && !resize && !hideSelection && !typingLayer
-      ? { layer: primary, in: toolbarIn, promote: editor.canPromote(primary) }
+      ? { layer: primary, in: toolbarIn, promote: editor.canPromote(primary), alone: editor.canEditAlone(primary) ? editor.editsAlone(primary) : null }
       : null;
   /**
    * The layer selected alone that can be resized, with handles in every view that shows it: not the page,
@@ -1545,6 +1547,8 @@ export function CanvasView(props: Props) {
           camera={cameraIn(camera, toolbar.in)}
           promote={toolbar.promote}
           onPromote={onPromote}
+          alone={toolbar.alone}
+          onEditAlone={onEditAlone}
         />
       )}
       {!travelling &&

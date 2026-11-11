@@ -961,6 +961,11 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           editor.promote(layer);
           onEdit();
         }}
+        onEditAlone={(layer, alone) => {
+          if (!editor?.canEditAlone(layer)) return;
+          editor.editAlone(layer, alone);
+          onEdit();
+        }}
         onBeginText={(layer) => {
           const own = editorOf(layer)!.typedIn(layer);
           // Loose text got an element of its own: the layers are built anew (those off the canvas are read as they are).

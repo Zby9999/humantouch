@@ -305,6 +305,8 @@ export interface Editor {
    * Returns the changes promoted, as they were, and those that stay with its usage.
    */
   promote(layer: Layer): { promoted: Change[]; stays: Change[] };
+  /** What the layer's style changes are recorded under (`Change.layer`): its id, or in an instance that edits alone, the key of its changes there (ticket 114); null before it has an id. */
+  recordedAs(layer: Layer): string | null;
   /** Whether the layer is one of the instances a loop renders, or is in one (ticket 114): which can stop following the others. */
   canEditAlone(layer: Layer): boolean;
   /** Whether the instance of a loop the layer is, or is in, no longer follows the others (ticket 114). */

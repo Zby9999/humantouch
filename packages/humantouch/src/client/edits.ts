@@ -863,6 +863,7 @@ export function createEditor(
         ),
       );
     },
+    recordedAs: keyOf,
     canEditAlone: (layer) => !!loopInstanceOf(tree, layer),
     editsAlone: (layer) => !!loopInstanceOf(tree, layer)?.el.hasAttribute(ALONE_ATTR),
     editAlone(layer, alone) {

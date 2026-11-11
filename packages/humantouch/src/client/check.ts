@@ -10,7 +10,7 @@
  * is drawn on the page to compare where the code that writes it cannot be
  * read: on an element put in and taken out at once, before anything is painted.
  */
-import { breakpointKey, breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
+import { breakpointKey, breakpointName, mediaOf, sameBreakpoint, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isGridSettings, isReorder, keptIn, makesGrid, placedAt, type Change, type Composed, type Created, type Margins, type Place, type PutBack } from "./changeset";
 import { canvasOf, type RoundOnCanvas } from "./moves";
@@ -20,7 +20,7 @@ import { checkable, foundByMarker, isEndOffset, textMovedInPlace, madeLayer, pxI
 import { absolute, ARRANGED, ordersOf, placementOf, readValue, roomBetween, round as rounded, sourcesFor, stackOf, type Align, type Arrangement, type MarginBetween, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, mayBeOf, savedCanvas as savedCanvasOf, usageKeyOf, type SavedCanvas } from "./page-elements";
-import { MADE_ATTR } from "./canvas-style";
+import { aloneOfKey, MADE_ATTR } from "./canvas-style";
 import { LOC_ATTR } from "../markers";
 import type { Axis } from "./snap";
 import { readUsageChain } from "./usage-chain";
@@ -517,7 +517,28 @@ function lookAt(doc: Document, change: Change, round: RoundOnCanvas, apart: stri
 /** The elements a style change is to show on, as `at` shows them: a change to a component itself shows in every usage of it, but those `apart`. */
 function styledBy(doc: Document, change: Change, apart: string[], at: PageWidth, round?: RoundOnCanvas): Element[] {
   const found = change.scope === "component" ? componentElementsOf(doc, change.target, apart, savedCanvas(round)) : elementsOf(doc, change.target, savedCanvas(round));
-  return found.map((el) => at.of(el)).filter((el): el is Element => !!el);
+  return instancesFor(found, change, round ?? []).map((el) => at.of(el)).filter((el): el is Element => !!el);
+}
+
+/**
+ * Of the elements of a style change's layer, in page order, those it is to
+ * show on (ticket 114): made on one instance alone, the one in that
+ * instance, by its place among those the loop renders; one the instances
+ * share, all but those of an instance with a value of its own for it this
+ * round, at every width or at the change's breakpoint.
+ */
+function instancesFor(found: Element[], change: Change, round: Change[]): Element[] {
+  if (change.alone) {
+    const el = change.instance && found[change.instance.nth - 1];
+    return el ? [el] : [];
+  }
+  if (change.scope !== "usage") return found;
+  const own = new Set(
+    round.flatMap((other) =>
+      other.alone && other.instance && aloneOfKey(other.layer)?.id === change.layer && changesTheSame(change, other) && (!other.breakpoint || sameBreakpoint(other.breakpoint, change.breakpoint)) ? [other.instance.nth - 1] : [],
+    ),
+  );
+  return own.size ? found.filter((_, i) => !own.has(i)) : found;
 }
 
 /** The value of a style change's property the page, as `at` shows it, has on the layer now; undefined when the layer is not there. */

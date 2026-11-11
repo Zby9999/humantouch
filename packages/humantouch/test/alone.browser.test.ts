@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { createChangeSet } from "../src/client/changeset";
+import { createChangeSet, type Change } from "../src/client/changeset";
+import { checkChange } from "../src/client/check";
 import { createEditor } from "../src/client/edits";
+import { placedOnCanvas } from "../src/client/moves";
+import { otherUsagesChanged, noteRound } from "../src/client/other-usages";
+import { serializeCanvas } from "../src/client/freezer";
+import { revertSaved } from "../src/client/saved-round";
 import type { Fill } from "../src/client/property-table";
 import type { Layer } from "../src/client/layers";
 import { createViews } from "../src/client/views";
@@ -30,7 +35,26 @@ const PAGE = `<!DOCTYPE html>
 </body>`;
 
 let iframe: HTMLIFrameElement | undefined;
-afterEach(() => iframe?.remove());
+let live: HTMLIFrameElement | undefined;
+let saved: HTMLIFrameElement | undefined;
+afterEach(() => {
+  iframe?.remove();
+  live?.remove();
+  saved?.remove();
+});
+
+/** A saved canvas, shown 800 px wide, as it looks. */
+function showSaved(html: string): Document {
+  saved?.remove();
+  saved = document.createElement("iframe");
+  saved.style.width = "800px";
+  document.body.append(saved);
+  const doc = saved.contentDocument!;
+  doc.open();
+  doc.write(html);
+  doc.close();
+  return doc;
+}
 
 function openCanvas() {
   iframe = document.createElement("iframe");
@@ -157,5 +181,93 @@ describe("one instance alone", () => {
     ]);
     expect(cards.map(background)).toEqual([WHITE, "rgb(255, 0, 0)", WHITE, WHITE]);
     expect(cards.map(padding)).toEqual(["12px", "12px", "12px", "12px"]);
+  });
+});
+
+describe("done checks the instance alone, and the loop's other instances (ticket 114)", () => {
+  /** The live page, as React renders it: each Card with its usage known. */
+  function livePage() {
+    live = document.createElement("iframe");
+    live.style.width = "800px";
+    document.body.append(live);
+    const page = live.contentDocument!;
+    page.open();
+    page.write(PAGE);
+    page.close();
+    function App() {}
+    function Card() {}
+    const app = { type: App, memoizedProps: {}, _debugOwner: null };
+    [...page.querySelectorAll("article")].forEach((card, i) => {
+      const usage = i < 3 ? "src/App.tsx:6:9" : "src/App.tsx:8:7";
+      const fiber = { _debugOwner: { type: Card, memoizedProps: { "data-ht-usage": usage }, _debugOwner: app } };
+      for (const el of [card, card.querySelector("h3")!]) Object.assign(el, { __reactFiber$alone: fiber });
+    });
+    const cards = [...page.querySelectorAll("article")] as HTMLElement[];
+    return { page, cards };
+  }
+  /** The second Card, alone, made red; and the padding of every Card of the loop: the round. */
+  function round(): Change[] {
+    const { editor, changes, cards, layerOf } = openCanvas();
+    editor.editAlone(layerOf(cards[1]), true);
+    editor.set(layerOf(cards[1]), "fill", RED);
+    editor.set(layerOf(cards[0]), "fill", BLUE);
+    return changes.list();
+  }
+
+  test("shown once the second Card alone is red, the others blue; red on the first too, not shown: another instance changed", () => {
+    const list = round();
+    const [alone, shared] = list;
+    const onCanvas = placedOnCanvas(list, "");
+    const { page, cards } = livePage();
+    // As the round is claimed: the other Cards white.
+    // The Card used on its own only: the loop's others change with the one shared.
+    const noted = noteRound(page, list, 800);
+    expect(noted.get(alone.id)!.seen.map(({ nth, chain }) => [nth, chain[0].usage])).toEqual([[undefined, "src/App.tsx:8:7"]]);
+    expect(checkChange(page, alone, onCanvas)).toEqual({ outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 } });
+
+    cards[1].style.backgroundColor = "rgb(255, 0, 0)";
+    cards[0].style.backgroundColor = cards[2].style.backgroundColor = "rgb(0, 0, 255)";
+    expect(checkChange(page, alone, onCanvas)).toEqual({ outcome: "shown" });
+    // The one shared shows on the first and the third: the second has a value of its own.
+    expect(checkChange(page, shared, onCanvas)).toEqual({ outcome: "shown" });
+  });
+
+  test("made alone with nothing else changed, the loop's other instances are noted as the round is claimed, and one changing with it is told", () => {
+    const { editor, changes, cards: canvasCards, layerOf } = openCanvas();
+    editor.editAlone(layerOf(canvasCards[1]), true);
+    editor.set(layerOf(canvasCards[1]), "fill", RED);
+    const [alone] = changes.list();
+    const { page, cards } = livePage();
+    const noted = noteRound(page, changes.list(), 800);
+    expect(noted.get(alone.id)!.seen.filter(({ nth }) => nth).map(({ nth, value }) => ({ nth, value }))).toEqual([
+      { nth: 1, value: { type: "solid", color: "#FFFFFF", opacity: 1 } },
+      { nth: 3, value: { type: "solid", color: "#FFFFFF", opacity: 1 } },
+    ]);
+
+    // Written for every instance: the second shows it, the others too.
+    for (const card of cards.slice(0, 3)) card.style.backgroundColor = "rgb(255, 0, 0)";
+    expect(checkChange(page, alone, placedOnCanvas(changes.list(), ""))).toEqual({ outcome: "shown" });
+    expect(otherUsagesChanged(page, alone, noted.get(alone.id)!, 800)).toEqual([
+      { chain: alone.target.chain, nth: 1, was: { type: "solid", color: "#FFFFFF", opacity: 1 }, is: RED },
+      { chain: alone.target.chain, nth: 3, was: { type: "solid", color: "#FFFFFF", opacity: 1 }, is: RED },
+    ]);
+    // By a field of its data: the others as they were.
+    cards[0].style.backgroundColor = cards[2].style.backgroundColor = WHITE;
+    expect(otherUsagesChanged(page, alone, noted.get(alone.id)!, 800)).toEqual([]);
+  });
+});
+
+describe("a saved round with an instance alone (ticket 114)", () => {
+  test("saved and opened again, the instance is still alone, its change on it alone; taken out of the saved round, it is as the others", () => {
+    const { doc, editor, changes, cards, layerOf } = openCanvas();
+    editor.editAlone(layerOf(cards[1]), true);
+    editor.set(layerOf(cards[1]), "fill", RED);
+    editor.set(layerOf(cards[0]), "fill", BLUE);
+    const canvas = serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 });
+    expect(canvas).toContain('data-ht-alone="1"');
+    expect([...showSaved(canvas).querySelectorAll("article")].map(background)).toEqual(["rgb(0, 0, 255)", "rgb(255, 0, 0)", "rgb(0, 0, 255)", WHITE]);
+    const reverted = revertSaved({ canvas, changeSet: changes.save() }, changes.list()[0].id)!;
+    expect([...showSaved(reverted.canvas).querySelectorAll("article")].map(background)).toEqual(["rgb(0, 0, 255)", "rgb(0, 0, 255)", "rgb(0, 0, 255)", WHITE]);
+    expect(reverted.changeSet.changes.map((change) => change.property)).toEqual(["fill"]);
   });
 });
