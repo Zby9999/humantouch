@@ -178,11 +178,12 @@ export function createEditor(
    * range), as far as no other range the property has of its own reaches
    * into it, so no two of them overlap.
    */
-  const editHere = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], continues: boolean, picked?: Picked) => {
+  /** `from`: what the layer's `property` is in the desktop view, read already (`resize`); in a view beside, it is read there as ever. */
+  const editHere = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], continues: boolean, picked?: Picked, from?: PropertyValues[P]) => {
     const view = working.beside();
     const id = keyOf(layer);
     const range = working.breakpoint();
-    if (!view || !id) return edit(layer, property, value, continues, range, undefined, picked);
+    if (!view || !id) return edit(layer, property, value, continues, range, view ? undefined : from, picked);
     const { breakpoint, cut } = rangeOfEdit(changesAtBreakpoints(id, property), view.width, range, project);
     edit(layer, property, value, continues, breakpoint, undefined, picked, cut ? cutting(cut, range!) : undefined);
   };
@@ -278,16 +279,19 @@ export function createEditor(
   /** Per element shown, the Variables the code gives each property, and the changes to it they were read for: read again once those differ. */
   const codeShown = new WeakMap<Element, Map<Property, { stamp: string; code: Bindings | undefined }>>();
 
-  /** The edit itself, at every width or at `breakpoint`: on the canvas and in the ChangeSet. `picked`: Variables the designer chose for the value. */
-  const apply = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], breakpoint: Breakpoint | null, picked?: Picked) => {
+  /**
+   * The edit itself, at every width or at `breakpoint`: on the canvas and in the ChangeSet. `picked`: Variables the designer chose for the value.
+   * `known`: what it is now, read just before (`edit`): not read again.
+   */
+  const apply = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], breakpoint: Breakpoint | null, picked?: Picked, known?: { before: PropertyValues[P] }) => {
     const definition = definitionOf(property);
     // Read, and written, as laid out at the breakpoint, in the view that stands for it.
     const el = working.shownAt(breakpoint, layer.el);
     // A gap whose layers have uneven room between them goes from that room, each (ticket 122): no gap set is the same.
-    const before = (property === "gap" ? asShown(el, () => gapBefore(el)) : readAsShown(el, property, colors)) as PropertyValues[P];
+    const before = known ? known.before : ((property === "gap" ? asShown(el, () => gapBefore(el)) : readAsShown(el, property, colors)) as PropertyValues[P]);
     // A change keeps the source it started from: the cascade is walked once, not on each step of a drag.
-    const known = keyOf(layer);
-    const earlier = known ? changes.find(known, property, breakpoint) : null;
+    const layerId = keyOf(layer);
+    const earlier = layerId ? changes.find(layerId, property, breakpoint) : null;
     const started = definition.reference ? earlier : null;
     // A layer made this round has no style of the page's to change.
     const sources = layer.made || earlier ? [] : sourcesFor(definition.setOn?.(el) ?? el, definition.setsOn?.(el) ?? definition.sets);
@@ -397,7 +401,8 @@ export function createEditor(
     // A Stack now laid out the other way, or made a Grid, a Grid a Stack: the layers are built anew, so a drag into it reads the way it runs now.
     // Made a Grid or a Stack at a breakpoint, the layers stay as the desktop view has them; their kind there is `arrangedKind`'s.
     const kindChanged = property === "arrangement" && !breakpoint && (before as Arrangement).type !== (value as Arrangement).type;
-    if (kindChanged || (layer.kind === "stack" && stackOf(layer.el).direction !== layer.direction)) tree = buildLayerTree(doc);
+    // Read only after an edit that writes how it is laid out: reading its style lays the canvas out anew, and a resize makes two edits a frame (ticket 153).
+    if (kindChanged || (layer.kind === "stack" && relaysOut(property) && stackOf(layer.el).direction !== layer.direction)) tree = buildLayerTree(doc);
     return id;
   };
 
@@ -532,7 +537,7 @@ export function createEditor(
     }
     const known = keyOf(layer);
     const wasPicked = pickedIn((known ? changes.find(known, property, breakpoint) : null)?.variables);
-    const id = apply(layer, property, value, breakpoint, picked);
+    const id = apply(layer, property, value, breakpoint, picked, { before });
     // A Variable picked for the value the layer has already, with nothing to change: no step.
     if (!cut && same(before, value) && !wasPicked && !changes.has(id, property, breakpoint)) return;
     const to = (v: PropertyValues[P], chosen: Picked | undefined) => () => {
@@ -652,7 +657,13 @@ export function createEditor(
    * bottom edge keeps its left or top edge as its size changes, its `right`
    * or `bottom` changed with it.
    */
-  const setValue = <P extends Property>(layer: Layer, property: P, value: PropertyValues[P], { continues = false, step = false, variables, sizeAlone = false }: SetOptions & { sizeAlone?: boolean } = {}) => {
+  /** `before`: what `property` is in the desktop view, read before the edits it is made with (`resize`); else it is read as it is set. */
+  const setValue = <P extends Property>(
+    layer: Layer,
+    property: P,
+    value: PropertyValues[P],
+    { continues = false, step = false, variables, sizeAlone = false, before }: SetOptions & { sizeAlone?: boolean; before?: PropertyValues[P] } = {},
+  ) => {
     if (!editor.can(layer, property, value)) throw new Error(`Human Touch: ${property} cannot be set to ${JSON.stringify(value)} on a ${layer.kind} layer`);
     // A Fixed size of one centered by its auto margins, held by a maximum: that maximum, its size `auto` still, so it goes on filling what room its sides leave where less (ticket 97).
     const held = heldMaxOf(layer, property, value);
@@ -676,7 +687,7 @@ export function createEditor(
         return editHere(layer, placing, round(offset - ((value as number) - was)), continues);
       }
       const end = sizeAlone ? null : endOffsetOf(layer, property);
-      if (!end) return editHere(layer, property, value, continues, variables);
+      if (!end) return editHere(layer, property, value, continues, variables, before);
       // Its far edge goes as far as its size grows: its left or top edge stays, as in Figma.
       const size = () => editor.measure(layer)[property as "width" | "height"];
       const [was, from] = [size(), editor.read(layer, end)];
@@ -843,6 +854,9 @@ export function createEditor(
       steppedWhile(step, () => group(edits, continues));
     },
     resize(layer, { width, height, x, y, right, bottom }, { continues = false, along } = {}) {
+      // In the desktop view, its height as it is before its width is set: read after, the canvas is laid out anew for it,
+      // as a resize sets both each frame (ticket 153). In a view beside, it is read where its edit goes, as ever.
+      const heightBefore = height === undefined || working.beside() ? undefined : editor.read(layer, "height");
       steppedWhile(true, () =>
         group(
           () => {
@@ -850,7 +864,7 @@ export function createEditor(
             if (width !== undefined) setValue(layer, "width", { type: "fixed", value: width }, { sizeAlone: true });
             if (x !== undefined) setValue(layer, "x", x);
             if (right !== undefined) setValue(layer, "right", right);
-            if (height !== undefined) setValue(layer, "height", { type: "fixed", value: height }, { sizeAlone: true });
+            if (height !== undefined) setValue(layer, "height", { type: "fixed", value: height }, { sizeAlone: true, before: heightBefore });
             if (y !== undefined) setValue(layer, "y", y);
             if (bottom !== undefined) setValue(layer, "bottom", bottom);
             // Made to the layer resized: a step that moves it but changes no size is one with the run's others all the same.
@@ -902,4 +916,9 @@ function find(layer: Layer, match: (layer: Layer) => boolean): Layer | null {
     if (found) return found;
   }
   return null;
+}
+
+/** Whether an edit of `property` may lay a Stack out another way: one that writes its display or its direction (ticket 153). */
+function relaysOut(property: Property): boolean {
+  return cssOf(property).some((name) => name === "display" || name === "flex-direction");
 }
