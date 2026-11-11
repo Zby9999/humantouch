@@ -63,8 +63,16 @@ const GAP = 8;
 function Popover({ label, anchor, leaving = false, onClose, children }: { label: string; anchor: HTMLElement; leaving?: boolean; onClose(): void; children: ComponentChildren }) {
   const box = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
+  const latest = useRef({ leaving, onClose });
+  latest.current = { leaving, onClose };
   useLayoutEffect(() => {
     const place = () => {
+      // Its control gone from the panel, it has nothing to be beside: it closes, not sent to the window's corner (ticket 139).
+      // Leaving, it stays where it was as it fades.
+      if (!anchor.isConnected) {
+        if (!latest.current.leaving) latest.current.onClose();
+        return;
+      }
       const at = anchor.getBoundingClientRect();
       // Placed as if it were as tall as it can be: it stays where it is as it grows or shrinks, a tab or a fill's type changed,
       // and is whole in the window however tall it comes to (designer, 2026-11-05).
@@ -284,18 +292,28 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
  * Whether a field in the element the handlers go on is being typed into:
  * there, the Variable the code writes the value with (ticket 119) is not shown
  * in the field's place till it is left, though the Variables come in meanwhile.
+ * A field in a popover opened from it (the Variables' search, a color picker's,
+ * a shadow's) is not one: focused, it would take the name, and so the popover's
+ * anchor, away (ticket 139).
  */
 export function useTypedIn() {
   const [typing, setTyping] = useState(false);
   return {
     typing,
     handlers: {
-      onFocusIn: (event: FocusEvent) => setTyping(event.target instanceof HTMLInputElement),
+      onFocusIn: (event: FocusEvent) => setTyping(ownField(event.target, event.currentTarget as Element)),
       onFocusOut: (event: FocusEvent) => {
-        if (!(event.relatedTarget instanceof HTMLInputElement && (event.currentTarget as Element).contains(event.relatedTarget))) setTyping(false);
+        if (!ownField(event.relatedTarget, event.currentTarget as Element)) setTyping(false);
       },
     },
   };
+}
+
+/** Whether `target` is a field of `slot`'s own: in it, and in no popover in it. */
+function ownField(target: EventTarget | null, slot: Element): boolean {
+  if (!(target instanceof HTMLInputElement) || !slot.contains(target)) return false;
+  const popover = target.closest(".ht-popover");
+  return !popover || !slot.contains(popover);
 }
 
 export function VariableSlot({ label, slot, property, part, rowReset, children }: {
