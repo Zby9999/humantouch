@@ -31,8 +31,10 @@ const GROUPS: { group: string; title: string; entries: Entry[] }[] = [
   { group: "shadow", title: "Shadow", entries: TAILWIND_SHADOW.map(([name, value]) => ({ name, value, own: false })) },
 ];
 
-export function VariablesPanel() {
-  const [search, setSearch] = useState("");
+/** `typed`: a search typed from outside, as a demo types it; the field is the panel's own otherwise. */
+export function VariablesPanel({ typed }: { typed?: string } = {}) {
+  const [own, setSearch] = useState("");
+  const search = typed ?? own;
   const [source, setSource] = useState<Source>("all");
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const text = search.trim().toLowerCase();

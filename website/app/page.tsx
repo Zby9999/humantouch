@@ -51,14 +51,14 @@ export default function Home() {
         <ApplyDemo />
       </Feature>
 
-      <section className="grid w-full max-w-[800px] gap-5 xl:max-w-[1200px] xl:grid-cols-3">
-        <Mini visual="top" label="Brief" title="Say what the panel can’t" body="Pick the Brief tool, click a layer, and write on its card what your Agent should achieve there.">
+      <section className="grid w-full max-w-[800px] gap-5 min-[1100px]:max-w-[1200px] min-[1100px]:grid-cols-3">
+        <Mini visual="top" title="Say what the panel can’t" body="Write on a layer what your Agent should achieve there.">
           <BriefMini />
         </Mini>
-        <Mini visual="bottom" fill="bg-[#23292D]" label="Off canvas" title="Set layers aside" body="Drag a layer off the canvas to keep it beside the views, across rounds, until you put it back.">
+        <Mini visual="bottom" fill="bg-[#23292D]" title="Set layers aside" body="Drag a layer off the canvas, and it waits there till you need it.">
           <OffCanvasMini />
         </Mini>
-        <Mini visual="top" label="Variables" title="Your project’s values" body="Colors, spacing and type sizes from your CSS variables or Tailwind theme, offered in the Design panel.">
+        <Mini visual="top" title="Your project’s values" body="Your CSS variables and Tailwind theme, right in the Design panel.">
           <VariablesMini />
         </Mini>
       </section>
@@ -118,13 +118,12 @@ function Feature({ side, backdrop, title, body, children }: { side: "left" | "ri
   );
 }
 
-/** One of the three small cards: a 300px visual at its top or bottom (`fill`, its color behind the demo), the words in the rest. One column below 1280px wide: three would each be too narrow. */
-function Mini({ visual, fill = "bg-sunk", label, title, body, children }: { visual: "top" | "bottom"; fill?: string; label: string; title: string; body: string; children: React.ReactNode }) {
+/** One of the three small cards: a 300px visual at its top or bottom (`fill`, its color behind the demo), the words in the rest. One column below 1100px wide (designer, 2026-11-11): three would each be too narrow. */
+function Mini({ visual, fill = "bg-sunk", title, body, children }: { visual: "top" | "bottom"; fill?: string; title: string; body: string; children: React.ReactNode }) {
   return (
-    <div className={`flex flex-col gap-3 rounded-[4px] bg-surface p-3 xl:h-[500px] ${visual === "bottom" ? "xl:flex-col-reverse xl:justify-between" : ""}`}>
+    <div className={`flex flex-col gap-3 rounded-[4px] bg-surface p-3 min-[1100px]:h-[500px] ${visual === "bottom" ? "min-[1100px]:flex-col-reverse min-[1100px]:justify-between" : ""}`}>
       <div className={`relative h-[300px] shrink-0 overflow-hidden rounded-[4px] ${fill}`}>{children}</div>
       <div className="flex flex-col gap-2 p-3">
-        <p className="label text-[16px] leading-[18px]">{label}</p>
         <h3 className="text-[18px] leading-[1.3] font-[500] tracking-[-0.2px] text-ink">{title}</h3>
         <p className="text-[14px] leading-[1.5] font-[440] text-label">{body}</p>
       </div>

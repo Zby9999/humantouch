@@ -18,6 +18,8 @@ type Props = {
   styles?: Partial<Record<Key, Style>>;
   /** As tall as its content, its footer at its foot: not run on under an edge, as in the hero. */
   hug?: boolean;
+  /** A layer taken off the page, as one moved off the canvas: the rest closes up. */
+  without?: Key;
 };
 
 const SERIF = "var(--font-instrument-serif), Georgia, serif";
@@ -30,7 +32,7 @@ const PAGE_MIN_HEIGHT = 3400;
  * Tablet and Phone widths, as its breakpoints say. A pointer down reports the layers under it, outermost first, for the
  * editor to pick from as Figma does.
  */
-export function DemoPage({ view, width, onPick, onHover, styles, hug = false }: Props) {
+export function DemoPage({ view, width, onPick, onHover, styles, hug = false, without }: Props) {
   const s = (key: Key): Style => ({ ...styleOf(key), ...styles?.[key] });
   const phone = width < 768;
   const tablet = !phone && width < 1280;
@@ -38,7 +40,8 @@ export function DemoPage({ view, width, onPick, onHover, styles, hug = false }: 
   const at = (desktop: number, tab: number, ph: number) => (phone ? ph : tablet ? tab : desktop);
   const side = at(80, 48, 24);
 
-  const layer = (target: Target, path: Target[], style: CSSProperties, children: ReactNode, Tag: "div" | "p" | "h1" | "h2" | "h3" | "blockquote" | "nav" | "footer" = "div") => (
+  const layer = (target: Target, path: Target[], style: CSSProperties, children: ReactNode, Tag: "div" | "p" | "h1" | "h2" | "h3" | "blockquote" | "nav" | "footer" = "div") =>
+    target.key === without ? null : (
     <Tag
       key={layerId(target)}
       data-ht={layerId(target)}
