@@ -1460,6 +1460,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
  * 2026-11-11); a grey dashed line from each to its layer, across and down only, 1px at any zoom (designer, 2026-11-10).
  */
 .ht-brief-cards { position: absolute; top: 0; left: 0; pointer-events: none; }
+.ht-brief-stage { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
 .ht-brief-lines { position: absolute; top: 0; left: 0; overflow: visible; }
 .ht-brief-lines path { fill: none; stroke: var(--ht-text-muted); stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
 .ht-brief-lines circle { fill: var(--ht-text-muted); }

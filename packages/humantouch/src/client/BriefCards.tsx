@@ -10,8 +10,8 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { BRIEF_ATTR, LAYER_ID_ATTR } from "./canvas-style";
-import { CARD_WIDTH, pathOf, placeCards, type Box, type PlacedCard } from "./brief-cards";
-import type { Camera } from "./camera";
+import { CARD_WIDTH, FULL_SIZE_FROM, pathOf, placeCards, type Box, type PlacedCard } from "./brief-cards";
+import { transformOf, type Camera } from "./camera";
 import { Icon } from "./icons";
 import { CHANGE_GLIDE_MS, EASE_IN_OUT, prefersReducedMotion } from "./motion";
 import type { Layer, LayerTree } from "./layers";
@@ -108,8 +108,8 @@ interface Props {
   onWritten(key: string, text: string | null): void;
   /** The card opened to be written in is not all in sight: the canvas panned by `dx` and `dy` screen px brings it in. */
   onReveal(dx: number, dy: number): void;
-  /** Kept up to date with where the cards are on the stage: ⇧1 fits them in with the views. */
-  placedNow: { current: Box[] };
+  /** Kept up to date with where the cards are on the stage, as large on it as they are zoomed out: ⇧1 fits them in with the views. */
+  placedNow: { current: () => Box[] };
 }
 
 /** How far in from the viewport's edges a card opened is brought, in screen px. */
@@ -146,31 +146,35 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
   // Just closed, a card is as tall as it was when it was opened till it is measured again, not as tall as it was open:
   // else it would be placed for a moment where it is not, and bounce back.
   const heightOf = (key: string) => (key === measured.writing && key !== writing ? restHeights.current[key] : undefined) ?? heights[key] ?? UNMEASURED;
+  const toPlace = cards.map((card) => ({
+    key: card.key,
+    host: card.host,
+    free: card.free,
+    layer: card.layer,
+    height: heightOf(card.key),
+    restHeight: restOf(card.key),
+  }));
   const placed = placeCards(
-    cards.map((card) => ({
-      key: card.key,
-      host: card.host,
-      free: card.free,
-      layer: card.layer,
-      height: heightOf(card.key),
-      restHeight: restOf(card.key),
-    })),
+    toPlace,
     obstacles,
     // Only a new brief is written beside its layer; one set before is changed where its card is, so it does not jump (designer, 2026-11-10).
     writing === "new" ? writing : null,
     // Opened, a card is full size however far the canvas is zoomed out (designer, 2026-11-11).
     { zoom: camera.zoom, open: writing !== "new" ? writing : null },
   );
-  placedNow.current = placed;
+  // Fitted, the canvas is most often zoomed out: the cards as large on it as they are then, all closed.
+  placedNow.current = () => placeCards(toPlace, obstacles, null, { zoom: FULL_SIZE_FROM });
   // Written, the card goes from beside its layer back out beside its view (designer, 2026-11-10): it glides there, its
   // line drawn again once it is. Found by its layer, once it is drawn again: a new brief's card is keyed anew as it is set.
+  // Both where they are in the view they are beside, which moves as the page's first brief is set (ticket 134).
   const lastWriting = useRef<{ box: Box; layer: Box } | null>(null);
   const toGlide = useRef<{ box: Box; layer: Box; renders: number } | null>(null);
+  const inHost = (box: Box, host: Box): Box => ({ ...box, x: box.x - host.x, y: box.y - host.y });
   useLayoutEffect(() => {
     const now = writing === null ? null : placed.find((p) => p.key === writing);
-    const nowLayer = now && cards.find((c) => c.key === writing)?.layer;
-    if (now && nowLayer) {
-      lastWriting.current = { box: now, layer: nowLayer };
+    const nowCard = now && cards.find((c) => c.key === writing);
+    if (now && nowCard?.layer) {
+      lastWriting.current = { box: inHost(now, nowCard.host), layer: inHost(nowCard.layer, nowCard.host) };
       toGlide.current = null;
       return;
     }
@@ -181,7 +185,7 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
     const was = toGlide.current;
     if (!was) return;
     const same = (a: Box, b: Box) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
-    const i = cards.findIndex((c) => c.layer && same(c.layer, was.layer));
+    const i = cards.findIndex((c) => c.layer && same(inHost(c.layer, c.host), was.layer));
     // Glides only to where it ends up: once it is drawn again, and measured as it is now, closed.
     if (i < 0 || measured.writing !== writing || heights[cards[i].key] === undefined) {
       // Not drawn again within a few renders (its brief taken off, say): nothing to glide.
@@ -192,10 +196,10 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
     const key = CSS.escape(cards[i].key);
     const el = layer.current?.querySelector<HTMLElement>(`.ht-brief-card[data-key="${key}"]`);
     const line = layer.current?.querySelector<SVGGElement>(`.ht-brief-lines g[data-key="${key}"]`);
-    const to = placed[i];
+    const to = inHost(placed[i], cards[i].host);
     // On the screen; and as the card is drawn, scaled.
-    const dx = ((was.box.x - to.x) * camera.zoom) / to.scale;
-    const dy = ((was.box.y - to.y) * camera.zoom) / to.scale;
+    const dx = ((was.box.x - to.x) * camera.zoom) / placed[i].scale;
+    const dy = ((was.box.y - to.y) * camera.zoom) / placed[i].scale;
     if (!el || (!dx && !dy) || prefersReducedMotion()) return;
     el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration: CHANGE_GLIDE_MS, easing: EASE_IN_OUT });
     line?.animate([{ opacity: 0 }, { opacity: 0, offset: 0.7 }, { opacity: 1 }], { duration: CHANGE_GLIDE_MS + 120, easing: "linear" });
@@ -216,22 +220,23 @@ export function BriefCards({ cards, obstacles, camera, writing, onWrite, onWritt
     const dy = shift(camera.y + at.y * camera.zoom, at.height * camera.zoom, viewport.clientHeight);
     if (dx || dy) onReveal(dx, dy);
   }, [writing]);
-  // On the screen: the cards are drawn there, not on the stage, so they are as large at any zoom.
+  // The cards on the screen, so they are as large at any zoom; their lines on the stage, so a pan only moves them.
   const onScreen = ({ x, y }: { x: number; y: number }) => ({ x: camera.x + x * camera.zoom, y: camera.y + y * camera.zoom });
   return (
     <div ref={layer} class="ht-brief-cards">
-      <svg class="ht-brief-lines" width="1" height="1" aria-hidden="true">
-        {placed.map((p, i) => {
-          if (!p.line) return null;
-          const to = onScreen(p.line.to);
-          return (
-            <g key={p.key} data-key={p.key} data-selected={cards[i].selected || undefined}>
-              <path d={pathOf(p.line.path.map(onScreen))} />
-              <circle cx={to.x} cy={to.y} r={3} />
-            </g>
-          );
-        })}
-      </svg>
+      <div class="ht-brief-stage" style={{ transform: transformOf(camera) }}>
+        <svg class="ht-brief-lines" width="1" height="1" aria-hidden="true">
+          {placed.map(
+            (p, i) =>
+              p.line && (
+                <g key={p.key} data-key={p.key} data-selected={cards[i].selected || undefined}>
+                  <path d={pathOf(p.line.path)} />
+                  <circle cx={p.line.to.x} cy={p.line.to.y} r={3 / camera.zoom} />
+                </g>
+              ),
+          )}
+        </svg>
+      </div>
       {placed.map((p, i) => (
         <Card
           key={cards[i].key}

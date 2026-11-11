@@ -421,6 +421,38 @@ test("a card set before, opened again, grows down where it is, and the cards bel
 test.describe("with motion", () => {
   test.use({ reducedMotion: "no-preference" });
 
+  test("the page's first brief set in the tablet view, its card glides from beside its layer out beside the view, as the gaps between the views widen (ticket 134)", async ({ page }) => {
+    await enterEditMode(page);
+    await openBrief(page, page.locator('iframe[title^="Tablet"]').contentFrame().locator("article").first());
+    await page.keyboard.type("Lift on hover");
+    // Where its left is on the screen, each frame, from just before it is set till it is still.
+    const lefts = cards(page)
+      .first()
+      .evaluate(
+        (first) =>
+          new Promise<number[]>((done) => {
+            // The card is drawn anew as it is set, keyed by its layer: found again each frame.
+            const root = first.getRootNode() as Document | ShadowRoot;
+            const out: number[] = [];
+            const t0 = performance.now();
+            const tick = () => {
+              const el = root.querySelector(".ht-brief-card");
+              out.push(el ? Math.round(el.getBoundingClientRect().x) : NaN);
+              if (performance.now() - t0 < 900) requestAnimationFrame(tick);
+              else done(out);
+            };
+            requestAnimationFrame(tick);
+          }),
+      );
+    await page.waitForTimeout(100);
+    await page.keyboard.press("Enter");
+    const seen = (await lefts).filter((x) => !Number.isNaN(x));
+    // Not a jump: on its way, it is somewhere between where it was written and where it ends up.
+    const [from, to] = [seen[0], seen[seen.length - 1]];
+    expect(from).not.toBe(to);
+    expect(seen.some((x) => Math.min(from, to) + 4 < x && x < Math.max(from, to) - 4)).toBe(true);
+  });
+
   test("a card opened again and closed, set or left with Esc, stays where it is: it does not bounce (designer, 2026-11-10)", async ({ page }) => {
     await enterEditMode(page);
     await writeBrief(page, canvas(page).locator("h1"), "A larger title, please, as it reads too small. ".repeat(4));
