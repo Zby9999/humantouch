@@ -115,6 +115,49 @@ test("after a reload, edit mode brings back the canvas and its changes as they w
     .toEqual([{ id: 1, property: "fill", before: { type: "solid", color: "#FFFFFF", opacity: 1 }, after: { type: "solid", color: "#0000FF", opacity: 1 } }]);
 });
 
+/** The saves the page sends the local service from here on: round and layers off the canvas, put or dropped. */
+function savesSent(page: Page, url: string): string[] {
+  const sent: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().startsWith(url) && ["PUT", "DELETE"].includes(request.method())) sent.push(`${request.method()} ${new URL(request.url()).pathname}`);
+  });
+  return sent;
+}
+
+// Ticket 160: a change in the last half second, before its save, is saved as the page goes, as leaving edit mode does.
+for (const [how, leave] of [
+  ["reloaded", (page: Page) => page.reload()],
+  ["navigated away from", (page: Page) => page.goto("about:blank")],
+  ["closed", (page: Page) => page.close({ runBeforeUnload: true })],
+] as const) {
+  test(`a change made the moment before the page is ${how} is saved, as one saved after half a second is`, async ({ page }) => {
+    await page.goto(DEV_URL);
+    await enterEditMode(page);
+    await fillFirstCardRed(page);
+    await leave(page);
+    await expect.poll(savedChanges, { timeout: 3000 }).toMatchObject([{ property: "fill", after: { color: "#FF0000" }, target: { component: "Card", instances: 3 } }]);
+    expect(readFileSync(CANVAS, "utf8")).toMatch(/background-color:rgb\(255 0 0 \/ 1\)!important/);
+  });
+}
+
+test("the page going with nothing waiting to be saved sends no save", async ({ page }) => {
+  await page.goto(DEV_URL);
+  const sent = savesSent(page, (await service(page)).url);
+  await enterEditMode(page);
+  await page.reload();
+  await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
+  expect(sent).toEqual([]);
+  // Edited, saved after half a second, then nothing more: the page going sends that save no second time.
+  await enterEditMode(page);
+  await fillFirstCardRed(page);
+  await expect.poll(savedChanges).toHaveLength(1);
+  const saved = sent.length;
+  await page.reload();
+  await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeVisible();
+  expect(sent.slice(saved)).toEqual([]);
+  expect(saved).toBeGreaterThan(0);
+});
+
 async function backToPreviewMode(page: Page) {
   await page.getByRole("button", { name: EXIT_LABEL }).click();
   await expect(page.locator('iframe[title="Canvas"]')).toHaveCount(0);

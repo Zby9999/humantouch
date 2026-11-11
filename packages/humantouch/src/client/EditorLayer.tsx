@@ -254,12 +254,12 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   /** The round as saved last: what a reading that ends after the canvas has gone is saved into. */
   const roundNow = useRef(round);
   roundNow.current = round;
-  const save = (next: SavedRound | null) => {
+  const save = (next: SavedRound | null, leaving?: boolean) => {
     // The service keeps a claimed round as the Agent got it; a last edit, too late, goes with the canvas.
     if (lastStatus.current?.status === "claimed") return;
     roundNow.current = next;
     setRound(next);
-    store?.save(next).catch((error: unknown) => console.warn(error));
+    store?.save(next, leaving).catch((error: unknown) => console.warn(error));
   };
 
   // What the page shows in each part of the range of a change saved with that yet to be read (ticket 65): read
@@ -285,10 +285,10 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
     const project = breakpoints ?? readMediaBreakpoints(document);
     for (const change of round.changeSet.changes) if (change.parts === null) partsReader.read(change, project, (parts) => partsRead(change.id, parts));
   }, [round, status?.status, breakpoints]);
-  const saveOffCanvas = (layers: SavedOffCanvasLayer[]) => {
+  const saveOffCanvas = (layers: SavedOffCanvasLayer[], leaving?: boolean) => {
     setOffCanvas(layers);
     return (
-      store?.saveOffCanvas(layers).catch((error: unknown) => {
+      store?.saveOffCanvas(layers, leaving).catch((error: unknown) => {
         console.warn(error);
         return {};
       }) ?? Promise.resolve({})

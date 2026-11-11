@@ -16,11 +16,15 @@ import {
   type Variable,
 } from "../service-protocol";
 import { CLAIM_PATH, OTHER_USAGES_PATH } from "./code-changes";
-import { roundWatch, serviceConfig, serviceRequest, type RoundWatch } from "./round-watch";
+import { KEEPALIVE_MAX_BYTES, roundWatch, serviceConfig, serviceRequest, type RoundWatch } from "./round-watch";
 
 export interface RoundStore extends RoundWatch {
-  /** Saves the round; null drops it. */
-  save(round: SavedRound | null): Promise<void>;
+  /**
+   * Saves the round; null drops it. `leaving`: the page is going (ticket 160):
+   * sent at once, not after the saves before it, as a request the browser
+   * sends on once the page has gone.
+   */
+  save(round: SavedRound | null, leaving?: boolean): Promise<void>;
   /** How the round stands now, read afresh: claimed the moment the Agent claims it, before `watch` says so. */
   status(): Promise<RoundStatus>;
   /** Ends a claimed round as it is. */
@@ -41,7 +45,12 @@ export interface RoundStore extends RoundWatch {
   /** The layers off the canvas, kept apart from any round (ADR 0009). */
   loadOffCanvas(): Promise<SavedOffCanvasLayer[]>;
   /** Keeps the layers off the canvas, all of them. Answers with the JSX that writes each, as kept. */
-  saveOffCanvas(layers: SavedOffCanvasLayer[]): Promise<OffCanvasSaveAnswer["snippets"]>;
+  saveOffCanvas(layers: SavedOffCanvasLayer[], leaving?: boolean): Promise<OffCanvasSaveAnswer["snippets"]>;
+}
+
+/** Whether a body may go as a request the browser sends on as the page goes: within what such requests may carry together. */
+function fitsKeepalive(bodies: (string | undefined)[]): boolean {
+  return bodies.reduce((total, body) => total + (body ? new TextEncoder().encode(body).length : 0), 0) <= KEEPALIVE_MAX_BYTES;
 }
 
 /** The project's Variables, as the local service reads them; none when there is no service, or it cannot say. */
@@ -65,10 +74,21 @@ export function connectRoundStore(): RoundStore | null {
   // Saves go one after another, so the last one made is the one that stays.
   let saving: Promise<unknown> = Promise.resolve();
   let savingOffCanvas: Promise<unknown> = Promise.resolve();
+  /** The bodies sent as the page goes, so far: together within what the browser carries on. */
+  const leavingWith: (string | undefined)[] = [];
+  /** `send` with `body`, at once, as the page goes; one the browser cannot carry on goes as an ordinary request. */
+  const sendLeaving = (send: (keepalive: boolean) => Promise<Response>, body: string | undefined) => {
+    const keepalive = fitsKeepalive([...leavingWith, body]);
+    if (keepalive) leavingWith.push(body);
+    return send(keepalive);
+  };
   return {
     ...roundWatch(request),
-    save(round) {
-      const next = saving.then(() => (round ? request("PUT", { body: JSON.stringify(round) }) : request("DELETE")));
+    save(round, leaving) {
+      const body = round ? JSON.stringify(round) : undefined;
+      const send = (keepalive: boolean) => (body ? request("PUT", { body, keepalive }) : request("DELETE", { keepalive }));
+      // The page going: no waiting for the save before, which went first and the service takes first.
+      const next = leaving ? sendLeaving(send, body) : saving.then(() => send(false));
       saving = next.catch(() => {});
       return next.then(() => {});
     },
@@ -96,8 +116,10 @@ export function connectRoundStore(): RoundStore | null {
       const response = await request("GET", { path: OFF_CANVAS_PATH });
       return response.status === 204 ? [] : ((await response.json()) as { layers: SavedOffCanvasLayer[] }).layers;
     },
-    saveOffCanvas(layers) {
-      const next = savingOffCanvas.then(() => request("PUT", { path: OFF_CANVAS_PATH, body: JSON.stringify({ layers }) }));
+    saveOffCanvas(layers, leaving) {
+      const body = JSON.stringify({ layers });
+      const send = (keepalive: boolean) => request("PUT", { path: OFF_CANVAS_PATH, body, keepalive });
+      const next = leaving ? sendLeaving(send, body) : savingOffCanvas.then(() => send(false));
       savingOffCanvas = next.catch(() => {});
       return next.then(async (response) => (response.status === 200 ? ((await response.json()) as OffCanvasSaveAnswer).snippets : {}));
     },
