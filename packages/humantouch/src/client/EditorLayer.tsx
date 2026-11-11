@@ -98,10 +98,38 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   const reflected = useRef<PagePrint | null>(saved?.page ?? null);
   /** The round was dropped, and the print kept with it went too: kept again if a round is made on the canvas still up. */
   const pageDropped = useRef(false);
+  /**
+   * Whether the code is the code the page the canvas reflects was printed on, as the local service last said (ticket
+   * 141): the same, the page is too, whatever it draws as time goes by. Asked again as the page may have seen the code
+   * change: as it loads, comes back to the front, hears of a code change, leaves edit mode. Null while asked, or not known.
+   */
+  const codeSame = useRef<boolean | null>(null);
+  const asked = useRef(0);
+  const askCode = () => {
+    const ask = ++asked.current;
+    codeSame.current = null;
+    if (!reflected.current) return;
+    store?.pageCode().then(
+      (same) => void (ask === asked.current && (codeSame.current = same)),
+      (error: unknown) => console.warn(error),
+    );
+  };
+  useEffect(() => {
+    const again = () => document.visibilityState === "visible" && askCode();
+    window.addEventListener("focus", again);
+    window.addEventListener(CODE_EVENT, askCode);
+    document.addEventListener("visibilitychange", again);
+    return () => {
+      window.removeEventListener("focus", again);
+      window.removeEventListener(CODE_EVENT, askCode);
+      document.removeEventListener("visibilitychange", again);
+    };
+  }, []);
   const load = () =>
     store?.load().then(
       (round) => {
         reflected.current = round?.page ?? null;
+        askCode();
         setRound(round);
       },
       (error: unknown) => {
@@ -111,6 +139,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
     );
   useEffect(() => {
     if (saved === undefined) void load();
+    else askCode();
     store?.breakpoints().then(setBreakpoints, (error: unknown) => {
       console.warn(error);
       setBreakpoints(null);
@@ -452,7 +481,10 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   // Edit mode on a round of none, the page frozen afresh: up to date.
   useEffect(() => {
     if (editing && !round) stale.current = false;
-    if (!editing) setPageToast(null);
+    if (!editing) {
+      setPageToast(null);
+      askCode();
+    }
   }, [editing]);
   /** The changes on the canvas as of the last render: what a run of code changes, told later, is told by. */
   const listedNow = useRef(listed);
@@ -528,7 +560,13 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
     if (page.keep) {
       reflected.current = page.keep;
       pageDropped.current = false;
-      store?.savePage(page.keep).catch((error: unknown) => console.warn(error));
+      const ask = ++asked.current;
+      codeSame.current = null;
+      // Printed on the code as it is: the same, till it changes.
+      store?.savePage(page.keep).then(
+        () => void (ask === asked.current && (codeSame.current = true)),
+        (error: unknown) => console.warn(error),
+      );
     }
     if (!("since" in page)) return;
     // Its styles taken in, the canvas is up to date with the page, as it is frozen afresh.
@@ -585,6 +623,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
           control={control}
           notice={editing && <PageToast message={pageToast} changes={listed.length} onUpdate={updateCanvas} />}
           reflects={reflected.current}
+          codeSame={() => codeSame.current}
           onPage={keepPage}
           startAt={startAt}
           cameraNow={cameraNow}

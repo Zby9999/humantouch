@@ -15,7 +15,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import type { PutBack } from "./client/changeset";
 import { CLAIM_PATH, CODE_QUIET_MS, OTHER_USAGES_PATH } from "./client/code-changes";
-import { PAGE_PATH, type PagePrint } from "./client/page-print";
+import { PAGE_PATH, type PageCode, type PagePrint } from "./client/page-print";
 import { readProjectBreakpoints } from "./project-breakpoints";
 import { snippetAt } from "./source-snippet";
 import {
@@ -43,6 +43,8 @@ import {
   keepOtherUsages,
   readChecks,
   readIfThere,
+  readPage,
+  type PageKept,
   readOffCanvas,
   readOtherUsages,
   readState,
@@ -149,8 +151,10 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
         // Claimed: with what was noted of the other usages, for a page opened or reloaded since to go by (ticket 82).
         const state = await readState(files);
         const otherUsages = state && (await readOtherUsages(files, state));
-        const page = await readIfThere(files.page);
-        return send(res, 200, JSON.stringify({ canvas, changeSet: JSON.parse(changeSet), ...(otherUsages && { otherUsages }), ...(page && { page: JSON.parse(page) as PagePrint }) } satisfies SavedRound));
+        // The page the canvas reflects (ticket 141): what cannot be read is left out, the round kept.
+        const kept = await readPage(files);
+        const page = kept && { path: kept.path, structure: kept.structure, styles: kept.styles };
+        return send(res, 200, JSON.stringify({ canvas, changeSet: JSON.parse(changeSet), ...(otherUsages && { otherUsages }), ...(page && { page }) } satisfies SavedRound));
       }
       case `PUT ${ROUND_PATH}`: {
         // The Agent is applying the ChangeSet: it stays as claimed.
@@ -183,9 +187,17 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
           print = JSON.parse(body || "null") as PagePrint | null;
         } catch {}
         if (!print || typeof print.path !== "string" || typeof print.structure !== "string" || typeof print.styles !== "string") return send(res, 400);
+        // Kept with the code it was printed on: while the code is the same, so is the page (`GET /page`).
+        const code = (await snapshotCode(root))?.tree ?? null;
         await mkdir(files.dir, { recursive: true });
-        await writeAtomically(files.page, `${JSON.stringify({ path: print.path, structure: print.structure, styles: print.styles })}\n`);
+        await writeAtomically(files.page, `${JSON.stringify({ path: print.path, structure: print.structure, styles: print.styles, code } satisfies PageKept)}\n`);
         return send(res, 204);
+      }
+      case `GET ${PAGE_PATH}`: {
+        // Whether the code is the code the page the canvas reflects was printed on (ticket 141): null when that cannot be told.
+        const kept = await readPage(files);
+        const now = kept?.code ? ((await snapshotCode(root))?.tree ?? null) : null;
+        return send(res, 200, JSON.stringify({ codeSame: kept?.code && now ? now === kept.code : null } satisfies PageCode));
       }
       case `DELETE ${ROUND_PATH}`:
         if ((await status()).status === "claimed") return send(res, 409);

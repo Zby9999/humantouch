@@ -4,6 +4,7 @@
  * the layers off the canvas, which belong to no round (ADR 0009).
  * The local service and the command line both work through this module.
  */
+import type { PagePrint } from "./client/page-print";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -143,6 +144,28 @@ export interface RoundResult {
   checks: Checks["results"];
   /** In a git repository: the code as the round found it and as it left it. */
   code: { repository: string; before: string; after: string } | null;
+}
+
+/**
+ * What `page.json` holds (ticket 141): the page the canvas reflects, printed,
+ * and the code it was printed on, as a git tree (`snapshotCode`); null
+ * outside a git repository.
+ */
+export interface PageKept extends PagePrint {
+  code: string | null;
+}
+
+/** The page the canvas reflects, as kept; null when none is, or what is there cannot be read: the round goes on without it. */
+export async function readPage(folder: HumanTouchFolder): Promise<PageKept | null> {
+  const text = await readIfThere(folder.page);
+  if (text === null) return null;
+  try {
+    const kept = JSON.parse(text) as Partial<PageKept> | null;
+    if (!kept || typeof kept.path !== "string" || typeof kept.structure !== "string" || typeof kept.styles !== "string") return null;
+    return { path: kept.path, structure: kept.structure, styles: kept.styles, code: typeof kept.code === "string" ? kept.code : null };
+  } catch {
+    return null;
+  }
 }
 
 /**

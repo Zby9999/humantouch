@@ -1,9 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { run } from "../src/cli";
-import { PAGE_PATH, type PagePrint } from "../src/client/page-print";
+import { PAGE_PATH, type PageCode, type PagePrint } from "../src/client/page-print";
 import { startService, type Service } from "../src/service";
 import { ROUND_PATH, TOKEN_HEADER, type SavedRound } from "../src/service-protocol";
 
@@ -68,4 +69,44 @@ test("a round that ends with changes left takes it away; claimed, none is kept",
   expect(carried.changeSet.changes).toHaveLength(2);
   expect(carried.page).toBeUndefined();
   expect(existsSync(join(root, ".humantouch/page.json"))).toBe(false);
+});
+
+const codeSame = async () => ((await (await call("GET", PAGE_PATH)).json()) as PageCode).codeSame;
+
+test("a page.json that cannot be read is left out: the round is answered without it", async () => {
+  await call("PUT", ROUND_PATH, ROUND);
+  mkdirSync(join(root, ".humantouch"), { recursive: true });
+  for (const corrupt of ["{\"path\": \"/\", \"struc", "null", JSON.stringify({ path: "/", structure: 1, styles: "x" })]) {
+    writeFileSync(join(root, ".humantouch/page.json"), corrupt);
+    const answered = await call("GET", ROUND_PATH);
+    expect(answered.status).toBe(200);
+    const saved = (await answered.json()) as SavedRound;
+    expect(saved.changeSet).toEqual(ROUND.changeSet);
+    expect(saved.page).toBeUndefined();
+    expect(await codeSame()).toBeNull();
+  }
+});
+
+test("kept with the code it was printed on: the same till a file changes; not known outside git", async () => {
+  // No git: not known, the page is compared as it draws.
+  await call("PUT", PAGE_PATH, PRINT);
+  expect(await codeSame()).toBeNull();
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
+  git("init", "-q");
+  writeFileSync(join(root, "Card.tsx"), "export const Card = 1;\n");
+  expect(await codeSame()).toBeNull(); // Printed before git: not known.
+  await call("PUT", PAGE_PATH, PRINT);
+  expect(JSON.parse(readFileSync(join(root, ".humantouch/page.json"), "utf8")).code).toMatch(/^[0-9a-f]{40}$/);
+  expect(await codeSame()).toBe(true);
+  // The round saved, and `.humantouch/` with it, is no change of the code; nor is the print kept again.
+  await call("PUT", ROUND_PATH, ROUND);
+  expect(await codeSame()).toBe(true);
+  writeFileSync(join(root, "Card.tsx"), "export const Card = 2;\n");
+  expect(await codeSame()).toBe(false);
+  // Back as it was: the same again, as across a restart of the dev server.
+  writeFileSync(join(root, "Card.tsx"), "export const Card = 1;\n");
+  await service.close();
+  service = await startService({ root, quietMs: 50 });
+  expect(await codeSame()).toBe(true);
+  expect((await round()).page).toEqual(PRINT);
 });

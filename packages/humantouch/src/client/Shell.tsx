@@ -85,6 +85,8 @@ interface Props {
   animate: boolean;
   /** The page the saved canvas reflects, printed (ticket 141); null when not known, or with none to come back to. */
   reflects?: PagePrint | null;
+  /** Whether the code is the code `reflects` was printed on (ticket 141): null when not known. */
+  codeSame?(): boolean | null;
   /**
    * The canvas is up (ticket 141): how the page stands to the one the saved canvas reflects (`same` for a canvas frozen
    * afresh), and the print of the page it reflects from now on, to keep. Without `since`: that print alone, kept once
@@ -100,7 +102,9 @@ interface Props {
  * stays as it is. Not known (a round carried over since, the Agent's code in), it reflects the page as it is now, if
  * frozen from this one.
  */
-function pageSince(doc: Document, reflects: PagePrint | null, windowHeight: number): PageEntry {
+function pageSince(doc: Document, reflects: PagePrint | null, codeSame: boolean | null, windowHeight: number): PageEntry {
+  // The code as it was, the page is as it was: what it draws as time goes by is not a change (ADR 0018).
+  if (reflects && codeSame && reflects.path === window.location.pathname + window.location.search) return { since: "same", keep: null };
   const now = printOf(window);
   if (!reflects) return { since: "same", keep: doc.documentElement.getAttribute(PAGE_ATTR) === now.path ? now : null };
   const since = compare(reflects, now);
@@ -117,7 +121,7 @@ const NUDGE_RUN_MS = 1000;
 const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
-export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints, onSave, onSaveOffCanvas, onChanges, control, notice, startAt, cameraNow, animate, reflects = null, onPage }: Props) {
+export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints, onSave, onSaveOffCanvas, onChanges, control, notice, startAt, cameraNow, animate, reflects = null, codeSame, onPage }: Props) {
   /**
    * Hidden at first: the editor often opens in a browser built into another app, where room is short. Hidden on every
    * entry, whether it was shown or hidden the last time; shown, it stays so until edit mode is left (designer,
@@ -296,6 +300,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     pageToKeep.current = null;
     if (keep) latestOnPage.current?.({ keep });
   };
+  /** A canvas frozen afresh, the page it reflects to print, once: as the canvas shows, or as edit mode is left before. */
+  const printFresh = useRef<(() => void) | null>(null);
   const latestOnSaveOffCanvas = useRef(onSaveOffCanvas);
   latestOnSaveOffCanvas.current = onSaveOffCanvas;
   /** Saves now what is waiting to be saved. */
@@ -332,6 +338,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     () => () => {
       flush();
       keepPage();
+      printFresh.current?.();
       control.current = null;
       left.current = true;
     },
@@ -862,7 +869,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
                 // A round carried over (ticket 68): what was applied in the rounds before stays on the canvas, under what is left, as the page's own.
                 if (restoreFrom.changeSet.applied?.length) takeInApplied(doc, restoreFrom.changeSet);
                 // The page changed since the page it reflects: its styles alone, they are taken in (ticket 141).
-                since.current = pageSince(doc, reflects, windowHeight);
+                since.current = pageSince(doc, reflects, codeSame?.() ?? null, windowHeight);
               }
             : undefined
         }
@@ -896,7 +903,18 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           // styles taken in: the page as it is, kept once the canvas is saved with them, at once. Not known: the page as it
           // is, kept. Its structure changed since: told.
           const entry = since.current;
-          if (!restoreFrom) requestAnimationFrame(() => setTimeout(() => !left.current && latestOnPage.current?.({ since: "same", keep: printOf(window) })));
+          if (!restoreFrom) {
+            // Once the canvas shows; a hidden tab draws no frame, so not after a second either.
+            const print = () => {
+              if (printFresh.current !== print) return;
+              printFresh.current = null;
+              clearTimeout(late);
+              latestOnPage.current?.({ since: "same", keep: printOf(window) });
+            };
+            printFresh.current = print;
+            const late = setTimeout(print, 1000);
+            requestAnimationFrame(() => setTimeout(() => !left.current && print()));
+          }
           else if (entry?.since === "styles") {
             pageToKeep.current = entry.keep;
             latestOnPage.current?.({ since: "styles", keep: null });

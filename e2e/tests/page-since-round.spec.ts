@@ -84,8 +84,10 @@ test("styles alone changed by hand: the canvas takes in the page's stylesheets, 
 
   await enterEditMode(page);
   expect(await looks(page)).toEqual(VIEW_TITLES.map(() => ["4px", "rgb(30, 64, 175)"]));
-  await expect.poll(() => canvas(page).locator("body").evaluate(() => [...document.fonts].some((font) => font.family.includes("Space Grotesk") && font.weight === "500"))).toBe(true);
-  await expect.poll(() => view(page, "Phone 390").locator("body").evaluate(() => [...document.fonts].some((font) => font.family.includes("Space Grotesk") && font.weight === "500"))).toBe(true);
+  // The weight declared by hand, loaded in the views, not only declared.
+  for (const title of ["Canvas", "Phone 390"]) {
+    await expect.poll(() => view(page, title).locator("body").evaluate(async () => (await document.fonts.load('500 16px "Space Grotesk"')).length > 0 && [...document.fonts].some((font) => font.family.includes("Space Grotesk") && font.weight === "500" && font.status === "loaded"))).toBe(true);
+  }
   await expect(page.getByRole("button", { name: "1 change not applied yet" })).toBeVisible();
   // Saved with them: the page it reflects is the page as it is now.
   await expect.poll(() => savedCanvas().includes("rgb(30, 64, 175)")).toBe(true);
@@ -130,14 +132,17 @@ test("the structure changed by hand, a class name in the JSX (Tailwind): the can
   expect((await pageSinceNoticesShown(page)).length).toBe(2);
 });
 
-test("a page that moves, loaded again and again with the code the same, is the same page: no notice, nothing taken in", async ({ page }) => {
+test("a page that moves, loaded again and again with the code the same, is the same page: no notice, nothing taken in; a note it shows after a while too", async ({ page }) => {
   await designARound(page, "Frame", ".spinner");
+  // Frozen before the page showed its note (`LATE_MS`).
+  expect(await canvas(page).locator(".motion-late").count()).toBe(0);
   const printed = readHumanTouchFile("page.json");
   const at = savedAt();
   for (let load = 0; load < 3; load++) {
     await page.reload();
-    // The page moves on meanwhile: the clock, the carousel, the list in another order.
-    await page.waitForTimeout(700);
+    // The page moves on meanwhile: the clock, the carousel, the list in another order; the note shown, twice.
+    if (load) await expect(page.locator(".motion-late")).toBeVisible({ timeout: 6000 });
+    else await page.waitForTimeout(700);
     await enterEditMode(page, ".spinner");
     await page.waitForTimeout(500);
     expect(await pageSinceNotice(page).count()).toBe(0);

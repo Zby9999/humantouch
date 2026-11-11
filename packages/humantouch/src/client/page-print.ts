@@ -12,9 +12,13 @@
  * What may differ from one load to the next with the code the same is left
  * out, so the page loaded again prints the same: the `style` attribute and
  * every attribute but `class` (animations write them, motion libraries
- * above all), digits in text (a time, a count), where an element is among
- * the others (what is shuffled, a carousel turning), source markers, and
- * the editor layer itself. A stylesheet in the body is the page's
+ * above all), each run of digits in text, with an AM or PM after it (a
+ * time, a count), the hash in a class name a build gives (CSS Modules,
+ * next/font: `classOf`), where an element is among the others (what is
+ * shuffled, a carousel turning), source markers, and the editor layer
+ * itself. Still, a page drawn by the time may print otherwise from one load
+ * to the next: the code the same, it is taken as the same without looking
+ * (`PageCode`, ADR 0018). A stylesheet in the body is the page's
  * structure: the canvas only takes in those of the page's head.
  */
 import { HOST_TAG } from "./host";
@@ -27,6 +31,15 @@ import { NOT_THE_PAGES } from "./shadow-roots";
  * toggle: only edit mode prints the page.
  */
 export const PAGE_PATH = "/page";
+
+/**
+ * What `GET` on `PAGE_PATH` answers: whether the project's code is the code
+ * the page the canvas reflects was printed on, as a git tree; null when that
+ * cannot be told (no print kept, no git).
+ */
+export interface PageCode {
+  codeSame: boolean | null;
+}
 
 /** What a page printed as: its address, its structure and its styles. Kept with a round, as `page.json`. */
 export interface PagePrint {
@@ -72,7 +85,7 @@ function structureOf(doc: Document): string {
   while (stack.length) {
     const node = stack.pop()!;
     if (node.nodeType === Node.TEXT_NODE) {
-      const text = (node as Text).data.replace(/\s+/g, " ").trim().replace(/\d/g, "0");
+      const text = textOf((node as Text).data);
       if (text) texts.push(text);
       continue;
     }
@@ -85,12 +98,35 @@ function structureOf(doc: Document): string {
       continue;
     }
     if (UNDRAWN.has(name)) continue;
-    tags.push(el.classList.length ? `${name}.${[...el.classList].sort().join(".")}` : name);
+    tags.push(el.classList.length ? `${name}.${[...el.classList].map(classOf).sort().join(".")}` : name);
     for (let child = el.lastChild; child; child = child.previousSibling) stack.push(child);
     const shadow = el.shadowRoot;
-    if (shadow) for (let child = shadow.lastChild; child; child = child.previousSibling) stack.push(child);
+    if (!shadow) continue;
+    // What a shadow root adopted is drawn there, as a stylesheet in it is: the canvas does not take it in.
+    for (const sheet of shadow.adoptedStyleSheets) tags.push(`adopted{${rulesOf(sheet) ?? ""}}`);
+    for (let child = shadow.lastChild; child; child = child.previousSibling) stack.push(child);
   }
   return `${tags.sort().join("\n")}\n\n${texts.sort().join("\n")}`;
+}
+
+/** A text as printed: its white space as one, each run of digits, a time with its AM or PM, as one digit. */
+export function textOf(data: string): string {
+  return data.replace(/\s+/g, " ").trim().replace(/\d[\d.,:]*(?:\s?[AaPp]\.?[Mm]\b\.?)?/g, "0");
+}
+
+/**
+ * A class name, as printed: the hash a build puts in it taken out, what it
+ * hashes (the stylesheet, the file) changing with no change in what is
+ * drawn. Only the names those builds give: Vite's CSS Modules
+ * (`_card_1x2y3_12`), webpack's (Next: `Card_card__a1B2c`), and next/font's
+ * (`__className_a1b2c3`, `__variable_a1b2c3`). A BEM modifier is no hash:
+ * webpack's has a capital, a digit, `_` or `-` in it.
+ */
+export function classOf(name: string): string {
+  return name
+    .replace(/^(_[A-Za-z][\w-]*?)_[a-z0-9]{5}_\d+$/, "$1_#")
+    .replace(/^([A-Za-z][\w-]*?_[A-Za-z][\w-]*?)__(?=[\w-]{0,4}[A-Z0-9_-])[\w-]{5}$/, "$1__#")
+    .replace(/^__(variable|className)_[0-9a-f]{6,}$/, "__$1_#");
 }
 
 /**

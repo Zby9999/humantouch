@@ -76,6 +76,8 @@ export async function keepRoundIn(context: BrowserContext) {
         return route.fulfill({ status: 204, headers });
       }
       if (pathname === "/page") {
+        // Nothing here tells the code: the page is compared as it draws.
+        if (request.method() === "GET") return route.fulfill({ status: 200, headers, contentType: "application/json", body: JSON.stringify({ codeSame: null }) });
         printed = JSON.parse(request.postData()!);
         return route.fulfill({ status: 204, headers });
       }

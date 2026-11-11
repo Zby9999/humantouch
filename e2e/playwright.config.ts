@@ -26,7 +26,7 @@ export const TOGGLE_LABEL = "Human Touch: enter edit mode";
 export const EXIT_LABEL = "Human Touch: back to preview mode";
 
 /** Tests that work with the example project's real `.humantouch/` folder: one at a time, across files too. */
-const PROJECT_FILES = /(autosave|claim|round|applying-bench|bench-scenarios|code-changes)\.spec\.ts$/;
+const PROJECT_FILES = /(autosave|claim|page-since-round|round|applying-bench|bench-scenarios|code-changes)\.spec\.ts$/;
 
 export default defineConfig({
   testDir: "./tests",

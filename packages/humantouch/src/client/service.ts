@@ -16,7 +16,7 @@ import {
   type Variable,
 } from "../service-protocol";
 import { CLAIM_PATH, OTHER_USAGES_PATH } from "./code-changes";
-import { PAGE_PATH, type PagePrint } from "./page-print";
+import { PAGE_PATH, type PageCode, type PagePrint } from "./page-print";
 import { roundWatch, serviceConfig, serviceRequest, type RoundWatch } from "./round-watch";
 
 export interface RoundStore extends RoundWatch {
@@ -24,6 +24,8 @@ export interface RoundStore extends RoundWatch {
   save(round: SavedRound | null): Promise<void>;
   /** Keeps the print of the page the canvas reflects (ticket 141), after what is being saved. */
   savePage(print: PagePrint): Promise<void>;
+  /** Whether the code is the code the page the canvas reflects was printed on (ticket 141); null when that cannot be told. */
+  pageCode(): Promise<boolean | null>;
   /** How the round stands now, read afresh: claimed the moment the Agent claims it, before `watch` says so. */
   status(): Promise<RoundStatus>;
   /** Ends a claimed round as it is. */
@@ -79,6 +81,10 @@ export function connectRoundStore(): RoundStore | null {
       const next = saving.then(() => request("PUT", { path: PAGE_PATH, body: JSON.stringify(print) }));
       saving = next.catch(() => {});
       return next.then(() => {});
+    },
+    async pageCode() {
+      await saving;
+      return ((await (await request("GET", { path: PAGE_PATH })).json()) as PageCode).codeSame;
     },
     async status() {
       return (await (await request("GET", { path: STATUS_PATH })).json()) as RoundStatus;

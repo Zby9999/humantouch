@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { createChangeSet } from "../src/client/changeset";
 import { createEditor } from "../src/client/edits";
 import { freeze, restore, restyle, serializeCanvas } from "../src/client/freezer";
-import { compare, printOf } from "../src/client/page-print";
+import { classOf, compare, printOf, textOf } from "../src/client/page-print";
 import { createHistory } from "../src/client/undo-steps";
 import { createViews } from "../src/client/views";
 
@@ -79,6 +79,48 @@ describe("the page's print", () => {
     expect(compare(then, printOf(livePage(page({ title: "Pricing" }))))).toBe("structure");
     expect(compare(then, printOf(livePage(page({ items: ["One", "Two"] }))))).toBe("structure");
     expect(compare(then, printOf(livePage(page({ card: "card shadow", styles: STYLES.replace("}</style>", "} .shadow { box-shadow: 0 1px 2px black }</style>") }))))).toBe("structure");
+  });
+
+  test("a time or a count, its digits however many, an AM or PM with them, prints the same", () => {
+    expect(textOf("9:59 AM")).toBe(textOf("10:00 PM"));
+    expect(textOf("9:59 a.m.")).toBe(textOf("10:00 p.m."));
+    expect(textOf("9 left")).toBe(textOf("10 left"));
+    expect(textOf("1,234.5 sold")).toBe(textOf("99 sold"));
+    expect(textOf("Updated  12:03:45\n today")).toBe("Updated 0 today");
+    // Words are words still.
+    expect(textOf("3 amps")).not.toBe(textOf("3 left"));
+    expect(textOf("9 left")).not.toBe(textOf("9 right"));
+  });
+
+  test("a class name a build hashes prints without its hash; others as they are", () => {
+    // Vite's CSS Modules, webpack's (Next), next/font's.
+    expect(classOf("_card_1x2y3_12")).toBe(classOf("_card_9zq0a_14"));
+    expect(classOf("Card_card__a1B2c")).toBe(classOf("Card_card__Zz-9_"));
+    expect(classOf("__className_a1b2c3")).toBe(classOf("__className_0f9e8d"));
+    expect(classOf("__variable_a1b2c3")).toBe(classOf("__variable_ffff00aa"));
+    expect(classOf("_card_1x2y3_12")).not.toBe(classOf("_title_1x2y3_12"));
+    expect(classOf("__className_a1b2c3")).not.toBe(classOf("__variable_a1b2c3"));
+    // Tailwind's, and a project's own, are left as they are.
+    for (const name of ["card", "text-lg", "md:px-4", "bg-[#123456]", "is-active", "btn__icon", "block_title__large", "_hidden"]) expect(classOf(name)).toBe(name);
+    const then = printOf(livePage(page({ card: "_card_1x2y3_12 __variable_a1b2c3" })));
+    expect(compare(then, printOf(livePage(page({ card: "_card_7k8l9_12 __variable_0d0e0f" }))))).toBe("same");
+  });
+
+  test("what a shadow root adopted is its structure: the canvas does not take it in", () => {
+    const shadowed = (rule: string) => {
+      const win = livePage(page());
+      const host = win.document.createElement("div");
+      win.document.body.append(host);
+      const root = host.attachShadow({ mode: "open" });
+      const sheet = new win.CSSStyleSheet();
+      sheet.replaceSync(rule);
+      root.adoptedStyleSheets = [sheet];
+      root.append(win.document.createElement("span"));
+      return printOf(win);
+    };
+    const then = shadowed("span { color: red }");
+    expect(compare(then, shadowed("span { color: red }"))).toBe("same");
+    expect(compare(then, shadowed("span { color: blue }"))).toBe("structure");
   });
 
   test("a print of another page says nothing of this one", () => {
