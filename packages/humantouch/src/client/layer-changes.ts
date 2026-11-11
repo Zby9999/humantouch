@@ -9,6 +9,7 @@ import {
   changesOn,
   ALONE_ATTR,
   copyRules,
+  dropCopiedEditStyles,
   declare,
   lookRules,
   PUT_BACK_ATTR,
@@ -30,7 +31,9 @@ import type { Change, CopiedBreakpoint, Created, Place } from "./changeset";
 import { NEW_TAGS } from "./checkable";
 import { wrappedTextOf } from "./layers";
 import { copyLook, matchLook } from "./look";
-import { holdAbsolute, releaseAbsolute, slotsOf } from "./moves";
+import { holdAbsolute, releaseAbsolute, slotAt, slotsOf } from "./moves";
+import { elementsWithin, holderOf } from "./shadow-roots";
+import { editableShadowRoots } from "./freezer";
 import { ORIGINAL_STYLE_ATTR } from "./style-source";
 import { CHAIN_ATTR } from "./usage-chain";
 
@@ -49,7 +52,7 @@ export function insertNew(doc: Document, id: string, created: Created, style: Re
     if (created.text !== undefined) writeWords(el, created.text);
     if (created.brief) el.setAttribute(BRIEF_ATTR, created.brief);
     keepOriginal(el);
-    container.insertBefore(el, slotsOf(container)[created.place.slot] ?? null);
+    holderOf(container).insertBefore(el, slotAt(container, created.place.slot));
     made.push(el);
   }
   declare(made, style);
@@ -64,7 +67,10 @@ export function insertNew(doc: Document, id: string, created: Created, style: Re
 export function insertCopies(originals: Element[], containers: Element[], id: string, place: Place, style: Record<string, string>) {
   originals.forEach((original, i) => {
     const copy = original.cloneNode(true) as Element;
-    for (const el of [copy, ...copy.querySelectorAll("*")]) {
+    // A host's shadow root is copied with it, what is in it layers of the copy too; its edit styles are the original's (ticket 138).
+    dropCopiedEditStyles(copy);
+    const els = elementsWithin(copy);
+    for (const el of els) {
       if (el.hasAttribute(DELETED_ATTR)) {
         el.remove();
         continue;
@@ -74,14 +80,20 @@ export function insertCopies(originals: Element[], containers: Element[], id: st
       for (const attr of [LAYER_ID_ATTR, MOVE_ATTR, AS_STACK_ATTR, REFERENCE_ATTR, TEXT_ATTR, ORIGINAL_TEXT_ATTR, ALONE_ATTR]) el.removeAttribute(attr);
       // Nor is a brief on a layer that is there, which is for that usage of it; a new Frame's says what to make of it, and a copy of it is made by it too.
       if (el.getAttribute(NEW_ATTR) !== "frame") el.removeAttribute(BRIEF_ATTR);
+    }
+    copy.setAttribute(LAYER_ID_ATTR, id);
+    holderOf(containers[i]).insertBefore(copy, slotAt(containers[i], place.slot));
+    // Once in, in the tree its rules go in: the document, or the shadow root it is in, or one copied with it (ADR 0017).
+    for (const el of els) {
+      if (!el.isConnected) continue;
       // It looks as the original does, at every width, with styles of its own.
       copyRules(original.ownerDocument, el);
       el.setAttribute(ORIGINAL_STYLE_ATTR, el.getAttribute("style") ?? "");
       el.setAttribute(MADE_ATTR, id);
     }
-    copy.setAttribute(LAYER_ID_ATTR, id);
     declare(copy, style);
-    containers[i].insertBefore(copy, slotsOf(containers[i])[place.slot] ?? null);
+    // The canvas's own styles, which a shadow root copied leaves out (ticket 136).
+    editableShadowRoots(copy);
   });
   if (place.absolute) holdAbsolute(containers);
 }
@@ -105,7 +117,7 @@ export function insertPutBack(doc: Document, id: string, source: Element, place:
       else el.removeAttribute(CHAIN_ATTR);
     }
     copy.setAttribute(LAYER_ID_ATTR, id);
-    container.insertBefore(copy, slotsOf(container)[place.slot] ?? null);
+    holderOf(container).insertBefore(copy, slotAt(container, place.slot));
     const css = matchLook(pairs, `[${MADE_ATTR}="${CSS.escape(id)}"]`, lookRules);
     declare(copy, style);
     pseudos ??= css;
@@ -133,7 +145,8 @@ export function copiedBreakpointsOf(original: Element, changes: Change[]): Copie
   const put = (value: CopiedBreakpoint) => values.set(JSON.stringify([value.inside, value.property, breakpointKey(value.breakpoint)]), value);
   const gone = new Set<string>();
   const seen = new Set<string>();
-  for (const el of [original, ...original.querySelectorAll(`[${LAYER_ID_ATTR}]`)]) {
+  // Those in a shadow root it hosts too (ticket 138).
+  for (const el of elementsWithin(original).filter((el) => el.hasAttribute(LAYER_ID_ATTR))) {
     const id = el.getAttribute(LAYER_ID_ATTR)!;
     const named = (change: Change) => (el === original ? null : { name: layerName(change), element: change.target.context.element });
     const deleted = el.closest(`[${DELETED_ATTR}]`);

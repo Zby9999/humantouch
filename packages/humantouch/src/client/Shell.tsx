@@ -1005,6 +1005,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         focus={focus}
         onSelect={select}
         editor={editor}
+        onHint={showToast}
         onMove={(layer: Layer, to: Destination) => {
           const moved = editorOf(layer)!.move(layer, to);
           onEdit();

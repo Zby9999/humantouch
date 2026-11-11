@@ -11,7 +11,7 @@ import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import { DELETED_ATTR } from "./canvas-style";
 import { readValue } from "./property-table";
 import { doctypeOf, editable, editableShadowRoots, FROZEN, serializeEditable } from "./freezer";
-import { hostsShadowRoots, mayHoldShadowRoots, noteShadowRoots } from "./shadow-roots";
+import { elementsWithin, flatParent, hostsShadowRoots, mayHoldShadowRoots, noteShadowRoots } from "./shadow-roots";
 import { LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./style-marks";
 import { CHAIN_ATTR } from "./usage-chain";
 
@@ -64,9 +64,19 @@ export function freezeLook(el: Element, into: HTMLIFrameElement) {
   const body = valuesOf(getComputedStyle(doc.body));
 
   const copy = el.cloneNode(true) as Element;
-  const sources = [el, ...el.querySelectorAll("*")];
-  const copies = [copy, ...copy.querySelectorAll("*")];
+  // A host's shadow root is copied with it: what is in it frozen too, its frozen styles in it, where no rule of the document reaches (ticket 138).
+  const shadows = mayHoldShadowRoots(from);
+  const sources = shadows ? elementsWithin(el) : [el, ...el.querySelectorAll("*")];
+  const copies = shadows ? elementsWithin(copy) : [copy, ...copy.querySelectorAll("*")];
   const rules: string[] = [];
+  /** The frozen styles of what is in each shadow root copied. */
+  const inShadow = new Map<ShadowRoot, string[]>();
+  const rulesFor = (to: Element) => {
+    const root = shadows ? to.getRootNode() : null;
+    if (!root || root.nodeType !== Node.DOCUMENT_FRAGMENT_NODE || !(root as ShadowRoot).host) return rules;
+    if (!inShadow.has(root as ShadowRoot)) inShadow.set(root as ShadowRoot, []);
+    return inShadow.get(root as ShadowRoot)!;
+  };
   const dropped: Element[] = [];
   sources.forEach((source, i) => {
     const to = copies[i];
@@ -77,7 +87,9 @@ export function freezeLook(el: Element, into: HTMLIFrameElement) {
     }
     const style = getComputedStyle(source);
     const own = valuesOf(style);
-    const parent = source === el ? body : valuesOf(getComputedStyle(source.parentElement!));
+    // What it inherits from: in a shadow root, its host at the top of it, or the slot it is shown in.
+    const parent = source === el ? body : valuesOf(getComputedStyle(shadows ? flatParent(source)! : source.parentElement!));
+    const rules = rulesFor(to);
     const known = defaultsOf(source);
     const declared = differing(own, known.own, parent);
     Object.assign(declared, sizeOf(source, style, source === el));
@@ -100,6 +112,12 @@ export function freezeLook(el: Element, into: HTMLIFrameElement) {
     copies[i] = asItLooks(source, to);
   });
   for (const gone of dropped) gone.remove();
+  for (const [shadow, frozen] of inShadow) {
+    const sheet = from.createElement("style");
+    sheet.setAttribute(LOOK_STYLES_ATTR, "");
+    sheet.textContent = frozen.join("");
+    shadow.append(sheet);
+  }
 
   // Its container's usage chain is the document's: it is an instance as it was on the page, or not.
   const chain = el.parentElement?.getAttribute(CHAIN_ATTR);
