@@ -33,6 +33,7 @@
 import { mediaOf, sameBreakpoint, widestFirst, type Breakpoint } from "./breakpoints";
 import type { Change, Composed, Dissolved } from "./changeset";
 import { EDIT_STYLES_ATTR, EDIT_STYLES_ORDER } from "./style-marks";
+import { elementsWithin, mayHoldShadowRoots, queryWithin } from "./shadow-roots";
 import { ORIGINAL_STYLE_ATTR, pinOffsetOf } from "./style-source";
 
 /** Stamped on the canvas elements of a layer once it is edited: its identity in the ChangeSet. */
@@ -62,10 +63,51 @@ export const ORIGINAL_TEXT_ATTR = "data-ht-original-text";
  */
 export const WRAP_ATTR = "data-ht-wrap";
 
-/** The canvas elements of the layer with id `id`, in page order: one per instance. */
-export function elementsOf(doc: Document, id: string): Element[] {
-  return [...doc.querySelectorAll(`[${LAYER_ID_ATTR}="${CSS.escape(id)}"]`)];
+/**
+ * On one of the instances a loop renders that no longer follows the others
+ * (ticket 114): its mark, a number. What is changed on it, or on a layer in
+ * it, from then on is changed on it alone, over what the instances share.
+ */
+export const ALONE_ATTR = "data-ht-alone";
+
+/** What a change made on the instance marked `mark` alone, to its layer with id `id`, is recorded under, in place of the layer's id (ticket 114). */
+export function aloneKey(id: string, mark: string): string {
+  return `${id} alone ${mark}`;
 }
+
+/** The layer's id and the instance's mark a change made on one instance alone is recorded under; null for any other key. */
+export function aloneOfKey(key: string): { id: string; mark: string } | null {
+  const found = /^(\S+) alone (\S+)$/.exec(key);
+  return found && { id: found[1], mark: found[2] };
+}
+
+/** The canvas elements of the layer with id `id`, in page order: one per instance. For a key of one instance alone (`aloneKey`), the one in it. */
+export function elementsOf(doc: Document, id: string): Element[] {
+  const alone = aloneOfKey(id);
+  // Those in its shadow roots too (ticket 137).
+  if (!alone) return queryWithin(doc, `[${LAYER_ID_ATTR}="${CSS.escape(id)}"]`);
+  const root = queryWithin(doc, `[${ALONE_ATTR}="${CSS.escape(alone.mark)}"]`)[0];
+  if (!root) return [];
+  const selector = `[${LAYER_ID_ATTR}="${CSS.escape(alone.id)}"]`;
+  return [...(root.matches(selector) ? [root] : []), ...root.querySelectorAll(selector)];
+}
+
+/**
+ * Where an element's edit styles are (ticket 137, ADR 0017): the tree it is
+ * in, its document, or the open shadow root it is in, whose elements no rule
+ * of the document reaches. An element in no tree yet, as a copy not put in,
+ * is its document's. In a document that holds no shadow root, its document.
+ */
+export type Scope = Document | ShadowRoot;
+export function scopeOf(el: Element): Scope {
+  const doc = el.ownerDocument;
+  if (!mayHoldShadowRoots(doc)) return doc;
+  const root = el.getRootNode();
+  return root.nodeType === Node.DOCUMENT_FRAGMENT_NODE && (root as ShadowRoot).host ? (root as ShadowRoot) : doc;
+}
+
+/** The document a scope is of. */
+const docOf = (scope: Scope): Document => (scope.nodeType === Node.DOCUMENT_NODE ? (scope as Document) : scope.ownerDocument!);
 
 /** Before the first edit to an element: its own style attribute, as the page wrote it, kept to look up what the page sets. */
 export function keepOriginal(el: Element) {
@@ -113,6 +155,10 @@ interface Rules {
   taken?: RuleBlocks;
   /** The edits'. */
   edits: RuleBlocks;
+  /** What the edits made on the instance alone in rounds before declared, applied then (ticket 114): the page's own now, over the edits the instances share, as they were. */
+  takenAlone?: RuleBlocks;
+  /** What the edits made on the instance alone declare (ticket 114): over the edits its layer shares with the other instances. */
+  alone?: RuleBlocks;
 }
 
 /** Canvas elements an edit is written onto: one, or several, as the instances of a layer. */
@@ -127,6 +173,48 @@ export type Elements = Element | Iterable<Element>;
  */
 export function declare(els: Elements, declarations: Record<string, string>, breakpoint: Breakpoint | null = null, layer?: string) {
   editRules(els, (el, rules) => put(el, rules.edits, declarations, breakpoint), { pendingLayer: layer });
+}
+
+/** Writes declarations onto canvas elements of one instance alone (ticket 114), over the edits they share with the other instances: at every width, or only at `breakpoint`. */
+export function declareAlone(els: Elements, declarations: Record<string, string>, breakpoint: Breakpoint | null = null) {
+  editRules(els, (el, rules) => put(el, (rules.alone ??= { base: { style: {} }, at: [] }), declarations, breakpoint));
+}
+
+/**
+ * Takes the declarations of the CSS properties `names` made on one instance
+ * alone off its canvas elements (ticket 114), at every width or at
+ * `breakpoint`, and keeps its other changes made on it alone, `others`, on.
+ */
+export function restoreAlone(els: Elements, names: string[], others: Change[], breakpoint: Breakpoint | null = null) {
+  editRules(
+    els,
+    (el, rules) => {
+      if (!rules.alone) return;
+      if (!others.length) {
+        delete rules.alone;
+        return;
+      }
+      const block = blockOf(rules.alone, breakpoint, false);
+      if (block) {
+        for (const name of names) delete block.style[name];
+        if (names.includes("display")) delete block.hidden;
+      }
+      for (const change of others) put(el, rules.alone, change.style, change.breakpoint ?? null);
+    },
+    { ruledOnly: true },
+  );
+}
+
+/** `declare`, or for a key of one instance alone (`aloneKey`), `declareAlone`. */
+export function declareFor(key: string, els: Elements, declarations: Record<string, string>, breakpoint: Breakpoint | null = null, layer?: string) {
+  if (aloneOfKey(key)) declareAlone(els, declarations, breakpoint);
+  else declare(els, declarations, breakpoint, layer);
+}
+
+/** `restoreStyle`, or for a key of one instance alone (`aloneKey`), `restoreAlone`. */
+export function restoreFor(key: string, els: Elements, names: string[], others: Change[], breakpoint: Breakpoint | null = null) {
+  if (aloneOfKey(key)) restoreAlone(els, names, others, breakpoint);
+  else restoreStyle(els, names, others, breakpoint);
 }
 
 /**
@@ -213,7 +301,13 @@ export function restoreStyle(els: Elements, names: string[], others: Change[], b
  * alone; of the changes to the component itself the element writes
  * (`component`), those left stay as they are. The elements look as they did.
  */
-export function takeInEdits(els: Elements, applied: (el: Element) => Change[], left: (el: Element) => Change[], component: (el: Element) => { applied: Change[]; left: Change[] }) {
+export function takeInEdits(
+  els: Elements,
+  applied: (el: Element) => Change[],
+  left: (el: Element) => Change[],
+  component: (el: Element) => { applied: Change[]; left: Change[] },
+  alone: (el: Element) => { applied: Change[]; left: Change[] } = () => ({ applied: [], left: [] }),
+) {
   editRules(
     els,
     (el, rules) => {
@@ -227,6 +321,13 @@ export function takeInEdits(els: Elements, applied: (el: Element) => Change[], l
         if ("display" in change.style) delete block.hidden;
       }
       for (const change of applied(el)) put(el, kept, change.style, change.breakpoint ?? null);
+      // Made on the instance alone (ticket 114): those applied over what it shares still, as the page's own; those left on it alone.
+      const aloneOn = alone(el);
+      if (aloneOn.applied.length) {
+        const takenAlone: RuleBlocks = structuredClone(rules.takenAlone) ?? { base: { style: {} }, at: [] };
+        for (const change of aloneOn.applied) put(el, takenAlone, change.style, change.breakpoint ?? null);
+        rules.takenAlone = takenAlone;
+      }
       const promoted = (changes: Change[]) => {
         const blocks: RuleBlocks = { base: { style: {} }, at: [] };
         for (const change of changes) put(el, blocks, change.style, change.breakpoint ?? null);
@@ -237,6 +338,8 @@ export function takeInEdits(els: Elements, applied: (el: Element) => Change[], l
       rules.taken = effective({ lifted: {}, copied: rules.taken, edits: kept });
       rules.promoted = promoted(written.left);
       rules.edits = promoted(own);
+      if (aloneOn.left.length) rules.alone = promoted(aloneOn.left);
+      else delete rules.alone;
     },
     { ruledOnly: true },
   );
@@ -263,11 +366,11 @@ export function asShown<T>(el: Element, look: () => T): T {
 export function asPage<T>(el: Element, look: () => T): T {
   const key = el.getAttribute(STYLE_KEY_ATTR);
   const rules = readRules(el);
-  const sheet = key && rules && sheetOf(el.ownerDocument, key);
+  const sheet = key && rules && sheetOf(scopeOf(el), key);
   if (!sheet) return look();
   // Put back as the rules have it: the text may be behind them.
   const css = cssOf(key, effective(rules));
-  sheet.textContent = cssOf(key, effective({ lifted: rules.lifted, copied: rules.copied, taken: rules.taken, edits: { base: { style: {} }, at: [] } }));
+  sheet.textContent = cssOf(key, effective({ lifted: rules.lifted, copied: rules.copied, taken: rules.taken, takenAlone: rules.takenAlone, edits: { base: { style: {} }, at: [] } }));
   try {
     return look();
   } finally {
@@ -313,7 +416,9 @@ export function declaredByEdit(el: Element, property: string): string {
  */
 export function copyRules(doc: Document, copy: Element) {
   const key = copy.getAttribute(STYLE_KEY_ATTR);
-  const rules = key && sheetOf(doc, key) ? (JSON.parse(sheetOf(doc, key)!.getAttribute(RULES_ATTR)!) as Rules) : null;
+  // Keys are the document's, whichever of its trees the rules are in.
+  const sheet = key ? (sheetOf(doc, key) ?? queryWithin(doc, `style[${RULES_FOR_ATTR}="${CSS.escape(key)}"]`)[0] ?? null) : null;
+  const rules = sheet ? (JSON.parse(sheet.getAttribute(RULES_ATTR)!) as Rules) : null;
   copy.removeAttribute(STYLE_KEY_ATTR);
   if (!rules) return;
   writeRules([{ el: copy, rules: { lifted: { ...rules.lifted }, copied: effective({ ...rules, lifted: {} }), edits: { base: { style: {} }, at: [] } } }]);
@@ -407,18 +512,33 @@ export function keepEditStylesApart(doc: Document) {
   apart.add(doc);
 }
 
-/** Puts the CSS layer of the edit styles first in the canvas's head, before any of the page's: where the layer order is settled. */
-export function orderEditStyles(doc: Document) {
+/**
+ * Puts the CSS layer of the edit styles first in the canvas's head, before any
+ * of the page's: where the layer order is settled. In a shadow root, which has
+ * no head, just before its first edit style element, at its end (ADR 0017): no
+ * node goes in among the page's own there.
+ */
+export function orderEditStyles(scope: Scope) {
+  if (scope.nodeType !== Node.DOCUMENT_NODE) {
+    const first = scope.querySelector(`style[${RULES_FOR_ATTR}]`);
+    if (!first || scope.querySelector(`style[${EDIT_STYLES_ATTR}="${EDIT_STYLES_ORDER}"]`)) return;
+    first.before(orderStyle(docOf(scope)));
+    return;
+  }
+  const doc = scope as Document;
   const head = doc.head;
   if (!head) return;
   let order = head.querySelector(`style[${EDIT_STYLES_ATTR}="${EDIT_STYLES_ORDER}"]`);
   if (order && head.firstElementChild === order) return;
-  if (!order) {
-    order = doc.createElement("style");
-    order.setAttribute(EDIT_STYLES_ATTR, EDIT_STYLES_ORDER);
-    order.textContent = `@layer ${EDIT_LAYER};`;
-  }
-  head.prepend(order);
+  head.prepend(order ?? orderStyle(doc));
+}
+
+/** The style element that declares the CSS layer of the edit styles. */
+function orderStyle(doc: Document): HTMLStyleElement {
+  const order = doc.createElement("style");
+  order.setAttribute(EDIT_STYLES_ATTR, EDIT_STYLES_ORDER);
+  order.textContent = `@layer ${EDIT_LAYER};`;
+  return order;
 }
 
 /** On the style element that shows the `::before` and `::after` of a layer put back from off the canvas: its id. */
@@ -426,8 +546,13 @@ export const PUT_BACK_ATTR = "data-ht-put-back";
 
 /** Leaves out of `root`, a saved canvas, the rules of elements no longer on it. */
 export function dropUnusedRules(root: Element) {
-  const keys = new Set([...root.querySelectorAll(`[${STYLE_KEY_ATTR}]`)].map((el) => el.getAttribute(STYLE_KEY_ATTR)));
-  for (const sheet of root.querySelectorAll(`style[${RULES_FOR_ATTR}]`)) if (!keys.has(sheet.getAttribute(RULES_FOR_ATTR))) sheet.remove();
+  // Those in its open shadow roots too, each shadow root's rules in it (ADR 0017); with none, its own elements.
+  const all = mayHoldShadowRoots(root.ownerDocument) ? elementsWithin(root) : null;
+  const matching = (selector: string) => (all ? all.filter((el) => el.matches(selector)) : [...root.querySelectorAll(selector)]);
+  const keys = new Set(matching(`[${STYLE_KEY_ATTR}]`).map((el) => el.getAttribute(STYLE_KEY_ATTR)));
+  for (const sheet of matching(`style[${RULES_FOR_ATTR}]`)) if (!keys.has(sheet.getAttribute(RULES_FOR_ATTR))) sheet.remove();
+  // A shadow root's layer order goes with its last edit style element.
+  if (all) for (const el of all) if (el.shadowRoot && !el.shadowRoot.querySelector(`style[${RULES_FOR_ATTR}]`)) el.shadowRoot.querySelector(`style[${EDIT_STYLES_ATTR}="${EDIT_STYLES_ORDER}"]`)?.remove();
   for (const sheet of root.querySelectorAll(`style[${PUT_BACK_ATTR}]`)) {
     if (!root.querySelector(`[${MADE_ATTR}="${CSS.escape(sheet.getAttribute(PUT_BACK_ATTR)!)}"]`)) sheet.remove();
   }
@@ -472,11 +597,19 @@ function applying(el: Element, blocks: RuleBlocks): AtBreakpoint[] {
   return [...blocks.at].sort((a, b) => widestFirst(a.breakpoint, b.breakpoint)).filter((at) => view.matchMedia(mediaOf(at.breakpoint)).matches);
 }
 
-/** What applies, all told: the lifted declarations, then what a copy took over, then the component's changes, then the edits of rounds before applied, then the edits. */
+/**
+ * What applies, all told: the lifted declarations, then what a copy took
+ * over, then the component's changes, then the edits of rounds before
+ * applied, then the edits, then those made on the instance alone, of rounds
+ * before and of this one (ticket 114). What the instance has of its own at
+ * every width wins over what the instances share at a breakpoint too: its
+ * value is its own at every width.
+ */
 function effective(rules: Rules): RuleBlocks {
   const all: RuleBlocks = { base: { style: { ...rules.lifted } }, at: [] };
-  for (const blocks of [rules.copied, rules.promoted, rules.taken, rules.edits]) {
+  for (const blocks of [rules.copied, rules.promoted, rules.taken, rules.edits, rules.takenAlone, rules.alone]) {
     if (!blocks) continue;
+    if (blocks === rules.takenAlone || blocks === rules.alone) for (const at of all.at) for (const name in blocks.base.style) delete at.style[name];
     Object.assign(all.base.style, blocks.base.style);
     if (blocks.base.hidden !== undefined) all.base.hidden = blocks.base.hidden;
     for (const at of blocks.at) {
@@ -491,12 +624,12 @@ function effective(rules: Rules): RuleBlocks {
 /** The element's rules, those of its group; null when it has none. */
 function readRules(el: Element): Rules | null {
   const key = el.getAttribute(STYLE_KEY_ATTR);
-  const sheet = key && sheetOf(el.ownerDocument, key);
+  const sheet = key && sheetOf(scopeOf(el), key);
   return sheet ? (JSON.parse(sheet.getAttribute(RULES_ATTR)!) as Rules) : null;
 }
 
 /** The rules of each key in `doc`, as JSON, each read once; null for a key with none. */
-function rulesReader(doc: Document): (key: string) => string | null {
+function rulesReader(doc: Scope): (key: string) => string | null {
   const read = new Map<string, string | null>();
   return (key) => {
     if (!read.has(key)) read.set(key, sheetOf(doc, key)?.getAttribute(RULES_ATTR) ?? null);
@@ -528,12 +661,13 @@ const groupOf = (layer: string, json: string) => `${layer}\n${json}`;
 function editRules(els: Elements, change: (el: Element, rules: Rules) => void, options: { ruledOnly?: boolean; pendingLayer?: string } = {}) {
   const list = elementsIn(els);
   if (!list.length) return;
-  const docs = new Set(list.map((el) => el.ownerDocument));
-  if (docs.size > 1) {
-    for (const doc of docs) editRules(list.filter((el) => el.ownerDocument === doc), change, options);
+  // Each tree's in it: a document's, an open shadow root's (ADR 0017).
+  const scopes = new Set(list.map(scopeOf));
+  if (scopes.size > 1) {
+    for (const scope of scopes) editRules(list.filter((el) => scopeOf(el) === scope), change, options);
     return;
   }
-  const jsonOf = rulesReader(list[0].ownerDocument);
+  const jsonOf = rulesReader(scopeOf(list[0]));
   const written: Written[] = [];
   for (const el of list) {
     const key = el.getAttribute(STYLE_KEY_ATTR);
@@ -573,15 +707,20 @@ function liftedRules(el: Element): Rules {
  */
 function writeRules(written: Written[], pendingLayer?: string) {
   if (!written.length) return;
-  const doc = written[0].el.ownerDocument;
+  /** The tree the elements are in, which their style elements go in: the document, or a shadow root (ADR 0017). */
+  const doc = scopeOf(written[0].el);
+  const owner = docOf(doc);
   /** The layer an element is an instance of, to share its style element with the others; none to keep its own. */
-  const layerOf = (el: Element) => (apart.has(doc) ? null : (el.getAttribute(LAYER_ID_ATTR) ?? pendingLayer ?? null));
+  const layerOf = (el: Element) => (apart.has(owner) ? null : (el.getAttribute(LAYER_ID_ATTR) ?? pendingLayer ?? null));
   const empty = (blocks: RuleBlocks) => !Object.keys(blocks.base.style).length && blocks.base.hidden === undefined && !blocks.at.length;
   const all = written.map(({ el, rules }) => {
     rules.edits.at = rules.edits.at.filter((at) => Object.keys(at.style).length || at.hidden !== undefined);
     if (rules.promoted && empty(rules.promoted)) delete rules.promoted;
     if (rules.taken && empty(rules.taken)) delete rules.taken;
-    const shows = !empty(rules.edits) || !!rules.copied || !!rules.promoted || !!rules.taken;
+    if (rules.alone) rules.alone.at = rules.alone.at.filter((at) => Object.keys(at.style).length || at.hidden !== undefined);
+    if (rules.alone && empty(rules.alone)) delete rules.alone;
+    if (rules.takenAlone && empty(rules.takenAlone)) delete rules.takenAlone;
+    const shows = !empty(rules.edits) || !!rules.copied || !!rules.promoted || !!rules.taken || !!rules.alone || !!rules.takenAlone;
     return { el, rules, json: shows ? JSON.stringify(rules) : null, key: el.getAttribute(STYLE_KEY_ATTR) };
   });
 
@@ -628,15 +767,17 @@ function writeRules(written: Written[], pendingLayer?: string) {
     const own = [...new Set(group.flatMap(({ key }) => (key === null ? [] : [key])))];
     const instances = layer ? [...new Set([...doc.querySelectorAll(`[${LAYER_ID_ATTR}="${CSS.escape(layer)}"][${STYLE_KEY_ATTR}]`)].map((instance) => instance.getAttribute(STYLE_KEY_ATTR)!))] : [];
     const key =
-      [...own, ...instances].find((key) => !taken.has(key) && jsonOf(key) === json) ?? own.find((key) => !taken.has(key) && !othersHave(key)) ?? String(nextKey(doc));
+      [...own, ...instances].find((key) => !taken.has(key) && jsonOf(key) === json) ?? own.find((key) => !taken.has(key) && !othersHave(key)) ?? String(nextKey(owner));
     taken.add(key);
     for (const one of group) if (one.key !== key) one.el.setAttribute(STYLE_KEY_ATTR, key);
     let sheet = sheetOf(doc, key);
     if (!sheet) {
-      sheet = doc.createElement("style");
+      sheet = owner.createElement("style");
       sheet.setAttribute(EDIT_STYLES_ATTR, "");
       sheet.setAttribute(RULES_FOR_ATTR, key);
-      (doc.head ?? doc.documentElement).append(sheet);
+      // A shadow root's at its end, after the page's own nodes and styles there.
+      if (doc === owner) (owner.head ?? owner.documentElement).append(sheet);
+      else doc.append(sheet);
       orderEditStyles(doc);
     }
     showGroup(sheet as HTMLStyleElement, key, rules, json!);
@@ -655,7 +796,7 @@ function showGroup(sheet: HTMLStyleElement, key: string, rules: Rules, json: str
 }
 
 /** The elements of the canvas with key `key`. */
-function membersOf(doc: Document, key: string): Element[] {
+function membersOf(doc: Scope, key: string): Element[] {
   return [...doc.querySelectorAll(`[${STYLE_KEY_ATTR}="${CSS.escape(key)}"]`)];
 }
 
@@ -667,7 +808,12 @@ function membersOf(doc: Document, key: string): Element[] {
  * element takes in new rules from the canvas.
  */
 export function syncEditStyles(root: Element) {
-  const sheets = isEditStyles(root) ? [root] : root.querySelectorAll(`style[${RULES_ATTR}]`);
+  // Those in its open shadow roots too (ADR 0017).
+  const sheets = isEditStyles(root)
+    ? [root]
+    : mayHoldShadowRoots(root.ownerDocument)
+      ? elementsWithin(root).filter(isEditStyles)
+      : root.querySelectorAll(`style[${RULES_ATTR}]`);
   for (const sheet of sheets) {
     const rules = JSON.parse(sheet.getAttribute(RULES_ATTR)!) as Rules;
     showRules(sheet as HTMLStyleElement, cssOf(sheet.getAttribute(RULES_FOR_ATTR)!, effective(rules)));
@@ -741,7 +887,7 @@ function copyDeclarations(to: CSSRuleList, from: CSSRuleList) {
 }
 
 /** The style element of the rules with key `key`. */
-function sheetOf(doc: Document, key: string): Element | null {
+function sheetOf(doc: Scope, key: string): Element | null {
   return doc.querySelector(`style[${RULES_FOR_ATTR}="${CSS.escape(key)}"]`);
 }
 
@@ -752,7 +898,8 @@ function nextKey(doc: Document): number {
   let last = lastKeys.get(doc);
   if (last === undefined) {
     last = 0;
-    for (const el of doc.querySelectorAll(`[${STYLE_KEY_ATTR}], style[${RULES_FOR_ATTR}]`)) {
+    // Keys are the document's, across its shadow roots.
+    for (const el of queryWithin(doc, `[${STYLE_KEY_ATTR}], style[${RULES_FOR_ATTR}]`)) {
       last = Math.max(last, Number(el.getAttribute(STYLE_KEY_ATTR) ?? el.getAttribute(RULES_FOR_ATTR)) || 0);
     }
   }

@@ -111,3 +111,23 @@
 - 137 要注意：第三方 Web Components（比如 node_modules 里的 Shoelace）shadow root 里的层，没有 `loc`，也没有 thirdParty 的 usage chain，现在看起来就是普通的、能改的层，不像 React 第三方组件那样锁住。
 - `slotAssignment: "manual"` 135 没复制，按名字分配，图层树也跟着按名字分配的读。
 - 137 要接着做：改样式写进 shadow root；`claim` 讲清楚改的是组件自己的样式；`done` 的页面核对进 shadow root。`style-source` 现在能说出值来自 shadow root 的哪条规则（`file` 是 null，shadow root 的 `<style>` 没有来源文件），137 写 `claim` 时可以用。
+
+**规划会话，2026-11-11 晚（设计师离开电脑，把决定交给规划会话）**
+
+- 合入 main：0b66d84。main 的整套验证会在下一批合并后一起跑。
+- 代定 1–7 都确认：
+  1. 画布自己的样式以 adopted stylesheet 放进每个 shadow root，不进存档，同意。画布上复制出的宿主由 138 补上。
+  2. 插进 slot 的层列在显示它的位置；没插进 slot 的子层不列，同意。照 ADR 0016，画出来的才是真的。
+  3. 文字层按显示出来的文字取名，同意。
+  4. 宿主的来源只认单独的 `:host`、`:host(…)`，同意。带状态的（`:host(.a):hover`）和 light DOM 里的 `:hover` 一样不算。`::part()` 和 `:host-context()` 见下面 B。
+  5. 找上一层用 flatParent，不按标记跳过，同意。
+  6. 冻结时 containingBlockOf 跨 shadow 边界，同意，和浏览器的排版一致。
+  7. 跨 shadow 边界的一段文字拆成几层，同意。
+- 给 137 的两个问题：
+  - **A. 第三方 Web Components 要锁住**，和 React 第三方组件一样，用同一条「Third-party components」写法规则（ticket 120）。
+    - 判断：定义这个自定义元素的模块来自 `node_modules` 或 vendored 包。比如开发时包一层 `customElements.define`，记下定义它的模块的 URL。
+    - 它 shadow root 里的层，使用链上标 thirdParty。
+    - 改动只能走组件从使用处接收的东西：属性、slot、CSS 自定义属性、`::part()`。
+  - **B. `::part()` 算来源，`:host-context()` 暂不算。**
+    - `::part()` 是项目从外面给第三方组件内部写样式的正当位置，配合 A 必须报出来。
+    - `:host-context()` 只有 Chrome 支持、带上下文条件，也少见，有人用到再开票。

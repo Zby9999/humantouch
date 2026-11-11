@@ -46,7 +46,7 @@ import { checkReport, fffProblem, measureRun, parseTranscript, pooled, reportedA
 import { canvasUpdatedNoticesShown, pageChangedNoticesShown, recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
 import { shellDenied } from "./pi-extension.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
-import { designProblems, exampleOf, held, openObservers, shown, type Desk, type Example, type SavedChange, type Scenario } from "./scenarios.ts";
+import { designProblems, exampleOf, held, openObservers, pageOf, shown, type Desk, type Example, type SavedChange, type Scenario } from "./scenarios.ts";
 import { STANDARD_SCENARIOS } from "./scenarios-other-examples.ts";
 import { showLayersOnEntry } from "../layers-on-entry.ts";
 
@@ -291,7 +291,7 @@ async function withScenario<T>(
     await showLayersOnEntry(context);
     await recordNotices(context);
     const page = await context.newPage();
-    await page.goto(server.url);
+    await page.goto(pageOf(scenario, server.url));
     await page.locator("main").waitFor();
     observers = await openObservers(browser, scenario, server.url);
     // A command line held to the rule pi's are (the bench's extension), before it runs: a command the Skill gives that the bench turns away is a gap the scripted pass finds.
