@@ -753,7 +753,7 @@ async function enterAgain(page: Page) {
 }
 
 /** The round's changes now, by their numbers and properties. */
-const changesNow = (): { id: number; property: string; kind: string; carried?: true; before: unknown }[] => readHumanTouchFile("changeset.json")?.changes ?? [];
+const changesNow = (): { id: number; property: string; kind: string; scope?: string; carried?: true; before: unknown }[] => readHumanTouchFile("changeset.json")?.changes ?? [];
 
 /** Whether edit mode froze the page afresh: no element of the canvas carries an edit or a layer id of a round's. */
 const frozenAfresh = (page: Page) => canvas(page).locator("[data-ht-layer], [data-ht-style]").count().then((n) => n === 0);
@@ -1391,7 +1391,9 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).nth(nth).click();
     for (const [field, value] of fields) await setField(page, field, value);
     if (promote) await page.getByRole("toolbar", { name: "Selection" }).getByRole("button", { name: "Promote" }).click();
-    await expect.poll(() => changesNow().map((change) => `${change.kind} ${change.property}`)).toEqual(fields.map(([field]) => `style ${field === "Gap" ? "gap" : "fill"}`));
+    // As saved, Promote with it: the fill saved before Promote is the usage's, and the save on leaving edit mode is not waited for.
+    const scope = promote ? "component" : "usage";
+    await expect.poll(() => changesNow().map((change) => `${change.kind} ${change.property} ${change.scope}`)).toEqual(fields.map(([field]) => `style ${field === "Gap" ? "gap" : "fill"} ${scope}`));
     await leaveEditMode(page);
   }
 
