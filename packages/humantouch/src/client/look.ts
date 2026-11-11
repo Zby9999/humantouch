@@ -10,7 +10,7 @@
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import { DELETED_ATTR } from "./canvas-style";
 import { readValue } from "./property-table";
-import { doctypeOf, editable, FROZEN, serializeEditable } from "./freezer";
+import { doctypeOf, editable, editableShadowRoots, FROZEN, serializeEditable } from "./freezer";
 import { hostsShadowRoots, mayHoldShadowRoots, noteShadowRoots } from "./shadow-roots";
 import { LOOK_STYLES_ATTR, LOOK_STYLES_BASE } from "./style-marks";
 import { CHAIN_ATTR } from "./usage-chain";
@@ -148,7 +148,10 @@ const PLACING = new Set(["position", "top", "right", "bottom", "left", "float", 
  */
 export function copyLook(source: Element, doc: Document): { copy: Element; pairs: [Element, Element][] } {
   const copy = doc.importNode(source, true) as Element;
-  if (hostsShadowRoots(copy)) noteShadowRoots(doc, true);
+  if (hostsShadowRoots(copy)) {
+    noteShadowRoots(doc, true);
+    editableShadowRoots(copy);
+  }
   const sources = [source, ...source.querySelectorAll("*")];
   const copies = [copy, ...copy.querySelectorAll("*")];
   const pairs: [Element, Element][] = [];
