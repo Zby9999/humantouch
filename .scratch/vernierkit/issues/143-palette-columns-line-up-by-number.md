@@ -111,6 +111,7 @@
   - `pnpm test`：vitest 1275 passed、1 skipped，node 132/132。
   - e2e 跑了 `variables.spec.ts`（23 条）、`dark-mode.spec.ts`（7 条）、`code-variables.spec.ts`（7 条），37/37 过。上一轮超时的 `variables.spec.ts:290` 这次也过了。
   - 没碰 Skill、claims、落地那条路径，也没碰热路径，所以没跑 bench 和 perf。
+  - 之后又合并了 main c7e5384，它只改了 `e2e/bench/toggle-watch.test.ts`（端口改成由系统分配）。合并后重跑 typecheck 和 `pnpm test`，都过，数字同上。e2e 没重跑，main 的这次改动不涉及它。
 
 ## 代定
 
