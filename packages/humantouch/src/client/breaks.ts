@@ -82,8 +82,11 @@ function drawn(el: Element): boolean {
 
 /** Whether `el` hides what overflows it across: `overflow-x` hidden or clipped. */
 function hidesX(el: Element): boolean {
-  return /^(hidden|clip)$/.test(getComputedStyle(el).overflowX);
+  return HIDES.test(getComputedStyle(el).overflowX);
 }
+
+/** An `overflow` that hides what overflows: hidden, or clipped. */
+const HIDES = /^(hidden|clip)$/;
 
 /** Placed out of its container's layout, by the window (fixed) or by a positioned box (absolute). */
 const placedFreely = (el: Element) => /^(absolute|fixed)$/.test(getComputedStyle(el).position);
@@ -126,7 +129,7 @@ function clipped(el: Element, box: DOMRect): boolean {
   let around: Element | null = position === "absolute" ? ((el as HTMLElement).offsetParent ?? null) : el.parentElement;
   while (around) {
     const style = getComputedStyle(around);
-    const [x, y] = [/^(hidden|clip)$/.test(style.overflowX), /^(hidden|clip)$/.test(style.overflowY)];
+    const [x, y] = [HIDES.test(style.overflowX), HIDES.test(style.overflowY)];
     if (around === doc.documentElement || around === doc.body) {
       const screen = doc.documentElement.clientWidth;
       if (x && (box.right > screen + NEAR || box.left < -NEAR)) return true;

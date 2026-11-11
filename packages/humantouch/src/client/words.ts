@@ -17,7 +17,8 @@
 export function wordsOf(el: Element, lines = true, blocks = false): string {
   let text = "";
   const view = el.ownerDocument.defaultView;
-  const block = (child: Element) => blocks && lines && !!view && child.isConnected && !/^(inline|contents|none)/.test(view.getComputedStyle(child).display);
+  // Not a table's cells or columns either, which stand side by side on a line.
+  const block = (child: Element) => blocks && lines && !!view && child.isConnected && !/^(inline|contents|none|table-cell|table-column)/.test(view.getComputedStyle(child).display);
   const walk = (node: Node) => {
     for (const child of node.childNodes) {
       if (child.nodeType === Node.TEXT_NODE || child.nodeType === Node.CDATA_SECTION_NODE) text += lines ? spacedOut((child as Text).data, node as Element) : (child as Text).data;
