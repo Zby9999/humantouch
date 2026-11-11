@@ -47,11 +47,10 @@
 
 ### 改了什么
 
-- **分组**（`VariantsPanel.tsx` 的 `palette`）：一条 ramp 至少一半的档在 Tailwind 的 11 档上，就进 Tailwind 那一组，主行照旧 11 列，同一个数字永远在同一列。原来是「全部档都在 Tailwind 档上」才进。不在 Tailwind 档上的档，进这条 ramp 的第二行：`Scale.ramps` 的每一项从 `[name, cells]` 变成 `[name, cells, extra?]`，`extra` 是第二行，也排在同一套 11 列上：
+- **分组**（`VariantsPanel.tsx` 的 `palette`）：一条 ramp 至少一半的档在 Tailwind 的 11 档上，而且多出来的档一行放得下（没有两档落在同一档下面，见第二轮），就进 Tailwind 那一组，主行照旧 11 列，同一个数字永远在同一列。原来是「全部档都在 Tailwind 档上」才进。不在 Tailwind 档上的档，进这条 ramp 的第二行：`Scale.ramps` 的每一项从 `[name, cells]` 变成 `[name, cells, extra?]`，`extra` 是第二行，也排在同一套 11 列上：
   - 每档放在比它小的那一档下面：150 在 100 下，250 在 200 下；没有更小的（0、25）放在第一列（50）下面；比 950 大的（1000）放在 950 下面。
-  - 两档落在同一列时（比如 125、150、175 都在 100 下），后面的另起一行，仍在那一列（代定 4）。
   - 没有多余档的 ramp 没有第三项，所以只有 Tailwind 档的项目，`palette` 的结果和改前逐字相同。
-- 不够一半的照旧自成一组，和以前一样按「大部分档相同」合组：Radix 1–12、10–90 都不变。`LINE_MAX`（16）不变。
+- 不够一半的、或多出来的档一行放不下的，照旧自成一组，和以前一样按「大部分档相同」合组：Radix 1–12、10–90 都不变。`LINE_MAX`（16）不变。
 - `paletteLines` 把第二行跟在 ramp 的第一行上返回。Tailwind 组只有 11 列，总是一行。
 - **Variables 面板**（`Palette`）：有第二行的 ramp，名字换成一个按钮 `SecondLineButton`，照原型 A：
   - 名字左边、面板左侧 16px 留白里有一个 12px 的箭头（`chevron-down`）。收起时转 -90°（朝右），展开时 0°（朝下），160ms，`EASE_OUT`。
@@ -74,7 +73,7 @@
 - 单元（`test/palette.test.ts`）：
   - 官网三条 ramp：neutral 进 11 列，第二行 0、150、250 在 50、100、200 下；blue、purple 各档在对应的列，缺的是空。
   - 改了一条已有的：Untitled UI 的 25、gray-1000 原来是自己的 13 列，现在是 11 列加第二行（代定 3）。
-  - 新增两条：同一列撞车另起一行；不到一半的 ramp 照旧自成一组。
+  - 新增两条：正好一半、一行放得下的并进 Tailwind 组（第二轮前是「撞车另起一行」，见第二轮）；不到一半的 ramp 照旧自成一组。
   - 原有的 Tailwind、Radix 1–12、10–90、shadcn 那几条没改，全过。
 - e2e（`variables.spec.ts`，新增 1 条，ticket 143）：
   - 用 `addColors` 把官网的三条 ramp 加进 React 18 示例。改名叫 graphite、ocean、orchid，免得和 Tailwind 自己的颜色重名。不改 `examples/`。
@@ -97,21 +96,41 @@
   - 单跑 `--repeat-each=3`：第一次 1/3 过（超时）。在 main 2ee7414 的临时 worktree（6850）上 3/3 过，每次 4s。紧接着本分支再跑 3/3 过，每次 3.3s。记为机器忙。临时 worktree 已删。
 - 没碰 Skill、claims 和落地那条路径，也没碰热路径（拖动、缩放、进出编辑模式、画布绘制），所以没跑 bench `--dry` / `--scripted` 和 perf。最后一条勾选框里这几项留给规划会话在 main 上整批跑。
 
+### 第二轮（审查意见，合并 main 332aa72 之后）
+
+- **一行放不下就不并组**：原来正好一半就并进 Tailwind 组，再加上撞车另起一行，像 Atlassian 的 0、10、20 … 100、200 … 900 这样的 ramp（19 档里 10 档在 Tailwind 上）会把 0–90 九档都叠在 50 下面，成九行。现在多出来的档里只要有两档会落在同一档下面，这条 ramp 就不进 Tailwind 组，照旧自成一组。改前它就是这样排的。所以第二行永远只有一行，`extra` 从「几行」改成「一行」（`Cells`）。新单元测试：Atlassian 的 ramp 自成一组，没有第二行；50、100、125、150、175、200 也自成一组。原来那条「撞车另起一行」的测试改成「正好一半、一行放得下」的情况。
+- **搜索时全部展开**：Variables 面板的搜索框里有字时，所有第二行都当作展开，搜到的色块不会藏在收起的行里（比如搜 "graphite-1" 能看到 graphite-150）。清空搜索后回到原来的开合状态。
+- **`aria-controls`**：箭头按钮的 `aria-controls` 指向它的第二行（`useId` 生成的 id），面板和弹出框都加了。弹出框里按钮还在 `role="listbox"` 里面。挪出去要改列表的结构（`h4` 小标题也有同样的问题），这次没挪（风险 6）。
+- **收起时焦点不丢**：焦点在第二行的色块上时收起（例如 Safari 点按钮不会把焦点移过去），第二行变成 `inert`，焦点会掉到 body。现在收起前先把焦点放到按钮上。查找时用按钮自己的根节点（`getRootNode()`），因为面板可能在 shadow root 里，用 `document` 找不到。e2e 里先这样写，用 `document` 的版本测试失败了，改了才过。
+- **新测试**：
+  - e2e 加在原来那条里：收起时，从 graphite-950 按 Tab 到 ocean-50；展开时到 graphite-0。`aria-controls` 指向第二行。焦点在 graphite-150 上时收起，焦点到按钮上。搜索时第二行看得见。弹出框里 `aria-controls` 也对。
+  - e2e 新增 1 条：`reducedMotion: "reduce"` 下点开后，第二行、最后一个色块、箭头的 `transition-duration` 和 `transition-delay` 都是 0s，色块的 opacity 马上是 1。
+  - vitest 浏览器测试 `test/second-lines.browser.test.ts`，3 条，测 `useSecondLines`：默认收起；显示时已在用就展开；变成在用就展开，手动收起后用同样的在用 Variable 再画几次，还是收起；换成另一条 ramp 的在用 Variable，那条展开，这条还是收起；在用清空再回来，又展开。
+- **结果**（不排锁，`HT_E2E_PORT=6800`）：
+  - typecheck 过。
+  - `pnpm test`：vitest 1275 passed、1 skipped，node 132/132。
+  - e2e 跑了 `variables.spec.ts`（23 条）、`dark-mode.spec.ts`（7 条）、`code-variables.spec.ts`（7 条），37/37 过。上一轮超时的 `variables.spec.ts:290` 这次也过了。
+  - 没碰 Skill、claims、落地那条路径，也没碰热路径，所以没跑 bench 和 perf。
+
 ## 代定
 
 1. 「大部分」：至少一半的档在 Tailwind 的 11 档上（正好一半也算）。
 2. 弹出框里的箭头放在列表左边 12px 的留白里，和主行垂直居中，10px。只有箭头是按钮，没有名字。悬停有底色。这样色块的列宽和改前一样。
 3. Untitled UI 的 25 和 1000 这类「几乎都是 Tailwind 档」的 ramp，原来是自己的 13 列，现在也照这张票的规矩进 11 列，25、1000 收进第二行，分别在 50、950 下面。
-4. 两档落在同一列下面时（比如 125、150、175 都在 100 下），每多一档另起一行，仍在那一列下面，不往右挪。这种情况展开后会是三、四行。
+4. 两档会落在同一档下面时（比如 125、150、175 都在 100 下），这条 ramp 不进 Tailwind 那一组，照旧按自己的档排列（第二轮改的，原来是一档一行往下叠）。所以第二行永远只有一行。
 5. 展开状态不记住：只在这个色板还显示时保留。关掉 Variables 面板、选中图层再取消、关掉弹出框后，都回到收起。在用的 Variable 在第二行时照样会自己展开。
 6. 自动展开只在 Variable「变成在用」时触发一次。设计师手动收起后，不会马上又弹开。
 7. 按钮的无障碍名称是 `<ramp>, more steps`。
 8. 弹出框里「在用」指字段当前绑定的 Variable（`bound`），面板里是选中图层用的（`inUse`）。
+9. 正好一半在 Tailwind 档上也算「大部分」（代定 1）。但只有多出来的档一行放得下（没有两档落在同一档下面）时才并进 Tailwind 组，否则照旧自成一组（代定 4）。
+10. 搜索框里有字时，所有第二行都展开；清空后回到原来的开合状态，搜索时不改设计师的开合。
 
 ## 风险
 
 1. `clip-path: inset(-4px)` 让展开过程中第二行的下边可以多露出 4px。实际看不出来（色块正在淡入）。
 2. Variables 面板只在什么都没选中时出现，所以那里的色块点不了，「在用」也总是空的。面板里第二行的绑定和自动展开都没有真正的使用场景，只有弹出框用得到。以后面板如果在有选中时也出现，自动展开已经接好了。
-3. 撞车另起行（代定 4）只在单元测试里测过，没有截图。真实项目里出现 125、175 这类档的不多。
+3. 退回自己的列（代定 4、9）时，这条 ramp 和 Tailwind 那几条又对不上列，和改前一样。Atlassian 这种 0、10 … 90 加 100 … 900 的就是这样。
 4. 箭头放在面板和弹出框列表的 padding 里，靠的是这两个容器 `overflow: auto` 时 padding 区域可见。以后改了 padding（面板 16px，列表 12px），箭头会被切掉。
 5. 没在 Safari、Firefox 上看过 `grid-template-rows` 的动画和 `inert`。两者都支持，但动画手感没确认。
+6. 弹出框里的箭头按钮在 `role="listbox"` 里面，不是 option，读屏软件可能不按列表的规矩读它。现在有 `aria-expanded` 和 `aria-controls`。要彻底解决，得把列表改成每条 ramp 一个 group，和 `h4` 小标题一起改。
+7. 收起时移焦点只在焦点确实在那一行里时才做。Chrome 点按钮本来就会把焦点给按钮，所以这一步主要是给 Safari 用的，但 Safari 上没试过。

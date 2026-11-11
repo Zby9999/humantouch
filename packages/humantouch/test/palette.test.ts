@@ -15,9 +15,9 @@ function names(entries: Resolved[]) {
   return {
     scales: scales.map(({ steps, ramps }) => ({
       steps,
-      ramps: ramps.map(([name, cells, extra]): [string, (string | null)[], (string | null)[][]?] => {
+      ramps: ramps.map(([name, cells, extra]): [string, (string | null)[], (string | null)[]?] => {
         const line = (cells: (Resolved | undefined)[]) => cells.map((cell) => cell?.variable.name ?? null);
-        return extra ? [name, line(cells), extra.map(line)] : [name, line(cells)];
+        return extra ? [name, line(cells), line(extra)] : [name, line(cells)];
       }),
     })),
     named: named.map((group) => group.map((entry) => entry.variable.name)),
@@ -88,7 +88,7 @@ describe("palette", () => {
           [
             "neutral",
             ramp("neutral", TAILWIND).map((name) => (name === "neutral-950" || neutral.includes(name) ? name : null)),
-            [["neutral-0", "neutral-150", "neutral-250", null, null, null, null, null, null, null, null]],
+            ["neutral-0", "neutral-150", "neutral-250", null, null, null, null, null, null, null, null],
           ],
           ["blue", [...ramp("blue", [50, 100, 200, 300, 400, 500, 600, 700]), null, null, null]],
           ["purple", [null, "purple-100", "purple-200", null, ...ramp("purple", [400, 500, 600, 700]), null, null, null]],
@@ -101,19 +101,24 @@ describe("palette", () => {
     const { scales } = names(colors(...ramp("gray", [25, ...TAILWIND]), ...ramp("slate", [...TAILWIND, 1000])));
     expect(scales.map(({ steps }) => steps)).toEqual([TAILWIND]);
     expect(scales[0].ramps.map(([name, cells, extra]) => [name, cells.length, extra])).toEqual([
-      ["gray", 11, [["gray-25", ...Array(10).fill(null)]]],
-      ["slate", 11, [[...Array(10).fill(null), "slate-1000"]]],
+      ["gray", 11, ["gray-25", ...Array(10).fill(null)]],
+      ["slate", 11, [...Array(10).fill(null), "slate-1000"]],
     ]);
   });
 
-  it("puts extra steps under the same step in lines of their own, and a ramp only half on Tailwind's steps with them", () => {
-    const { scales } = names(colors(...ramp("gray", [50, 100, 125, 150, 175, 200])));
+  it("puts a ramp only half on Tailwind's steps with them, its others in a second line", () => {
+    const { scales } = names(colors(...ramp("gray", [50, 100, 150, 200, 250, 300])));
     expect(scales[0].steps).toEqual(TAILWIND);
-    expect(scales[0].ramps[0][2]!.map((line) => line.slice(0, 2))).toEqual([
-      [null, "gray-125"],
-      [null, "gray-150"],
-      [null, "gray-175"],
-    ]);
+    expect(scales[0].ramps[0][2]!.slice(0, 3)).toEqual([null, "gray-150", "gray-250"]);
+  });
+
+  it("keeps a ramp on columns of its own when two of its steps off Tailwind's would be under the same step: Atlassian's 0, 10 … 100, 200 … 900", () => {
+    const atlassian = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900];
+    const gray = names(colors(...ramp("gray", atlassian))).scales;
+    expect(gray.map(({ steps }) => steps)).toEqual([atlassian.map(String)]);
+    expect(gray[0].ramps[0]).toHaveLength(2);
+    const blue = names(colors(...ramp("blue", [50, 100, 125, 150, 175, 200]))).scales;
+    expect(blue.map(({ steps }) => steps)).toEqual([["50", "100", "125", "150", "175", "200"]]);
   });
 
   it("keeps a ramp less than half on Tailwind's steps on its own columns", () => {

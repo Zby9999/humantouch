@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import { Fragment, type ComponentChildren } from "preact";
-import { useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useId, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { VariableGroup } from "../service-protocol";
 import type { Shadow } from "./effects";
 import { Icon } from "./icons";
@@ -155,7 +155,7 @@ export function VariantsPanel({ catalog, takes, inUse, onApply }: Props) {
                 (list as Resolved[]).length ? (
                   <div key={label as string} class="ht-variants-part">
                     <p class="ht-variants-subtitle">{label as string}</p>
-                    {view(group, list as Resolved[], item, used)}
+                    {view(group, list as Resolved[], item, used, !!text)}
                   </div>
                 ) : null,
               )}
@@ -171,10 +171,10 @@ export function VariantsPanel({ catalog, takes, inUse, onApply }: Props) {
 type Item = (entry: Resolved, cls: string, children?: preact.ComponentChildren, style?: Record<string, string>) => preact.JSX.Element;
 
 /** A group's Variables, each drawn as what it is. */
-function view(group: VariableGroup, entries: Resolved[], item: Item, used: (entry: Resolved) => boolean) {
+function view(group: VariableGroup, entries: Resolved[], item: Item, used: (entry: Resolved) => boolean, searching: boolean) {
   switch (group) {
     case "color":
-      return <Palette entries={entries} item={item} used={used} />;
+      return <Palette entries={entries} item={item} used={used} searching={searching} />;
     case "spacing":
       return <Lengths entries={entries} />;
     case "radius":
@@ -292,12 +292,15 @@ type Cells = (Resolved | undefined)[];
  * where a ramp has no color for it. On Tailwind's columns, a ramp's steps off
  * them, if any, are its second line, on the same columns (ticket 143): each
  * under the step below it (`150` under `100`), one below them all (`0`) under
- * the first; one more under a step taken goes in a line under that.
+ * the first.
  */
 export interface Scale {
   steps: string[];
-  ramps: [name: string, cells: Cells, extra?: Cells[]][];
+  ramps: [name: string, cells: Cells, extra?: Cells][];
 }
+
+/** The column of Tailwind's steps a step off them is under (ticket 143): the step below it, or the first. */
+const columnUnder = (step: string) => Math.max(0, STEPS.filter((s) => Number(s) <= Number(step)).length - 1);
 
 /**
  * A group's colors as a palette (designer, 2026-11-08): the ramps, by scale,
@@ -328,8 +331,10 @@ export function palette(entries: Resolved[]): { scales: Scale[]; named: Resolved
     if (colors.length < RAMP_MIN) continue;
     for (const [, entry] of colors) inRamp.add(entry);
     const steps = new Set(colors.map(([step]) => step));
-    // Mostly on Tailwind's steps: half of them or more (ticket 143, 代定).
-    const tailwind = [...steps].filter((step) => STEPS.includes(step)).length * 2 >= steps.size;
+    // Mostly on Tailwind's steps: half of them or more, the others one line under them, none two under the
+    // same step (ticket 143, 代定): Atlassian's 0, 10 … 100, 200 … 900 keeps columns of its own.
+    const off = [...steps].filter((step) => !STEPS.includes(step));
+    const tailwind = off.length * 2 <= steps.size && new Set(off.map(columnUnder)).size === off.length;
     // A scale of its own shares columns with one mostly on its steps: Radix's 1–12 with a 1–11, not with a 10–90.
     const into = scales.find((scale) =>
       tailwind ? scale.tailwind : !scale.tailwind && [...steps].filter((step) => scale.steps.has(step)).length * 2 >= Math.min(steps.size, scale.steps.size),
@@ -355,16 +360,10 @@ export function palette(entries: Resolved[]): { scales: Scale[]; named: Resolved
         steps: order,
         ramps: ramps.map(([name, colors]): Scale["ramps"][number] => {
           const cells = order.map((step) => colors.find(([s]) => s === step)?.[1]);
-          const off = colors.filter(([step]) => !order.includes(step)).sort(([a], [b]) => Number(a) - Number(b));
+          const off = colors.filter(([step]) => !order.includes(step));
           if (!off.length) return [name, cells];
-          const extra: Cells[] = [];
-          for (const [step, entry] of off) {
-            // Under the step below it, or the first; a line further down where that column is taken.
-            const column = Math.max(0, STEPS.filter((s) => Number(s) <= Number(step)).length - 1);
-            let line = extra.find((cells) => !cells[column]);
-            if (!line) extra.push((line = Array<Resolved | undefined>(order.length).fill(undefined)));
-            line[column] = entry;
-          }
+          const extra: Cells = Array<Resolved | undefined>(order.length).fill(undefined);
+          for (const [step, entry] of off) extra[columnUnder(step)] = entry;
           return [name, cells, extra];
         }),
       };
@@ -381,11 +380,11 @@ const bare = (entry: Resolved) => entry.variable.name.replace(/^--(color-)?/, ""
  * more than one; a ramp's lines after its first are unnamed. A ramp's second
  * line (ticket 143) comes with its first, Tailwind's 11 steps being one line.
  */
-export function paletteLines({ steps, ramps }: Scale): [name: string, cells: Cells, extra?: Cells[]][] {
+export function paletteLines({ steps, ramps }: Scale): [name: string, cells: Cells, extra?: Cells][] {
   const lines = Math.ceil(steps.length / LINE_MAX);
   const width = Math.ceil(steps.length / lines);
   return ramps.flatMap(([name, cells, extra]) =>
-    Array.from({ length: lines }, (_, i): [string, Cells, Cells[]?] => {
+    Array.from({ length: lines }, (_, i): [string, Cells, Cells?] => {
       const line = cells.slice(i * width, (i + 1) * width);
       return !i && extra ? [name, line, extra] : [i ? "" : name, line];
     }),
@@ -396,7 +395,8 @@ export function paletteLines({ steps, ramps }: Scale): [name: string, cells: Cel
  * Which ramps' second lines are open (ticket 143): folded at first, and each
  * opened or folded by its button; one with the Variable of the selected layers
  * (`inUse`, ramps' names) opens by itself as that comes in use, so its ring is
- * seen. Kept while the palette is shown, not after (代定).
+ * seen, and stays folded once folded by hand till that Variable changes. Kept
+ * while the palette is shown, not after (代定).
  */
 export function useSecondLines(inUse: string[]): [ReadonlySet<string>, (name: string) => void] {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(inUse));
@@ -422,9 +422,24 @@ export function useSecondLines(inUse: string[]): [ReadonlySet<string>, (name: st
  * picker (`bare`), which shows no names, the chevron alone, in its list's
  * gutter left of the line (代定).
  */
-export function SecondLineButton({ name, open, bare, onToggle }: { name: string; open: boolean; bare?: boolean; onToggle(): void }) {
+export function SecondLineButton({ name, open, controls, bare, onToggle }: { name: string; open: boolean; controls: string; bare?: boolean; onToggle(): void }) {
+  const toggle = (event: MouseEvent) => {
+    // Folded with the focus in the line (a click not focusing its button, as in Safari): the focus to the button, not lost as the line goes inert.
+    // Looked for in the editor's own root: the panel can be in a shadow root.
+    const button = event.currentTarget as HTMLElement;
+    const root = button.getRootNode() as Document | ShadowRoot;
+    if (open && root.getElementById(controls)?.contains(root.activeElement)) button.focus();
+    onToggle();
+  };
   return (
-    <button type="button" class={`ht-variants-more-button${bare ? " is-bare" : ""}`} aria-label={`${name}, more steps`} aria-expanded={open} onClick={onToggle}>
+    <button
+      type="button"
+      class={`ht-variants-more-button${bare ? " is-bare" : ""}`}
+      aria-label={`${name}, more steps`}
+      aria-expanded={open}
+      aria-controls={controls}
+      onClick={toggle}
+    >
       <Icon name="chevron-down" />
       {!bare && <span class="ht-variants-more-name">{name}</span>}
     </button>
@@ -432,9 +447,9 @@ export function SecondLineButton({ name, open, bare, onToggle }: { name: string;
 }
 
 /** A ramp's second line, under its first: its height eased open and closed, its swatches fading in one after another; out of reach folded. */
-export function SecondLine({ open, children }: { open: boolean; children: ComponentChildren }) {
+export function SecondLine({ id, open, children }: { id: string; open: boolean; children: ComponentChildren }) {
   return (
-    <div class={`ht-variants-more${open ? " is-open" : ""}`} inert={!open}>
+    <div id={id} class={`ht-variants-more${open ? " is-open" : ""}`} inert={!open}>
       <div class="ht-variants-more-lines">{children}</div>
     </div>
   );
@@ -457,10 +472,13 @@ export function secondLineSwatches(cells: Cells, first: number, swatch: (entry: 
  * would break the ramps' columns, and its name, starting with the ramp's,
  * tells whose it is.
  */
-function Palette({ entries, item, used }: { entries: Resolved[]; item: Item; used: (entry: Resolved) => boolean }) {
+function Palette({ entries, item, used, searching }: { entries: Resolved[]; item: Item; used: (entry: Resolved) => boolean; searching: boolean }) {
   const { scales, named } = palette(entries);
   const lines = scales.map(paletteLines);
-  const [open, toggle] = useSecondLines(lines.flat().flatMap(([name, , extra]) => (extra?.flat().some((entry) => entry && used(entry)) ? [name] : [])));
+  const [opened, toggle] = useSecondLines(lines.flat().flatMap(([name, , extra]) => (extra?.some((entry) => entry && used(entry)) ? [name] : [])));
+  // Searched, every second line open: a color found is not left folded (ticket 143).
+  const open = { has: (name: string) => searching || opened.has(name) };
+  const id = useId();
   const swatch = (entry: Resolved | undefined, i: number) =>
     entry ? item(entry, "ht-variants-swatch", undefined, { "--ht-swatch": cssColor(entry.drawn as Color) }) : <span key={`empty ${i}`} class="ht-variants-empty" />;
   return (
@@ -469,18 +487,20 @@ function Palette({ entries, item, used }: { entries: Resolved[]; item: Item; use
         scale.map(([name, steps, extra], r) => (
           <Fragment key={`${s} ${r}`}>
             <div class="ht-variants-ramp" style={{ "--ht-steps": `${steps.length}` }}>
-              {extra ? <SecondLineButton name={name} open={open.has(name)} onToggle={() => toggle(name)} /> : <span class="ht-variants-ramp-name">{name}</span>}
+              {extra ? (
+                <SecondLineButton name={name} open={open.has(name)} controls={`${id}-${s}-${r}`} onToggle={() => toggle(name)} />
+              ) : (
+                <span class="ht-variants-ramp-name">{name}</span>
+              )}
               {steps.map(swatch)}
             </div>
             {extra && (
-              <SecondLine open={open.has(name)}>
-                {extra.map((cells, l) => (
-                  <div key={l} class="ht-variants-ramp" style={{ "--ht-steps": `${steps.length}` }}>
-                    {secondLineSwatches(cells, 2, (entry, column, order) =>
-                      item(entry, "ht-variants-swatch", undefined, { "--ht-swatch": cssColor(entry.drawn as Color), gridColumn: `${column}`, "--ht-order": `${order}` }),
-                    )}
-                  </div>
-                ))}
+              <SecondLine id={`${id}-${s}-${r}`} open={open.has(name)}>
+                <div class="ht-variants-ramp" style={{ "--ht-steps": `${steps.length}` }}>
+                  {secondLineSwatches(extra, 2, (entry, column, order) =>
+                    item(entry, "ht-variants-swatch", undefined, { "--ht-swatch": cssColor(entry.drawn as Color), gridColumn: `${column}`, "--ht-order": `${order}` }),
+                  )}
+                </div>
               </SecondLine>
             )}
           </Fragment>
