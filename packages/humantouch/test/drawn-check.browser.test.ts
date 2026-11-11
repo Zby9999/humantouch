@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { createChangeSet } from "../src/client/changeset";
-import { checkChange, type EffectNotes } from "../src/client/check";
+import { checkChange, effectNotes, type EffectNotes } from "../src/client/check";
+import { drawsAlike } from "../src/client/draws-alike";
 import { createEditor } from "../src/client/edits";
 import type { Layer } from "../src/client/layers";
 import { placedOnCanvas } from "../src/client/moves";
@@ -72,7 +73,7 @@ const check = (html: string, round: ReturnType<typeof changed>, notes?: EffectNo
 
 /** Checked first on the page as it was, as the page's checks first look at a claimed round, its notes kept; then on `html`. */
 function checkNoted(before: string, html: string, round: ReturnType<typeof changed>) {
-  const notes: EffectNotes = new Map();
+  const notes = effectNotes(true);
   expect(check(before, round, notes).outcome).toBe("not shown");
   return check(html, round, notes);
 }
@@ -163,7 +164,7 @@ describe("drawn otherwise: not shown, as ever", () => {
 
   test("nothing noted after the page first looked: what it moves, noted once the code changed, would be no change of the code's", () => {
     const round = changed(page(), "section", "padding", [0, 0, 0, 24]);
-    const notes: EffectNotes = new Map();
+    const notes = effectNotes(true);
     const margin = page({ words: "margin-left: 24px" });
     expect(check(margin, round, notes).outcome).toBe("not shown");
     expect(check(margin, round, notes).outcome).toBe("not shown");
@@ -187,5 +188,133 @@ describe("looking puts nothing on the page that stays (ADR 0016)", () => {
     expect(doc.adoptedStyleSheets.length).toBe(sheets);
     expect(title.getAnimations()).toEqual([]);
     expect(getComputedStyle(title).color).toBe("rgb(255, 0, 0)");
+  });
+});
+
+describe("review of ticket 146: what drawing alone does not tell", () => {
+  test("an alignment a layer in the container overrides for itself (its own alignment, an auto margin) tells nothing", () => {
+    const column = "flex-direction: column";
+    const round = changed(page({ section: column }), "section", "align", { x: "center", y: "start", distribute: false });
+    expect(check(page({ section: column, words: "align-self: flex-end" }), round).outcome).toBe("not shown");
+    const row = changed(page(), "section", "align", { x: "center", y: "start", distribute: false });
+    expect(check(page({ words: "margin-left: auto" }), row).outcome).toBe("not shown");
+  });
+
+  test("a style that paints too (a font weight) is never noted: a weight that moves things as far is not taken for it", () => {
+    const round = changed(page(), "h1", "fontWeight", 400);
+    expect(checkNoted(page(), page({ title: "font-weight: 500" }), round).outcome).toBe("not shown");
+  });
+
+  test("a paint that is no color is not taken for a color", () => {
+    const doc = frameWith(`<!DOCTYPE html><body style="margin: 0"><svg width="40" height="40"><rect width="40" height="40" style="fill: none"></rect></svg></body>`);
+    const rect = doc.querySelector("rect")!;
+    expect(drawsAlike([{ el: rect, style: { fill: "red" } }]).alike).toBe(false);
+    expect(drawsAlike([{ el: rect, style: { fill: "none" } }]).alike).toBe(true);
+  });
+
+  test("a change that hides the layer is never put on: its animations run on where they were", () => {
+    const round = changed(page(), "p", "visible", false);
+    const doc = frameWith(page({ words: "animation: turn 10s linear infinite" }).replace("<body", "<style>@keyframes turn { to { transform: rotate(1turn) } }</style><body"));
+    const [turning] = doc.querySelector("p")!.getAnimations();
+    turning.currentTime = 4000;
+    expect(checkChange(doc, round[0], round).outcome).toBe("not shown");
+    expect(turning.currentTime).toBe(4000);
+    expect(doc.querySelector("p")!.getAnimations()).toEqual([turning]);
+  });
+
+  test("a page that scrolls smoothly is put back where it was scrolled at once, and so is what scrolls in the layer", () => {
+    const tall = (height: string) => `<!DOCTYPE html>
+<html style="scroll-behavior: smooth"><body style="margin: 0">
+  <main data-ht-loc="app/page.tsx:20:5">
+    <div data-ht-loc="app/page.tsx:21:7" style="height: ${height}; width: 200px">
+      <div data-ht-loc="app/page.tsx:22:9" style="height: 100px; overflow: auto; scroll-behavior: smooth"><p style="margin: 0">${"Freeze the page and apply. ".repeat(40)}</p></div>
+    </div>
+  </main>
+</body></html>`;
+    const round = changed(tall("1600px"), "main > div", "height", { type: "fixed", value: 120 });
+    const fontRound = changed(tall("1600px"), "main > div", "width", { type: "fixed", value: 780 });
+    const doc = frameWith(tall("1600px"));
+    const win = doc.defaultView!;
+    win.scrollTo({ top: 900, behavior: "instant" });
+    const inner = doc.querySelector("main > div > div")!;
+    inner.scrollTo({ top: 300, behavior: "instant" });
+    expect([win.scrollY, inner.scrollTop]).toEqual([900, 300]);
+    expect(checkChange(doc, round[0], round).outcome).toBe("not shown");
+    expect(checkChange(doc, fontRound[0], fontRound).outcome).toBe("not shown");
+    expect([win.scrollY, inner.scrollTop]).toEqual([900, 300]);
+  });
+
+  test("0 letter spacing on a label beside a field: shown, as ticket 142 had it", () => {
+    const html = (spacing: string) => `<!DOCTYPE html>
+<body style="margin: 0">
+  <main data-ht-loc="app/page.tsx:20:5">
+    <label data-ht-loc="app/page.tsx:21:7" style="letter-spacing: ${spacing}">Name</label>
+    <input data-ht-loc="app/page.tsx:22:7" value="Freeze">
+  </main>
+</body>`;
+    const round = changed(html("0.8px"), "label", "letterSpacing", { value: 0, unit: "px" });
+    expect(check(html("normal"), round)).toEqual({ outcome: "shown" });
+    expect(check(html("0em"), round)).toEqual({ outcome: "shown" });
+  });
+
+  test("a loop's instances that grow along their container, each moving the next: shown by a margin as by the padding", () => {
+    const cards = (words: string) => `<!DOCTYPE html>
+<body style="margin: 0">
+  <main data-ht-loc="app/page.tsx:20:5" style="width: 800px">
+    ${Array.from({ length: 7 }, () => `<section data-ht-loc="app/page.tsx:22:7" style="display: flex"><p data-ht-loc="app/page.tsx:24:9" style="margin: 0; ${words}">Freeze</p></section>`).join("\n    ")}
+  </main>
+</body>`;
+    const round = changed(cards(""), "section", "padding", [24, 0, 0, 0]);
+    expect(checkNoted(cards(""), cards("margin-top: 24px"), round)).toEqual({ outcome: "shown" });
+    expect(checkNoted(cards(""), cards("margin-top: 20px"), round).outcome).toBe("not shown");
+  });
+
+  test("another change of the round that moves what this one's style was noted to move: not taken for this one", () => {
+    const doc = frameWith(page());
+    const views = createViews({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 });
+    const changes = createChangeSet();
+    const editor = createEditor(views, changes);
+    const section = () => find(editor.tree().root, (one) => one.el === doc.querySelector("section"))!;
+    editor.set(section(), "padding", [0, 0, 0, 24]);
+    editor.set(section(), "gap", 24);
+    const round = placedOnCanvas(changes.list(), doc.documentElement.outerHTML);
+    const padding = round.find((change) => change.property === "padding")!;
+    const notes = effectNotes(true);
+    expect(checkChange(frameWith(page()), padding, round, notes).outcome).toBe("not shown");
+    // The gap applied, not the padding: the words are where the padding was noted to put them.
+    expect(checkChange(frameWith(page({ section: "gap: 24px" })), padding, round, notes).outcome).toBe("not shown");
+  });
+
+  test("notes closed (a page opened after the round was claimed, or the code changed): nothing noted, nothing to go by", () => {
+    const round = changed(page(), "section", "padding", [0, 0, 0, 24]);
+    const notes = effectNotes(false);
+    expect(check(page(), round, notes).outcome).toBe("not shown");
+    expect(check(page({ words: "margin-left: 24px" }), round, notes).outcome).toBe("not shown");
+  });
+
+  test("a layer looked at again as it was drawn is not given the style again; drawn otherwise, it is", () => {
+    const round = changed(page(), "p", "width", { type: "fixed", value: 500 });
+    const doc = frameWith(page({ words: "width: 400px" }));
+    const own = Object.getOwnPropertyDescriptor(doc.defaultView!.Document.prototype, "adoptedStyleSheets")!;
+    let sets = 0;
+    Object.defineProperty(doc, "adoptedStyleSheets", {
+      configurable: true,
+      get: () => own.get!.call(doc),
+      set: (sheets) => {
+        sets++;
+        own.set!.call(doc, sheets);
+      },
+    });
+    expect(checkChange(doc, round[0], round).outcome).toBe("not shown");
+    const once = sets;
+    expect(once).toBeGreaterThan(0);
+    expect(checkChange(doc, round[0], round).outcome).toBe("not shown");
+    expect(sets).toBe(once);
+    const words = doc.querySelector("p") as HTMLElement;
+    words.style.width = "";
+    words.style.maxWidth = "500px";
+    words.style.flexGrow = "1";
+    expect(checkChange(doc, round[0], round)).toEqual({ outcome: "shown" });
+    expect(sets).toBeGreaterThan(once);
   });
 });

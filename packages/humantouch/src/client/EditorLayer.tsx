@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { CheckAsk, CheckReport, SavedOffCanvasLayer, RoundStatus, SavedRound } from "../service-protocol";
+import { CODE_EVENT, type CheckAsk, type CheckReport, type SavedOffCanvasLayer, type RoundStatus, type SavedRound } from "../service-protocol";
 import { ChangeList } from "./ChangeList";
 import { watchStall, type StallWatch } from "./agent-stall";
 import type { Camera } from "./camera";
@@ -11,7 +11,7 @@ import { ENTER_MARK, HOST_TAG } from "./host";
 import { Icon } from "./icons";
 import { placedOnCanvas, type RoundOnCanvas } from "./moves";
 import { showsAnyHere, watchPage, type PageChecks } from "./page-checks";
-import type { EffectNotes } from "./check";
+import { effectNotes, type EffectNotes } from "./check";
 import { keptOf, notedFor, notedFrom, noteRound, type OtherUsagesNoted } from "./other-usages";
 import { PageToast, type PageToastMessage } from "./PageToast";
 import { createPartsReader } from "./range-parts";
@@ -139,16 +139,29 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
    * round for the Agent before the code changed (ticket 82).
    */
   const otherUsages = useRef(new Map<number, OtherUsagesNoted | null>());
-  /** What each change's style moved as the page first looked at it (ADR 0016): kept as `otherUsages` is, but in this page alone. */
-  const effects = useRef<EffectNotes>(new Map());
+  /**
+   * What each change's style moved as the page first looked at it (ADR 0016):
+   * kept as `otherUsages` is, but in this page alone. Open to note only on a
+   * page that saw the round before it was claimed: one opened or reloaded
+   * since may have the Agent's code already.
+   */
+  const effects = useRef<EffectNotes>(effectNotes(false));
+  // The code changing before the round is claimed (the Agent editing first): noted after, what a change's style moves is of the Agent's code.
+  useEffect(() => {
+    if (isClaimed) return;
+    const close = () => void (effects.current.open = false);
+    window.addEventListener(CODE_EVENT, close);
+    return () => window.removeEventListener(CODE_EVENT, close);
+  }, [isClaimed]);
   /** Whether the round, read before it was claimed, has been asked for again since (ticket 82). */
   const reread = useRef(false);
   useEffect(() => {
     if (isClaimed) return;
     otherUsages.current = new Map();
-    effects.current = new Map();
+    // Known not to be claimed: the page sees the round before the Agent's code.
+    effects.current = effectNotes(status !== undefined);
     reread.current = false;
-  }, [isClaimed]);
+  }, [isClaimed, status === undefined]);
   useLayoutEffect(() => {
     if (!isClaimed || !store || !round) return;
     // Read before it was claimed: what was kept with the claim comes as it is read again (ticket 82). Till then the page neither

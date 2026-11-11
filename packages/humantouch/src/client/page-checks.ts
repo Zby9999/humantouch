@@ -17,7 +17,7 @@
  */
 import { CHECK_ARRIVE_MS, CHECK_SETTLE_MS, CODE_EVENT, type CheckAsk, type CheckReport, type CheckResult } from "../service-protocol";
 import type { Change } from "./changeset";
-import { checkAcross, checkHere, itself, outsideOf, uncheckable, widthsOf, type EffectNotes, type PageWidth } from "./check";
+import { checkAcross, checkHere, effectNotes, itself, outsideOf, uncheckable, widthsOf, type EffectNotes, type PageWidth } from "./check";
 import { codeUpdates, sliced } from "./code-changes";
 import { otherUsagesChanged, looksAtOtherUsages, noteChange, noteOutside, outsideChanged, unnoted, withOutside, type OtherUsagesNoted } from "./other-usages";
 import { CHECK_MEASURE } from "./host";
@@ -129,7 +129,7 @@ function hotUpdates(win: Window): HotUpdates | undefined {
  * check at all (a brief, a copy made this round) it never looks at by itself:
  * asked, it says why.
  */
-export function watchPage({ window: win, changes, report, onShown, viewWidths, copiesIn, otherUsages: others = new Map(), onNoted, effects = new Map() }: Options): PageChecks {
+export function watchPage({ window: win, changes, report, onShown, viewWidths, copiesIn, otherUsages: others = new Map(), onNoted, effects = effectNotes(true) }: Options): PageChecks {
   const doc = win.document;
   const code = () => codeUpdates(win);
   const shown = new Set<number>();
@@ -364,6 +364,8 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   follow();
   let waiting = false;
   const observer = new MutationObserver(() => {
+    // The page changing, its code may have: what a change's style moves is noted no more (ADR 0016).
+    effects.open = false;
     if (code()) {
       if (performance.now() < followUntil) look();
       return;
@@ -380,6 +382,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
     }
   });
   const onCode = () => {
+    effects.open = false;
     codeCameAt = performance.now();
     follow();
     look();

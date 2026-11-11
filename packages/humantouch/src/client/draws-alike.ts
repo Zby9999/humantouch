@@ -79,6 +79,7 @@ const PAINTED = [
   "font-family",
   "font-weight",
   "font-style",
+  "text-transform",
   "-webkit-text-stroke-width",
   "-webkit-text-stroke-color",
   "object-fit",
@@ -130,6 +131,8 @@ export function drawsAlike(restyled: Restyled[], noting: Element[] = [], look = 
   const doc = first.el.ownerDocument;
   const win = doc.defaultView;
   if (!win || !restyled.every(({ el, style }) => el.isConnected && el.getRootNode() === doc && Object.keys(style).length > 0 && el.getClientRects().length > 0)) return drawing;
+  // Hidden and shown again, a layer's animations and its starting styles begin anew, and what scrolls in it goes back to its start: never put on.
+  if (restyled.some(({ style }) => /^\s*none\b/.test(style.display ?? ""))) return drawing;
   const sheet = new win.CSSStyleSheet();
   const rules = restyled.map(({ el, style }) => `${pathOf(el)} { ${Object.entries(style).map(([name, value]) => `${name}: ${value} !important;`).join(" ")} }`);
   try {
@@ -143,15 +146,17 @@ export function drawsAlike(restyled: Restyled[], noting: Element[] = [], look = 
   });
   if (longhands.some((names) => !names.length)) return drawing;
   const els = [...new Set(restyled.flatMap(({ el }) => around(el)))];
-  // Past as many as are looked at, what is not looked at may move; a field's words have no node of their own to see them move by.
-  if (els.length > MAX_ELEMENTS || els.some((el) => UNSEEN_WORDS.has(el.localName))) return drawing;
+  // Past as many as are looked at, what is not looked at may move; a field's words, of the layers or in them, have no node of their own to see them move by.
+  const fields = restyled.some(({ el }) => UNSEEN_WORDS.has(el.localName) || !!el.querySelector([...UNSEEN_WORDS].join(", ")));
+  if (els.length > MAX_ELEMENTS || fields) return drawing;
   const texts = [...new Set(restyled.flatMap(({ el }) => textsIn(el)))].slice(0, MAX_TEXTS);
   // Paint, of the layers and what is in them: the style on them paints nothing else, but may move it.
   const painted = (el: Element) => restyled.some((one) => one.el.contains(el));
   const before = look ? drawnOf(els, texts, win, painted) : null;
   // Looked at as it was drawn when last looked at, with the same style: as it was then, with nothing put on it again.
   const print = look && !noting.length ? JSON.stringify([rules, before, restyled.map(({ el }, i) => longhands[i].map((name) => getComputedStyle(el).getPropertyValue(name))), win.innerWidth]) : null;
-  const last = print ? lastLooked.get(first.el) : undefined;
+  const key = rules.join("\n");
+  const last = print ? lastLooked.get(first.el)?.get(key) : undefined;
   if (print && last?.print === print) return { alike: last.alike, moved: new Map() };
   // The page's own important declarations that would win over these (its style attribute's, those in a CSS layer, or by an id): what they draw would not be the change's.
   const winsOver = (source: StyleSource) => source.important && (source.kind === "inline" || source.layer !== null || (source.selector ?? "").includes("#"));
@@ -171,12 +176,13 @@ export function drawsAlike(restyled: Restyled[], noting: Element[] = [], look = 
   if (transitions) for (const rule of held) sheet.insertRule(rule, sheet.cssRules.length);
   const scroll = [win.scrollX, win.scrollY];
   // What scrolls round the layers, where it is scrolled: a style that makes what is in it shorter would scroll it back.
-  const scrolled = [...new Set(restyled.flatMap(({ el }) => scrollersOf(el)))].map((box) => [box, box.scrollLeft, box.scrollTop] as const);
+  const scrolled = [...new Set([...restyled.flatMap(({ el }) => scrollersOf(el)), ...els.filter((el) => el.scrollTop || el.scrollLeft)])].map((box) => [box, box.scrollLeft, box.scrollTop] as const);
   doc.adoptedStyleSheets = [...doc.adoptedStyleSheets, sheet];
   try {
     if (!restyled.some(({ el, style }, i) => inertOn(el, longhands[i]) || heldBack(el, style))) {
       drawing.alike = !!before && same(before, drawnOf(els, texts, win, painted), doc);
-      noting.forEach((el, i) => drawing.moved.set(el, movedBetween(laidOut[i], layoutOf(el))));
+      // A style that paints too (a font, its weight, its case) is not told by where things are alone: nothing noted.
+      if (!longhands.some((names) => names.some((name) => PAINTED.includes(name)))) noting.forEach((el, i) => drawing.moved.set(el, movedBetween(laidOut[i], layoutOf(el))));
     }
   } finally {
     if (transitions) {
@@ -185,13 +191,18 @@ export function drawsAlike(restyled: Restyled[], noting: Element[] = [], look = 
       void doc.documentElement.getBoundingClientRect();
     }
     doc.adoptedStyleSheets = doc.adoptedStyleSheets.filter((one) => one !== sheet);
-    if (win.scrollX !== scroll[0] || win.scrollY !== scroll[1]) win.scrollTo(scroll[0], scroll[1]);
-    for (const [box, left, top] of scrolled) if (box.scrollLeft !== left || box.scrollTop !== top) box.scrollTo(left, top);
+    // At once: a page that scrolls smoothly would be seen to glide back.
+    if (win.scrollX !== scroll[0] || win.scrollY !== scroll[1]) win.scrollTo({ left: scroll[0], top: scroll[1], behavior: "instant" });
+    for (const [box, left, top] of scrolled) if (box.scrollLeft !== left || box.scrollTop !== top) box.scrollTo({ left, top, behavior: "instant" });
   }
   return remembered(drawing);
 
   function remembered(found: Drawing): Drawing {
-    if (print) lastLooked.set(first.el, { print, alike: found.alike });
+    if (print) {
+      let byRules = lastLooked.get(first.el);
+      if (!byRules) lastLooked.set(first.el, (byRules = new Map()));
+      byRules.set(key, { print, alike: found.alike });
+    }
     return found;
   }
 }
@@ -203,7 +214,7 @@ export function drawsAlike(restyled: Restyled[], noting: Element[] = [], look = 
  * where nothing round its layer has changed, putting the style on again
  * finds the same, and costs the whole page's styles worked out anew.
  */
-const lastLooked = new WeakMap<Element, { print: string; alike: boolean }>();
+const lastLooked = new WeakMap<Element, Map<string, { print: string; alike: boolean }>>();
 
 /** Elements whose words are drawn with no text node to measure: a field's. */
 const UNSEEN_WORDS = new Set(["input", "textarea", "select"]);
@@ -230,6 +241,7 @@ export function layoutOf(el: Element): Moved {
   const out: Moved = new Map();
   const of = (rect: DOMRect, from: DOMRect) => [rect.left - from.left, rect.top - from.top, rect.width, rect.height];
   const own = el.getBoundingClientRect();
+  out.set("size", [0, 0, own.width, own.height]);
   const parent = el.parentElement;
   if (parent) {
     const from = parent.getBoundingClientRect();
@@ -245,7 +257,7 @@ export function layoutOf(el: Element): Moved {
       if (out.size >= MAX_ELEMENTS) return;
       if (child.nodeType === Node.TEXT_NODE && (child as Text).data.trim()) {
         range.selectNodeContents(child);
-        out.set(`t${path}.${i}`, of(range.getBoundingClientRect(), own));
+        out.set(`t${path}.${i}`, [...range.getClientRects()].flatMap((line) => of(line, own)));
       } else if (child.nodeType === Node.ELEMENT_NODE && !NOT_DRAWN.has((child as Element).localName)) {
         out.set(`d${path}.${i}`, of((child as Element).getBoundingClientRect(), own));
         walk(child, `${path}.${i}`);
@@ -314,18 +326,40 @@ export function movedAlike(noted: Element[], moved: Map<Element, Moved>, others:
   return out;
 }
 
-/** Two boxes, x, y, width and height, the same within half a px: where neither has an area, by their size alone. */
+/** Two boxes, x, y, width and height (as many as a run of text has lines), the same within half a px: where neither has an area, by their size alone. */
 function alike(a: number[], b: number[]): boolean {
-  const nowhere = (box: number[]) => box[2] * box[3] === 0;
-  const from = nowhere(a) && nowhere(b) ? 2 : 0;
-  return a.length === b.length && a.every((n, i) => i < from || Math.abs(n - b[i]) <= NEAR);
+  if (a.length !== b.length) return false;
+  // Boxes four numbers each: a run of text, one to a line.
+  for (let at = 0; at < a.length; at += 4) {
+    const nowhere = (box: number[]) => box[at + 2] * box[at + 3] === 0;
+    const from = nowhere(a) && nowhere(b) ? 2 : 0;
+    for (let i = from; i < 4; i++) if (Math.abs(a[at + i] - b[at + i]) > NEAR) return false;
+  }
+  return true;
 }
 
-/** Whether the style, now on `el`, lays out a container it is not, or places an item in no container that lays it out: it draws nothing there. */
+/**
+ * Whether the style, now on `el`, lays out a container it is not, or places
+ * an item in no container that lays it out: it draws nothing there. Or
+ * aligns what is in it where a layer in it places itself (an auto margin, an
+ * alignment of its own): the alignment moves that layer nothing, whatever it is.
+ */
 function inertOn(el: Element, longhands: string[]): boolean {
   const laysOut = (of: Element | null) => !!of && /(flex|grid)/.test(getComputedStyle(of).display);
   if (longhands.some((name) => OF_CONTAINERS.has(name)) && !laysOut(el)) return true;
-  return longhands.some((name) => OF_ITEMS.has(name)) && !laysOut(el.parentElement);
+  if (longhands.some((name) => OF_ITEMS.has(name)) && !laysOut(el.parentElement)) return true;
+  return longhands.some((name) => ALIGNING.has(name)) && [...el.children].some(placesItself);
+}
+
+/** Properties that align what is in a container, which a layer in it may override for itself. */
+const ALIGNING = new Set(["justify-content", "align-items", "justify-items", "align-content"]);
+
+/** Whether a layer places itself in its container, whatever the container's alignment: an auto margin, or an alignment of its own. */
+function placesItself(child: Element): boolean {
+  const style = getComputedStyle(child);
+  if (!/^(auto|normal)$/.test(style.alignSelf) || !/^(auto|normal)$/.test(style.justifySelf)) return true;
+  const map = child.computedStyleMap?.();
+  return !!map && ["margin-top", "margin-right", "margin-bottom", "margin-left"].some((side) => String(map.get(side)) === "auto");
 }
 
 /**
@@ -391,9 +425,10 @@ function drawnOf(els: Element[], texts: Text[], win: Window, painted: (el: Eleme
       const style = getComputedStyle(el);
       return { box: box(el.getBoundingClientRect()), paint: PAINTED.map((name) => style.getPropertyValue(name)) };
     }),
+    // Each line: a run broken otherwise may take up as much room in all.
     texts: texts.map((text) => {
       range.selectNodeContents(text);
-      return box(range.getBoundingClientRect());
+      return [...range.getClientRects()].flatMap(box);
     }),
   };
   range.detach();
@@ -414,7 +449,9 @@ function same(a: { els: Drawn[]; texts: number[][] }, b: { els: Drawn[]; texts: 
     return drawn.paint.every((value, j) => {
       const then = other.paint[j];
       if (value === then) return true;
-      if (COLORS.has(PAINTED[j])) return painted(value) === painted(then);
+      // A paint that is no color (`none`, a `url()`) is told by how it is written.
+      if (COLORS.has(PAINTED[j]) && CSS.supports("color", value) && CSS.supports("color", then)) return painted(value) === painted(then);
+      if (COLORS.has(PAINTED[j])) return false;
       return roundedIn(value) === roundedIn(then);
     });
   });

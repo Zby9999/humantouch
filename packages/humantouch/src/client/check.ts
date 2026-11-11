@@ -30,6 +30,7 @@ import { readUsageChain } from "./usage-chain";
 import { colorReader } from "./paint";
 import { drawnStroke, showsStroke } from "./stroke-weight";
 import { drawsAlike, movedAlike, movedAsNoted, type Moved, type Restyled } from "./draws-alike";
+import type { TextLength } from "./typography";
 
 /**
  * Properties the browser draws otherwise than written: compared as the code
@@ -45,6 +46,14 @@ const AS_WRITTEN: Partial<Record<Property, { draw(doc: Document, value: unknown)
   stroke: {
     draw: (doc, value) => drawnStroke(doc, value as Stroke | null),
     shows: (el, value, drawn) => showsStroke(el, colorReader(el.ownerDocument), value as Stroke | null, drawn as Stroke | null),
+  },
+  // A letter spacing of 0 is 0 in any unit: Chrome computes 0px as normal, which reads as 0% (ticket 142). Kept past what is drawn (ADR 0016): it tells so where nothing is drawn to look at too.
+  letterSpacing: {
+    draw: () => null,
+    shows: (el, value) => {
+      const shown = readValue(el, "letterSpacing") as TextLength;
+      return (shown.value === 0 && (value as TextLength).value === 0) || sameValue(shown, value);
+    },
   },
   // Spread evenly, a Stack is written space-between, which carries no point along it, read back as the start: with both spread evenly, only the point across it is compared (ticket 145).
   // Kept past what is drawn (ADR 0016): a page that stretches its layers across where the canvas puts them at the start reads as the start too, though their boxes are wider.
@@ -451,9 +460,9 @@ export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas,
   let checked = false;
   /** The first width it does not show at. Past it, the page looks on only at the widths it has noted nothing at yet: what the change's style moves there is noted before the change is applied (ADR 0016). */
   let failed: CheckResult | null = null;
-  const unnoted = (width: number) => !!notes && change.kind === "style" && !notes.has(`${change.id}@${width}`);
+  const unnoted = (width: number) => !!notes?.open && change.kind === "style" && !notes.noted.has(`${change.id}@${width}`);
   // Looked at, a width is noted, if only as nothing to go by: a style looked at otherwise than by `lookStyle` (an X, a Grid's columns) notes nothing.
-  const looked = (width: number) => notes && !notes.has(`${change.id}@${width}`) && notes.set(`${change.id}@${width}`, []);
+  const looked = (width: number) => notes?.open && !notes.noted.has(`${change.id}@${width}`) && notes.noted.set(`${change.id}@${width}`, []);
   if (own) {
     const result = lookAt(doc, change, round, apart, page, sources);
     looked(page.width);
@@ -571,6 +580,7 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
     }
   }
   const margins = marginsFor(change, at);
+  const alone = () => !othersAround(doc, change, round, els);
   const placing = change.after !== null && PLACING.includes(property);
   // Where the canvas moves it in its container's layout still, relative or sticky: by the value itself (ticket 84).
   const inLayout = placing ? change.offsetInLayoutAt?.find(({ breakpoint }) => within(breakpoint, at.width))?.position : undefined;
@@ -587,8 +597,8 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
             uncentered: !!change.uncenteredAt?.some((range) => within(range, at.width)),
           })
         : property === "gap"
-          ? lookGap(els, change, at)
-          : lookStyle(els, change, at);
+          ? lookGap(els, change, at, alone)
+          : lookStyle(els, change, at, alone);
   // What sets the value shown instead, read on the element that shows it.
   return sources && result.outcome === "not shown" && wrong ? { ...result, sources: sourcesFor(wrong, property) } : result;
 }
@@ -654,7 +664,7 @@ function movedAlong(el: Element, axis: Axis): number {
  * as without (ADR 0016, `drawsAlike`). Not shown: the first that does
  * neither, and the value it shows.
  */
-function lookStyle(els: Element[], change: Change, at: PageWidth): [CheckResult, Element | null] {
+function lookStyle(els: Element[], change: Change, at: PageWidth, alone: () => boolean): [CheckResult, Element | null] {
   const property = change.property as Property;
   const after = change.after;
   const comparison = AS_WRITTEN[property];
@@ -665,7 +675,7 @@ function lookStyle(els: Element[], change: Change, at: PageWidth): [CheckResult,
     seenAt(change, at, els);
     return [{ outcome: "shown" }, null];
   }
-  if (!WEIGHED_AS_WRITTEN.has(property) && drawnAsCanvas(change, els, off, at, (el) => [{ el, style: change.style }])) return [{ outcome: "shown" }, null];
+  if (!WEIGHED_AS_WRITTEN.has(property) && drawnAsCanvas(change, els, off, at, (el) => [{ el, style: change.style }], alone)) return [{ outcome: "shown" }, null];
   return [{ outcome: "not shown", actual: readValue(off[0], property) }, off[0]];
 }
 
@@ -684,7 +694,19 @@ const WEIGHED_AS_WRITTEN = new Set<Property>(["stroke"]);
  * page looks at the change at that width, and never again: noted later, the
  * code may have changed. Kept by the page's checks while the round is claimed.
  */
-export type EffectNotes = Map<string, (Moved | null)[]>;
+export interface EffectNotes {
+  noted: Map<string, (Moved | null)[]>;
+  /**
+   * Whether the page may note still: so long as the code has not changed
+   * since the round was claimed, as far as this page can tell. Closed, a
+   * width not noted yet is never noted: what its style moves would be of the
+   * page as the Agent has edited it.
+   */
+  open: boolean;
+}
+
+/** Notes to keep for a claimed round, the page open to note them, or not (a page opened after the round was claimed). */
+export const effectNotes = (open: boolean): EffectNotes => ({ noted: new Map(), open });
 
 /** Of a layer's elements (a loop's instances), how many the page notes what a change's style moves of, by putting it on: the rest, by one of them laid out alike. */
 const NOTED_AT_MOST = 4;
@@ -693,7 +715,7 @@ const effectKey = (change: Change, at: PageWidth) => `${change.id}@${at.width}`;
 
 /** Of a change the page shows at `at` by its value alone, as it first looks: nothing to note, nor to note later. */
 function seenAt(change: Change, at: PageWidth, els: Element[]) {
-  if (at.notes && !at.notes.has(effectKey(change, at))) at.notes.set(effectKey(change, at), els.map(() => null));
+  if (at.notes && !at.notes.noted.has(effectKey(change, at))) at.notes.noted.set(effectKey(change, at), els.map(() => null));
 }
 
 /**
@@ -707,10 +729,10 @@ function seenAt(change: Change, at: PageWidth, els: Element[]) {
  * which settles most changes not applied yet at the cost of one, then the
  * rest together.
  */
-function drawnAsCanvas(change: Change, els: Element[], off: Element[], at: PageWidth, restyle: (el: Element) => Restyled[]): boolean {
+function drawnAsCanvas(change: Change, els: Element[], off: Element[], at: PageWidth, restyle: (el: Element) => Restyled[], alone: () => boolean): boolean {
   const key = effectKey(change, at);
-  const noted = at.notes?.get(key);
-  if (at.notes && !noted) {
+  const noted = at.notes?.noted.get(key);
+  if (at.notes?.open && !noted) {
     const noting = PAINT.has(change.property) ? [] : off.slice(0, NOTED_AT_MOST);
     const first = drawsAlike(restyle(off[0]), noting.slice(0, 1));
     // The rest: all looked at only where the first draws alike; else those to note alone, where the change moves things.
@@ -719,11 +741,14 @@ function drawnAsCanvas(change: Change, els: Element[], off: Element[], at: PageW
     const moved = new Map([...first.moved, ...(rest?.moved ?? [])]);
     // Past those noted, an element laid out as one of them was (a loop's instances, alike) is moved alike.
     if (noting.length && off.length > noting.length) for (const [el, alike] of movedAlike(noting, moved, off.slice(noting.length))) moved.set(el, alike);
-    at.notes.set(key, els.map((el) => moved.get(el) ?? null));
+    // A loop's instances: each moves the others along as it grows, by as much as the style moves them all, not one alone. What is in each, and how large it is, is its own.
+    if (els.length > 1) for (const [el, one] of moved) moved.set(el, new Map([...one].filter(([what]) => what === "size" || what.startsWith("d") || what.startsWith("t"))));
+    at.notes.noted.set(key, els.map((el) => moved.get(el) ?? null));
     return first.alike && (!rest || rest.alike);
   }
   if (drawsAlike(restyle(off[0])).alike && (off.length === 1 || drawsAlike(off.slice(1).flatMap(restyle)).alike)) return true;
-  return !!noted && off.every((el) => {
+  // Moved as noted, but by another change of the round that moves the same: not told so.
+  return !!noted && alone() && off.every((el) => {
     const moved = noted[els.indexOf(el)];
     return !!moved && movedAsNoted(el, moved);
   });
@@ -738,7 +763,7 @@ function drawnAsCanvas(change: Change, els: Element[], off: Element[], at: PageW
  * room between the layers, from the least to the most, and those margins
  * (`MarginsLeft`); else its gap as written.
  */
-function lookGap(els: Element[], change: Change, at: PageWidth): [CheckResult, Element | null] {
+function lookGap(els: Element[], change: Change, at: PageWidth, alone: () => boolean): [CheckResult, Element | null] {
   const after = change.after as number;
   const named = (margin: MarginBetween) =>
     change.marginsDropped?.find(({ target, margins }) => !!target.loc && margin.el.getAttribute(LOC_ATTR) === target.loc && margin.side in margins);
@@ -765,7 +790,7 @@ function lookGap(els: Element[], change: Change, at: PageWidth): [CheckResult, E
   }
   // Drawn as the canvas draws it, its gap given and the margins it takes off gone (ADR 0016): as with any style.
   const restyle = (el: Element): Restyled[] => [{ el, style: change.style }, ...lefts.get(el)!.map((margin) => ({ el: margin.el, style: { [margin.side]: "0px" } }))];
-  if (drawnAsCanvas(change, els, [...off.keys()], at, restyle)) return [{ outcome: "shown" }, null];
+  if (drawnAsCanvas(change, els, [...off.keys()], at, restyle, alone)) return [{ outcome: "shown" }, null];
   return [...off.values()][0];
 }
 
@@ -1207,6 +1232,32 @@ function drawnThere(placed: PlacedOnPage, to: { x?: number; y?: number }, canvas
     if (value === undefined) return true;
     const drawn = !!canvas && near(placed[side] + placed.margins[side], value + canvas.margins[side]);
     return drawn || ((!canvas || !canvas.known) && near(placed[side], value));
+  });
+}
+
+/**
+ * Whether another change of the round is to the layer of `change` (`els`, on
+ * the page), its container, a layer beside it, or one in it, or puts a layer
+ * in or takes one out of any of those: where it is applied, it may move what
+ * this change's style was noted to move (ADR 0016), so what is moved so does
+ * not tell this change apart. A layer made this round, by where its maker puts it.
+ */
+function othersAround(doc: Document, change: Change, round: RoundOnCanvas, els: Element[]): boolean {
+  const canvas = savedCanvas(round);
+  const near = (el: Element) => els.some((own) => el === own || el === own.parentElement || el.parentElement === own.parentElement || own.contains(el));
+  const targetOf = (target: Change["target"]): Change["target"] | null => {
+    if (!target.made) return target;
+    const made = madeLayer(target.made, round);
+    return made ? made.place.container.target : null;
+  };
+  const touches = (target: Change["target"] | null | undefined) => {
+    const found = target && targetOf(target);
+    return !!found && !found.made && foundByMarker(found) && elementsOf(doc, found, canvas).some(near);
+  };
+  return round.some((other) => {
+    if (other.id === change.id) return false;
+    const containers = other.kind === "style" ? [] : [other.before, other.after].map((place) => (place as Partial<Place> | null)?.container?.target);
+    return [other.target, ...containers].some(touches);
   });
 }
 
