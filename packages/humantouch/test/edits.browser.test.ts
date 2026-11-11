@@ -959,6 +959,27 @@ describe("text", () => {
     ]);
   });
 
+  test("the Next dev overlay's own fonts, served from `next dev`'s `/__nextjs_font/` only, are not offered; a family of the project's named alike is; one the text uses first is (ticket 154)", async () => {
+    const { doc } = openCanvas(`<!DOCTYPE html>
+<style>
+  @font-face { font-family: '__nextjs-Geist'; font-weight: 400 600; src: url(/__nextjs_font/geist-latin-ext.woff2) format('woff2'); unicode-range: U+100-24F }
+  @font-face { font-family: '__nextjs-Geist'; font-weight: 400 600; src: url(/__nextjs_font/geist-latin.woff2) format('woff2'); unicode-range: U+0-FF }
+  /* As the Tablet and Phone views have it: from the dev server's address. No dev server here: it loads from local(), to be there for the text. */
+  @font-face { font-family: '__nextjs-Geist Mono'; font-weight: 400 600; src: url("http://localhost:7350/__nextjs_font/geist-mono-latin.woff2") format('woff2'), local("Courier New") }
+  @font-face { font-family: '__nextjs-Brand'; src: url("/fonts/__nextjs_font-brand-154.woff2") format('woff2') }
+  body { margin: 0; font: 16px Georgia, serif }
+</style>
+<body><code style="font-family: '__nextjs-Geist Mono', monospace; font-weight: 500">Uses it first</code></body>`);
+    await doc.fonts.ready;
+
+    expect(fontsOf(doc)).toEqual([
+      // A project's family, its name alike but its file its own: offered, as before.
+      { family: "__nextjs-Brand", weights: [400] },
+      // The text uses it first: offered, in the weight the text uses it in.
+      { family: "__nextjs-Geist Mono", weights: [500] },
+    ]);
+  });
+
   test("a text layer's font is the first of its stack that is there; changed, it takes the stack the page uses that font in", async () => {
     const { doc, editor, changes, layerOf } = openCanvas(FONT_PAGE);
     await doc.fonts.ready;

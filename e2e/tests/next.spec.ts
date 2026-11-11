@@ -74,3 +74,19 @@ test("edit mode freezes the page into a canvas: the layers are there to select a
   const fills = () => canvas(page).locator("article").evaluateAll((cards) => cards.map((card) => getComputedStyle(card).backgroundColor));
   await expect.poll(fills).toEqual(["rgb(255, 0, 0)", "rgb(255, 0, 0)", "rgb(255, 0, 0)", "rgb(255, 255, 255)"]);
 });
+
+test("the font menu leaves out the Next dev overlay's own fonts, __nextjs-Geist and its Mono, there under next dev only (ticket 154)", async ({ page }) => {
+  await page.getByRole("button", { name: TOGGLE_LABEL }).click();
+  await expect(canvas(page).locator("h1")).toBeVisible();
+  // The overlay's faces are on the canvas, as on the page: what the menu is to leave out.
+  const families = () =>
+    page.locator('iframe[title="Canvas"]').evaluate((frame: HTMLIFrameElement) => [...(frame.contentDocument!.fonts as unknown as Iterable<FontFace>)].map((face) => face.family.replace(/["']/g, "")));
+  await expect.poll(families).toEqual(expect.arrayContaining(["__nextjs-Geist", "__nextjs-Geist Mono"]));
+
+  await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Third Kind", exact: true }).click();
+  const font = page.getByRole("complementary", { name: "Design" }).getByRole("group", { name: "Text" }).getByRole("combobox", { name: "Font", exact: true });
+  await expect(font).toHaveValue("Georgia");
+  const options = await font.getByRole("option").allTextContents();
+  expect(options).toContain("Georgia");
+  expect(options.filter((family) => family.startsWith("__nextjs-"))).toEqual([]);
+});
