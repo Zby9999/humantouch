@@ -13,7 +13,8 @@ import { usePhases } from "./usePhases";
  * "Apply my design changes" in a chat, plain, no terminal (designer, 2026-11-12); Acme, in the browser below, has Human
  * Touch's toggle in its corner. The Agent's steps come in one under the other as it works; the toggle locks, its ring
  * fills as the Agent is done with each change, and the change list, opened by itself, lets each go as the page shows
- * it. Then the Agent's answer, in the form `finish` gives: what applied, and what not 1:1.
+ * it. Then the Agent's answer, in the form `finish` gives: every change applied (designer, 2026-11-12: no change left
+ * not 1:1 in the demo).
  */
 
 const SCENE_W = 640;
@@ -58,7 +59,7 @@ const WORK: { at: number; doing: string; done: string }[] = [
   { at: 2, doing: "Reading your changes in Human Touch", done: "Read 3 changes in Human Touch" },
   { at: 3, doing: "Editing app/page.tsx", done: "Edited app/page.tsx" },
   { at: 4, doing: "Checking the cover on the page", done: "Checked the cover: it shows both changes" },
-  { at: 5, doing: "Checking the text on the page", done: "Checked the text: 18px, not 19px" },
+  { at: 5, doing: "Checking the text on the page", done: "Checked the text: it shows the change" },
 ];
 
 const APPLY_CSS = `
@@ -191,15 +192,15 @@ function Scene({ phase, scale, browserH }: { phase: number; scale: number; brows
           })}
           {phase >= 7 && (
             <div className="demo-line demo-answer">
-              <p>Applied 2 of your 3 changes.</p>
+              <p>Applied all 3 of your changes, each checked on the page.</p>
               <ul>
                 <li>
                   <span>✓</span>
                   <span>The cover: fill stone → muted, corners 0 → 24</span>
                 </li>
                 <li>
-                  <span>⚠️</span>
-                  <span>The text: 18px, not 19px. The type scale has no 19px, so text-lg, the nearest.</span>
+                  <span>✓</span>
+                  <span>The text: font size 20 → 18</span>
                 </li>
               </ul>
             </div>

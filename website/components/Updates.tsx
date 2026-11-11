@@ -12,7 +12,7 @@ export function Updates({ count }: { count?: number }) {
               {update.date}
             </time>
           </div>
-          <p className="truncate text-[14px] leading-[1.4] font-[440] text-label" title={update.body}>
+          <p className="truncate text-[14px] leading-[1.4] font-[440] text-label">
             {update.body}
           </p>
         </li>
