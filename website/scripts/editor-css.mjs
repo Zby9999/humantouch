@@ -27,12 +27,13 @@ const css = (toggleStyles + styles)
   .replaceAll('"Human Touch Geist"', "var(--font-geist)");
 /**
  * Until the product's own dark pass is merged (the front-end line, 2026-11-11; then take this out): the parts the
- * product draws in light colors in dark mode too, drawn dark here (designer, 2026-11-11). A layer's disclosure and an
- * effect's fold as the dark editor's raised tool; an instance's purple lighter, its name's ground a purple shade.
+ * product draws in light colors in dark mode too, drawn dark here (designer, 2026-11-11). A row hovered in Layers as the
+ * selected one's ground at 60%, as in light; a layer's disclosure and an effect's fold as the dark editor's raised tool; an instance's purple lighter, its name's ground a purple shade.
  */
 const DARK_UNTIL_THE_PRODUCT = `
 @media (prefers-color-scheme: dark) {
   .ht-shell { --ht-instance: #b87dff; --ht-instance-soft: rgb(154 60 238 / 0.28); }
+  .ht-tree-row:hover { background: rgb(56 56 56 / 0.6); }
   :is(.ht-tree-chevron[data-open], .ht-fold) { background: #4a4a4a; box-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.08), 0 1px 1.5px rgb(0 0 0 / 0.4); color: #e6e6e6; }
 }
 `;

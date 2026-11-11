@@ -64,7 +64,7 @@ export function ThemeSwitch() {
           title={choice.label}
           onClick={() => choose(choice.theme)}
           className={`flex h-6 w-11 items-center justify-center rounded-full transition-[background-color,box-shadow,color] duration-150 ${
-            theme === choice.theme ? "bg-neutral-0 text-ink shadow-raised dark:bg-raised" : "text-muted hover:text-label"
+            theme === choice.theme ? "bg-neutral-0 text-ink shadow-raised dark:bg-neutral-600" : "text-muted hover:text-label"
           }`}
         >
           <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
