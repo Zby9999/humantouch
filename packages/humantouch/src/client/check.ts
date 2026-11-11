@@ -26,6 +26,7 @@ import { checkable, foundByMarker, isEndOffset, textMovedInPlace, madeLayer, pxI
 import { absolute, ARRANGED, ordersOf, placementOf, readValue, roomBetween, round as rounded, sourcesFor, stackOf, type Align, type Arrangement, type MarginBetween, type Property, type Stroke } from "./property-table";
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, mayBeOf, savedCanvas as savedCanvasOf, usageKeyOf, type SavedCanvas } from "./page-elements";
+import { htmlOf, parseCanvas } from "./shadow-roots";
 import { aloneOfKey, MADE_ATTR } from "./canvas-style";
 import { tidyWords, wordsOf } from "./words";
 import { LOC_ATTR } from "../markers";
@@ -1068,14 +1069,14 @@ function writtenAround(round: RoundOnCanvas, change: Change): () => SavedCanvas 
     });
     const file = locs[0]?.file;
     const line = Math.min(...locs.filter((loc) => loc.file === file).map((loc) => loc.line));
-    const doc = saved && file ? (new DOMParser().parseFromString(saved.doc().documentElement.outerHTML, "text/html") as Document) : null;
+    const doc = saved && file ? parseCanvas(htmlOf(saved.doc().documentElement)) : null;
     const el = doc?.querySelector(`[${MADE_ATTR}="${CSS.escape(change.layer)}"]`);
     // Marked as written in the source, not as made on the canvas, which the markers followed leave out.
     if (doc && el) {
       el.setAttribute(LOC_ATTR, `${file}:${line}:0`);
       el.removeAttribute(MADE_ATTR);
     }
-    byChange.set(change.id, doc && el ? savedCanvasOf(doc.documentElement.outerHTML, () => doc) : null);
+    byChange.set(change.id, doc && el ? savedCanvasOf(htmlOf(doc.documentElement), () => doc) : null);
   }
   const canvas = byChange.get(change.id)!;
   return () => canvas;

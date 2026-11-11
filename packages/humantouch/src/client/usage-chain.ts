@@ -5,6 +5,7 @@
  * this is the one place to follow.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
+import { DEFINED_GLOBAL } from "../definitions";
 
 /** One component on the chain, innermost first. */
 export interface UsageLevel {
@@ -14,6 +15,8 @@ export interface UsageLevel {
   usage: string | null;
   /** The component comes from a third-party dependency: the JSX it writes carries no markers. */
   thirdParty: boolean;
+  /** The component is a custom element, its host, whose open shadow root the layer is in (ticket 137): one a dependency defines. */
+  webComponent?: true;
 }
 
 /** Where the freezer writes the chain on the canvas copy, as JSON. */
@@ -39,7 +42,7 @@ let fiberKey: string | undefined;
  */
 export function readUsageChain(el: Element): UsageLevel[] {
   const fiber = fiberOf(el);
-  if (!fiber) return [];
+  if (!fiber) return webComponentChain(el);
   const chain: UsageLevel[] = [];
   // A component writes either marked JSX (project source) or unmarked JSX (a dependency).
   let marked = el.hasAttribute(LOC_ATTR);
@@ -51,6 +54,44 @@ export function readUsageChain(el: Element): UsageLevel[] {
   }
   return chain;
 }
+
+/**
+ * The chain of an element React does not know, in the open shadow root of a
+ * custom element a dependency defines (ticket 137, ADR 0017): drawn by that
+ * dependency, as a third-party component's elements are, used where its host
+ * is written, then on up the host's own chain. Empty for any other, and on a
+ * page whose dev server does not record which module defines each (`DEFINED_GLOBAL`).
+ */
+function webComponentChain(el: Element): UsageLevel[] {
+  const defined = (el.ownerDocument.defaultView as unknown as Record<string, Map<string, string> | undefined> | null)?.[DEFINED_GLOBAL];
+  if (!defined?.size) return [];
+  const root = el.getRootNode();
+  const host = root.nodeType === Node.DOCUMENT_FRAGMENT_NODE ? (root as ShadowRoot).host : null;
+  const stack = host && defined.get(host.localName);
+  if (!host || !stack || !definedByDependency(stack)) return [];
+  return [{ component: host.localName, usage: host.getAttribute(LOC_ATTR), thirdParty: true, webComponent: true }, ...readUsageChain(host)];
+}
+
+/**
+ * Whether a custom element was defined from a dependency's code alone: every
+ * module on the stack `customElements.define` was called from, past the
+ * dev server's own script recording it, is in `node_modules`, as the source
+ * markers leave dependencies unmarked. A project's element defined through a
+ * library's helper (Lit's `@customElement`) has a module of its own on it.
+ * Read the same in each browser's form of a stack: only its lines that name a
+ * script are read (Chrome heads its own with `Error`, Firefox and Safari do
+ * not), and the recording script is told by its address, that of the line on
+ * top, not by its place.
+ */
+export function definedByDependency(stack: string): boolean {
+  const urls = stack.split("\n").flatMap((line) => FRAME.exec(line.trim())?.[1] ?? []);
+  const recording = urls[0];
+  const modules = urls.filter((url) => url !== recording);
+  return modules.length > 0 && modules.every((url) => /\/node_modules\//.test(url));
+}
+
+/** A line of a stack that names a script, by its address: Chrome's `at f (…)`, `at …`, `at async …`; Firefox's and Safari's `f@…`. */
+const FRAME = /(?:\(|\bat (?:async )?|@|^)([a-z][\w+.-]*:\/\/[^\s)]+?):\d+:\d+\)?$/i;
 
 function fiberOf(el: Element): Fiber | undefined {
   const node = el as unknown as Record<string, Fiber | undefined>;

@@ -1,3 +1,5 @@
+import { HOST_TAG } from "./host";
+
 /**
  * Open shadow roots on the canvas (ticket 135). The freezer copies each open
  * shadow root of the page, the styles in it with it, onto its host's copy.
@@ -22,6 +24,11 @@
  * copied, empty.
  */
 export const NOT_THE_PAGES = new Set(["nextjs-portal", "next-route-announcer", "vite-error-overlay"]);
+
+/** Whether `el` hosts an open shadow root of the page's: not the editor's own (`<human-touch>`), nor one of `NOT_THE_PAGES`. */
+export function hostsPagesShadowRoot(el: Element): boolean {
+  return !!el.shadowRoot && el.localName !== HOST_TAG && !NOT_THE_PAGES.has(el.localName);
+}
 
 /** How a shadow root is attached on the canvas: open, as the page's was; copied with its host; written out with it. */
 export const ON_CANVAS: ShadowRootInit = { mode: "open", clonable: true, serializable: true };
@@ -229,4 +236,38 @@ function attachDeclared(root: ParentNode) {
     template.remove();
     attachDeclared(shadow);
   }
+}
+
+/**
+ * The elements in `root` that match `selector`, itself too; with `deep`, those
+ * in its open shadow roots too, nested ones, whether or not its document is
+ * noted to hold any: for the live page, which never is (ticket 137), when
+ * what is looked for may be in one.
+ */
+export function queryDeep<E extends Element = Element>(root: Document | Element, selector: string, deep: boolean): E[] {
+  const found = root.nodeType === Node.ELEMENT_NODE && (root as Element).matches(selector) ? [root as E] : [];
+  found.push(...root.querySelectorAll<E>(selector));
+  if (!deep) return found;
+  const hosts = (scope: ParentNode) => [...(scope === root && root.nodeType === Node.ELEMENT_NODE ? [root as Element] : []), ...scope.querySelectorAll("*")].filter(hostsPagesShadowRoot);
+  const scopes: ParentNode[] = [root];
+  for (let i = 0; i < scopes.length; i++) {
+    for (const host of hosts(scopes[i])) {
+      scopes.push(host.shadowRoot!);
+      found.push(...host.shadowRoot!.querySelectorAll<E>(selector));
+    }
+  }
+  return found;
+}
+
+/**
+ * A canvas as saved, parsed with no window to show it in, its declarative
+ * shadow roots made shadow roots again (ticket 137) and the document noted to
+ * hold them, so what looks for layers finds those in them too. With none
+ * written, as `DOMParser` parses it. Written back with `htmlOf`.
+ */
+export function parseCanvas(html: string): Document {
+  if (!html.includes("shadowrootmode") || typeof Document.parseHTMLUnsafe !== "function") return new DOMParser().parseFromString(html, "text/html");
+  const doc = Document.parseHTMLUnsafe(html);
+  noteShadowRoots(doc, true);
+  return doc;
 }

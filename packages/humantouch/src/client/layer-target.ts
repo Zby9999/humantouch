@@ -22,6 +22,9 @@ export function targetOf(layer: Layer, instances: number): Target {
   // Text with no element of its own is found by which run of text of its container it is; a Frame's only text, by the Frame's element.
   const wrapped = written !== layer.el ? Number(layer.el.getAttribute(WRAP_ATTR)) : null;
   const run = layer.text && !isOnlyText(layer) ? layer.parent!.children.filter((child) => child.text).indexOf(layer) : layer.text ? null : wrapped;
+  // In an open shadow root: its host (ticket 137). The document itself is the tree of most.
+  const tree = written.getRootNode();
+  const host = tree.nodeType === Node.DOCUMENT_FRAGMENT_NODE ? (tree as ShadowRoot).host : null;
   // A layer made this round is not in the source yet: the change that made it says where it goes.
   return {
     loc,
@@ -33,6 +36,7 @@ export function targetOf(layer: Layer, instances: number): Target {
     ...(layer.made && { made: layer.made }),
     ...(run !== null && { run }),
     ...(layer.text && isOnlyText(layer) && { onlyText: true as const }),
+    ...(host && { shadowRoot: openingTag(host) }),
     context,
   };
 }

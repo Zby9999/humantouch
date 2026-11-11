@@ -1,4 +1,4 @@
-import { APPLIED_LEAVE_MS, APPLIED_SCALE, CHANGE_PING_MS, EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, GRIP_ENTER_MS, GRIP_EXIT_MS, HEADER_LINE_MS, POPOVER_EXIT_MS, RESET_POP_MS, TIP_IN_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
+import { APPLIED_LEAVE_MS, APPLIED_SCALE, CHANGE_PING_MS, CHEVRON_TURN_MS, EASE_IN_OUT, EASE_OUT, FIELD_SETTLE_MS, FIELD_STATE_MS, GRIP_ENTER_MS, GRIP_EXIT_MS, HEADER_LINE_MS, POPOVER_EXIT_MS, RESET_POP_MS, SECOND_LINE_FADE_MS, SECOND_LINE_MS, SECOND_LINE_STAGGER_MS, TIP_IN_MS, TOAST_FADE_MS, TOOL_SLIDE_MS } from "./motion";
 import { EDITOR_FONT_FAMILY } from "./editor-font";
 import { FONT_STACK } from "./toggle-styles";
 
@@ -1863,7 +1863,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 }
 .ht-variable-search::placeholder { color: var(--ht-text-muted); font-weight: 500; }
 /* The picker's colors: the palette of the Variables tab, without its ramps' names. */
-.ht-variants-ramp.is-bare { grid-template-columns: repeat(var(--ht-steps, 11), minmax(0, 1fr)); }
+.ht-variants-ramp.is-bare { position: relative; grid-template-columns: repeat(var(--ht-steps, 11), minmax(0, 1fr)); }
 .ht-variants-swatch[aria-selected="true"] { box-shadow: inset 0 0 0 1px #fff, 0 0 0 2px var(--ht-accent); }
 .ht-variable-list { overflow: auto; min-height: 0; margin: 0 -12px; padding: 0 12px; }
 .ht-variable-list .ht-subtitle { margin: 8px 0 4px; }
@@ -1951,7 +1951,7 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 /* The named colors (designer, 2026-11-08): under the ramps, each its swatch and its name, two a row; a group of
    names, and the color after one, from a row's start. */
 .ht-variants-named { display: flex; flex-direction: column; gap: 2px; }
-.ht-variants-palette > .ht-variants-ramp + .ht-variants-named { margin-top: 6px; }
+.ht-variants-palette > :is(.ht-variants-ramp, .ht-variants-more) + .ht-variants-named { margin-top: 6px; }
 .ht-variants-named-title { margin: 0; padding: 2px 0; color: var(--ht-panel-label); }
 .ht-variants-names { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 4px; }
 .ht-variants-named-item { all: unset; display: flex; align-items: center; gap: 6px; min-width: 0; box-sizing: border-box; height: 24px; padding: 0 4px; border-radius: 6px; }
@@ -1970,6 +1970,34 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
 }
 .ht-variants-swatch:hover, .ht-variants-swatch:focus-visible { box-shadow: inset 0 0 0 1.5px #fff, 0 0 0 1px rgb(0 0 0 / 0.35); outline: none; }
 .ht-variants-swatch.is-in-use { box-shadow: inset 0 0 0 1px #fff, 0 0 0 2px var(--ht-accent); }
+/* A ramp's name with its second line's fold (ticket 143, prototype A): a chevron in the panel's gutter left of the
+   name, which keeps its width; right folded, down open, as a group's disclosure. The name and the gutter the button,
+   its hover a field's ground behind both. In the picker, which shows no names, the chevron alone in its list's gutter. */
+.ht-variants-more-button { all: unset; position: relative; isolation: isolate; display: flex; align-items: center; min-width: 0; height: 20px; border-radius: 4px; color: var(--ht-panel-label); }
+.ht-variants-more-button::before { content: ""; position: absolute; inset: -2px -2px -2px -16px; z-index: -1; border-radius: 4px; }
+.ht-variants-more-button:hover::before { background: var(--ht-field); }
+.ht-variants-more-button:focus-visible::before { outline: 2px solid var(--ht-accent); outline-offset: -2px; }
+.ht-variants-more-button:active { scale: 0.97; }
+.ht-variants-more-button > .ht-icon { position: absolute; left: -14px; top: 4px; width: 12px; height: 12px; color: var(--ht-text-faint); rotate: -90deg; transition: rotate ${CHEVRON_TURN_MS}ms ${EASE_OUT}; }
+.ht-variants-more-button[aria-expanded="true"] > .ht-icon { rotate: 0deg; }
+.ht-variants-more-button:hover > .ht-icon { color: var(--ht-text); }
+.ht-variants-more-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ht-variants-more-button.is-bare { position: absolute; top: 0; bottom: 0; left: -12px; width: 12px; height: auto; }
+.ht-variants-more-button.is-bare::before { inset: 0 1px; }
+.ht-variants-more-button.is-bare > .ht-icon { left: 1px; top: calc(50% - 5px); width: 10px; height: 10px; }
+/* A ramp's second line, under its first: its height eased open and closed, the gap above it with it; folded, nothing
+   of it shows or is reached. Open, a swatch's ring shows past its edges, as on the first line. */
+.ht-variants-more { display: grid; grid-template-rows: 0fr; margin-top: -2px; transition: grid-template-rows ${SECOND_LINE_MS}ms ${EASE_OUT}; }
+.ht-variants-more.is-open { grid-template-rows: 1fr; }
+.ht-variants-more-lines { min-height: 0; clip-path: inset(-4px); visibility: hidden; transition: visibility 0s ${SECOND_LINE_MS}ms; }
+.ht-variants-more.is-open > .ht-variants-more-lines { visibility: visible; transition: none; }
+.ht-variants-more-lines > .ht-variants-ramp { margin-top: 2px; }
+.ht-variants-more .ht-variants-swatch { opacity: 0; translate: 0 -3px; transition: opacity ${SECOND_LINE_FADE_MS}ms ${EASE_OUT}, translate ${SECOND_LINE_MS}ms ${EASE_OUT}; }
+.ht-variants-more.is-open .ht-variants-swatch { opacity: 1; translate: none; transition-delay: calc(var(--ht-order, 0) * ${SECOND_LINE_STAGGER_MS}ms); }
+@media (prefers-reduced-motion: reduce) {
+  .ht-variants-more, .ht-variants-more-lines, .ht-variants-more .ht-variants-swatch, .ht-variants-more.is-open .ht-variants-swatch, .ht-variants-more-button > .ht-icon { transition: none; }
+  .ht-variants-more .ht-variants-swatch { translate: none; }
+}
 .ht-variants-row { display: flex; align-items: center; gap: 8px; box-sizing: border-box; min-height: 24px; padding: 0 8px; border-radius: 8px; }
 .ht-variants-row.is-button { all: unset; display: flex; align-items: center; gap: 8px; box-sizing: border-box; min-height: 28px; padding: 2px 8px; border-radius: 8px; }
 .ht-variants-row.is-button:hover, .ht-variants-row.is-button:focus-visible, .ht-variants-tile:hover, .ht-variants-tile:focus-visible { background: var(--ht-field); outline: none; }
