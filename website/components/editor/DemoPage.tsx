@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { ENTRIES, styleOf, type Key, type ViewName } from "./model";
+import { ENTRIES, styleOf, type Key, type Style, type ViewName } from "./model";
 
 export type Target = { key: Key; index?: number };
 export type Selection = Target | null;
@@ -14,6 +14,8 @@ type Props = {
   width: number;
   onPick: (path: Target[], view: ViewName) => void;
   onHover: (target: Target | null) => void;
+  /** Styles in place of the model's, for a demo's changes. */
+  styles?: Partial<Record<Key, Style>>;
 };
 
 const SERIF = "var(--font-instrument-serif), Georgia, serif";
@@ -26,8 +28,8 @@ const PAGE_MIN_HEIGHT = 3400;
  * Tablet and Phone widths, as its breakpoints say. A pointer down reports the layers under it, outermost first, for the
  * editor to pick from as Figma does.
  */
-export function DemoPage({ view, width, onPick, onHover }: Props) {
-  const s = styleOf;
+export function DemoPage({ view, width, onPick, onHover, styles }: Props) {
+  const s = (key: Key): Style => ({ ...styleOf(key), ...styles?.[key] });
   const phone = width < 768;
   const tablet = !phone && width < 1280;
   /** A size at Desktop, Tablet and Phone. */
@@ -112,7 +114,7 @@ export function DemoPage({ view, width, onPick, onHover }: Props) {
           {layer(
             C,
             [P],
-            { position: "relative", height: at(560, 380, 260), background: String(s("cover").fill), padding: at(32, 28, 20), display: "flex", alignItems: "flex-end", overflow: "hidden" },
+            { position: "relative", boxSizing: "border-box", height: at(560, 380, 260), background: String(s("cover").fill), borderRadius: Number(s("cover").radius), transition: "background-color 200ms cubic-bezier(0.23, 1, 0.32, 1)", padding: at(32, 28, 20), display: "flex", alignItems: "flex-end", overflow: "hidden" },
             <>
               {/* The cover's art: a ring and a rule, drawn thin. */}
               <span aria-hidden="true" style={{ position: "absolute", right: "14%", top: "50%", width: at(360, 240, 150), aspectRatio: "1", translate: "0 -50%", borderRadius: "50%", border: "1px solid rgb(22 22 20 / 0.35)" }} />

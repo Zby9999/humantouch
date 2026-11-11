@@ -4,13 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import { NumberField } from "./fields";
 import { Icon } from "./Icon";
 import type { IconName } from "./icon-paths";
-import { ACME_COLORS, RADIUS_VARIABLES, SPACING_VARIABLES, TEXT_VARIABLES, type Layer, type Style } from "./model";
+import { ACME_COLORS, RADIUS_VARIABLES, SPACING_VARIABLES, TEXT_VARIABLES, type Layer, type Prop, type Style } from "./model";
 
 /**
  * The Design panel's sections for one selected layer, in the product's markup (Properties.tsx), after its header: the
  * hero's panel and the Canvas card's both draw them. Everything in them can be pointed at, opened, dragged and typed
  * into, but they keep nothing: a number rolls back once let go, a choice stays as it was, a Variable picked leaves the
- * one bound. `open: "fill"` holds the fill's colors open, for a demo to pick from; `shadows`, the drop shadows listed.
+ * one bound. `open: "fill"` holds the fill's colors open, for a demo to pick from; `shadows`, the drop shadows listed;
+ * `changed`, the properties changed here, their fields in the accent with a reset, as the product marks them; `follows`,
+ * numbers given from outside roll to their digits.
  */
 export function DesignSections({
   layer,
@@ -20,6 +22,8 @@ export function DesignSections({
   badge,
   shadows = 0,
   open,
+  changed = [],
+  follows = false,
 }: {
   layer: Layer;
   style: Style;
@@ -28,6 +32,8 @@ export function DesignSections({
   badge?: { range: string; label: string };
   shadows?: number;
   open?: "fill";
+  changed?: Prop[];
+  follows?: boolean;
 }) {
   const isText = layer.kind === "text";
   const owner = layer.instance?.component ?? layer.inComponent?.component;
@@ -187,7 +193,7 @@ export function DesignSections({
           <NumberField tip="Opacity" icon="opacity" value={Number(style.opacity)} unit="%" max={100} />
           {!isText && (
             <div className="ht-row">
-              <ValueField tip="Corner radius" icon="radius" value={Number(style.radius ?? 0)} variables={RADIUS_VARIABLES} />
+              <ValueField tip="Corner radius" icon="radius" value={Number(style.radius ?? 0)} variables={RADIUS_VARIABLES} changed={changed.includes("radius")} follows={follows} />
               <button type="button" className="ht-icon-button" aria-label="Independent corners" data-tip="Independent corners" aria-pressed="false">
                 <Icon name="corners" />
               </button>
@@ -283,7 +289,7 @@ export function DesignSections({
             </button>
           )}
         </div>
-        {(isText || style.fill !== undefined) && <ColorField name="Fill" value={String(style[isText ? "color" : "fill"])} removable={!isText} open={open === "fill"} />}
+        {(isText || style.fill !== undefined) && <ColorField name="Fill" value={String(style[isText ? "color" : "fill"])} removable={!isText} open={open === "fill"} changed={changed.includes(isText ? "color" : "fill")} />}
       </section>
 
       {!isText && (
@@ -368,18 +374,18 @@ function usePopover(shown = false) {
 }
 
 /** A value bound to a Variable, by name: click it for the others; detached, a number. Neither is kept. */
-function ValueField({ tip, icon, value, variables, after }: { tip: string; icon: IconName; value: number; variables: { name: string; value: number }[]; after?: React.ReactNode }) {
+function ValueField({ tip, icon, value, variables, after, changed = false, follows = false }: { tip: string; icon: IconName; value: number; variables: { name: string; value: number }[]; after?: React.ReactNode; changed?: boolean; follows?: boolean }) {
   const pop = usePopover();
   const bound = variables.find((v) => v.value === value);
   if (!bound)
     return (
       <div className="ht-variable-slot">
-        <NumberField tip={tip} icon={icon} value={value} after={after} />
+        <NumberField tip={tip} icon={icon} value={value} className={changed ? "is-changed" : ""} follows={follows} after={<>{after}{changed && <Reset label={tip} />}</>} />
       </div>
     );
   return (
     <div ref={pop.ref} className="ht-variable-slot" style={{ position: "relative" }}>
-      <div className="ht-field ht-variable-chip">
+      <div className={`ht-field ht-variable-chip${changed ? " is-changed" : ""}`}>
         <Icon name={icon} />
         <button type="button" className="ht-variable-chip-name" aria-label={`${tip} variable`} aria-haspopup="dialog" aria-expanded={pop.open} data-tip={`${bound.name}: ${bound.value}px`} onClick={() => pop.setOpen((o) => !o)}>
           {bound.name}
@@ -387,6 +393,7 @@ function ValueField({ tip, icon, value, variables, after }: { tip: string; icon:
         <button type="button" className="ht-icon-button" aria-label={`Detach ${tip.toLowerCase()} variable`} data-tip="Detach variable">
           <Icon name="detach" />
         </button>
+        {changed && <Reset label={tip} />}
       </div>
       {pop.open && (
         <div className="ht-pop" style={{ top: 28, left: 0, width: 160 }}>
@@ -419,13 +426,15 @@ function PaddingFields({ value }: { value: number[] }) {
 }
 
 /** A color: its swatch opens the project's colors; its value is the Variable it equals, or its hex, typed in and taken back. */
-function ColorField({ name, value, opacity = 100, removable, open = false }: { name: string; value: string; opacity?: number; removable?: boolean; open?: boolean }) {
+function ColorField({ name, value, opacity = 100, removable, open = false, changed = false }: { name: string; value: string; opacity?: number; removable?: boolean; open?: boolean; changed?: boolean }) {
   const pop = usePopover(open);
   const [draft, setDraft] = useState<string | null>(null);
   const bound = ACME_COLORS.find((v) => v.value.toUpperCase() === value.toUpperCase());
   const row = (
-    <div className="ht-color-row">
-      <div className={`ht-field ht-color-field${bound ? "" : " is-joined"}`}>
+    <div className={`ht-color-row${changed ? " is-changed" : ""}`}>
+      {/* Changed: one reset for the color and its opacity, at the row's left, as the product has it. */}
+      {changed && <Reset label={name} />}
+      <div className={`ht-field ht-color-field${bound ? "" : " is-joined"}${changed ? " is-changed" : ""}`}>
         <button type="button" className="ht-swatch ht-swatch-button" aria-label={`${name} color picker`} aria-haspopup="dialog" aria-expanded={pop.open} style={{ ["--ht-swatch" as string]: value }} onClick={() => pop.setOpen((o) => !o)} />
         {bound ? (
           <>
@@ -480,5 +489,14 @@ function ColorField({ name, value, opacity = 100, removable, open = false }: { n
       </button>
       {picker}
     </div>
+  );
+}
+
+/** A changed field's reset, as the product's (ChangeMarks.tsx); here it takes nothing back. */
+function Reset({ label }: { label: string }) {
+  return (
+    <button type="button" className="ht-reset" aria-label={`Reset ${label.toLowerCase()}`} data-tip={`Reset ${label.toLowerCase()}`}>
+      <Icon name="reset" />
+    </button>
   );
 }

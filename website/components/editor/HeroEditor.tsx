@@ -732,7 +732,7 @@ function DesignPanel({ view, selected, root, atRest, onLeave }: { view: ViewName
   return (
     <aside className="ht-panel is-design" aria-label="Design">
       {header}
-      <DesignSections layer={layer} style={style} icon={iconOf(key)} size={size} badge={view === "Desktop" ? undefined : { range: VIEWS.find((v) => v.name === view)!.range, label: `${view} breakpoint` }} />
+      <DesignSections layer={layer} style={style} icon={iconOf(key)} size={size} badge={view === "Desktop" ? undefined : { range: VIEWS.find((v) => v.name === view)!.breakpoint!, label: `${view} breakpoint` }} />
     </aside>
   );
 }

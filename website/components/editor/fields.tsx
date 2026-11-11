@@ -32,7 +32,7 @@ const reducedMotion = () => typeof matchMedia !== "undefined" && matchMedia("(pr
  * A number: drag its icon or the grip at its right end sideways, 1 per 2px (10 with ⇧), its grip swaying with the drag's
  * speed and its digits rolling; press ↑ or ↓; or type. Let go, left or entered, it rolls back to `value`.
  */
-export function NumberField({ tip, icon, glyph, value, unit = "", min = 0, max = Infinity, after, className = "", rolls = true }: { tip: string; icon?: IconName; glyph?: string; value: number; unit?: string; min?: number; max?: number; after?: ReactNode; className?: string; rolls?: boolean }) {
+export function NumberField({ tip, icon, glyph, value, unit = "", min = 0, max = Infinity, after, className = "", rolls = true, follows = false }: { tip: string; icon?: IconName; glyph?: string; value: number; unit?: string; min?: number; max?: number; after?: ReactNode; className?: string; rolls?: boolean; follows?: boolean }) {
   /** The value as dragged, stepped or typed, till it is let go; null, the layer's own. */
   const [held, setHeld] = useState<number | null>(null);
   const shown = held ?? value;
@@ -56,6 +56,12 @@ export function NumberField({ tip, icon, glyph, value, unit = "", min = 0, max =
     },
     onEnd: back,
   };
+  // `follows`: a value given from outside (a demo's drag) rolls to its digits as a drag here would.
+  const given = useRef(value);
+  if (follows && given.current !== value) {
+    given.current = value;
+    rollNext.current = rolls;
+  }
   const text = `${shown}${unit}`;
   const roll = useRoll(text, input, rollNext);
 

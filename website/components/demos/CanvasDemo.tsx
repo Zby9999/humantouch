@@ -1,13 +1,11 @@
 "use client";
 
-import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { EDITOR_CSS } from "@/components/editor/editor-css.generated";
-import { Icon } from "@/components/editor/Icon";
 import { DesignSections } from "@/components/editor/DesignSections";
 import type { Layer } from "@/components/editor/model";
-import { VariablesPanel } from "@/components/editor/VariablesPanel";
-import { PointerShape, TIP } from "./parts";
+import { EASE_IN_OUT, EASE_OUT, Handles, Panel, SCENE_CSS, SceneCursor, useFit, usePointer, useShadow, type Aim, type Box, type Step } from "./scene";
 import { usePhases } from "./usePhases";
 
 /*
@@ -32,8 +30,6 @@ const PAGE_W = VIEWPORT_W - PAGE.left - 40;
 /** From the page to the scene, for the pointer and the marquee. */
 const toScene = (x: number, y: number) => ({ x: x + WINDOW.left + PAGE.left, y: y + WINDOW.top + PAGE.top });
 
-const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
-const EASE_IN_OUT = "cubic-bezier(0.77, 0, 0.175, 1)";
 const SERIF = "var(--font-instrument-serif), Georgia, serif";
 const SANS = "var(--font-inter), sans-serif";
 
@@ -50,8 +46,8 @@ const STACK_GAP = 12;
  * The steps: where the pointer goes in each (a place on the page, or a field in the panel by its label), how long it
  * takes, and how long the step holds once there. What a step does shows when the pointer arrives.
  */
-type Aim = { page: [number, number] } | { panel: string } | { text: true } | { button: true };
-const STEPS: { aim: Aim; move: number; hold: number; click?: boolean; keys?: boolean }[] = [
+type Target = { page: [number, number] } | { panel: string } | { text: true } | { button: true };
+const STEPS: (Step & { aim: Target; keys?: boolean })[] = [
   /* 0 rest */ { aim: { page: [70, 92] }, move: 500, hold: 600 },
   /* 1 marquee: the four selected */ { aim: { page: [254, 300] }, move: 800, hold: 700 },
   /* 2 ⇧A: a Stack */ { aim: { page: [254, 300] }, move: 0, hold: 1300, keys: true },
@@ -68,39 +64,20 @@ const STEPS: { aim: Aim; move: number; hold: number; click?: boolean; keys?: boo
 const DURATIONS = STEPS.map((s) => s.move + s.hold);
 const LAST = STEPS.length - 1;
 
-const SCENE_CSS = `
+const CANVAS_CSS = `
 .demo-scene { position: absolute; top: 0; right: 0; width: ${SCENE_W}px; height: ${SCENE_H}px; transform-origin: top right; pointer-events: none; }
 .demo-window { position: absolute; left: ${WINDOW.left}px; top: ${WINDOW.top}px; right: ${WINDOW.right}px; bottom: -40px; overflow: hidden; border-top-right-radius: 12px; box-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15), 0 24px 64px -12px rgb(0 0 0 / 0.5); }
 .demo-window .ht-shell { position: absolute; inset: 0; z-index: auto; grid-template-rows: minmax(0, 1fr); }
 /* Room at its foot, under the card's edge, for its last fields to scroll up into sight. */
 .demo-window .ht-panel { position: relative; overflow: hidden; padding-bottom: 240px; }
-.demo-window .ht-panel-header { padding-top: 16px; }
 .demo-window .ht-canvas { position: absolute; }
-.ht-pop { position: absolute; z-index: 30; padding: 4px; border-radius: 12px; background: var(--ht-panel); box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 2px 6px rgb(0 0 0 / 0.06), 0 8px 24px -4px rgb(0 0 0 / 0.12); }
-.ht-pop button { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; height: 24px; padding: 0 8px; border-radius: 6px; }
-.ht-pop button[data-on] { background: var(--ht-field); }
-.ht-pop .ht-pop-value { margin-left: auto; color: var(--ht-text-muted); font-variant-numeric: tabular-nums; }
-.ht-pop .ht-pop-swatch { width: 14px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.2); }
 .demo-marquee { position: absolute; box-sizing: border-box; border: 1px solid var(--ht-accent); background: rgb(0 143 240 / 0.08); }
-.demo-cursor { position: absolute; z-index: 40; width: 20px; height: 20px; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.3)); }
 `;
 
 export function CanvasDemo() {
   const { ref, phase } = usePhases(DURATIONS, LAST);
-  const host = useRef<HTMLDivElement>(null);
-  const [shadow, setShadow] = useState<ShadowRoot | null>(null);
-  const [scale, setScale] = useState(0.75);
-
-  useEffect(() => {
-    const el = host.current!;
-    setShadow(el.shadowRoot ?? el.attachShadow({ mode: "open" }));
-    const box = ref.current!;
-    const fit = () => setScale(box.clientWidth / SCENE_W);
-    fit();
-    const observer = new ResizeObserver(fit);
-    observer.observe(box);
-    return () => observer.disconnect();
-  }, [ref]);
+  const { host, shadow } = useShadow();
+  const scale = useFit(ref, SCENE_W);
 
   const keys = STEPS[phase].keys;
 
@@ -110,7 +87,7 @@ export function CanvasDemo() {
       {shadow &&
         createPortal(
           <>
-            <style>{EDITOR_CSS + SCENE_CSS}</style>
+            <style>{EDITOR_CSS + SCENE_CSS + CANVAS_CSS}</style>
             <Scene phase={phase} scale={scale} root={shadow} />
           </>,
           shadow as unknown as Element,
@@ -139,10 +116,6 @@ type Size = { w: number; h: number };
 type Sizes = Record<Part | "label", Size>;
 
 function Scene({ phase, scale, root }: { phase: number; scale: number; root: ShadowRoot }) {
-  /** The step the pointer last got to the aim of: till it gets to this one's, what shows is the step before's. */
-  const [arrivedAt, setArrivedAt] = useState(0);
-  const [pressed, setPressed] = useState(false);
-  const [cursor, setCursor] = useState(toScene(...(STEPS[0].aim as { page: [number, number] }).page));
   const [sizes, setSizes] = useState<Sizes | null>(null);
   const page = useRef<HTMLDivElement>(null);
   const scene = useRef<HTMLDivElement>(null);
@@ -162,52 +135,20 @@ function Scene({ phase, scale, root }: { phase: number; scale: number; root: Sha
     document.fonts?.ready.then(measure);
   }, []);
 
-  const step = STEPS[phase];
-  const arrived = arrivedAt === phase;
-  const shown = arrived ? phase : Math.max(0, phase - 1);
-
-  // At each step: the pointer sets off for its aim, found in what shows now; once there, it clicks, and the step shows.
-  useLayoutEffect(() => {
-    const aim = step.aim;
-    const sceneBox = scene.current!.getBoundingClientRect();
-    const k = sceneBox.width / SCENE_W;
-    const at = (el: Element | null | undefined, dx = 0.5, dy = 0.5) => {
-      if (!el) return null;
-      const b = el.getBoundingClientRect();
-      return { x: (b.left - sceneBox.left + b.width * dx) / k, y: (b.top - sceneBox.top + b.height * dy) / k };
-    };
-    const target =
-      "page" in aim
-        ? toScene(...aim.page)
-        : "button" in aim
-          ? at(page.current?.querySelector('[data-part="button"]'), 0.8, 0.7)
-          : "text" in aim
-            ? at(page.current?.querySelector('[data-part="label"]'), 0.6, 0.6)
-            : at(root.querySelector(`[aria-label="${aim.panel}"]`) ?? [...root.querySelectorAll(".ht-pop button")].find((b) => b.textContent?.startsWith(aim.panel)), 0.5, 0.55);
-    // A field low in the panel, or under the card's edge: the panel scrolls it up to the middle, as a hand would, on the way.
-    const panel = root.querySelector(".ht-panel.is-design");
-    const shown = (root.host as HTMLElement).getBoundingClientRect().height / k;
-    if (target && "panel" in aim && panel && !panel.querySelector(".ht-pop") && target.y > shown * 0.6) {
-      const by = Math.min(Math.round(target.y - shown * 0.45), panel.scrollHeight - panel.clientHeight - panel.scrollTop);
-      panel.scrollTo({ top: panel.scrollTop + by, behavior: "smooth" });
-      target.y -= by;
-    }
-    if (target) setCursor(target);
-    if (phase === 0 || !step.move) {
-      setArrivedAt(phase);
-      return;
-    }
-    const timers = [
-      setTimeout(() => {
-        setArrivedAt(phase);
-        if (step.click) setPressed(true);
-      }, step.move),
-      setTimeout(() => setPressed(false), step.move + 120),
-    ];
-    return () => timers.forEach(clearTimeout);
-    // Only a new step sets it off.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
+  const { shown, arrived, cursor, pressed, move } = usePointer({
+    phase,
+    steps: STEPS,
+    root,
+    scene,
+    width: SCENE_W,
+    aim: (index): Aim => {
+      const aim = STEPS[index].aim;
+      if ("page" in aim) return toScene(...aim.page);
+      if ("button" in aim) return { el: page.current?.querySelector('[data-part="button"]'), dx: 0.8, dy: 0.7 };
+      if ("text" in aim) return { el: page.current?.querySelector('[data-part="label"]'), dx: 0.6, dy: 0.6 };
+      return { el: root.querySelector(`[aria-label="${aim.panel}"]`) ?? [...root.querySelectorAll(".ht-pop button")].find((b) => b.textContent?.startsWith(aim.panel)), dx: 0.5, inPanel: true };
+    },
+  });
 
   const stacked = shown >= 2;
   const selection: Part[] | "stack" | "button" | "label" | null = shown === 1 ? PARTS : shown === 2 ? "stack" : shown >= 11 ? null : shown >= 8 ? "label" : shown >= 3 ? "button" : null;
@@ -300,33 +241,13 @@ function Scene({ phase, scale, root }: { phase: number; scale: number; root: Sha
       </div>
 
       {marquee && <Marquee from={marquee.from} to={marquee.to} ms={STEPS[1].move} />}
-      <Cursor at={cursor} ms={step.move} pressed={pressed} />
+      <SceneCursor at={cursor} ms={move} pressed={pressed} />
     </div>
   );
 }
-
-type Box = { left: number; top: number; width: number; height: number };
 
 /** A box on the page, moved to the viewport. */
 const moved = (b: Box): Box => ({ left: b.left + PAGE.left, top: b.top + PAGE.top, width: b.width, height: b.height });
-
-/** The selected layers' handles, as the product places them: corners 8px squares on the box's edges. */
-function Handles({ box }: { box: Box }) {
-  const { left: l, top: t, width: w, height: h } = box;
-  const corners: [string, number, number][] = [
-    ["nw", l, t],
-    ["ne", l + w, t],
-    ["sw", l, t + h],
-    ["se", l + w, t + h],
-  ];
-  return (
-    <div className="ht-handles" aria-hidden="true">
-      {corners.map(([name, x, y]) => (
-        <div key={name} className="ht-handle" data-handle={name} data-corner={name === "sw" || name === "ne" ? "1" : "-1"} style={{ left: x - 4, top: y - 4, width: 8, height: 8 }} />
-      ))}
-    </div>
-  );
-}
 
 /** The marquee, drawn out from where the pointer went down to where it goes. */
 function Marquee({ from, to, ms }: { from: { x: number; y: number }; to: { x: number; y: number }; ms: number }) {
@@ -343,29 +264,9 @@ function Marquee({ from, to, ms }: { from: { x: number; y: number }; to: { x: nu
   );
 }
 
-function Cursor({ at, ms, pressed }: { at: { x: number; y: number }; ms: number; pressed: boolean }) {
-  return (
-    <svg
-      className="demo-cursor"
-      viewBox="0 0 20 20"
-      style={{ left: at.x - TIP.x, top: at.y - TIP.y, transformOrigin: `${TIP.x}px ${TIP.y}px`, transition: `left ${ms}ms ${EASE_IN_OUT}, top ${ms}ms ${EASE_IN_OUT}, scale 120ms`, scale: pressed ? 0.9 : 1 }}
-    >
-      <PointerShape />
-    </svg>
-  );
-}
-
 /** The Design panel, the product's, as the hero draws it: the Variables with nothing selected, a layer's design with one. */
 function DesignPanel({ shown, sizes, fillOpen, white, stroke, dropShadow, ink }: { shown: number; sizes: Sizes | null; fillOpen: boolean; white: boolean; stroke: boolean; dropShadow: boolean; ink: boolean }) {
   const nothing = shown === 0 || shown === LAST;
-  const header = (
-    <div className="ht-panel-header">
-      <h2 className="ht-panel-title">{nothing ? "Variables" : "Design"}</h2>
-      <button type="button" className="ht-icon-button" aria-label="Back to preview mode">
-        <Icon name="close" />
-      </button>
-    </div>
-  );
   /** A size as the panel gives it: the canvas is at 75%. */
   const real = (n: number) => Math.round(n / ZOOM);
   const sizeOf = (s: Size | undefined): [number, number] => (s ? [real(s.w), real(s.h)] : [0, 0]);
@@ -404,30 +305,8 @@ function DesignPanel({ shown, sizes, fillOpen, white, stroke, dropShadow, ink }:
     key = "label";
     content = <DesignSections layer={LABEL} style={{ fontSize: 14, color: ink ? "#161614" : "#FAF9F6", opacity: 100 }} icon="text" size={sizeOf(sizes?.label)} open={fillOpen ? "fill" : undefined} />;
   }
-  return <Panel key_={key} header={header} content={content} variables={nothing} />;
+  return <Panel layer={nothing ? null : key} content={content} />;
 }
-
-/**
- * The panel: the Variables, built once and kept, shown with nothing selected (built again each loop, they held the main
- * thread for some 80ms); a layer's sections, new for each layer, the panel back at its top.
- */
-function Panel({ key_, header, content, variables }: { key_: string; header: ReactNode; content: ReactNode; variables: boolean }) {
-  const el = useRef<HTMLElement>(null);
-  useLayoutEffect(() => {
-    el.current!.scrollTop = 0;
-  }, [key_]);
-  return (
-    <aside ref={el} className="ht-panel is-design" aria-label="Design">
-      {header}
-      <div style={{ display: variables ? "contents" : "none" }}>
-        <Variables />
-      </div>
-      <Fragment key={key_}>{content}</Fragment>
-    </aside>
-  );
-}
-
-const Variables = memo(VariablesPanel);
 
 const STACK: Layer = { name: "Stack", kind: "stack", source: "src/App.tsx:24:7", sizing: ["Hug", "Hug"] };
 const BUTTON: Layer = { name: "Button", kind: "frame", source: "src/App.tsx:28:9", sizing: ["Hug", "Hug"] };

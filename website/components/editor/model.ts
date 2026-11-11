@@ -34,11 +34,11 @@ export type Style = Partial<Record<Prop, Value>>;
 
 export type ViewName = "Desktop" | "Tablet" | "Phone";
 
-/** The views, as the editor names them, with the width each is drawn at and its range. */
-export const VIEWS: { name: ViewName; width: number; range: string }[] = [
+/** The views, as the editor names them, with the width each is drawn at, its range, and its breakpoint as the Design panel's badge names it. */
+export const VIEWS: { name: ViewName; width: number; range: string; breakpoint?: string }[] = [
   { name: "Desktop", width: 1440, range: "≥ 1280" },
-  { name: "Tablet", width: 768, range: "768–1279" },
-  { name: "Phone", width: 390, range: "≤ 767" },
+  { name: "Tablet", width: 768, range: "768–1279", breakpoint: "768px to 1279px" },
+  { name: "Phone", width: 390, range: "≤ 767", breakpoint: "below 768px" },
 ];
 
 export type Layer = {
