@@ -9,7 +9,7 @@ import { declaredByEdit, rematch } from "./canvas-style";
 import type { Fragment } from "./changeset";
 import { openingTag } from "./layer-target";
 import type { Definition } from "./property-table";
-import { wordsOf } from "./layer-changes";
+import { wordsOf } from "./words";
 import { cssColor, type Color, type ColorReader } from "./paint";
 import { flatParent } from "./shadow-roots";
 import { sourcesOf } from "./style-source";
@@ -95,7 +95,7 @@ function keepsOwn<V>(css: string, read: (el: Element, colors: ColorReader) => V)
       keeps = (el) => !follows(el) && (follows(el.parentElement!) || a.get(el) !== a.get(el.parentElement!));
     }
     return fragments.flatMap((el) => {
-      const text = wordsOf(el);
+      const text = wordsOf(el, false);
       if (!text || getComputedStyle(el).display === "none" || !keeps(el)) return [];
       return [{ element: openingTag(el), text: text.length > MAX_WORDS ? `${text.slice(0, MAX_WORDS - 1)}…` : text, value: read(el, colors) }];
     });

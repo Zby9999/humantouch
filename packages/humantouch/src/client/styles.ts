@@ -1379,6 +1379,8 @@ button.ht-change-text:focus-visible { outline: 2px solid var(--ht-accent); outli
   -webkit-user-select: none;
   background: var(--ht-canvas);
 }
+/* Over the words typed in, where a press places the caret (ticket 144). */
+.ht-viewport.is-over-typed { cursor: text; }
 .ht-viewport.is-pan-ready { cursor: grab; }
 .ht-viewport.is-drawing { cursor: crosshair; }
 .ht-viewport.is-briefing { cursor: copy; }

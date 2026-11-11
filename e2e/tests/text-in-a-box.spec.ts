@@ -119,7 +119,7 @@ test("a click on the Close button selects it; a double click types in its words"
   await page.waitForTimeout(DOUBLE_CLICK_MS);
   await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
   await page.keyboard.type("Done");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
 
   await expect(close(page)).toHaveText("Done");
   await expect.poll(() => close(page).evaluate((el) => el.childElementCount)).toBe(0);
