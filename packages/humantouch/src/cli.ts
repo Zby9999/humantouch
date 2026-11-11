@@ -7,7 +7,7 @@
  */
 import { changes as changesWord, container as containerOf, describeChanges, heldWords, shareWords, toApply, type NotesOptions } from "./change-notes";
 import { breakpointName, tailwindOf } from "./client/breakpoints";
-import { otherUsagesWords, listed, ordinal, otherUsagesWord, outsideWords, propertyName, quoted, quotedWords, value } from "./design-values";
+import { adaptedWords, breakFix, breakingWith, brokenWords, otherUsagesWords, listed, ordinal, otherUsagesWord, outsideWords, propertyName, quoted, quotedWords, value } from "./design-values";
 import type { MadeMissing, OffsetInLayout, PlacedOnPage } from "./client/check";
 import { AUTO_MARGINS, AUTO_MARGINS_CLASS, AXIS_SIZE, CENTERING_SIGN, centeringSides, movedBy, PLACED_BY, shareCss, SIDES, type Edge, type Share } from "./client/checkable";
 import type { Change, Composed, Created, GridSettings, Margins, Place, SavedChangeSet } from "./client/changeset";
@@ -18,6 +18,7 @@ import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult, type OtherUsageChanged } from "./service-protocol";
 import { outsideIn, type OutsideChanged } from "./outside-protocol";
+import { adaptedIn, breaksIn, type BreakFound } from "./widths-protocol";
 import { whereToLook } from "./where-to-look";
 import {
   appliedOf,
@@ -182,7 +183,7 @@ function readAgain(change: Change, result: CheckResult | undefined): Change {
   const [first, ...others] = change.parts ?? [];
   if (first && others.every((part) => JSON.stringify(part.before) === JSON.stringify(first.before))) next = { ...next, before: first.before };
   // Shown on the layer, and at other usages too (ticket 77): its value there is its after.
-  if (result?.outcome !== "not shown" || result.otherUsages || outsideIn(result) || !readWhereMade(change, result.width)) return next;
+  if (result?.outcome !== "not shown" || result.otherUsages || outsideIn(result) || breaksIn(result) || !readWhereMade(change, result.width)) return next;
   const before = change.parts ? undefined : beforeOf(change, result.actual);
   // Centered (ticket 79): what its side is written as now goes with it, so the notes say the code as it is twice alike.
   const share = before !== undefined && change.centeredOn ? (result.actual as { share?: Share }).share : undefined;
@@ -282,7 +283,7 @@ async function done(folder: HumanTouchFolder, args: string[], io: Io): Promise<n
   const asked = changes.filter((change) => change.kind !== "brief").map((change) => change.id);
   const { asked: claimed, results } = await askPages(folder, { ...state, done: doneIds }, "check", asked);
   const applied = appliedOf(claimed, (await readChecks(folder))?.results);
-  const lines = changes.map((change) => checkLine(change, results.get(change.id)));
+  const lines = changes.map((change) => checkLine(change, results.get(change.id), changeSet.changes));
   const one = changes.length === 1;
   io.write(`${one ? "Change" : "Changes"} ${listed(reported)} done: ${applied.length} of ${changesWord(ids.length)} applied.\n`);
   io.write(one ? `${lines[0]}\n` : lines.map((line, i) => `Change ${reported[i]}: ${line[0].toLowerCase()}${line.slice(1)}\n`).join(""));
@@ -296,14 +297,18 @@ async function newAsk(folder: HumanTouchFolder, ids: number[], sources: boolean)
 
 
 /** What `done` says of a change, as the page checked it. */
-function checkLine(change: Change, result: CheckResult | undefined): string {
+function checkLine(change: Change, result: CheckResult | undefined, round: Change[]): string {
   if (change.kind === "brief") return `Not checked on the page: ${BRIEF_UNCHECKED}. Say in your report how you achieved it: what you changed, and where.`;
   switch (result?.outcome) {
-    case "shown":
-      return "Checked on the page: it shows the change.";
+    case "shown": {
+      // Made in the desktop view, drawn otherwise at a view's width (ticket 147): what is drawn there, for the report.
+      const adapted = adaptedIn(result);
+      return `Checked on the page: it shows the change.${adapted?.length ? ` ${adaptedWords(change, adapted)}.` : ""}`;
+    }
     case "not shown":
       if (result.otherUsages?.length) return shownAtOtherUsages(change, result.otherUsages);
       if (outsideIn(result)?.length) return shownOutside(change, outsideIn(result)!);
+      if (breaksIn(result)?.length) return breaksLayout(change, breaksIn(result)!, round);
       return `Checked on the page: it does not show the change. ${notShown(change, result.actual, result.width)}`;
     default:
       return `Not checked on the page: ${result?.reason ?? "the page did not answer in time"}. That is no error: go on.`;
@@ -337,6 +342,33 @@ function shownOutside(change: Change, widths: OutsideChanged[]): string {
     `Checked on the page: it shows the change, but outside its range too: ${outsideWords(change.property, widths)} since the round was claimed. ` +
     `The change applies ${breakpointName(change.breakpoint)} only${tailwind ? ` (\`${tailwind}\`)` : ""}: make it there alone, put the other widths back as they were, and run \`npx humantouch done ${change.id}\` again.`
   );
+}
+
+/**
+ * A change whose layer breaks the layout at a width as it did not when the
+ * round was claimed (ticket 147), so not shown (ADR 0016): where, how, and
+ * how to fix it. With other changes to the layer that may break it too
+ * (`breakingWith`), the layer is said as theirs as well: the page cannot
+ * tell which does it. At a width the page noted only after the code changed
+ * (`late`), it cannot tell whether the break is new either: if it was there
+ * before, the report says so.
+ */
+function breaksLayout(change: Change, breaks: BreakFound[], round: Change[]): string {
+  const others = breakingWith(change, round);
+  const subject = others.length ? `the layer of changes ${listed([change.id, ...others].sort((a, b) => a - b))}` : `change ${change.id}`;
+  const which = others.length ? `; any of those changes may be what does it` : "";
+  const again = `run \`npx humantouch done ${change.id}\` again`;
+  const [late, fresh] = [breaks.filter((one) => one.late), breaks.filter((one) => !one.late)];
+  const sentences: string[] = [];
+  if (fresh.length) sentences.push(`${brokenWords(fresh, subject)}, which it did not when the round was claimed${which}: ${breakFix(change)}, and ${again}.`);
+  if (late.length) {
+    const there = new Set(late.map((one) => one.width)).size === 1 ? "that width" : "those widths";
+    sentences.push(
+      `${brokenWords(late, fresh.length ? "the layer" : subject)}; the page could not note ${there} before the code changed, so it cannot tell whether that is new${which}. ` +
+        `If the change does it: ${breakFix(change)}, and ${again}; if the page did so before the change, say so in the report.`,
+    );
+  }
+  return `Checked on the page: it does not show the change. ${sentences.join(" ")}`;
 }
 
 /** How a sentence of what the page shows opens: "At 390px wide, the", `width` px wide when not as wide as its window; else "The". */
@@ -701,12 +733,15 @@ async function finish(folder: HumanTouchFolder, io: Io): Promise<number> {
   const atOtherUsages = notShown.filter((id) => ((check) => check?.outcome === "not shown" && !!check.otherUsages?.length)(result.checks[id]));
   // Shown at its breakpoint, but outside its range too (ticket 104).
   const outside = notShown.filter((id) => !atOtherUsages.includes(id) && !!outsideIn(result.checks[id])?.length);
-  const unshown = notShown.filter((id) => !atOtherUsages.includes(id) && !outside.includes(id));
+  // Not shown, its layer breaking the layout at a width (ticket 147, ADR 0016).
+  const broken = notShown.filter((id) => !atOtherUsages.includes(id) && !outside.includes(id) && !!breaksIn(result.checks[id])?.length);
+  const unshown = notShown.filter((id) => !atOtherUsages.includes(id) && !outside.includes(id) && !broken.includes(id));
   let text = `Round finished: ${applied.length} of ${changesWord(ids.length)} applied.`;
   if (missing.length) text += ` Not marked done: ${missing.join(", ")}.`;
   if (unshown.length) text += ` The page does not show: ${unshown.join(", ")}.`;
   if (atOtherUsages.length) text += ` Shown at other usages of its component too: ${atOtherUsages.join(", ")}.`;
   if (outside.length) text += ` Shown outside its breakpoint's range too: ${outside.join(", ")}.`;
+  if (broken.length) text += ` Not shown, breaking the layout at a width: ${broken.join(", ")}.`;
   io.write(`${text}\n\n${reportFor(changeSet.changes, applied, result.checks)}`);
   return 0;
 }

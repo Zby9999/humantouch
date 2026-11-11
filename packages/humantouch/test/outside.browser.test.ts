@@ -98,6 +98,6 @@ test("noted as the code begins to change with no claim (ticket 78): as wide as t
   const fill = style("src/App.tsx:3:7", "fill", { breakpoint: PHONE });
   const noted = noteRound(page, [fill], 800, [768, 390]);
   expect(noted.get(fill.id)?.outside).toEqual([{ width: 800, values: [{ type: "solid", color: "#FFFFFF", opacity: 1 }] }]);
-  // The window in the phone's range: nothing to note.
-  expect(noteRound(page, [fill], 390, [768, 390]).size).toBe(0);
+  // The window in the phone's range: nothing outside it to note; a fill cannot break the layout, so nothing of that either (ticket 147).
+  expect(noteRound(page, [fill], 390, [768, 390]).get(fill.id)).toBeUndefined();
 });

@@ -560,6 +560,7 @@ describe("a change for one usage, looked at on the component's other usages (tic
       editor.set(layerOf(cards[0]), "fill", RED);
       const round = changes.list();
       const kept = await keptAtTheClaim(round);
+      // A fill: nothing of breaks of the layout, which it cannot make (ticket 147).
       expect(kept).toEqual({ 1: { width: 800, seen: [{ key: expect.stringContaining("src/App.tsx:8:7"), chain: cardAt("src/App.tsx:8:7"), value: WHITE }] } });
 
       const { page, fill } = livePage();
@@ -600,6 +601,7 @@ describe("a change for one usage, looked at on the component's other usages (tic
       expect(round.map((change) => `${change.scope} ${change.property}`)).toEqual(["usage fill", "component radius"]);
       const { page, fill } = livePage();
       const noted = noteRound(page, round, 800);
+      // The Card's corners, promoted: not noted, nor looked at for breaks of the layout, which a radius cannot make (ticket 147).
       expect([...noted.keys()]).toEqual([1]);
       expect(noted.get(1)!.seen.map(({ chain, value }) => ({ chain, value }))).toEqual([{ chain: cardAt("src/App.tsx:8:7"), value: WHITE }]);
       // The Agent's code in, the fourth card red: noted before, white it was.
@@ -697,6 +699,47 @@ describe("new words, looked at in every instance and at the component's other us
     loop[1].textContent = "Plan\nahead";
     expect(check()).toEqual({ outcome: "shown" });
     loop[1].style.whiteSpace = "normal";
+    expect(check()).toEqual({ outcome: "not shown", actual: "Plan ahead" });
+  });
+
+  test("new words with a line break, the lines written as blocks: drawn as lines, so shown, as many as there are, once between two blocks; inline, run together, not shown (ADR 0016, ticket 147)", () => {
+    const html = PAGE.replace(/>Card \d</g, ">Card<");
+    const { editor, changes, cards, layerOf } = openCanvas(html);
+    editor.setText(layerOf(cards[0].querySelector("h3")!), "Plan\nahead");
+    const { page, titles } = livePage(html);
+    const check = () => checkChange(page, changes.list()[0], onCanvas(changes.list()));
+    const loop = titles.slice(0, 3);
+
+    for (const title of loop) title.innerHTML = '<span style="display: block">Plan</span><span style="display: block">ahead</span>';
+    expect(check()).toEqual({ outcome: "shown" });
+    // Block-level otherwise (flex), with white space between them and a `<br>` at the end of the first: still one line break.
+    loop[1].innerHTML = '<div style="display: flex">Plan<br></div>\n  <div>ahead</div>';
+    expect(check()).toEqual({ outcome: "shown" });
+    // A block in a line's words: a line more.
+    loop[1].innerHTML = 'Plan<span style="display: block">a</span>head';
+    expect(check()).toEqual({ outcome: "not shown", actual: "Plan\na\nhead" });
+    // Inline, the spans run together: no line break.
+    loop[1].innerHTML = "<span>Plan</span> <span>ahead</span>";
+    expect(check()).toEqual({ outcome: "not shown", actual: "Plan ahead" });
+  });
+
+  test("new words with a line break in a Stack's or a Grid's layers (ticket 147's review): one below the other, lines, so shown; side by side, words apart, an icon among them too, not lines", () => {
+    const html = PAGE.replace(/>Card \d</g, ">Card<");
+    const { editor, changes, cards, layerOf } = openCanvas(html);
+    editor.setText(layerOf(cards[0].querySelector("h3")!), "Plan\nahead");
+    const { page, titles } = livePage(html);
+    const check = () => checkChange(page, changes.list()[0], onCanvas(changes.list()));
+    const loop = titles.slice(0, 3);
+
+    for (const title of loop) title.innerHTML = '<span style="display: flex; flex-direction: column"><span>Plan</span><span>ahead</span></span>';
+    expect(check()).toEqual({ outcome: "shown" });
+    // A row that wraps, the second below the first: a line too.
+    loop[1].innerHTML = '<span style="display: flex; flex-wrap: wrap; width: 40px"><span style="width: 40px">Plan</span><span>ahead</span></span>';
+    expect(check()).toEqual({ outcome: "shown" });
+    // Side by side, in a row, an icon between them: words apart.
+    loop[1].innerHTML = '<span style="display: flex; gap: 4px"><span>Plan</span><svg width="8" height="8"></svg><span>ahead</span></span>';
+    expect(check()).toEqual({ outcome: "not shown", actual: "Plan ahead" });
+    loop[1].innerHTML = '<span style="display: grid; grid-template-columns: auto auto"><span>Plan</span><span>ahead</span></span>';
     expect(check()).toEqual({ outcome: "not shown", actual: "Plan ahead" });
   });
 

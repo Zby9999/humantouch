@@ -611,7 +611,7 @@ test.describe("done checks the change on the page", () => {
     expect(right).toBe(70);
   });
 
-  test("a layer the canvas places from the right is checked by its `right` at every view's width: placed by its left instead, it shows only as wide as the window, and is not shown; one the project's breakpoints place by its left at the phone's width is not looked at there (ticket 75, line review)", async ({ page }) => {
+  test("a layer the canvas places from the right is checked by its `right` at every view's width: placed by its left instead, it shows only as wide as the window, and past the views' screens it makes the page wider, so it is not shown (ADR 0016); one the project's breakpoints place by its left at the phone's width is not looked at there (ticket 75, line review)", async ({ page }) => {
     // In the code, two layers placed freely in the hero from its right: one at every width, one by its left below `md`.
     editSource(
       APP,
@@ -643,23 +643,31 @@ test.describe("done checks the change on the page", () => {
     ]);
     const [width, right, otherWidth, otherRight] = changes.map(({ id }) => String(id));
     await npxHumanTouch("claim");
+    // What breaks of the layout the layers made at the views' widths, noted before the code changes: else noted late, and said so (ticket 147's review).
+    const notedAt = (id: string) => (readHumanTouchFile("other-usages.json")?.otherUsages?.[id]?.breaks ?? []).filter((one: { late?: true }) => !one.late).map((one: { width: number }) => one.width);
+    for (const id of [width, right]) await expect.poll(() => notedAt(id).sort()).toEqual(expect.arrayContaining([390, 768]));
 
     // Not as the notes say: placed by its left, where the canvas draws it as wide as the window. The other, as they say.
     editSource(APP, "top-[30px] right-10 h-[40px] w-20", `top-[30px] left-[${hero - 20 - 100}px] right-auto h-[40px] w-[100px]`);
     editSource(APP, "right-[100px] h-[40px] w-[80px]", "right-[140px] h-[40px] w-[40px]");
     await drawnWith(page.getByTestId("from-right"), `left-[${hero - 20 - 100}px]`, "right-auto", "w-[100px]");
     await drawnWith(page.getByTestId("left-on-phones"), "right-[140px]", "w-[40px]");
-    expect(await npxHumanTouch("done", width)).toContain("Checked on the page: it shows the change.");
-    expect(await npxHumanTouch("done", right)).toContain("Checked on the page: it does not show the change. At 768px wide, the right position is drawn at");
+    // Its left as wide as the window is past the screen at the views' widths: the page wider than the screen there, which it was not when the round was claimed (ADR 0016, ticket 147).
+    // Its width and its right both on the layer, either may do it: said as the layer of both (ticket 147's review).
+    for (const id of [width, right]) {
+      expect(await npxHumanTouch("done", id)).toContain(
+        `Checked on the page: it does not show the change. At Tablet (768px) the layer of changes ${width} and ${right} makes the page wider than the screen (it scrolls sideways); at Phone (390px) it makes the page wider than the screen (it scrolls sideways), which it did not when the round was claimed; any of those changes may be what does it: `,
+      );
+    }
     for (const id of [otherWidth, otherRight]) expect(await npxHumanTouch("done", id)).toContain("Checked on the page: it shows the change.");
 
     // As the notes say: shown at every width.
     editSource(APP, `left-[${hero - 20 - 100}px] right-auto`, "right-[20px]");
     await drawnWith(page.getByTestId("from-right"), "right-[20px]");
-    expect(await npxHumanTouch("done", right)).toContain("Checked on the page: it shows the change.");
+    for (const id of [width, right]) expect(await npxHumanTouch("done", id)).toContain("Checked on the page: it shows the change.");
   });
 
-  test("a layer the canvas places absolute from `md` up is not looked at at the phone's width, where the canvas lays it out in its container: its X and Y written as the notes say show; one placed absolute at every width is looked at there, and laid out there is not shown (ticket 83)", async ({ page }) => {
+  test("a layer the canvas places absolute from `md` up is not looked at at the phone's width, where the canvas lays it out in its container: its X and Y written as the notes say show; one placed absolute at every width is looked at there, and laid out there is adapted there (ticket 83; ADR 0016)", async ({ page }) => {
     // In the code, two layers in the hero: one placed freely from `md` up, in the hero's layout below; one placed freely at every width.
     editSource(
       APP,
@@ -699,12 +707,10 @@ test.describe("done checks the change on the page", () => {
     await drawnWith(page.getByTestId("from-md"), "md:top-[40px]", "md:left-[60px]");
     await drawnWith(page.getByTestId("everywhere"), "md:absolute", "md:top-[90px]", "md:left-[60px]");
     for (const id of [x, y]) expect(await npxHumanTouch("done", id)).toContain("Checked on the page: it shows the change.");
-    expect(await npxHumanTouch("done", other)).toContain(
-      `Checked on the page: it does not show the change. At 390px wide, the layer is not placed absolute, not absolute at X 60px: check its \`position\` and \`left\`, and that its container is its positioning reference, then run \`npx humantouch done ${other}\` again.`,
-    );
+    expect(await npxHumanTouch("done", other)).toContain("Checked on the page: it shows the change. At Phone (390px) the layer is drawn elsewhere than on the canvas: if you adapted it there on purpose, say so in the report.");
   });
 
-  test("a layer the canvas places relative on phones, absolute from `md` up: its X moves it on phones too, so the phone's width is looked at, and its `left` written from `md` up only does not show (ticket 83, review)", async ({ page }) => {
+  test("a layer the canvas places relative on phones, absolute from `md` up: its X moves it on phones too, so the phone's width is looked at, and its `left` written from `md` up only is adapted there (ticket 83, review; ADR 0016)", async ({ page }) => {
     editSource(
       APP,
       '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
@@ -729,7 +735,7 @@ test.describe("done checks the change on the page", () => {
     // Written from `md` up only: on phones, the page does not move it.
     editSource(APP, "md:top-[30px] md:left-[40px]", "md:top-[30px] md:left-[60px]");
     await drawnWith(page.getByTestId("relative-below-md"), "md:left-[60px]");
-    expect(await npxHumanTouch("done", String(change.id))).toContain("Checked on the page: it does not show the change. At 390px wide,");
+    expect(await npxHumanTouch("done", String(change.id))).toContain("Checked on the page: it shows the change. At Phone (390px) the layer is drawn elsewhere than on the canvas: if you adapted it there on purpose, say so in the report.");
   });
 
   /** A change's ranges as the changeset records them: where the canvas places the layer otherwise, and where it moves it in its container's layout (ticket 84). */
@@ -739,7 +745,7 @@ test.describe("done checks the change on the page", () => {
     offsetInLayoutAt?.map(({ breakpoint: { min, max }, position }) => [min, max, position]),
   ];
 
-  test("a layer the canvas places relative on phones, absolute from `md` up: at the phone's width, done compares its `left` itself; written from `md` up only, it says how far the canvas moves the layer there, not to check its `position`; written at every width, it shows (ticket 84)", async ({ page }) => {
+  test("a layer the canvas places relative on phones, absolute from `md` up: at the phone's width, done compares its `left` itself; written from `md` up only, it is adapted there, and done says so; written at every width, it shows (ticket 84; ADR 0016)", async ({ page }) => {
     editSource(
       APP,
       '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
@@ -766,8 +772,7 @@ test.describe("done checks the change on the page", () => {
     editSource(APP, "md:top-[30px] md:left-[40px]", "md:top-[30px] md:left-[60px]");
     await drawnWith(page.getByTestId("relative-below-md"), "md:left-[60px]");
     expect(await npxHumanTouch("done", id)).toBe(
-      "Change 1 done: 0 of 1 change applied.\n" +
-        "Checked on the page: it does not show the change. At 390px wide, the page does not move the layer, where the canvas moves it 60px right of where its container lays it out: give it `left` 60px at this width too, then run `npx humantouch done 1` again.\n",
+      "Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change. At Phone (390px) the layer is drawn elsewhere than on the canvas: if you adapted it there on purpose, say so in the report.\n",
     );
     // Written at every width, as the notes say.
     editSource(APP, "md:left-[60px]", "left-[60px]");
@@ -776,7 +781,7 @@ test.describe("done checks the change on the page", () => {
     expect(await npxHumanTouch("finish")).toContain("Round finished: 1 of 1 change applied.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n✓ Applied\n- 1. X: <the layer, and what you changed>\n```\n");
   });
 
-  test("a layer the canvas places relative on phones, from the right from `md` up, moved: at the phone's width its `right` moves it too, as it has no `left`, so done compares it there; written from `md` up only, it does not show, and finish says how far the canvas moves it (ticket 84)", async ({ page }) => {
+  test("a layer the canvas places relative on phones, from the right from `md` up, moved: at the phone's width its `right` moves it too, as it has no `left`, so done compares it there; written from `md` up only, it is adapted there, applied, and listed under ✓ (ticket 84; ADR 0016)", async ({ page }) => {
     editSource(
       APP,
       '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
@@ -803,16 +808,14 @@ test.describe("done checks the change on the page", () => {
     editSource(APP, "md:right-[40px]", "md:right-[20px]");
     await drawnWith(page.getByTestId("right-from-md"), "md:right-[20px]");
     expect(await npxHumanTouch("done", id)).toBe(
-      "Change 1 done: 0 of 1 change applied.\n" +
-        "Checked on the page: it does not show the change. At 390px wide, the page does not move the layer, where the canvas moves it 20px left of where its container lays it out: give it `right` 20px at this width too, then run `npx humantouch done 1` again.\n",
+      "Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change. At Phone (390px) the layer is drawn elsewhere than on the canvas: if you adapted it there on purpose, say so in the report.\n",
     );
     expect(await npxHumanTouch("finish")).toContain(
-      "Round finished: 0 of 1 change applied. The page does not show: 1.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n⚠️ Not applied 1:1\n" +
-        "- 1. Right: <the layer>\n  Why: at 390px wide, the page does not move the layer 20px left of where its container lays it out, as the canvas does: <what keeps it so>\n  Instead: <what you did, or “left as it was”>\n```\n",
+      "Round finished: 1 of 1 change applied.\n\nEnd your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n```\n✓ Applied\n- 1. Right: <the layer, and what you changed>\n```\n",
     );
   });
 
-  test("on a page laid out right to left, a layer the canvas places relative on phones by its `left` and its `right` both, from the right from `md` up, moved: at the phone's width its `right` is what moves it, so done compares it there; written from `md` up only, it does not show; written at every width, it shows (ticket 89)", async ({ page }) => {
+  test("on a page laid out right to left, a layer the canvas places relative on phones by its `left` and its `right` both, from the right from `md` up, moved: at the phone's width its `right` is what moves it, so done compares it there; written from `md` up only, it is adapted there; written at every width, it shows (ticket 89; ADR 0016)", async ({ page }) => {
     editSource(
       APP,
       '<section className="flex h-screen flex-col justify-center" data-testid="hero">',
@@ -839,8 +842,7 @@ test.describe("done checks the change on the page", () => {
     editSource(APP, "md:right-[40px]", "md:right-[20px]");
     await drawnWith(page.getByTestId("both-sides"), "md:right-[20px]");
     expect(await npxHumanTouch("done", id)).toBe(
-      "Change 1 done: 0 of 1 change applied.\n" +
-        "Checked on the page: it does not show the change. At 390px wide, the page moves the layer 40px left, where the canvas moves it 20px left of where its container lays it out: give it `right` 20px at this width too, then run `npx humantouch done 1` again.\n",
+      "Change 1 done: 1 of 1 change applied.\nChecked on the page: it shows the change. At Phone (390px) the layer is drawn elsewhere than on the canvas: if you adapted it there on purpose, say so in the report.\n",
     );
     // Written at every width, as the notes say: its `left` there moves it nothing, right to left.
     editSource(APP, "right-[40px] h-[40px]", "right-[20px] h-[40px]");
@@ -902,7 +904,10 @@ test.describe("done checks the change on the page", () => {
     await drawnWith(page.getByTestId("centered"), `left-[${hero / 2 + 40}px]`);
     for (const { id } of changes.slice(0, 3)) expect(await npxHumanTouch("done", String(id))).toContain("Checked on the page: it shows the change.");
     const centered = String(changes[3].id);
-    expect(await npxHumanTouch("done", centered)).toContain("Checked on the page: it does not show the change. At 768px wide, the layer's `left` is");
+    // Right as wide as the window, past the phone's screen there: the page wider than the screen (ADR 0016, ticket 147).
+    expect(await npxHumanTouch("done", centered)).toContain(
+      `Checked on the page: it does not show the change. At Phone (390px) change ${centered} makes the page wider than the screen (it scrolls sideways), which it did not when the round was claimed: give it this place only from a breakpoint up where it fits (a variant such as \`md:\`), or place the layer within its container, and run \`npx humantouch done ${centered}\` again.`,
+    );
     editSource(APP, `left-[${hero / 2 + 40}px] h-[40px] w-[80px]`, "left-[calc(50%+40px)] h-[40px] w-[80px]");
     await drawnWith(page.getByTestId("centered"), "left-[calc(50%+40px)]");
     expect(await npxHumanTouch("done", centered)).toContain("Checked on the page: it shows the change.");
@@ -950,7 +955,8 @@ test.describe("done checks the change on the page", () => {
     const layer = page.getByTestId("by-margins");
     editSource(APP, "absolute inset-x-0 top-[120px] mx-auto", `absolute left-[${hero / 2}px] top-[120px] mx-auto`);
     await drawnWith(layer, `left-[${hero / 2}px]`);
-    expect(await npxHumanTouch("done", id)).toContain("Checked on the page: it does not show the change. At 768px wide, the layer is drawn at");
+    // Right as wide as the window, past the phone's screen there: the page wider than the screen (ADR 0016, ticket 147).
+    expect(await npxHumanTouch("done", id)).toContain(`Checked on the page: it does not show the change. At Phone (390px) change ${id} makes the page wider than the screen (it scrolls sideways), which it did not when the round was claimed: `);
     editSource(APP, `absolute left-[${hero / 2}px] top-[120px] mx-auto`, "absolute left-[40px] right-[-40px] top-[120px] mx-auto");
     await drawnWith(layer, "left-[40px]", "right-[-40px]");
     expect(await npxHumanTouch("done", id)).toContain("Checked on the page: it shows the change.");
@@ -989,7 +995,7 @@ test.describe("done checks the change on the page", () => {
     await expect(page.locator("iframe[data-ht-check]")).toHaveCount(0);
   });
 
-  test("a change made in the desktop view is checked at every view's width too: the Grid's columns changed for `sm:` only do not show at the phone's", async ({ page }) => {
+  test("a change made in the desktop view is checked at every view's width too: the Grid's columns changed for `sm:` only are adapted at the phone's, and done says what is drawn there (ADR 0016)", async ({ page }) => {
     await page.goto(DEV_URL);
     await enterEditMode(page);
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Grid", exact: true }).click();
@@ -1001,8 +1007,8 @@ test.describe("done checks the change on the page", () => {
     const grid = page.locator("main").locator('[class~="pb-16"]');
     editSource(APP, "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-3", "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2");
     await drawnWith(grid, "sm:grid-cols-2");
-    expect(await npxHumanTouch("done", "1")).toContain("Checked on the page: it does not show the change. At 390px wide, the number of columns is 1, not 2, as the browser computes `grid-template-columns` on the layer.");
-    await expect(progress(page)).toHaveAttribute("aria-valuenow", "0");
+    expect(await npxHumanTouch("done", "1")).toContain("Checked on the page: it shows the change. At Phone (390px) its number of columns is 1, not 2: if you adapted it there on purpose, say so in the report.");
+    await expect(progress(page)).toHaveAttribute("aria-valuenow", "1");
 
     editSource(APP, "grid grid-cols-1 gap-4 pb-16 sm:grid-cols-2", "grid grid-cols-2 gap-4 pb-16");
     await drawnWith(grid, "grid-cols-2");

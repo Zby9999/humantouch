@@ -88,6 +88,15 @@ export interface ScenarioChange {
    * the 1:1 rates.
    */
   notOneToOne?: string;
+  /**
+   * The scripted pass only (`apply`): what the page's check says of the
+   * change as the scripted code writes it, when not plainly that it shows it
+   * (ticket 147). `done`: words `done` says of it. `notShown`: the scripted
+   * code writes it wrong on purpose, so the check says not shown, and the
+   * report has it under ⚠️; `adapted`: the views' widths the check says it
+   * is adapted at.
+   */
+  scripted?: { done: string; notShown?: true; adapted?: number[] };
 }
 
 /**
@@ -139,6 +148,12 @@ export interface Scenario {
    * Changes `notOneToOne` are left as they were.
    */
   apply?(desk: Desk): Promise<void>;
+  /**
+   * Why the scenario is for the scripted pass (and `--dry`) alone, never an
+   * Agent's run: its scripted code writes the round wrong on purpose, to show
+   * what the page's check says of it (ticket 147).
+   */
+  scriptedOnly?: string;
 }
 
 /** The example project a scenario runs on. */
@@ -307,6 +322,38 @@ const TILES = [
   [144, 86],
 ].map(([left, top]) => `        <div className="absolute left-[${left}px] top-[${top}px] h-10 w-[100px] bg-stone-300" />\n`);
 const TILES_FRAME = `      <div className="relative h-60">\n${TILES.join("")}      </div>\n`;
+
+/**
+ * Waits until the page has noted `what` of change 1 as it began to check the
+ * claimed round, kept in `.humantouch/` (`noted` of the note, tickets 82,
+ * 104, 147): a copy of the page at each width is made first, and the code
+ * written before would be noted as the round's baseline. The bench's copy
+ * only (`desk.shell`).
+ */
+async function notedAtClaim(desk: Desk, what: string, noted: (note: any) => boolean) {
+  for (let tries = 0; ; tries++) {
+    const file = await desk.shell!("cat .humantouch/other-usages.json").catch(() => "");
+    const kept = (() => {
+      try {
+        return JSON.parse(file).otherUsages?.["1"];
+      } catch {
+        return null;
+      }
+    })();
+    if (noted(kept)) return;
+    if (tries > 150) throw new Error(`The page did not note ${what} in 15 s`);
+    await desk.page.waitForTimeout(100);
+  }
+}
+
+/** The Get started button made Fixed, 500px wide, in the desktop view: in the phone view, 390px wide, the hero is 342px (ticket 147). */
+async function designWidth500(desk: Desk) {
+  const { page } = desk;
+  await enterEditMode(page);
+  await layer(page, "Button").click();
+  await setField(page, "Width", "500");
+  await saved(desk, 1);
+}
 
 // The tests below run in the page: each stands on its own, with no names from here.
 
@@ -1027,6 +1074,84 @@ export const SCENARIOS: Scenario[] = [
     ],
     async apply(desk) {
       await desk.edit("src/App.tsx", "self-start px-4 py-2 text-white", "w-full max-w-[200px] self-start px-4 py-2 text-white");
+    },
+  },
+  // Ticket 147 (ADR 0016): a width made in the desktop view wider than the hero is at a phone's width, adapted there: shown, Phone adapted, and what is drawn there said.
+  {
+    id: "width-500-adapted",
+    title: "The Get started button made Fixed, 500px wide (in the phone view, wider than the hero).",
+    design: designWidth500,
+    changes: [
+      {
+        kind: "style",
+        expect: "From 768px up the Get started button is 500px wide; below, it is no wider than the hero, and the page does not scroll sideways.",
+        checkable: true,
+        widths: [390, 768, 1280],
+        shows: ({ width }) => {
+          const button = document.querySelector('[data-testid="hero"] button')!.getBoundingClientRect().width;
+          const hero = document.querySelector('[data-testid="hero"]')!.getBoundingClientRect().width;
+          const unscrolled = document.documentElement.scrollWidth <= document.documentElement.clientWidth;
+          return unscrolled && (width >= 768 ? Math.abs(button - 500) <= 0.5 : button <= hero + 0.5);
+        },
+        scripted: { done: "it shows the change. At Phone (390px) it draws 342px wide, not 500px: if you adapted it there on purpose, say so in the report.", adapted: [390] },
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", "self-start px-4 py-2 text-white", "w-full md:w-[500px] self-start px-4 py-2 text-white");
+    },
+  },
+  // Ticket 147 (ADR 0016): the same width written as given at every width: at a phone's width it makes the page wider than the screen, so not shown, and `done` says how to fix it.
+  {
+    id: "width-500-literal",
+    title: "The Get started button made Fixed, 500px wide (in the phone view, wider than the hero); written 500px wide at every width.",
+    scriptedOnly: "the scripted code writes the width as given at every width, which breaks the layout at a phone's width, to show the page's check says so",
+    design: designWidth500,
+    changes: [
+      {
+        kind: "style",
+        expect: "As wide as the window, the Get started button is 500px wide.",
+        checkable: true,
+        shows: () => Math.abs(document.querySelector('[data-testid="hero"] button')!.getBoundingClientRect().width - 500) <= 0.5,
+        scripted: {
+          done:
+            "it does not show the change. At Phone (390px) change 1 makes the page wider than the screen (it scrolls sideways) and the layer wider than its container (500px in 342px), which it did not when the round was claimed: " +
+            "use 500px only from a breakpoint up where it fits (a variant such as `md:`), or keep the layer within its container",
+          notShown: true,
+        },
+      },
+    ],
+    async apply(desk) {
+      await notedAtClaim(desk, "what broke at the phone's width", (note) => !!note?.breaks?.some((one: { width: number }) => one.width === 390));
+      await desk.edit("src/App.tsx", "self-start px-4 py-2 text-white", "w-[500px] self-start px-4 py-2 text-white");
+    },
+  },
+  // Ticket 147, as ticket 104 has it: a change in the phone view written without its breakpoint, so at every width, is no adaptation: outside its range it is not shown still.
+  {
+    id: "phone-padding-prefix-missed",
+    title: "In the phone view (below 768px only): the Get started button's top padding 16px; written without the breakpoint, at every width.",
+    scriptedOnly: "the scripted code leaves the breakpoint out, so the desktop view's padding changes too, to show the page's check says so",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await pick(page, phone(page), `${HERO} > button`);
+      await setField(page, "Padding top", "16");
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "Below 768px the Get started button's top padding is 16px.",
+        checkable: true,
+        // Four sides, each its own Variable: the top's the one written anew, the others as they were.
+        variable: ["pt-4"],
+        widths: [390],
+        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"] button')!).paddingTop === "16px",
+        scripted: { done: "it shows the change, but outside its range too: at 1280px wide, its padding from", notShown: true },
+      },
+    ],
+    async apply(desk) {
+      await notedAtClaim(desk, "what the button showed outside the phone's range", (note) => !!note?.outside?.length);
+      await desk.edit("src/App.tsx", "self-start px-4 py-2 text-white", "self-start px-4 pt-4 pb-2 text-white");
     },
   },
   {

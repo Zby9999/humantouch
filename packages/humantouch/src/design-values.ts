@@ -6,6 +6,7 @@ import type { LineHeight, TextCase, TextLength } from "./client/typography";
 import type { UsageLevel } from "./client/usage-chain";
 import type { OtherUsageChanged } from "./service-protocol";
 import type { OutsideChanged } from "./outside-protocol";
+import { DRAWS_NO_BREAK, type AdaptedAt, type BreakFound } from "./widths-protocol";
 
 const PROPERTIES: Record<string, string> = {
   fill: "Fill",
@@ -234,6 +235,96 @@ function placedOtherwise(was: unknown, is: unknown): boolean {
   const { placement: before, ...rest } = was as { placement: string };
   const { placement: after, ...others } = is as { placement: string };
   return before !== after && JSON.stringify(rest) === JSON.stringify(others);
+}
+
+/** The widths of the views beside the desktop view by default, as each is named (ADR 0008): the tablet's and the phone's. */
+export const TABLET_WIDTH = 768;
+export const PHONE_WIDTH = 390;
+
+/** A view's width as a sentence names it (ticket 147): "Phone (390px)", "Tablet (768px)"; another, "500px wide". */
+export function viewAt(width: number): string {
+  if (width === PHONE_WIDTH) return `Phone (${width}px)`;
+  if (width === TABLET_WIDTH) return `Tablet (${width}px)`;
+  return `${width}px wide`;
+}
+
+/** A change's value as a fix says to use it: a fixed size as its px alone ("500px"). */
+function valueToUse(change: Change): string {
+  const size = change.after as Size | null;
+  if ((change.property === "width" || change.property === "height") && size?.type === "fixed") return `${size.value}px`;
+  return value(change.property, change.after);
+}
+
+/** Properties that place a layer: what the page draws instead is a place, said in no value. */
+const PLACEMENT = new Set(["x", "y", "right", "bottom", "absolute"]);
+
+/**
+ * What the page draws of a change made in the desktop view at each view's
+ * width it adapted it at (`AdaptedAt`, ticket 147), each "at Phone (390px)
+ * it draws 342px wide, not 500px", the first opening a sentence; and that
+ * an adaptation on purpose goes in the report. Where nothing it read says
+ * it in a word, "it is drawn otherwise than on the canvas".
+ */
+export function adaptedWords(change: Change, widths: AdaptedAt[]): string {
+  const at = widths.map(({ width, actual, drawn }, i) => {
+    const where = `${i ? "at" : "At"} ${viewAt(width)}`;
+    if (change.kind === "delete") return `${where} the layer is still on the page`;
+    if (change.kind !== "style" || PLACEMENT.has(change.property)) return `${where} the layer is drawn elsewhere than on the canvas`;
+    if (drawn !== undefined) return `${where} it draws ${drawn}px ${/[Hh]eight/.test(change.property) ? "tall" : "wide"}, not ${valueToUse(change)}`;
+    if (actual !== null && typeof actual === "object" && !Array.isArray(actual) && ("margins" in actual || "orders" in actual)) return `${where} it is drawn otherwise than on the canvas`;
+    return `${where} its ${propertyName(change.property)} is ${value(change.property, actual)}, not ${value(change.property, change.after)}`;
+  });
+  return `${at.join("; ")}: if you adapted it ${widths.length === 1 ? "there" : "at those widths"} on purpose, say so in the report`;
+}
+
+/** A break of the layout, as a sentence goes on after its subject: "makes the page wider than the screen"; `self`, the layer as it is said there. */
+function breakWords({ kind, of, size, room, by }: BreakFound, self: string): string {
+  const who = of === "layer" ? self : "its container";
+  if (kind === "page") return "makes the page wider than the screen (it scrolls sideways)";
+  if (kind === "wider") return `makes ${who} wider than ${of === "layer" ? "its container" : "the container around it"} (${size}px in ${room}px)`;
+  if (by === "screen") return `pushes ${who} past the screen's edge, where the page cannot be scrolled to`;
+  return `has ${who} cut off by an element around it that hides what overflows it (\`overflow: hidden\`)`;
+}
+
+/**
+ * The breaks of the layout a change's layer makes that it did not as the
+ * round was claimed (ticket 147), width by width: "At Phone (390px) change 6
+ * makes the page wider than the screen (it scrolls sideways), and the layer
+ * wider than its container (500px in 342px)", the first with `subject`, the
+ * others going on with "it"; `opening`, the first opening a sentence.
+ */
+export function brokenWords(breaks: BreakFound[], subject: string, opening = true): string {
+  const widths = [...new Set(breaks.map((one) => one.width))];
+  return widths
+    .map((width, i) => {
+      const self = i || subject.startsWith("the layer") ? "itself" : "the layer";
+      // "makes the page wider than the screen, and the layer wider than its container": the verb said once.
+      const here = breaks.filter((one) => one.width === width).sort((a, b) => BREAK_ORDER.indexOf(a.kind) - BREAK_ORDER.indexOf(b.kind));
+      const words = here.map((one, n) => (n ? breakWords(one, self).replace(/^makes /, "") : breakWords(one, self)));
+      return `${i || !opening ? "at" : "At"} ${viewAt(width)} ${i ? "it" : subject} ${listed(words)}`;
+    })
+    .join("; ");
+}
+
+/** The order breaks of the layout are said in: what makes something wider first, as one verb says them. */
+const BREAK_ORDER: BreakFound["kind"][] = ["page", "wider", "clipped"];
+
+/**
+ * The other changes of `round` to `change`'s layer that may break the layout
+ * too (ticket 147), by id: style changes to a property that can
+ * (`DRAWS_NO_BREAK`). A break of the layer may be any of theirs.
+ */
+export function breakingWith(change: Change, round: Change[]): number[] {
+  const same = (other: Change) => other.target.loc === change.target.loc && JSON.stringify(other.target.chain) === JSON.stringify(change.target.chain);
+  return round.filter((other) => other.id !== change.id && other.kind === "style" && !DRAWS_NO_BREAK.has(other.property) && same(other)).map((other) => other.id);
+}
+
+/** How to fix a change whose layer breaks the layout (ticket 147): made in the desktop view, to use its value only where it fits; at a breakpoint, to keep it within its container. */
+export function breakFix(change: Change): string {
+  if (change.breakpoint) return "keep the layer within its container there";
+  // A place: its value only where it fits, or a place that keeps it in.
+  if (change.kind !== "style" || PLACEMENT.has(change.property)) return `give it this place only from a breakpoint up where it fits (a variant such as \`md:\`), or place the layer within its container`;
+  return `use ${valueToUse(change)} only from a breakpoint up where it fits (a variant such as \`md:\`), or keep the layer within its container`;
 }
 
 /** `1`, `1 and 2`, `1, 2 and 3`: things in a sentence. */
