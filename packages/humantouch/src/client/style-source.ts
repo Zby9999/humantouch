@@ -283,6 +283,8 @@ function cascade(el: Element, properties: string[]): { winners: Map<string, Cand
     layers = new LayerOrder();
     visitSheets(root === doc ? doc.styleSheets : sheetsOf(root as ShadowRoot));
     reach = null;
+    depth = 0;
+    host = null;
   };
   if (shadows && el.shadowRoot) reaching(el.shadowRoot, asHost(el), 1);
   // Slotted on through a slot slotted in another shadow root, by that one's `::slotted()` rules too.

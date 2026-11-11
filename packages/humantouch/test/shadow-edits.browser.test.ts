@@ -253,6 +253,22 @@ describe("the page check of a change in an open shadow root (ticket 137)", () =>
   });
 });
 
+test("a copy of the page has a shadow root the page made clonable too, and follows it as it changes", () => {
+  const live = livePage(`<!DOCTYPE html><body><div id="host"></div></body>`, (doc) => {
+    doc.getElementById("host")!.attachShadow({ mode: "open", clonable: true }).innerHTML = `<style>p { color: rgb(0, 128, 0) }</style><p id="a">A</p>`;
+  }).document;
+  const copy = copyPage(live, 390, document.body);
+  try {
+    const a = inShadow(live, "a");
+    expect(getComputedStyle(copy.of(a)!).color).toBe("rgb(0, 128, 0)");
+    a.textContent = "Changed";
+    copy.sync();
+    expect(copy.of(a)!.textContent).toBe("Changed");
+  } finally {
+    copy.close();
+  }
+});
+
 describe("what sets a value in an open shadow root (ticket 137)", () => {
   const PARTS = `<!DOCTYPE html>
 <style>body { margin: 0 } #host::part(label) { color: rgb(0, 0, 255) } #host::part(other) { color: rgb(0, 255, 0) }</style>

@@ -86,12 +86,17 @@ export function copyPage(page: Document, width: number, into: ParentNode): PageC
    */
   const copyShadow = (host: Element, to: Element) => {
     const shadow = host.shadowRoot!;
-    if (to.shadowRoot) return;
     let copy: ShadowRoot;
-    try {
-      copy = to.attachShadow({ mode: "open" });
-    } catch {
-      return; // Not an element that can host one.
+    if (to.shadowRoot) {
+      // One the page made clonable came with its host's copy: made anew from the page's, node for node, as any other.
+      copy = to.shadowRoot;
+      copy.replaceChildren();
+    } else {
+      try {
+        copy = to.attachShadow({ mode: "open" });
+      } catch {
+        return; // Not an element that can host one.
+      }
     }
     inCopy.set(shadow, copy);
     const Sheet = doc.defaultView!.CSSStyleSheet;

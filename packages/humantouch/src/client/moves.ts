@@ -122,7 +122,7 @@ function kept(round: RoundOnCanvas, canvas: string, doc?: Document): RoundOnCanv
 const canvases = new WeakMap<RoundOnCanvas, { canvas: string; doc?: Document; read?: SavedCanvas }>();
 
 /** Its shadow roots as shadow roots, the layers in them found (ticket 137). */
-const parse = (canvas: string) => parseCanvas(canvas);
+const parse = parseCanvas;
 
 /**
  * The canvas of `round`, as saved: what the page goes by to find a layer
