@@ -136,6 +136,8 @@ interface Rules {
   taken?: RuleBlocks;
   /** The edits'. */
   edits: RuleBlocks;
+  /** What the edits made on the instance alone in rounds before declared, applied then (ticket 114): the page's own now, over the edits the instances share, as they were. */
+  takenAlone?: RuleBlocks;
   /** What the edits made on the instance alone declare (ticket 114): over the edits its layer shares with the other instances. */
   alone?: RuleBlocks;
 }
@@ -300,9 +302,13 @@ export function takeInEdits(
         if ("display" in change.style) delete block.hidden;
       }
       for (const change of applied(el)) put(el, kept, change.style, change.breakpoint ?? null);
-      // Made on the instance alone (ticket 114): those applied over what it shares, as they were; those left on it alone still.
+      // Made on the instance alone (ticket 114): those applied over what it shares still, as the page's own; those left on it alone.
       const aloneOn = alone(el);
-      for (const change of aloneOn.applied) put(el, kept, change.style, change.breakpoint ?? null);
+      if (aloneOn.applied.length) {
+        const takenAlone: RuleBlocks = structuredClone(rules.takenAlone) ?? { base: { style: {} }, at: [] };
+        for (const change of aloneOn.applied) put(el, takenAlone, change.style, change.breakpoint ?? null);
+        rules.takenAlone = takenAlone;
+      }
       const promoted = (changes: Change[]) => {
         const blocks: RuleBlocks = { base: { style: {} }, at: [] };
         for (const change of changes) put(el, blocks, change.style, change.breakpoint ?? null);
@@ -345,7 +351,7 @@ export function asPage<T>(el: Element, look: () => T): T {
   if (!sheet) return look();
   // Put back as the rules have it: the text may be behind them.
   const css = cssOf(key, effective(rules));
-  sheet.textContent = cssOf(key, effective({ lifted: rules.lifted, copied: rules.copied, taken: rules.taken, edits: { base: { style: {} }, at: [] } }));
+  sheet.textContent = cssOf(key, effective({ lifted: rules.lifted, copied: rules.copied, taken: rules.taken, takenAlone: rules.takenAlone, edits: { base: { style: {} }, at: [] } }));
   try {
     return look();
   } finally {
@@ -550,11 +556,19 @@ function applying(el: Element, blocks: RuleBlocks): AtBreakpoint[] {
   return [...blocks.at].sort((a, b) => widestFirst(a.breakpoint, b.breakpoint)).filter((at) => view.matchMedia(mediaOf(at.breakpoint)).matches);
 }
 
-/** What applies, all told: the lifted declarations, then what a copy took over, then the component's changes, then the edits of rounds before applied, then the edits, then those made on the instance alone. */
+/**
+ * What applies, all told: the lifted declarations, then what a copy took
+ * over, then the component's changes, then the edits of rounds before
+ * applied, then the edits, then those made on the instance alone, of rounds
+ * before and of this one (ticket 114). What the instance has of its own at
+ * every width wins over what the instances share at a breakpoint too: its
+ * value is its own at every width.
+ */
 function effective(rules: Rules): RuleBlocks {
   const all: RuleBlocks = { base: { style: { ...rules.lifted } }, at: [] };
-  for (const blocks of [rules.copied, rules.promoted, rules.taken, rules.edits, rules.alone]) {
+  for (const blocks of [rules.copied, rules.promoted, rules.taken, rules.edits, rules.takenAlone, rules.alone]) {
     if (!blocks) continue;
+    if (blocks === rules.takenAlone || blocks === rules.alone) for (const at of all.at) for (const name in blocks.base.style) delete at.style[name];
     Object.assign(all.base.style, blocks.base.style);
     if (blocks.base.hidden !== undefined) all.base.hidden = blocks.base.hidden;
     for (const at of blocks.at) {
@@ -661,7 +675,8 @@ function writeRules(written: Written[], pendingLayer?: string) {
     if (rules.taken && empty(rules.taken)) delete rules.taken;
     if (rules.alone) rules.alone.at = rules.alone.at.filter((at) => Object.keys(at.style).length || at.hidden !== undefined);
     if (rules.alone && empty(rules.alone)) delete rules.alone;
-    const shows = !empty(rules.edits) || !!rules.copied || !!rules.promoted || !!rules.taken || !!rules.alone;
+    if (rules.takenAlone && empty(rules.takenAlone)) delete rules.takenAlone;
+    const shows = !empty(rules.edits) || !!rules.copied || !!rules.promoted || !!rules.taken || !!rules.alone || !!rules.takenAlone;
     return { el, rules, json: shows ? JSON.stringify(rules) : null, key: el.getAttribute(STYLE_KEY_ATTR) };
   });
 

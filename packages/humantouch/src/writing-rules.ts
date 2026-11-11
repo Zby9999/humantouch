@@ -336,7 +336,7 @@ const HOW_CHECKED: HowChecked[] = [
   {
     calledFor: (change, list) => checkable(change, list) && change.kind === "style" && !!change.alone,
     text:
-      "a change for one instance alone (ticket 114) by the value the browser computes for it on the layer in that instance, the one given (its place among those the loop renders on the page, its words), " +
+      "a change for one instance alone by the value the browser computes for it on the layer in that instance, the one given (its place among those the loop renders on the page, its words), " +
       "and by the loop's other instances, which are to show what they did as the round was claimed: one that changes with it means it is not shown",
   },
   {

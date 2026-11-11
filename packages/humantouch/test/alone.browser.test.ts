@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { createChangeSet, type Change } from "../src/client/changeset";
+import { declare, declareAlone } from "../src/client/canvas-style";
 import { checkChange } from "../src/client/check";
 import { createEditor } from "../src/client/edits";
 import { placedOnCanvas } from "../src/client/moves";
 import { otherUsagesChanged, noteRound } from "../src/client/other-usages";
 import { serializeCanvas } from "../src/client/freezer";
-import { revertSaved } from "../src/client/saved-round";
+import { revertSaved, takeInApplied } from "../src/client/saved-round";
 import type { Fill } from "../src/client/property-table";
 import type { Layer } from "../src/client/layers";
 import { createViews } from "../src/client/views";
@@ -269,5 +270,35 @@ describe("a saved round with an instance alone (ticket 114)", () => {
     const reverted = revertSaved({ canvas, changeSet: changes.save() }, changes.list()[0].id)!;
     expect([...showSaved(reverted.canvas).querySelectorAll("article")].map(background)).toEqual(["rgb(0, 0, 255)", "rgb(0, 0, 255)", "rgb(0, 0, 255)", WHITE]);
     expect(reverted.changeSet.changes.map((change) => change.property)).toEqual(["fill"]);
+  });
+});
+
+describe("review fixes (ticket 114)", () => {
+  test("applied in a round before, a fill made alone stays over the fill the instances share, left this round", () => {
+    const { doc, editor, changes, cards, layerOf } = openCanvas();
+    editor.editAlone(layerOf(cards[1]), true);
+    editor.set(layerOf(cards[1]), "fill", RED);
+    editor.set(layerOf(cards[0]), "fill", BLUE);
+    const [alone, shared] = changes.list();
+    const canvas = serializeCanvas({ document: doc, width: 800, height: 600, windowHeight: 600, scrollY: 0 });
+    const shown = showSaved(canvas);
+    takeInApplied(shown, { lastId: 2, changes: [shared], applied: [alone] });
+    expect([...shown.querySelectorAll("article")].map(background)).toEqual(["rgb(0, 0, 255)", "rgb(255, 0, 0)", "rgb(0, 0, 255)", WHITE]);
+  });
+
+  test("a copy of the instance alone follows the others: it has no mark", () => {
+    const { doc, editor, cards, layerOf } = openCanvas();
+    editor.editAlone(layerOf(cards[1]), true);
+    editor.duplicate(layerOf(cards[1]));
+    expect(doc.querySelectorAll("[data-ht-alone]")).toHaveLength(1);
+    expect(doc.querySelectorAll("article")).toHaveLength(5);
+  });
+
+  test("a value of its own at every width wins over one the instances share at a breakpoint", () => {
+    const { cards } = openCanvas();
+    // 800px wide: a range up to 1000px holds.
+    declare(cards.slice(0, 3), { "background-color": "rgb(0, 255, 0)" }, { min: null, max: 1000 }, "9");
+    declareAlone(cards[1], { "background-color": "rgb(255, 0, 0)" });
+    expect(cards.map(background)).toEqual(["rgb(0, 255, 0)", "rgb(255, 0, 0)", "rgb(0, 255, 0)", WHITE]);
   });
 });

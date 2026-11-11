@@ -56,7 +56,7 @@ export function SelectionToolbar({ layer, view, camera, promote, onPromote, alon
           type="button"
           class="ht-selection-tool"
           aria-pressed={alone}
-          title={alone ? "Changes made here are made to this instance alone. Press to follow the others again." : "Change this instance alone, apart from the others the loop renders."}
+          data-ht-tip={alone ? "Changes made here are made to this instance alone. Press to follow the others again." : "Change this instance alone, apart from the others the loop renders."}
           onClick={() => onEditAlone(layer, !alone)}
         >
           <Icon name="alone" />

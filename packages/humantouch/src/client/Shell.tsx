@@ -10,7 +10,7 @@ import { Icon } from "./icons";
 import { FIELD_SETTLE_MS, ping, prefersReducedMotion, TIP_DELAY_MS, TIP_GRACE_MS } from "./motion";
 import { pointerHeld, watchHolds } from "./pointer-held";
 import { createChangeSet, withDependents, type Change, type ChangeSet, type Created, type Place, type PutBack, type RangePart } from "./changeset";
-import { DELETED_ATTR, LAYER_ID_ATTR } from "./canvas-style";
+import { DELETED_ATTR, elementsOf, LAYER_ID_ATTR } from "./canvas-style";
 import { createClipboard } from "./clipboard";
 import { copyStyle, pasteStyle, type CopiedStyle } from "./style-copy";
 import type { Destination, Editor } from "./edit-commands";
@@ -397,7 +397,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   /** The layer a change is of, as the canvas has it now: one deleted, the layer it was in; one moved off the canvas, there. */
   const layerOfChange = (change: Change): Layer | null => {
     if (!tree || !offCanvas) return null;
-    const byId = (doc: Document, id: string) => doc.querySelector(`[${LAYER_ID_ATTR}="${CSS.escape(id)}"]:not([${DELETED_ATTR}])`);
+    // Made on one instance alone (ticket 114): its layer in that instance.
+    const byId = (doc: Document, id: string) => elementsOf(doc, id).find((el) => !el.hasAttribute(DELETED_ATTR)) ?? null;
     const moved = change.offCanvas ? offCanvas.list().find((outside) => outside.id === change.offCanvas)?.layer() : null;
     if (moved) return moved;
     const id = change.kind === "delete" ? (change.before as Place).container.layer : change.layer;

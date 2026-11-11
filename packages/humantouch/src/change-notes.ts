@@ -876,7 +876,7 @@ export function container({ container: { target } }: Place, located = true): str
 
 /** Which of a loop's instances a change made on one alone is for (ticket 114), and how the Agent tells it apart. */
 function aloneLine({ target: { instances }, instance }: Change): string {
-  const which = instance ? `the ${ordinal(instance.nth)} of the ${instances} instances a loop renders${instance.words ? `, which reads ${quoted(instance.words)}` : ""}` : `one of the ${instances} instances a loop renders`;
+  const which = instance ? `the ${ordinal(instance.nth)} of the ${instances} instances a loop renders${instance.words ? ` (it reads ${quoted(instance.words)})` : ""}` : `one of the ${instances} instances a loop renders`;
   return (
     `**One instance alone:** the layer is in ${which}, which the designer changed apart from the others. ` +
     "Tell it apart by a field of its item in the data the loop goes through (its `id`, say) or a condition on it, never by its index; the other instances stay as they are."

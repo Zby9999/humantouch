@@ -320,7 +320,7 @@ export function createEditor(
             ? idOf(layer.parent, tree.acrossInstances(layer.parent))
             : undefined
         : undefined;
-    const els = alone ? [layer.el] : instances.map((instance) => instance.el);
+    const els = alone ? alone.els : instances.map((instance) => instance.el);
     if (asStack && !breakpoint) for (const el of els) el.setAttribute(AS_STACK_ATTR, "");
     // The instances share their edit styles from the first edit on, their id stamped on them after, as it always was.
     // A Grid made a Stack, read before it is one: how it placed its layers stays in the code (ticket 109's follow-up).
@@ -348,7 +348,8 @@ export function createEditor(
     const variables = bind?.(property, value, picked, earlier?.variables, code);
     changes.record(id, {
       // A text style written on a Frame drawn around its text is its text's.
-      target: targetOf(layer.framesText && isTextProperty(property) ? textOnFrame(layer) : layer, instances.length),
+      // Made on one instance alone (ticket 114): one of the instances the loop renders.
+      target: targetOf(layer.framesText && isTextProperty(property) ? textOnFrame(layer) : layer, alone ? alone.instances : instances.length),
       scope: "usage",
       ...(breakpoint && { breakpoint }),
       property,

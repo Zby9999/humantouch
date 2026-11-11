@@ -10,7 +10,7 @@
  * is drawn on the page to compare where the code that writes it cannot be
  * read: on an element put in and taken out at once, before anything is painted.
  */
-import { breakpointKey, breakpointName, mediaOf, sameBreakpoint, widthIn, type Breakpoint } from "./breakpoints";
+import { breakpointKey, breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
 import { changeKey, isGridSettings, isReorder, keptIn, makesGrid, placedAt, type Change, type Composed, type Created, type Margins, type Place, type PutBack } from "./changeset";
 import { canvasOf, type RoundOnCanvas } from "./moves";
@@ -169,7 +169,9 @@ export function widthsOf(change: Change, round: Change[], pageWidth: number, vie
   // A new layer in its container's layout is there or not at every width alike; placed absolute, it is placed at each.
   if (change.kind === "create" && !placeOfMade(change, round).absolute) return { own: true, others: [] };
   const { loc, chain, made: madeAs } = change.target;
-  const sameLayer = (other: Change) => (madeAs ? other.layer === change.layer : other.target.loc === loc && usageKey(loc!, other.target.chain) === usageKey(loc!, chain));
+  // Made on one instance alone (ticket 114): its own changes; one the instances share, theirs.
+  const sameLayer = (other: Change) =>
+    madeAs || change.alone ? other.layer === change.layer : !other.alone && other.target.loc === loc && usageKey(loc!, other.target.chain) === usageKey(loc!, chain);
   // A Stack made a Grid at a breakpoint, or its columns changed there once made one at every width (ticket 109), lays out its own too.
   // Its direction or gaps changed there before, made a Grid at every width after: the page checks the Grid there, but for what that change sets (`arrangedOver`).
   const laysOutOwn = (other: Change) => other.property === change.property || (arrangedTogether(change.property, other.property) && (change.property !== "arrangement" || other.id > change.id));
@@ -195,7 +197,13 @@ export function outsideOf(change: Change, round: Change[], pageWidth: number, vi
   const { loc, chain } = change.target;
   const ownKey = usageKey(loc!, chain);
   const otherwise = round.filter(
-    (other) => other.id !== change.id && other.kind === "style" && other.target.loc === loc && (other.scope === "component" || usageKey(loc!, other.target.chain) === ownKey) && changesTheSame(change, other),
+    (other) =>
+      other.id !== change.id &&
+      other.kind === "style" &&
+      other.target.loc === loc &&
+      (other.scope === "component" || usageKey(loc!, other.target.chain) === ownKey) &&
+      (change.alone ? other.layer === change.layer : !other.alone) &&
+      changesTheSame(change, other),
   );
   return [...new Set([pageWidth, ...viewWidths])].filter((width) => !within(breakpoint, width) && !otherwise.some((other) => !other.breakpoint || within(other.breakpoint, width)));
 }
@@ -517,7 +525,7 @@ function lookAt(doc: Document, change: Change, round: RoundOnCanvas, apart: stri
 /** The elements a style change is to show on, as `at` shows them: a change to a component itself shows in every usage of it, but those `apart`. */
 function styledBy(doc: Document, change: Change, apart: string[], at: PageWidth, round?: RoundOnCanvas): Element[] {
   const found = change.scope === "component" ? componentElementsOf(doc, change.target, apart, savedCanvas(round)) : elementsOf(doc, change.target, savedCanvas(round));
-  return instancesFor(found, change, round ?? []).map((el) => at.of(el)).filter((el): el is Element => !!el);
+  return instancesFor(found, change, round ?? [], at.width).map((el) => at.of(el)).filter((el): el is Element => !!el);
 }
 
 /**
@@ -525,17 +533,18 @@ function styledBy(doc: Document, change: Change, apart: string[], at: PageWidth,
  * show on (ticket 114): made on one instance alone, the one in that
  * instance, by its place among those the loop renders; one the instances
  * share, all but those of an instance with a value of its own for it this
- * round, at every width or at the change's breakpoint.
+ * round, at every width or at a breakpoint that holds at `width`.
  */
-function instancesFor(found: Element[], change: Change, round: Change[]): Element[] {
+function instancesFor(found: Element[], change: Change, round: Change[], width: number): Element[] {
   if (change.alone) {
-    const el = change.instance && found[change.instance.nth - 1];
+    // Once in each of the loop's instances, in page order: else which is in the one changed alone cannot be told.
+    const el = change.instance && found.length === change.target.instances && found[change.instance.nth - 1];
     return el ? [el] : [];
   }
   if (change.scope !== "usage") return found;
   const own = new Set(
     round.flatMap((other) =>
-      other.alone && other.instance && aloneOfKey(other.layer)?.id === change.layer && changesTheSame(change, other) && (!other.breakpoint || sameBreakpoint(other.breakpoint, change.breakpoint)) ? [other.instance.nth - 1] : [],
+      other.alone && other.instance && aloneOfKey(other.layer)?.id === change.layer && changesTheSame(change, other) && (!other.breakpoint || within(other.breakpoint, width)) ? [other.instance.nth - 1] : [],
     ),
   );
   return own.size ? found.filter((_, i) => !own.has(i)) : found;
@@ -562,6 +571,8 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
     if ("missing" in found) return { outcome: "unchecked", reason: `the layer is new this round, and not at its place on the page (change ${makerOf(change.target.made, round)!.id})` };
     els = found.els.map((el) => at.of(el)).filter((el): el is Element => !!el);
   } else els = styledBy(doc, change, apart, at, round);
+  // Made on one instance alone (ticket 114): the page finds the layer once in each of the loop's instances, or cannot tell which is in that one.
+  if (!els.length && change.alone) return { outcome: "unchecked", reason: "the page does not find the layer once in each of the instances the loop renders, so it cannot tell which is the one changed alone" };
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
   if (property === "arrangement" && change.after) {
     // Laid out as a Stack by its layers' `order`, as on the canvas there (ticket 109's follow-up).
