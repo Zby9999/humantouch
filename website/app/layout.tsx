@@ -5,7 +5,7 @@ import { HumanTouch } from "humantouch/react";
 import { Nav } from "@/components/Nav";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
-/** Every weight Rajdhani has, for the labels to be tried at each (designer, 2026-11-11). */
+/** Every weight Rajdhani has, for the labels to be tried at each (designer, 2026-11-11); all loaded, see globals.css. */
 const rajdhani = Rajdhani({ subsets: ["latin"], weight: ["300", "400", "500", "600", "700"], variable: "--font-rajdhani" });
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
