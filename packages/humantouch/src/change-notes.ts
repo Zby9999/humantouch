@@ -94,6 +94,7 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Scope:** ${change.scope === "component" ? componentScope(target) : scope(target, look, !!change.alone)}`,
     `**Breakpoint:** ${breakpoint(change)}`,
     `**Design intent:** ${intent(change, list, look)}`,
+    ...(target.shadowRoot ? [shadowRootLine(target)] : []),
     ...(change.kind === "style" ? [variablesLine(change)].filter((line) => line !== null) : []),
     ...(change.copiedBreakpoints?.length ? [copiedBreakpoints(change.copiedBreakpoints, list)] : []),
     ...(change.asStack && !madeGridAfter(change, list) ? [AS_STACK] : []),
@@ -934,6 +935,18 @@ const AS_STACK =
 const NOT_LOCATED =
   "**Not located.** The layer carries no source marker: it may be markup outside the components (such as `index.html`) or code written without JSX. Find it in the source from its place on the page, above.";
 
+/**
+ * Where a layer in an open shadow root is styled (ticket 137, ADR 0017): by
+ * the styles of the component that renders into it, not the page's CSS; drawn by a
+ * dependency's custom element, from its usage.
+ */
+function shadowRootLine({ shadowRoot, chain }: Target): string {
+  if (chain[0]?.webComponent) {
+    return `**Shadow root:** the layer is in the shadow root of \`${shadowRoot}\`, a custom element a dependency defines: change it from where \`<${chain[0].component}>\` is used, by what it takes there (see **Third-party Web Components**), never inside the dependency.`;
+  }
+  return `**Shadow root:** the layer is in the shadow root of \`${shadowRoot}\`, which the page's CSS does not reach: the change is to the styles of the component that renders into its shadow root (see **Shadow roots**), not to global CSS.`;
+}
+
 function layer({ context, onlyText }: Target): string {
   const name = context.path.at(-1);
   // The only text of a Frame, as a button's words are, is written in the Frame's element.
@@ -1023,7 +1036,9 @@ function setBy(sources: StyleSource[], root: string): string {
     const declaration = source.declaration && `\`${source.declaration}${source.important ? " !important" : ""}\``;
     if (source.kind === "inline") return `the element's style attribute, ${declaration}`;
     let text = `rule \`${source.selector}\` ${source.layer ? `in CSS layer \`${source.layer}\`` : "in no CSS layer"}`;
-    if (source.file) text += `${source.layer ? "" : ","} of \`${projectPath(source.file, root)}\``;
+    // A shadow root's own: the component's styles for it, written where it renders them (ticket 137).
+    if (source.shadowRoot) text += `${source.layer ? "" : ","} of the styles \`<${source.shadowRoot}>\` has in its shadow root`;
+    else if (source.file) text += `${source.layer ? "" : ","} of \`${projectPath(source.file, root)}\``;
     if (source.className) text = `class \`${source.className}\`: ${text}`;
     return `${text}, ${declaration}`;
   };

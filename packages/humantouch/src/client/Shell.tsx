@@ -393,7 +393,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   /** The layer a change is of, as the canvas has it now: one deleted, the layer it was in; one moved off the canvas, there. */
   const layerOfChange = (change: Change): Layer | null => {
     if (!tree || !offCanvas) return null;
-    // Made on one instance alone (ticket 114): its layer in that instance.
+    // Made on one instance alone (ticket 114): its layer in that instance. In a shadow root too (ticket 137, `elementsOf`).
     const byId = (doc: Document, id: string) => elementsOf(doc, id).find((el) => !el.hasAttribute(DELETED_ATTR)) ?? null;
     const moved = change.offCanvas ? offCanvas.list().find((outside) => outside.id === change.offCanvas)?.layer() : null;
     if (moved) return moved;
