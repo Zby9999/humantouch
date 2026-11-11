@@ -77,9 +77,10 @@ export function usePointer({ phase, steps, root, scene, width, aim }: { phase: n
       point = { x: (b.left - box.left + b.width * (target.dx ?? 0.5)) / k, y: (b.top - box.top + b.height * (target.dy ?? 0.55)) / k };
       const panel = root.querySelector(".ht-panel.is-design");
       // The part of the panel in sight: from its top to the card's foot.
-      // The card: the host is drawn as its contents, so measured, it is the card it sits in.
-      const bottom = (root.host as HTMLElement).parentElement!.getBoundingClientRect().height / k;
+      // The card: the host is drawn as its contents, so measured, it is the card it sits in. The panel may end above it.
+      const card = (root.host as HTMLElement).parentElement!.getBoundingClientRect().height / k;
       const top = panel ? (panel.getBoundingClientRect().top - box.top) / k : 0;
+      const bottom = panel ? Math.min(card, (panel.getBoundingClientRect().bottom - box.top) / k) : card;
       if (target.inPanel && panel && !panel.querySelector(".ht-pop") && point.y > top + (bottom - top) * 0.7) {
         const by = Math.min(Math.round(point.y - (top + (bottom - top) * 0.45)), panel.scrollHeight - panel.clientHeight - panel.scrollTop);
         panel.scrollTo({ top: panel.scrollTop + by, behavior: "smooth" });

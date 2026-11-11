@@ -19,15 +19,17 @@ import { usePhases } from "./usePhases";
 
 const SCENE_W = 640;
 const SCENE_H = 667;
-/** The canvas's zoom: Desktop's 1440px are 317 in the scene. */
-const K = 0.22;
+/** The canvas's zoom: Desktop's 1440px are 259 in the scene. */
+const K = 0.18;
 const LEFT = 20;
-const GAP = 16;
-const TOP = 60;
+const GAP = 14;
+const TOP = 56;
+/** Where the views and the panel end: above the card's foot, on a phone's square card too (designer, 2026-11-11). */
+const FOOT = 610;
 const FRAME_LEFT = VIEWS.map((_, i) => LEFT + VIEWS.slice(0, i).reduce((x, v) => x + v.width * K + GAP, 0));
-/** The pages run on past the card's foot, as they do past the canvas's. */
-const FRAME_H = SCENE_H + 40 - TOP;
-const PANEL = { left: LEFT, top: 392, width: 320 };
+const FRAME_H = FOOT - TOP;
+/** The Design panel at the bottom right, over the narrow views' feet, clear of the covers (designer, 2026-11-11). */
+const PANEL = { right: 20, top: 300, width: 320 };
 const STONE = String(styleOf("cover").fill);
 const MUTED = "#6E6C66";
 const RADIUS = 48;
@@ -35,14 +37,14 @@ const DRAG_MS = 800;
 
 type Target = { at: [number, number] } | { cover: ViewName } | { panel: string } | { radius: number };
 const STEPS: (Step & { aim: Target })[] = [
-  /* 0 rest: nothing selected */ { aim: { at: [470, 470] }, move: 500, hold: 700 },
+  /* 0 rest: nothing selected */ { aim: { at: [580, 240] }, move: 500, hold: 700 },
   /* 1 the cover, in Desktop */ { aim: { cover: "Desktop" }, move: 650, hold: 700, click: true },
   /* 2 its Fill's swatch */ { aim: { panel: "Fill color picker" }, move: 550, hold: 450, click: true },
   /* 3 muted: every view follows */ { aim: { panel: "muted" }, move: 350, hold: 1500, click: true },
   /* 4 the cover, in Phone */ { aim: { cover: "Phone" }, move: 750, hold: 800, click: true },
   /* 5 onto the corner radius's icon */ { aim: { radius: 0.08 }, move: 550, hold: 150 },
   /* 6 dragged right: Phone alone rounds */ { aim: { radius: 0.62 }, move: DRAG_MS, hold: 1600, drag: true },
-  /* 7 the canvas: nothing selected; hold */ { aim: { at: [480, 520] }, move: 550, hold: 2200, click: true },
+  /* 7 the canvas: nothing selected; hold */ { aim: { at: [575, 200] }, move: 550, hold: 2200, click: true },
 ];
 const DURATIONS = STEPS.map((s) => s.move + s.hold);
 /** The pages, drawn again only when their styles change: three Acmes on every step cost a long task. */
@@ -59,7 +61,7 @@ const VIEWS_CSS = `
 .demo-scene .ht-view-name.is-active { color: #fff; }
 .demo-frame { position: absolute; top: ${TOP}px; height: ${FRAME_H}px; overflow: hidden; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.25), 0 16px 40px -8px rgb(0 0 0 / 0.5); }
 .demo-frame > div { transform-origin: top left; }
-.demo-panel { position: absolute; left: ${PANEL.left}px; top: ${PANEL.top}px; width: ${PANEL.width}px; bottom: -40px; overflow: hidden; padding-bottom: 240px; border-radius: 12px; box-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15), 0 24px 64px -12px rgb(0 0 0 / 0.55); }
+.demo-panel { position: absolute; right: ${PANEL.right}px; top: ${PANEL.top}px; width: ${PANEL.width}px; height: ${FOOT - PANEL.top}px; overflow: hidden; padding-bottom: 240px; border-radius: 12px; box-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15), 0 24px 64px -12px rgb(0 0 0 / 0.55); }
 `;
 
 export function DesignPanelDemo() {
