@@ -130,6 +130,14 @@ const HOW_TO_WRITE: HowToWrite[] = [
       `When a class inside the component sets the value, do not add a second, conflicting class at the usage (\`rounded-xl rounded-sm\`): make the component's class a default the usage can replace (${replaceBy(look?.helper)}).`,
   },
   {
+    name: "One instance alone",
+    calledFor: (change) => !!change.alone,
+    text:
+      "a change marked **One instance alone** is for one of the instances a loop renders, apart from the others: give it to that instance by a field of its item in the data the loop goes through, its `id` where it has one (`choice.id === \"dark\"`), or a condition on its item, never by its index, which changes as the data does. " +
+      "The other instances keep what they have. A change to the same property for every instance changes them all but this one, which keeps its own value: write it so (its own value after the shared one, a class that wins over it). " +
+      "Its other properties follow the others: change only those given.",
+  },
+  {
     name: "The component itself",
     calledFor: (change) => change.scope === "component",
     text:
@@ -320,10 +328,16 @@ const placedSo = (change: Change, so: (how: PlacedAlong) => boolean) =>
 /** What the page reads, and where, kind by kind, in the order said. */
 const HOW_CHECKED: HowChecked[] = [
   {
-    calledFor: (change, list) => checkable(change, list) && change.kind === "style" && !placing(change),
+    calledFor: (change, list) => checkable(change, list) && change.kind === "style" && !placing(change) && !change.alone,
     text:
       "a style change by the value the browser computes (`getComputedStyle`) for the CSS its reference style names, on the layer in every instance, whatever class or rule gives it, and on nothing else: " +
       "an edit that also changes elements outside the scope is wrong, though `done` says it shows",
+  },
+  {
+    calledFor: (change, list) => checkable(change, list) && change.kind === "style" && !!change.alone,
+    text:
+      "a change for one instance alone by the value the browser computes for it on the layer in that instance, the one given (its place among those the loop renders on the page, its words), " +
+      "and by the loop's other instances, which are to show what they did as the round was claimed: one that changes with it means it is not shown",
   },
   {
     calledFor: (change, list) => checkable(change, list) && change.kind === "style" && !change.breakpoint,

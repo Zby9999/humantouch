@@ -305,6 +305,21 @@ export interface Editor {
    * Returns the changes promoted, as they were, and those that stay with its usage.
    */
   promote(layer: Layer): { promoted: Change[]; stays: Change[] };
+  /** What the layer's style changes are recorded under (`Change.layer`): its id, or in an instance that edits alone, the key of its changes there (ticket 114); null before it has an id. */
+  recordedAs(layer: Layer): string | null;
+  /** Whether the layer is one of the instances a loop renders, or is in one (ticket 114): which can stop following the others. */
+  canEditAlone(layer: Layer): boolean;
+  /** Whether the instance of a loop the layer is, or is in, no longer follows the others (ticket 114). */
+  editsAlone(layer: Layer): boolean;
+  /**
+   * Has the instance of a loop the layer is, or is in, stop following the
+   * others (`alone`), or follow them again, as one edit that can be undone
+   * (ticket 114). Not following, what is changed on it, or on a layer in it,
+   * from then on is changed on it alone, over what the instances share: the
+   * others' changes still change it, but where it has a value of its own.
+   * Following again, what was changed on it alone is taken back.
+   */
+  editAlone(layer: Layer, alone: boolean): void;
 }
 
 /** An Off-canvas Layer being put back onto the canvas: its element off the canvas, as it looks now, and it as kept. */
