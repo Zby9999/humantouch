@@ -102,20 +102,21 @@ export default function Home() {
 }
 
 /**
- * One of the three features: an 800×500 card, the demo on its backdrop on one side, the words on the other. From 768px
- * wide (designer, 2026-11-11, for all three): the demo 500px wide, flush with the card's edges on its side, its corners
- * round only there; the words from the top, the body 240px above the foot. Below, one above the other, as they were.
+ * One of the three features: an 800×500 card, the demo on its backdrop on one side, the words on the other; below 768px
+ * wide, one above the other. At every width (designer, 2026-11-11, for all three): the demo 500px wide (no wider than
+ * the card), flush with the card's edges on its side, its corners round only there; the words from the top, the body
+ * 240px above the foot.
  */
 function Feature({ side, backdrop, title, body, children }: { side: "left" | "right"; backdrop: string; title: string; body: string; children: React.ReactNode }) {
   const right = side === "right";
   return (
-    <section className={`flex w-full max-w-[800px] flex-col gap-3 rounded-[4px] bg-surface p-3 md:h-[500px] md:py-0 ${right ? "md:flex-row-reverse md:pr-0 md:pl-3" : "md:flex-row md:pr-3 md:pl-0"}`}>
-      <div className={`relative aspect-square w-full shrink-0 overflow-hidden rounded-[4px] bg-neutral-900 md:aspect-auto md:h-full md:w-[500px] ${right ? "md:rounded-l-none" : "md:rounded-r-none"}`}>
+    <section className={`flex w-full max-w-[800px] flex-col gap-3 rounded-[4px] bg-surface md:h-[500px] ${right ? "pl-3 md:flex-row-reverse" : "pr-3 md:flex-row"}`}>
+      <div className={`relative aspect-square w-[500px] max-w-full shrink-0 overflow-hidden rounded-[4px] bg-neutral-900 md:aspect-auto md:h-full ${right ? "rounded-l-none" : "rounded-r-none"}`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={backdrop} alt="" className="absolute inset-0 size-full object-cover" />
         <div className="absolute inset-0">{children}</div>
       </div>
-      <div className="flex flex-col justify-between gap-2 p-3 md:px-5 md:pt-6 md:pb-60">
+      <div className="flex flex-col justify-between gap-2 px-5 pt-6 pb-60">
         <h2 className="text-lg leading-[1.3] font-[500] tracking-[-0.2px] text-ink">{title}</h2>
         <p className="text-[14px] leading-[1.5] font-[440] text-label">{body}</p>
       </div>
