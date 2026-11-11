@@ -69,11 +69,14 @@
   - `<p>Hi <x-name></x-name></p>`（`x-name` 的 shadow root 里有字）：`p` 下面是「Hi」和「Ada Lovelace」两层文字，都有框，各自命中到自己。
   - 转了两道的 slot：两个 shadow root 的 `::slotted` 都读到。
 - `pnpm typecheck` 通过。
-- `pnpm test`：vitest 1237 passed、1 skipped（另有一个临时的 perf 测试文件，量完删了，不算）；`node --test` 129 pass。
-- 整套 e2e（`HT_E2E_PORT=6500`，负载 3–11）：610 passed、1 skipped、4 挂。挂的都是 project files 组 `round.spec.ts` 的 556、614、707、742，等 Vite 改写后的 `App.tsx` 5s 超时，两边只差 import 的顺序（Vite 的 HMR 改写），和本票无关。单独 `--workers=1 --repeat-each=3` 跑 12/12 过。跑完示例没有残留改动。
-- bench（`HT_BENCH_PORT=6520`）：`--dry` 31/31，`--claim-out` 和 main（7535c54d，packages 和本线 base 61f5f2d2 一样）的输出 `diff -r` 完全相同（31 个文件）。`--scripted` 22/22。场景比票上写的多（29 → 31、20 → 22），是后来加的。
+- 第二轮 review 修改后（最后一版 1c2c261，负载 4–7）：
+  - `pnpm test`：vitest 1240 passed、1 skipped；`node --test` 129 pass。
+  - 整套 e2e（`HT_E2E_PORT=6500`）：614 passed、1 skipped，没有挂的。跑完示例没有残留改动。
+  - bench（`HT_BENCH_PORT=6520`）：`--dry` 31/31，`--claim-out` 和 main（28a5182）的 `--dry` 输出 `diff -r` 完全相同（31 个文件）。`--scripted` 22/22。场景比票上写的多（29 → 31、20 → 22），是后来加的。
+  - perf 没再跑：这一轮只改了可能有 shadow root 的文档里的文字层判断和取名，没有 shadow root 的页面的选中和命中路径没动。
+- 第一轮 review 修改后那次（db56d61）：vitest 1237 passed、1 skipped，`node --test` 129 pass。整套 e2e 610 passed、1 skipped、4 挂：都是 project files 组 `round.spec.ts` 的 556、614、707、742，等 Vite 改写后的 `App.tsx` 5s 超时，只差 import 的顺序，单独 `--workers=1 --repeat-each=3` 跑 12/12 过。bench `--dry` 31/31，`claim-out` 和当时的 main 7535c54d 相同；`--scripted` 22/22。
 
-**perf（`HT_PERF_HEADLESS=1 HT_PERF_PORT=6570`，负载 6–11）**
+**perf（`HT_PERF_HEADLESS=1 HT_PERF_PORT=6570`，负载 6–11，第一轮 review 修改后那次）**
 
 | 项目 | main | 本票 |
 |---|---|---|
