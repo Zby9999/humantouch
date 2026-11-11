@@ -106,7 +106,9 @@
 
 ### 数字
 
-**最终检查**：加了"退出不要动画"、又合进 main（b039c29c，139 的合并）之后，全部重跑一遍：`pnpm typecheck` 过，`pnpm test` 过；整套 e2e 一次跑完 607 过、1 跳过、0 失败（19.0 分钟）；`--dry` 29/29，`--claim-out` 29 个文件和 main（b039c29c）逐字相同；`--scripted` 20/20；headless perf 20/20（8.1 分钟）；切换按钮的 `react.js`、`react.dev.js` 和 main 逐字节相同。
+**合并前最后一轮**（合进 main 46258d9e，含 139、142、145 和 ADR 0016 之后）：typecheck 过；`pnpm test` vitest 1227 过 1 跳过、node 129 过；e2e page 组 453 过 3 失败（breakpoints:299、popover-exit:229、popover-exit:297，都是计时测试，单独 `--workers=1 --repeat-each=3` 重跑：299、297 3/3 过；229 一次 2/3，之后 main 和分支各 5/5），project files 组持共用锁重跑 153 过 1 跳过；`--dry` 31/31，`--claim-out` 31 个文件和 main 46258d9e 逐字相同；`--scripted` 22/22；切换按钮的 `react.js`、`react.dev.js` 和 main 逐字节相同。headless perf 上一轮 20/20，这一轮按规划会话的安排没跑；有窗口的 perf 由规划会话跑。
+
+**之前一轮**：加了"退出不要动画"、又合进 main（b039c29c，139 的合并）之后，全部重跑一遍：`pnpm typecheck` 过，`pnpm test` 过；整套 e2e 一次跑完 607 过、1 跳过、0 失败（19.0 分钟）；`--dry` 29/29，`--claim-out` 29 个文件和 main（b039c29c）逐字相同；`--scripted` 20/20；headless perf 20/20（8.1 分钟）；切换按钮的 `react.js`、`react.dev.js` 和 main 逐字节相同。
 
 更早的一轮，在合进 main（00bfb7a8，135–139）之后：
 
