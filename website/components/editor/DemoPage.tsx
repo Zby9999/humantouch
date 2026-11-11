@@ -16,6 +16,8 @@ type Props = {
   onHover: (target: Target | null) => void;
   /** Styles in place of the model's, for a demo's changes. */
   styles?: Partial<Record<Key, Style>>;
+  /** As tall as its content, its footer at its foot: not run on under an edge, as in the hero. */
+  hug?: boolean;
 };
 
 const SERIF = "var(--font-instrument-serif), Georgia, serif";
@@ -28,7 +30,7 @@ const PAGE_MIN_HEIGHT = 3400;
  * Tablet and Phone widths, as its breakpoints say. A pointer down reports the layers under it, outermost first, for the
  * editor to pick from as Figma does.
  */
-export function DemoPage({ view, width, onPick, onHover, styles }: Props) {
+export function DemoPage({ view, width, onPick, onHover, styles, hug = false }: Props) {
   const s = (key: Key): Style => ({ ...styleOf(key), ...styles?.[key] });
   const phone = width < 768;
   const tablet = !phone && width < 1280;
@@ -67,7 +69,7 @@ export function DemoPage({ view, width, onPick, onHover, styles }: Props) {
       {layer(
         P,
         [],
-        { background: String(s("page").fill), padding: `0 ${side}px`, display: "flex", flexDirection: "column", minHeight: PAGE_MIN_HEIGHT },
+        { background: String(s("page").fill), padding: `0 ${side}px`, display: "flex", flexDirection: "column", minHeight: hug ? undefined : PAGE_MIN_HEIGHT },
         <>
           {layer(
             N,

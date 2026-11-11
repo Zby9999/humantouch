@@ -24,12 +24,9 @@ const K = 0.18;
 const LEFT = 20;
 const GAP = 14;
 const TOP = 56;
-/** Where the views and the panel end: above the card's foot, on a phone's square card too (designer, 2026-11-11). */
-const FOOT = 610;
 const FRAME_LEFT = VIEWS.map((_, i) => LEFT + VIEWS.slice(0, i).reduce((x, v) => x + v.width * K + GAP, 0));
-const FRAME_H = FOOT - TOP;
-/** The Design panel at the bottom right, over the narrow views' feet, clear of the covers (designer, 2026-11-11). */
-const PANEL = { right: 20, top: 300, width: 320 };
+/** The Design panel at the bottom right, running on past the card's foot, clear of the covers (designer, 2026-11-11). */
+const PANEL = { right: 20, top: 392, width: 320 };
 const STONE = String(styleOf("cover").fill);
 const MUTED = "#6E6C66";
 const RADIUS = 48;
@@ -59,9 +56,9 @@ const VIEWS_CSS = `
 .demo-scene .ht-view-label { color: rgb(255 255 255 / 0.55); }
 .demo-scene .ht-view-name { color: rgb(255 255 255 / 0.75); transition: color 150ms; }
 .demo-scene .ht-view-name.is-active { color: #fff; }
-.demo-frame { position: absolute; top: ${TOP}px; height: ${FRAME_H}px; overflow: hidden; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.25), 0 16px 40px -8px rgb(0 0 0 / 0.5); }
+.demo-frame { position: absolute; top: ${TOP}px; overflow: hidden; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.25), 0 16px 40px -8px rgb(0 0 0 / 0.5); }
 .demo-frame > div { transform-origin: top left; }
-.demo-panel { position: absolute; right: ${PANEL.right}px; top: ${PANEL.top}px; width: ${PANEL.width}px; height: ${FOOT - PANEL.top}px; overflow: hidden; padding-bottom: 240px; border-radius: 12px; box-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15), 0 24px 64px -12px rgb(0 0 0 / 0.55); }
+.demo-panel { position: absolute; right: ${PANEL.right}px; top: ${PANEL.top}px; width: ${PANEL.width}px; bottom: -40px; overflow: hidden; padding-bottom: 240px; border-radius: 12px; box-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15), 0 24px 64px -12px rgb(0 0 0 / 0.55); }
 `;
 
 export function DesignPanelDemo() {
@@ -83,14 +80,15 @@ export function DesignPanelDemo() {
   );
 }
 
-type Measured = Record<ViewName, { box: Box; size: [number, number] }>;
+type Measured = Record<ViewName, { box: Box; size: [number, number]; page: number }>;
 
 function Scene({ phase, scale, root }: { phase: number; scale: number; root: ShadowRoot }) {
   const scene = useRef<HTMLDivElement>(null);
   const [covers, setCovers] = useState<Measured | null>(null);
   const coverIn = (view: ViewName) => root.querySelector(`[data-view="${view}"] [data-ht="cover"]`) as HTMLElement | null;
 
-  // Each view's cover: its box in the scene, for the selection, and its size, for the panel.
+  // Each view's cover: its box in the scene, for the selection, and its size, for the panel; and each page's height, for
+  // its frame to hug it (designer, 2026-11-11: the frames end with their pages, not run on).
   useLayoutEffect(() => {
     const measure = () => {
       const s = scene.current?.getBoundingClientRect();
@@ -101,7 +99,7 @@ function Scene({ phase, scale, root }: { phase: number; scale: number; root: Sha
         const el = coverIn(v.name);
         if (!el) return;
         const b = el.getBoundingClientRect();
-        out[v.name] = { box: { left: (b.left - s.left) / k, top: (b.top - s.top) / k, width: b.width / k, height: b.height / k }, size: [el.offsetWidth, el.offsetHeight] };
+        out[v.name] = { box: { left: (b.left - s.left) / k, top: (b.top - s.top) / k, width: b.width / k, height: b.height / k }, size: [el.offsetWidth, el.offsetHeight], page: (root.querySelector(`[data-view="${v.name}"] [data-ht="page"]`) as HTMLElement).offsetHeight };
       }
       setCovers(out);
     };
@@ -162,9 +160,9 @@ function Scene({ phase, scale, root }: { phase: number; scale: number; root: Sha
                 <Icon name="fullscreen" />
               </span>
             </div>
-            <div className="demo-frame" data-view={v.name} style={{ left: FRAME_LEFT[i], width: v.width * K }}>
+            <div className="demo-frame" data-view={v.name} style={{ left: FRAME_LEFT[i], width: v.width * K, height: covers ? covers[v.name].page * K : 400 }}>
               <div style={{ transform: `scale(${K})` }}>
-                <Page view={v.name} width={v.width} onPick={none} onHover={none} styles={styles[v.name]} />
+                <Page view={v.name} width={v.width} onPick={none} onHover={none} styles={styles[v.name]} hug />
               </div>
             </div>
           </div>
