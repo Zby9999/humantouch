@@ -84,7 +84,7 @@ describe("the page's print", () => {
   test("a print of another page says nothing of this one", () => {
     const then = printOf(livePage(page(), "/pricing"));
     const now = printOf(livePage(page({ title: "About" }), "/about"));
-    expect(compare(then, now)).toBe("same");
+    expect(compare(then, now)).toBe("other");
   });
 });
 

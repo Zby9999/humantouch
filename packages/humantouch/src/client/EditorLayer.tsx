@@ -12,7 +12,7 @@ import { Icon } from "./icons";
 import { placedOnCanvas, type RoundOnCanvas } from "./moves";
 import { showsAnyHere, watchPage, type PageChecks } from "./page-checks";
 import { keptOf, notedFor, notedFrom, noteRound, type OtherUsagesNoted } from "./other-usages";
-import type { PagePrint, PageSince } from "./page-print";
+import type { PageEntry, PagePrint } from "./page-print";
 import { PageToast, type PageToastMessage } from "./PageToast";
 import { createPartsReader } from "./range-parts";
 import { revertSaved, withPartsRead } from "./saved-round";
@@ -269,9 +269,13 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   const save = (next: SavedRound | null) => {
     // The service keeps a claimed round as the Agent got it; a last edit, too late, goes with the canvas.
     if (lastStatus.current?.status === "claimed") return;
+    const made = !roundNow.current && next;
     roundNow.current = next;
     setRound(next);
     store?.save(next).catch((error: unknown) => console.warn(error));
+    // The page a round's canvas reflects goes with the round (ticket 141): dropped with it, kept again as a round is made on a canvas.
+    if (!next) reflected.current = null;
+    else if (made && reflected.current) store?.savePage(reflected.current).catch((error: unknown) => console.warn(error));
   };
 
   // What the page shows in each part of the range of a change saved with that yet to be read (ticket 65): read
@@ -498,13 +502,14 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
    * the page it reflects, its structure too, told, the canvas as it was, and not again as the code changes till it is
    * frozen afresh (ticket 78).
    */
-  const keepPage = ({ since, keep }: { since: PageSince; keep: PagePrint | null }) => {
-    if (keep) {
-      reflected.current = keep;
-      store?.savePage(keep).catch((error: unknown) => console.warn(error));
+  const keepPage = (page: PageEntry | { keep: PagePrint }) => {
+    if (page.keep) {
+      reflected.current = page.keep;
+      store?.savePage(page.keep).catch((error: unknown) => console.warn(error));
     }
+    if (!("since" in page)) return;
     // Its styles taken in, the canvas is up to date with the page, as it is frozen afresh.
-    stale.current = since === "structure";
+    stale.current = page.since === "structure";
     if (stale.current) tell("since");
   };
   const updateCanvas = () => {

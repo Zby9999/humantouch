@@ -19,7 +19,7 @@ import { createHistory, together } from "./undo-steps";
 import { cameInto, createOffCanvas, type OffCanvasLayer, type OffCanvas } from "./off-canvas";
 import { carry as carryOff, moveInto as moveIntoOff, partOff as partOffCanvas, takenBackOff, type Desk } from "./off-canvas-moves";
 import { PAGE_ATTR, restyle, serializeCanvas, type Canvas } from "./freezer";
-import { compare, printOf, type PagePrint, type PageSince } from "./page-print";
+import { compare, printOf, type PageEntry, type PagePrint } from "./page-print";
 import { takeInApplied } from "./saved-round";
 import { framedText, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
@@ -87,9 +87,10 @@ interface Props {
   reflects?: PagePrint | null;
   /**
    * The canvas is up (ticket 141): how the page stands to the one the saved canvas reflects (`same` for a canvas frozen
-   * afresh), and the print of the page it reflects from now on, to keep; null: it reflects the one it did.
+   * afresh), and the print of the page it reflects from now on, to keep. Without `since`: that print alone, kept once
+   * the canvas that took the page's styles in is saved.
    */
-  onPage?(page: { since: PageSince; keep: PagePrint | null }): void;
+  onPage?(page: PageEntry | { keep: PagePrint }): void;
 }
 
 /**
@@ -99,7 +100,7 @@ interface Props {
  * stays as it is. Not known (a round carried over since, the Agent's code in), it reflects the page as it is now, if
  * frozen from this one.
  */
-function pageSince(doc: Document, reflects: PagePrint | null, windowHeight: number): { since: PageSince; keep: PagePrint | null } {
+function pageSince(doc: Document, reflects: PagePrint | null, windowHeight: number): PageEntry {
   const now = printOf(window);
   if (!reflects) return { since: "same", keep: doc.documentElement.getAttribute(PAGE_ATTR) === now.path ? now : null };
   const since = compare(reflects, now);
@@ -213,7 +214,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   /** Only the round there was on entering counts: saves along the way do not restore anything. */
   const [restoreFrom] = useState(saved);
   /** How the page stands to the one the saved canvas reflects, worked out as it is put back (ticket 141). */
-  const since = useRef<{ since: PageSince; keep: PagePrint | null } | null>(null);
+  const since = useRef<PageEntry | null>(null);
   const [restoreOffCanvas] = useState(savedOffCanvas);
   const [tree, setTree] = useState<LayerTree | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
@@ -293,7 +294,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   const keepPage = () => {
     const keep = pageToKeep.current;
     pageToKeep.current = null;
-    if (keep) latestOnPage.current?.({ since: "same", keep });
+    if (keep) latestOnPage.current?.({ keep });
   };
   const latestOnSaveOffCanvas = useRef(onSaveOffCanvas);
   latestOnSaveOffCanvas.current = onSaveOffCanvas;
@@ -897,6 +898,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           if (!restoreFrom) requestAnimationFrame(() => setTimeout(() => !left.current && latestOnPage.current?.({ since: "same", keep: printOf(window) })));
           else if (entry?.since === "styles") {
             pageToKeep.current = entry.keep;
+            latestOnPage.current?.({ since: "styles", keep: null });
             changed();
           } else if (entry) latestOnPage.current?.(entry);
           /**

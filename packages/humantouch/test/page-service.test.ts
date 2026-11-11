@@ -53,6 +53,9 @@ test("kept as the page prints it, and answered with the round; not saved with it
   expect((await round()).page).toEqual(PRINT);
   expect(JSON.parse(readFileSync(join(root, ".humantouch/changeset.json"), "utf8"))).toEqual(ROUND.changeSet);
   expect((await call("PUT", PAGE_PATH, { path: "/" })).status).toBe(400);
+  // The round dropped, the page its canvas reflected goes with it.
+  await call("DELETE", ROUND_PATH);
+  expect(existsSync(join(root, ".humantouch/page.json"))).toBe(false);
 });
 
 test("a round that ends with changes left takes it away; claimed, none is kept", async () => {

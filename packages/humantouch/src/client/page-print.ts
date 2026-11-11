@@ -36,8 +36,18 @@ export interface PagePrint {
   styles: string;
 }
 
-/** How the page as it is now stands to the page a canvas reflects. */
-export type PageSince = "same" | "styles" | "structure";
+/** How the page as it is now stands to the page a canvas reflects: `other`, it is another page, which says nothing of that one. */
+export type PageSince = "same" | "styles" | "structure" | "other";
+
+/**
+ * Edit mode back on a round's canvas (ticket 141): how the page stands to the
+ * one the canvas reflects, and the print of the page it reflects from then
+ * on, to keep; null: it reflects the one it did.
+ */
+export interface PageEntry {
+  since: PageSince;
+  keep: PagePrint | null;
+}
 
 /** Elements whose subtree is not drawn, or not the page's: looked into for nothing. */
 const UNDRAWN = new Set(["head", "script", "noscript", "template", "link", "style", HOST_TAG, ...NOT_THE_PAGES]);
@@ -48,9 +58,9 @@ export function printOf(win: Window): PagePrint {
   return { path: win.location.pathname + win.location.search, structure: hash(structureOf(doc)), styles: hash(stylesOf(doc)) };
 }
 
-/** How `now` stands to `then`: the same page, or one whose styles alone changed, or its structure too. A print of another page is the same: it says nothing of this one. */
+/** How `now` stands to `then`: the same page, or one whose styles alone changed, or its structure too; or another page. */
 export function compare(then: PagePrint, now: PagePrint): PageSince {
-  if (then.path !== now.path) return "same";
+  if (then.path !== now.path) return "other";
   if (then.structure !== now.structure) return "structure";
   return then.styles !== now.styles ? "styles" : "same";
 }

@@ -178,7 +178,10 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
       case `PUT ${PAGE_PATH}`: {
         // The page a canvas reflects (ticket 141): kept for the round being edited, or about to be, as edit mode put the canvas up.
         if ((await status()).status === "claimed") return send(res, 409);
-        const print = JSON.parse(body || "null") as PagePrint | null;
+        let print: PagePrint | null = null;
+        try {
+          print = JSON.parse(body || "null") as PagePrint | null;
+        } catch {}
         if (!print || typeof print.path !== "string" || typeof print.structure !== "string" || typeof print.styles !== "string") return send(res, 400);
         await mkdir(files.dir, { recursive: true });
         await writeAtomically(files.page, `${JSON.stringify({ path: print.path, structure: print.structure, styles: print.styles })}\n`);
@@ -188,6 +191,8 @@ export async function startService({ root, quietMs = CODE_QUIET_MS }: { root: st
         if ((await status()).status === "claimed") return send(res, 409);
         await rm(files.changeSet, { force: true });
         await rm(files.canvas, { force: true });
+        // The page that canvas reflected goes with it (ticket 141).
+        await rm(files.page, { force: true });
         return send(res, 204);
       case `GET ${EVENTS_PATH}`: {
         res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" });
