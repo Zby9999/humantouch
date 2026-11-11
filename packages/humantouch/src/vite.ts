@@ -1,5 +1,6 @@
 import type { Plugin } from "vite";
-import { CODE_EVENT, CODE_GLOBAL, DEFINITIONS_SCRIPT, SERVICE_GLOBAL, type ServiceConfig } from "./service-protocol";
+import { DEFINITIONS_SCRIPT } from "./definitions";
+import { CODE_EVENT, CODE_GLOBAL, SERVICE_GLOBAL, type ServiceConfig } from "./service-protocol";
 import { startService, type Service } from "./service";
 import { markSource } from "./source-marker";
 import { updatesInTurn, viteVersionFor } from "./vite-version";

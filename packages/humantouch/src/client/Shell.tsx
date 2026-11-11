@@ -20,6 +20,7 @@ import { cameInto, createOffCanvas, type OffCanvasLayer, type OffCanvas } from "
 import { carry as carryOff, moveInto as moveIntoOff, partOff as partOffCanvas, takenBackOff, type Desk } from "./off-canvas-moves";
 import { serializeCanvas, type Canvas } from "./freezer";
 import { takeInApplied } from "./saved-round";
+import { queryWithin } from "./shadow-roots";
 import { framedText, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
 import { PanelResizer } from "./PanelResizer";
@@ -390,7 +391,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   /** The layer a change is of, as the canvas has it now: one deleted, the layer it was in; one moved off the canvas, there. */
   const layerOfChange = (change: Change): Layer | null => {
     if (!tree || !offCanvas) return null;
-    const byId = (doc: Document, id: string) => doc.querySelector(`[${LAYER_ID_ATTR}="${CSS.escape(id)}"]:not([${DELETED_ATTR}])`);
+    // In a shadow root too (ticket 137).
+    const byId = (doc: Document, id: string) => queryWithin(doc, `[${LAYER_ID_ATTR}="${CSS.escape(id)}"]:not([${DELETED_ATTR}])`)[0] ?? null;
     const moved = change.offCanvas ? offCanvas.list().find((outside) => outside.id === change.offCanvas)?.layer() : null;
     if (moved) return moved;
     const id = change.kind === "delete" ? (change.before as Place).container.layer : change.layer;

@@ -6,14 +6,6 @@ import type { UsageLevel } from "./client/usage-chain";
 
 /** Global the dev server sets on the page: where the local service is, and its token. */
 export const SERVICE_GLOBAL = "__HUMAN_TOUCH__";
-/**
- * Global the dev server sets on the page (ticket 137): for each custom
- * element defined, by its name, the call stack it was defined from, the
- * module that defines it first, to tell a third-party one by.
- */
-export const DEFINED_GLOBAL = "__HUMAN_TOUCH_DEFINED__";
-/** The script, run before any of the page's, that has `customElements.define` record into `DEFINED_GLOBAL`. */
-export const DEFINITIONS_SCRIPT = `(()=>{const r=window.customElements;if(!r||window.${DEFINED_GLOBAL})return;const m=new Map(),d=r.define;window.${DEFINED_GLOBAL}=m;r.define=function(n,c,o){if(!m.has(n))m.set(n,String(new Error().stack));return d.call(this,n,c,o)}})();`;
 /** Next.js has no `index.html` for the global: `withHumanTouch()` puts the same, as JSON, in the bundle's `process.env` under this name. */
 export const SERVICE_ENV = "HT_SERVICE";
 /** Header that carries the token. A request without the right one is turned away. */

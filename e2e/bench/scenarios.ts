@@ -119,6 +119,8 @@ export interface Scenario {
   id: string;
   /** The example project it runs on; the Vite + React 19 + Tailwind v4 one when not given. */
   example?: Example;
+  /** The page of the example it runs on, its path (`/shadow`); its first page when not given. */
+  path?: string;
   /** What the designer does, in words. */
   title: string;
   /** Makes the round in the editor layer, and waits until it is saved. */
@@ -141,6 +143,8 @@ export interface Scenario {
 
 /** The example project a scenario runs on. */
 export const exampleOf = (scenario: Scenario): Example => scenario.example ?? "vite-react19-tw4";
+/** The address of the page a scenario runs on, of its example's dev server at `url`. */
+export const pageOf = (scenario: Scenario, url: string): string => url + (scenario.path ?? "");
 
 export const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
 export const phone = (page: Page) => page.locator('iframe[title="Phone 390"]');
@@ -253,6 +257,8 @@ export async function saved(desk: Desk, count: number) {
 }
 
 const HERO = '[data-testid="hero"]';
+/** The panel the page `/shadow` has in a shadow root (ticket 137): Playwright's locators go into open shadow roots. */
+const SHADOW_PANEL = '[data-testid="shadow-panel"] .panel';
 /** The intro paragraph's layer, by its words. */
 const INTRO = "A Framer-style editor layer for any page.";
 
@@ -1699,6 +1705,39 @@ export const SCENARIOS: Scenario[] = [
       await desk.edit("src/App.tsx", `sm:grid-cols-3 ${AREAS}">`, `sm:grid-cols-3 ${AREAS} max-md:flex max-md:flex-col">`);
     },
   },
+  // Ticket 137: a layer in an open shadow root, styled by the component's own style element there, as the website's hero is.
+  {
+    id: "shadow-root-style",
+    path: "/shadow",
+    title:
+      "The panel at the top of the page `/shadow`, which its component renders into a shadow root of its own, styled by a style element there (as the website's hero is): fill blue (#2563EB), corner radius 10px.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await pick(page, desktop(page), SHADOW_PANEL);
+      await setField(page, "Fill color", "2563eb");
+      await setField(page, "Corner radius", "10");
+      await saved(desk, 2);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The panel at the top of `/shadow` is blue (#2563EB), in its shadow root; nothing else on the page changes.",
+        checkable: true,
+        shows: () => getComputedStyle(document.querySelector('[data-testid="shadow-panel"]')!.shadowRoot!.querySelector(".panel")!).backgroundColor === "rgb(37, 99, 235)",
+      },
+      {
+        kind: "style",
+        expect: "The panel at the top of `/shadow` has 10px corners.",
+        checkable: true,
+        shows: () => getComputedStyle(document.querySelector('[data-testid="shadow-panel"]')!.shadowRoot!.querySelector(".panel")!).borderTopLeftRadius === "10px",
+      },
+    ],
+    async apply(desk) {
+      // As the notes say: the component's own styles for its shadow root, not the page's CSS, which does not reach in.
+      await desk.edit("src/shadow/ShadowPanel.tsx", ".panel { padding: 16px; border-radius: 16px; background: #fde68a; }", ".panel { padding: 16px; border-radius: 10px; background: #2563eb; }");
+    },
+  },
 ];
 
 /**
@@ -1773,7 +1812,7 @@ export async function openObservers(browser: Browser, scenario: Scenario, url: s
       contexts.push(context);
       await context.route((target) => target.hostname === "127.0.0.1", (route) => route.abort());
       const page = await context.newPage();
-      await page.goto(url);
+      await page.goto(pageOf(scenario, url));
       await page.locator("main").waitFor();
       pages.set(width, page);
     }

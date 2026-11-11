@@ -5,7 +5,7 @@
  * this is the one place to follow.
  */
 import { LOC_ATTR, USAGE_ATTR } from "../markers";
-import { DEFINED_GLOBAL } from "../service-protocol";
+import { DEFINED_GLOBAL } from "../definitions";
 
 /** One component on the chain, innermost first. */
 export interface UsageLevel {

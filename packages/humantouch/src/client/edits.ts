@@ -22,6 +22,7 @@ import { ARRANGED, cssOf, definitionOf, inGrid, isTextProperty, isGrid, ofText, 
 import { autoMarginBefore, computedShareOf, extentOf, heldCentered, middleShareOf, pastShare, placedFrom, sideMoves, sideShareOf } from "./placed-from";
 import { marginsAt } from "./stacks";
 import { createStructureEdits } from "./structure-edits";
+import { queryWithin } from "./shadow-roots";
 import { sourcesOf } from "./style-source";
 import { createHistory, createSteps, type History } from "./undo-steps";
 import { pickedIn } from "./variables";
@@ -56,7 +57,8 @@ export function createEditor(
   let tree = buildLayerTree(doc);
   const colors = colorReader(doc);
   let lastId = 0;
-  for (const el of doc.querySelectorAll(`[${LAYER_ID_ATTR}]`)) lastId = Math.max(lastId, Number(el.getAttribute(LAYER_ID_ATTR)) || 0);
+  // Those in its shadow roots too (ticket 137): no id handed out twice.
+  for (const el of queryWithin(doc, `[${LAYER_ID_ATTR}]`)) lastId = Math.max(lastId, Number(el.getAttribute(LAYER_ID_ATTR)) || 0);
 
   /** The layer's id: the one it has, else the one `idOf` stamps on it next. */
   const idFor = (layer: Layer) => layer.el.getAttribute(LAYER_ID_ATTR) ?? String(lastId + 1);

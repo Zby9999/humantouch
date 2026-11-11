@@ -201,3 +201,84 @@ test("saved with the round and the page loaded again, the shadow root shows as i
   expect(atPhone[2].color).toBe("rgb(0, 0, 200)");
   expect(atPhone[3]["border-top-left-radius"]).toBe("4px");
 });
+
+test("a layer in the shadow root given a fill and a corner radius shows them on the canvas and in every view, and in the change list; one changed in the Phone view, at the Phone's widths alone; undone and redone (ticket 137)", async ({ page }) => {
+  await openPage(page);
+  await enterEditMode(page);
+  const design = page.getByRole("complementary", { name: "Design" });
+  const panelIn = (view: Locator) => view.contentFrame().locator("#shadow-host .panel");
+  const looksIn = (view: Locator) => panelIn(view).evaluate((el) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).borderTopLeftRadius]);
+  const setField = async (name: string, value: string) => {
+    const field = design.getByRole("textbox", { name, exact: true });
+    await field.fill(value);
+    await field.press("Enter");
+  };
+
+  // The panel, a layer of the shadow root, a double click into its host.
+  await desktop(page).contentFrame().locator("#shadow-host .title").dblclick();
+  await expect(design.getByRole("textbox", { name: "Fill color", exact: true })).toHaveValue("FFE600");
+  await setField("Fill color", "ff0000");
+  await setField("Corner radius", "8");
+  for (const view of [desktop(page), tablet(page), phone(page)]) await expect.poll(() => looksIn(view)).toEqual(["rgb(255, 0, 0)", "8px"]);
+  // The page's other layers as they were: the edit styles are the shadow root's own.
+  await expect(desktop(page).contentFrame().locator("h1")).not.toHaveCSS("background-color", "rgb(255, 0, 0)");
+  await page.locator("[data-ht-changes-opener]").click();
+  await expect(page.getByRole("dialog", { name: "Changes" }).getByRole("listitem")).toHaveCount(2);
+  await page.keyboard.press("Escape");
+
+  // In the Phone view: its corner radius at the Phone's widths alone.
+  const atPhone = await placeOf(panelIn(phone(page)));
+  await page.keyboard.down("ControlOrMeta");
+  await page.mouse.click(atPhone[0] + 4, atPhone[1] + 4);
+  await page.keyboard.up("ControlOrMeta");
+  await expect(design.getByRole("textbox", { name: "Corner radius" })).toHaveValue("8");
+  await setField("Corner radius", "24");
+  await expect.poll(() => looksIn(phone(page))).toEqual(["rgb(255, 0, 0)", "24px"]);
+  expect(await looksIn(tablet(page))).toEqual(["rgb(255, 0, 0)", "8px"]);
+  expect(await looksIn(desktop(page))).toEqual(["rgb(255, 0, 0)", "8px"]);
+
+  // Undone: the Phone's radius, then the radius at every width; redone, back.
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => looksIn(phone(page))).toEqual(["rgb(255, 0, 0)", "8px"]);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(() => looksIn(desktop(page))).toEqual(["rgb(255, 0, 0)", "16px"]);
+  await expect.poll(() => looksIn(phone(page))).toEqual(["rgb(255, 0, 0)", "4px"]);
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect.poll(() => looksIn(desktop(page))).toEqual(["rgb(255, 0, 0)", "8px"]);
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect.poll(() => looksIn(phone(page))).toEqual(["rgb(255, 0, 0)", "24px"]);
+  expect(await looksIn(tablet(page))).toEqual(["rgb(255, 0, 0)", "8px"]);
+});
+
+test("the layers in the shadow root of a custom element a dependency defines are locked, used where the element is, as a third-party component's are; the change records it so (ticket 137)", async ({ page }) => {
+  // A module served from `node_modules`, as a Web Components library is: what defines `<acme-chip>` is a dependency.
+  await page.route(`${DEV_URL}/node_modules/acme-elements/chip.js`, (route) =>
+    route.fulfill({
+      contentType: "text/javascript",
+      body: `customElements.define("acme-chip", class extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" }).innerHTML = '<style>span { display: inline-block; padding: 4px 8px; background: rgb(0, 0, 255); color: white }</style><span part="label">Chip</span>';
+  }
+});`,
+    }),
+  );
+  await page.route(URL, async (route) => {
+    const response = await route.fetch();
+    const chip = '<acme-chip id="chip"></acme-chip><script type="module" src="/node_modules/acme-elements/chip.js"></script>';
+    await route.fulfill({ response, body: (await response.text()).replace("<body>", `<body>${chip}`) });
+  });
+  await page.goto(URL);
+  await expect(page.locator("#chip span")).toHaveText("Chip");
+  await enterEditMode(page);
+
+  const chip = page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "acme-chip", exact: true });
+  await expect(chip).toHaveCount(1);
+  await chip.click();
+  const saved = page.waitForRequest((request) => new globalThis.URL(request.url()).pathname === "/round" && request.method() === "PUT" && !!request.postData()?.includes('"width"'));
+  const width = page.getByRole("complementary", { name: "Design" }).getByRole("textbox", { name: "Width", exact: true });
+  await width.fill("90");
+  await width.press("Enter");
+  const { changeSet } = JSON.parse((await saved).postData()!);
+  expect(changeSet.changes[0].target).toMatchObject({ locked: true, loc: null, chain: [{ component: "acme-chip", thirdParty: true }], shadowRoot: '<acme-chip id="chip">' });
+});

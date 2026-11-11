@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { designProblems, exampleOf, held, openObservers, shown, type Example } from "../bench/scenarios.ts";
+import { designProblems, exampleOf, held, openObservers, pageOf, shown, type Example } from "../bench/scenarios.ts";
 import { STANDARD_SCENARIOS } from "../bench/scenarios-other-examples.ts";
 import { DEV_URL, NEXT_URL, REACT18_URL } from "../playwright.config";
 import { expect, test } from "./fixtures";
@@ -64,7 +64,7 @@ for (const scenario of STANDARD_SCENARIOS) {
 
   test(`scenario ${scenario.id} makes the changes it names, none shown on the page yet`, async ({ page, browser }) => {
     clearHumanTouchFolder(humanTouchFolder);
-    await page.goto(SERVED[example]);
+    await page.goto(pageOf(scenario, SERVED[example]));
     await page.locator("main").waitFor();
     await scenario.design({
       page,

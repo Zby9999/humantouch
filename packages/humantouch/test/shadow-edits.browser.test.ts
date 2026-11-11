@@ -13,7 +13,8 @@ import { copyPage } from "../src/client/page-copy";
 import { revertSaved } from "../src/client/saved-round";
 import { sourcesOf } from "../src/client/style-source";
 import { definedByDependency } from "../src/client/usage-chain";
-import { DEFINED_GLOBAL, type Variable } from "../src/service-protocol";
+import { DEFINED_GLOBAL } from "../src/definitions";
+import type { Variable } from "../src/service-protocol";
 import { variablesInCode } from "../src/client/code-variables";
 import { bind, resolveVariables } from "../src/client/variables";
 
