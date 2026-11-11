@@ -109,7 +109,7 @@
    - 挪动、复制后面加 "; it stays in that shadow root"；改字、删除不加。
 5. 提示用 toast，松手时出现，拖动中不提示（规划会话已定，见「提示」）。
 6. bench 加了两个场景，不是一个：同一轮里同时换顺序和改其中一层的字，两层的行号互换，按 ticket 99 的配对认不出哪个 marker 是标题的，文字核对是 unchecked。这在 light DOM 也一样，不是 shadow root 的问题。所以换顺序（`shadow-root-structure`）、改字（`shadow-root-text`）分开放。
-7. 粘贴（⌘V）到边界另一侧时，照现有的 `canDrop` 不粘贴，不提示。
+7. 粘贴（⌘V）到边界另一侧时，照旧不粘贴，但会用同一个 toast 提示 "Layers can't be pasted into this component."（规划会话 2026-11-12 改的，句子和另外三句一起放在 `SHADOW_EDGE_HINTS`）。做法：`clipboard.ts` 的 `paste` 里，放不进去、但不看边界本来能放（`canDropIgnoringEdge`）的，记下来，粘贴完调 `onHint`，由 Shell 的 `showToast` 显示。有的放进去、有的被边界挡住时，放进去的照常放，同时也提示。测了：unit 1 条（`shadow-structure`），e2e 1 条（页面的 Button 复制后粘贴到 shadow root 里 panel 的 Stack：出现提示，Layers 行数和画布上的按钮数不变）。
 
 ### 风险
 

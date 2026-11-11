@@ -386,6 +386,7 @@ const EDGE_HINTS = {
   out: "This layer stays inside its component.",
   in: "Layers can't be moved into this component.",
   slotted: "This layer's place is set by its component.",
+  paste: "Layers can't be pasted into this component.",
 };
 
 /** A Frame at the top of the shadow root, after the panel, 240 px tall, with an absolute layer in it, 60 × 40 at 100, 120. */
@@ -546,6 +547,27 @@ test("a layer of the page let go over the line in a host beside it, near the hos
 
   await page.keyboard.press("ControlOrMeta+z");
   for (const view of views) await expect.poll(() => order(view)).toEqual(["lite", "card-a", "card-b"]);
+});
+
+test("a layer of the page copied and pasted into the shadow root's Stack goes nowhere, and the toast says why (ticket 138)", async ({ page }) => {
+  await openPage(page);
+  await enterEditMode(page);
+  const canvas = desktop(page).contentFrame();
+  const tree = page.getByRole("tree", { name: "Layers" });
+  const rows = tree.getByRole("treeitem");
+  const buttons = canvas.locator("button");
+  const [rowCount, buttonCount] = [await rows.count(), await buttons.count()];
+
+  await tree.getByRole("treeitem", { name: "Button", exact: true }).click();
+  await page.keyboard.press("ControlOrMeta+c");
+  // The panel's Stack, in the host's shadow root.
+  await tree.getByRole("treeitem", { name: "Stack", exact: true }).nth(1).click();
+  await expect.poll(() => boxOn(page.locator('.ht-selection[data-view="Desktop"]'))).toEqual(await placeOf(canvas.locator("#shadow-host .panel")));
+  await page.keyboard.press("ControlOrMeta+v");
+  await expect(toast(page)).toHaveText(EDGE_HINTS.paste);
+  await expect(rows).toHaveCount(rowCount);
+  await expect(buttons).toHaveCount(buttonCount);
+  await expect(canvas.locator("#shadow-host button")).toHaveCount(0);
 });
 
 test("in the shadow root, a layer is deleted and another copied; the host copied has its shadow root, its layers apart from the original's; in every view and the change list; undone, as they were (ticket 138)", async ({ page }) => {
