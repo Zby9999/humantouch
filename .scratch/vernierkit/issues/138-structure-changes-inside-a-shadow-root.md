@@ -109,7 +109,7 @@
    - 挪动、复制后面加 "; it stays in that shadow root"；改字、删除不加。
 5. 提示用 toast，松手时出现，拖动中不提示（规划会话已定，见「提示」）。
 6. bench 加了两个场景，不是一个：同一轮里同时换顺序和改其中一层的字，两层的行号互换，按 ticket 99 的配对认不出哪个 marker 是标题的，文字核对是 unchecked。这在 light DOM 也一样，不是 shadow root 的问题。所以换顺序（`shadow-root-structure`）、改字（`shadow-root-text`）分开放。
-7. 粘贴（⌘V）到边界另一侧时，照现有的 `canDrop` 不粘贴，不提示。
+7. 粘贴（⌘V）到边界另一侧时，照旧不粘贴，但会用同一个 toast 提示 "Layers can't be pasted into this component."（规划会话 2026-11-12 改的，句子和另外三句一起放在 `SHADOW_EDGE_HINTS`）。做法：`clipboard.ts` 的 `paste` 里，放不进去、但不看边界本来能放（`canDropIgnoringEdge`）的，记下来，粘贴完调 `onHint`，由 Shell 的 `showToast` 显示。有的放进去、有的被边界挡住时，放进去的照常放，同时也提示。测了：unit 1 条（`shadow-structure`），e2e 1 条（页面的 Button 复制后粘贴到 shadow root 里 panel 的 Stack：出现提示，Layers 行数和画布上的按钮数不变）。
 
 ### 风险
 
@@ -118,3 +118,17 @@
 3. `holderOf` 在 live page 的 check 里也会进 shadow root。如果页面上的容器恰好是第三方元素的宿主，读到的子层是它的 shadow 内容，和画布一致；但 closed shadow root 的宿主在画布和页面上都按 light DOM 读。
 4. `check.ts` 里本地的 `holderOf`/`parentOf`，对 slot 进去的层给的是宿主；而它在 flat tree 里的父元素是 slot 所在的元素。`changedAround` 的 `containsAcross` 也是按 DOM 算的，不是按 flat tree。现在都走不到，因为 slot 进去的层不能挪。等它们能挪时，这两处要改用 `flatParent`。
 5. look 的 `LOOK_STYLES_BASE`（look 文档的基础样式）只在 look 文档的 head 里，进不了 shadow root。shadow root 里的元素靠的是各自冻结的样式，目前没看到差别，但基础样式里有的东西 shadow root 里没有。
+
+**规划会话，2026-11-12**
+
+线上合并到 main 2c74e25。135–138 这条线全部完成。
+
+代定：
+- 1–6 都确认。
+  - 第 4 条，claim 的句子写得清楚：改的是组件渲染进 shadow root 的标记，不是外面页面的标记。
+  - 第 6 条，把 bench 分成两个场景，同意。ticket 99 的限制在 light DOM 里也一样。
+- 第 7 条改一下：⌘V 粘贴到边界另一侧时，照旧不粘贴，但要用同一个 toast 提示，不能悄悄地什么都不做。文字是 `Layers can't be pasted into this component.`。这是个小改动，由这条线顺手补上。
+
+风险 1–5 接受。风险 4（slot 进去的层能挪以后，要改用 flatParent）记在这里，以后开放挪动时一起处理。
+
+这张票的整套验证跟下一批 main 一起跑。

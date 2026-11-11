@@ -153,12 +153,14 @@ function dropContainer(
 /**
  * What the canvas's toast says when a layer is let go past a shadow root's
  * edge, where it cannot go (ticket 138), by the edge: out of the component it
- * is in, into one from outside it, or, slotted in one, anywhere.
+ * is in, into one from outside it, or, slotted in one, anywhere; and when
+ * ⌘V would paste a layer past one, which it does not (`clipboard.ts`).
  */
-export const SHADOW_EDGE_HINTS: Record<ShadowEdge, string> = {
+export const SHADOW_EDGE_HINTS: Record<ShadowEdge | "paste", string> = {
   out: "This layer stays inside its component.",
   in: "Layers can't be moved into this component.",
   slotted: "This layer's place is set by its component.",
+  paste: "Layers can't be pasted into this component.",
 };
 
 /**

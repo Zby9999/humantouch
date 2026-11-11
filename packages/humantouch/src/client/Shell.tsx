@@ -677,7 +677,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   };
 
   /** ⌘C / ⌘X / ⌘V, within the editor. */
-  const clipboard = useMemo(() => (editor && round.current ? createClipboard(editor, round.current.changeSet) : null), [editor]);
+  const clipboard = useMemo(() => (editor && round.current ? createClipboard(editor, round.current.changeSet, showToast) : null), [editor, showToast]);
   /** Layers on the canvas: the clipboard holds only those. */
   const onCanvas = (layers: Layer[]) => layers.every((layer) => !outsideOf(layer));
   /** ⌘C: whether there was anything to copy. */

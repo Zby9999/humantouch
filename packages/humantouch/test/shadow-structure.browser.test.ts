@@ -3,7 +3,8 @@ import { createChangeSet } from "../src/client/changeset";
 import { createEditor } from "../src/client/edits";
 import { freeze } from "../src/client/freezer";
 import { freezeLook } from "../src/client/look";
-import { findDrop, shadowEdgeAt } from "../src/client/drag";
+import { createClipboard } from "../src/client/clipboard";
+import { findDrop, SHADOW_EDGE_HINTS, shadowEdgeAt } from "../src/client/drag";
 import type { Place } from "../src/client/changeset";
 import type { Layer } from "../src/client/layers";
 import type { Fill } from "../src/client/property-table";
@@ -220,6 +221,20 @@ describe("a layer in an open shadow root (ticket 138)", () => {
     expect(copiedA.getAttribute("data-ht-style")).not.toBe(inShadow(doc, "a").getAttribute("data-ht-style"));
     editor.set(layerOf(copiedA), "fill", { type: "solid", color: "#0000FF", opacity: 1 });
     expect(getComputedStyle(inShadow(doc, "a")).backgroundColor).toBe("rgb(255, 0, 0)");
+  });
+
+  test("pasted past the shadow root's edge, a copy goes nowhere, and the hint says why; within the shadow root, it goes in", async () => {
+    const { doc, editor, layerOf } = await open();
+    const hints: string[] = [];
+    const clipboard = createClipboard(editor, createChangeSet(), (text) => hints.push(text));
+    const [other, box, a] = [doc.getElementById("other")!, inShadow(doc, "box"), inShadow(doc, "a")];
+    expect(clipboard.copy([layerOf(other)])).toBe(true);
+    expect(clipboard.paste([layerOf(box)])).toEqual([]);
+    expect(hints).toEqual([SHADOW_EDGE_HINTS.paste]);
+    expect(doc.querySelectorAll("#other")).toHaveLength(1);
+    expect(clipboard.copy([layerOf(a)])).toBe(true);
+    expect(clipboard.paste([layerOf(inShadow(doc, "side"))])).toHaveLength(1);
+    expect(hints).toHaveLength(1);
   });
 
   test("copied and deleted in the shadow root, a card shows so in every view", async () => {

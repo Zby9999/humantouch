@@ -5,6 +5,7 @@
  */
 import { LAYER_ID_ATTR } from "./canvas-style";
 import type { ChangeSet } from "./changeset";
+import { SHADOW_EDGE_HINTS } from "./drag";
 import type { Destination, Editor } from "./edit-commands";
 import type { Layer } from "./layers";
 import { spotIn } from "./stacks";
@@ -31,7 +32,8 @@ interface Held {
   items: { el: Element; spot: { x: number; y: number } }[];
 }
 
-export function createClipboard(editor: Editor, changes: ChangeSet): Clipboard {
+/** `onHint`: what to tell the designer when a paste does not go where asked: past a shadow root's edge (ticket 138). */
+export function createClipboard(editor: Editor, changes: ChangeSet, onHint?: (text: string) => void): Clipboard {
   let held: Held | null = null;
 
   const hold = (mode: Held["mode"], layers: Layer[]) => {
@@ -74,6 +76,7 @@ export function createClipboard(editor: Editor, changes: ChangeSet): Clipboard {
       const { mode, items } = held;
       const last = selected.at(-1);
       const pasted: Element[] = [];
+      let pastEdge = false;
       editor.batch(() => {
         items.forEach((item, n) => {
           // Deleted, as a cut leaves it: back from its deletion first, then moved, one move in the ChangeSet.
@@ -84,11 +87,16 @@ export function createClipboard(editor: Editor, changes: ChangeSet): Clipboard {
           if (!layer) return;
           const target = last ? editor.tree().layerOf(last.el) : null;
           const to = destination(target, item, n);
-          if (to && !editor.canDrop(layer, to.parent)) return;
+          if (to && !editor.canDrop(layer, to.parent)) {
+            // Not past a shadow root's edge either, but not without a word (ticket 138).
+            if (editor.canDropIgnoringEdge(layer, to.parent)) pastEdge = true;
+            return;
+          }
           if (mode === "copy" && !deletion) pasted.push(editor.duplicate(layer, to ?? undefined).el);
           else pasted.push((to ? editor.move(layer, to) : layer).el);
         });
       });
+      if (pastEdge) onHint?.(SHADOW_EDGE_HINTS.paste);
       const layers = pasted.map((el) => editor.tree().layerOf(el)).filter((layer) => layer !== null);
       if (mode === "cut" && layers.length) hold("copy", layers);
       return layers;
