@@ -1,8 +1,8 @@
-# 03Kind
+# Human Touch
 
 一个装进现有网页的 Framer 式编辑层：设计师在页面上直接摆放、调整界面，再把改动交给 Agent 写进代码。
 
-产品名写作 03Kind，口头叫 Third Kind，中文叫「第三类」：纯设计软件、装了 Agent 的设计软件之外的第三类，即装进 Agent 的设计工具（ticket 70）。包和命令写作小写的 `03kind`；JS 标识符和 HTML 元素名不能以数字开头，那里写作 Third Kind（`thirdKind()`、`<ThirdKind />`、`<third-kind>`）。
+产品名写作 Human Touch（ticket 133，设计师 2026-11-11 定；旧名见 ticket 70、133）：AI 加速做界面的同时，人类设计师可以介入微调。中文名还没定。包和命令写作小写的 `humantouch`（`human-touch` 在 npm 上已被别的工具占用）；JS 标识符写作 `humanTouch()`、`withHumanTouch()`、`<HumanTouch />`，HTML 元素名写作 `<human-touch>`。
 
 ## 角色
 

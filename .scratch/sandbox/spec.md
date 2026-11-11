@@ -1,6 +1,6 @@
 # 组件沙盒规格（占位）
 
-**Status:** 未开始，待 03Kind 第一版这一轮补完后单独立项。
+**Status:** 未开始，待 Human Touch 第一版这一轮补完后单独立项。
 
 已定的方向见 [ADR 0007](../../docs/adr/0007-component-sandbox.md)、[GLOSSARY.md](../../GLOSSARY.md) 中的"组件沙盒"，以及 [docs/goals.md](../../docs/goals.md) 中的 Flex 第二版指标。第一版只在选中工具条中预留了 States 入口的位置（见 `.scratch/vernierkit/spec.md`）。
 

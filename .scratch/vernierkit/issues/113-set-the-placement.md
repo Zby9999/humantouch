@@ -18,7 +18,7 @@
 - [ ] 改动说明写明新的定位方式和距离，照项目的写法；`done` 核对算出的 `left` / `right` / `top` / `bottom` / 宽高 / `transform`，断点改动照 ticket 104 也看范围外的宽度；ADR 0014 原来那几条核对规则照旧
 - [ ] 脚本扮演 Agent（`apply`）走一遍「改成按右边、落地、`done`」和「改成 Left & Right、落地、`done`」，核对是 ✓
 - [ ] 原来的改动说明逐字不变：`--dry` 24/24、`--scripted` 全过；切换按钮的包逐字节不变
-- [ ] 性能 headless 前后对比（`TK_PERF_HEADLESS=1`）：进入编辑模式、改数值、拖动不变差
+- [ ] 性能 headless 前后对比（`HT_PERF_HEADLESS=1`）：进入编辑模式、改数值、拖动不变差
 - [ ] e2e 全过，`move-placement.spec.ts` 原有的测试不改；GLOSSARY「定位方式」去掉「编辑层没有设约束的界面」、补上 Left & Right；ADR 0014 的 Consequences 相应改；docs/roadmap.md、spec 的 Out of Scope 写明 Scale 仍不做
 
 ## 背景
