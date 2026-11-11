@@ -1,5 +1,5 @@
 /** @jsxImportSource preact */
-import { createContext, isValidElement, type ComponentChildren, type RefObject, type TargetedKeyboardEvent } from "preact";
+import { createContext, Fragment, isValidElement, type ComponentChildren, type RefObject, type TargetedKeyboardEvent } from "preact";
 import { useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Variable, VariableGroup } from "../service-protocol";
 import { ResetButton, useChangeMarks, type ValuePart } from "./ChangeMarks";
@@ -9,10 +9,18 @@ import { Icon, type IconName } from "./icons";
 import { cssColor, type Color } from "./paint";
 import type { Property } from "./property-table";
 import { equal, sameVariable, type Catalog, type Drawn, type Resolved } from "./variables";
-import { palette, paletteLines, Tip } from "./VariantsPanel";
+import { palette, paletteLines, SecondLine, SecondLineButton, secondLineSwatches, Tip, useSecondLines } from "./VariantsPanel";
 
 /** How many named colors a row of the picker's palette holds: as many as Tailwind's steps, as before. */
 const NAMED_ROW = 11;
+
+interface PickerRow {
+  cells: (Resolved | undefined)[];
+  columns: number;
+  /** A ramp's line with a second line (ticket 143): the ramp's name, for its fold, and that line's colors. */
+  name?: string;
+  extra?: (Resolved | undefined)[][];
+}
 
 /**
  * The picker's palette as the Variables tab's (designer, 2026-11-08), without
@@ -20,10 +28,10 @@ const NAMED_ROW = 11;
  * many columns, each named in its title. Undefined where a ramp has no color
  * for a step: a named row has no placeholders, as it has no steps.
  */
-function pickerRows(entries: Resolved[]): { cells: (Resolved | undefined)[]; columns: number }[] {
+function pickerRows(entries: Resolved[]): PickerRow[] {
   const { scales, named } = palette(entries);
   const colors = named.flat();
-  const rows = scales.flatMap((scale) => paletteLines(scale).map(([, cells]) => ({ cells, columns: cells.length })));
+  const rows: PickerRow[] = scales.flatMap((scale) => paletteLines(scale).map(([name, cells, extra]) => ({ cells, columns: cells.length, ...(extra && { name, extra }) })));
   for (let i = 0; i < colors.length; i += NAMED_ROW) rows.push({ cells: colors.slice(i, i + NAMED_ROW), columns: NAMED_ROW });
   return rows;
 }
@@ -230,32 +238,7 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
               return part.length ? (
                 <div key={heading} role="group" aria-label={heading}>
                   <h4 class="ht-section-title ht-subtitle">{heading}</h4>
-                  <div class="ht-variants-palette">
-                    {pickerRows(part).map(({ cells, columns }, r) => (
-                      <div key={r} class="ht-variants-ramp is-bare" style={{ "--ht-steps": `${columns}` }}>
-                        {cells.map((entry, i) =>
-                          entry ? (
-                            <button
-                              key={entry.variable.name}
-                              type="button"
-                              role="option"
-                              class="ht-variants-swatch"
-                              aria-selected={sameVariable(bound, entry.variable)}
-                              aria-label={entry.variable.name}
-                              style={{ "--ht-swatch": cssColor(entry.drawn as Color) }}
-                              onPointerEnter={(event) => point(entry, event.currentTarget)}
-                              onPointerLeave={() => setPointed(null)}
-                              onFocus={(event) => point(entry, event.currentTarget)}
-                              onBlur={() => setPointed(null)}
-                              onClick={() => onPick(entry)}
-                            />
-                          ) : (
-                            <span key={`empty ${i}`} class="ht-variants-empty" />
-                          ),
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  <PickerPalette rows={pickerRows(part)} bound={bound} point={point} unpoint={() => setPointed(null)} onPick={onPick} />
                 </div>
               ) : null;
             })
@@ -274,6 +257,52 @@ export function VariableList({ group, bound, onPick }: { group: VariableGroup; b
       </div>
       {pointed && <Tip entry={pointed.entry} at={pointed.at} hint={undefined} inUse={sameVariable(bound, pointed.entry.variable)} />}
     </>
+  );
+}
+
+/**
+ * The picker's palette (`pickerRows`): a ramp's second line folded under its
+ * first (ticket 143), its chevron in the list's gutter, as it shows no names;
+ * opened by itself when the Variable picked is on it.
+ */
+function PickerPalette({ rows, bound, point, unpoint, onPick }: { rows: PickerRow[]; bound: Variable | null; point(entry: Resolved, swatch: HTMLElement): void; unpoint(): void; onPick(entry: Resolved): void }) {
+  const [open, toggle] = useSecondLines(rows.flatMap(({ name, extra }) => (name && extra?.flat().some((entry) => entry && sameVariable(bound, entry.variable)) ? [name] : [])));
+  const swatch = (entry: Resolved, style?: Record<string, string>) => (
+    <button
+      key={entry.variable.name}
+      type="button"
+      role="option"
+      class="ht-variants-swatch"
+      aria-selected={sameVariable(bound, entry.variable)}
+      aria-label={entry.variable.name}
+      style={{ "--ht-swatch": cssColor(entry.drawn as Color), ...style }}
+      onPointerEnter={(event) => point(entry, event.currentTarget)}
+      onPointerLeave={unpoint}
+      onFocus={(event) => point(entry, event.currentTarget)}
+      onBlur={unpoint}
+      onClick={() => onPick(entry)}
+    />
+  );
+  return (
+    <div class="ht-variants-palette">
+      {rows.map(({ cells, columns, name, extra }, r) => (
+        <Fragment key={r}>
+          <div class="ht-variants-ramp is-bare" style={{ "--ht-steps": `${columns}` }}>
+            {name && extra && <SecondLineButton name={name} open={open.has(name)} bare onToggle={() => toggle(name)} />}
+            {cells.map((entry, i) => (entry ? swatch(entry) : <span key={`empty ${i}`} class="ht-variants-empty" />))}
+          </div>
+          {name && extra && (
+            <SecondLine open={open.has(name)}>
+              {extra.map((line, l) => (
+                <div key={l} class="ht-variants-ramp is-bare" style={{ "--ht-steps": `${columns}` }}>
+                  {secondLineSwatches(line, 1, (entry, column, order) => swatch(entry, { gridColumn: `${column}`, "--ht-order": `${order}` }))}
+                </div>
+              ))}
+            </SecondLine>
+          )}
+        </Fragment>
+      ))}
+    </div>
   );
 }
 
