@@ -16,6 +16,7 @@ import { changesEditStyles, isEditStyles, syncEditStyles } from "./canvas-style"
 import { copyCanvas, drawInto, fitHeight, type Canvas } from "./freezer";
 import { rangeOf, runAt, type Layer, type LayerTree } from "./layers";
 import { createLater } from "./later";
+import { elementsWithin, noteShadowRoots } from "./shadow-roots";
 
 /**
  * How long the steps of a value pause, ms, before the views beside the one
@@ -466,8 +467,11 @@ function follow(canvas: Document, copy: Document, typed: () => void, lags: () =>
     if (shadow && copied) {
       if (way === down) observer.observe(shadow, EVERYTHING);
       pair(shadow, copied, way);
-      // The pixels of the stills in it, which no copy of them takes.
-      for (const still of shadow.querySelectorAll("canvas")) drawInto(way.to.get(still) as HTMLCanvasElement, still);
+      noteShadowRoots(way.doc, true);
+      // The pixels of the stills in it, nested shadow roots too, which no copy of them takes.
+      for (const still of elementsWithin(shadow)) {
+        if (still.localName === "canvas") drawInto(way.to.get(still) as HTMLCanvasElement, still as HTMLCanvasElement);
+      }
     }
     if (node.nodeName.toLowerCase() === "canvas") drawInto(made as HTMLCanvasElement, node as HTMLCanvasElement);
     if (!template) update(node, made, false, way);

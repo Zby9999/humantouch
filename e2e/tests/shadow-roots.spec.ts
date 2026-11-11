@@ -70,6 +70,11 @@ test("an open shadow root shows on the canvas as on the page, its style element'
   // The script's animation in it at its end, in every view; the page's carries on.
   for (const view of [desktop(page), tablet(page), phone(page)]) await expect(view.contentFrame().locator("#shadow-host .fade")).toHaveCSS("opacity", "0.4");
   expect(Number(await page.locator("#shadow-host .fade").evaluate((el) => getComputedStyle(el).opacity))).toBeGreaterThan(0.9);
+  // The closed one: on the page its content shows; on the canvas, the host shows as one with none, its own content alone.
+  await expect(page.locator("#closed-host")).toContainText("Light of the closed host");
+  const closed = desktop(page).contentFrame().locator("#closed-host");
+  await expect(closed).toHaveText("Light of the closed host");
+  expect(await closed.evaluate((el) => el.shadowRoot === null && !el.ownerDocument.documentElement.outerHTML.includes("Closed content"))).toBe(true);
 });
 
 test("a press on what the shadow root shows selects its host, as before (ticket 136 goes in)", async ({ page }) => {

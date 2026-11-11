@@ -7,7 +7,7 @@ import { dropUnusedRules, orderEditStyles, syncEditStyles, upgradeEditStyles } f
 import { containingBlockOf } from "./containing-block";
 import { HOST_TAG } from "./host";
 import { EDIT_STYLES_ATTR } from "./style-marks";
-import { attachDeclared, elementsWithin, htmlOf, NOT_THE_PAGES, ON_CANVAS } from "./shadow-roots";
+import { elementsWithin, htmlOf, mayHoldShadowRoots, NOT_THE_PAGES, noteShadowRoots, ON_CANVAS, putBackShadowRoots, queryWithin, shadowRootsIn } from "./shadow-roots";
 import { PIN_OFFSET_ATTR, PINNED_ATTR, SHEET_HREF_ATTR } from "./style-source";
 import { FONT_STACK } from "./toggle-styles";
 import { CHAIN_ATTR, readUsageChain } from "./usage-chain";
@@ -79,7 +79,7 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
     scrollbar: Math.max(0, page.innerWidth - root.clientWidth),
     matches: (query) => page.matchMedia(query).matches,
   };
-  const animationEnds = readAnimationEnds(live);
+  const animationEnds = readAnimationEnds(live.getAnimations());
   // Writing a doctype puts the copy in the same rendering mode as the page.
   doc.open();
   doc.write(doctypeOf(live));
@@ -147,6 +147,8 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
       return; // Not an element that can host one: shown as one with none.
     }
     for (const node of shadow.childNodes) copied.append(doc.importNode(node, true));
+    // The document's animations leave out those in shadow roots: read here, each shadow root's as it is copied.
+    for (const [el, ends] of readAnimationEnds(shadow.getAnimations())) animationEnds.set(el, ends);
     copyEach([...shadow.querySelectorAll("*")], [...copied.querySelectorAll("*")]);
     // Constructable stylesheets come after all the others in the cascade.
     for (const sheet of shadow.adoptedStyleSheets) copied.append(styleOf(doc, sheet));
@@ -160,6 +162,7 @@ export function freeze(page: Window, iframe: HTMLIFrameElement): Promise<Canvas>
   if (Math.abs(rootHeight - root.clientHeight) < 1) setImportant(copy, "height", `${rootHeight}px`);
 
   doc.replaceChild(copy, doc.documentElement);
+  noteShadowRoots(doc, shadowRoots.length > 0);
   // Written back as text: every view, and the canvas saved with the round, takes the sheets from their text.
   for (const sheet of [...doc.styleSheets, ...shadowRoots.flatMap((shadow) => [...shadow.styleSheets])]) {
     const rules = readRules(sheet);
@@ -254,8 +257,8 @@ export function restore(html: string, iframe: HTMLIFrameElement, takeIn?: (doc: 
   doc.open();
   doc.write(html);
   doc.close();
-  // Its shadow roots, written out as declarative ones, where the parser left them templates.
-  attachDeclared(doc);
+  // Its shadow roots, written out as declarative ones.
+  putBackShadowRoots(doc, html);
   const root = doc.documentElement;
   const saved = JSON.parse(root.getAttribute(LAYOUT_ATTR) ?? "null") as (Omit<Layout, "windowHeight"> & Partial<Layout>) | null;
   if (!saved) return Promise.reject(new Error("Human Touch: the saved canvas has no layout"));
@@ -266,7 +269,7 @@ export function restore(html: string, iframe: HTMLIFrameElement, takeIn?: (doc: 
   upgradeEditStyles(doc);
   // A round carried over from one that ended with changes not applied (ticket 68): what was applied taken in, before it is laid out.
   takeIn?.(doc);
-  const pixels = [...doc.querySelectorAll<HTMLCanvasElement>(`canvas[${PIXELS_ATTR}]`)].map((still) => {
+  const pixels = queryWithin<HTMLCanvasElement>(doc, `canvas[${PIXELS_ATTR}]`).map((still) => {
     const image = new Image();
     image.src = still.getAttribute(PIXELS_ATTR)!;
     still.removeAttribute(PIXELS_ATTR);
@@ -316,6 +319,8 @@ export function copyCanvas(canvas: Canvas, iframe: HTMLIFrameElement, width: num
   doc.open();
   doc.write(doctypeOf(from));
   doc.close();
+  // Its shadow roots come with it, as the canvas's do.
+  noteShadowRoots(doc, mayHoldShadowRoots(from));
   const copy = doc.importNode(from.documentElement, true);
   // The canvas's edit styles may have changed in place since their text was written.
   syncEditStyles(copy);
@@ -336,7 +341,7 @@ function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loadin
   const { width } = layout;
   iframe.style.width = `${width}px`;
   iframe.style.height = `${layout.height}px`;
-  for (const el of doc.querySelectorAll<HTMLElement>(`[${TOP_LAYER_ATTR}]`)) {
+  for (const el of queryWithin<HTMLElement>(doc, `[${TOP_LAYER_ATTR}]`)) {
     try {
       if (el.getAttribute(TOP_LAYER_ATTR) === "modal") {
         el.removeAttribute("open");
@@ -345,7 +350,9 @@ function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loadin
     } catch {}
   }
   // The copy restarts the page's CSS animations from scratch.
-  for (const animation of animationsIn(doc)) {
+  // The document's leave out those in its shadow roots.
+  const animations = new Set([...doc.getAnimations(), ...shadowRootsIn(doc).flatMap((shadow) => shadow.getAnimations())]);
+  for (const animation of animations) {
     try {
       animation.finish();
     } catch {
@@ -355,7 +362,7 @@ function layOut(doc: Document, iframe: HTMLIFrameElement, layout: Layout, loadin
 
   const atRest = (): Canvas => {
     const height = fitHeight(doc, iframe, layout.windowHeight);
-    for (const el of doc.querySelectorAll(`[${SCROLL_ATTR}]`)) {
+    for (const el of queryWithin(doc, `[${SCROLL_ATTR}]`)) {
       const [left, top] = el.getAttribute(SCROLL_ATTR)!.split(" ").map(Number);
       el.scrollTo(left, top);
     }
@@ -386,14 +393,14 @@ export function fitHeight(doc: Document, iframe: HTMLIFrameElement, floor: numbe
   // Measured at its shortest: a page shorter than its window is laid out as tall as the window.
   iframe.style.height = `${floor}px`;
   let height = Math.max(floor, doc.documentElement.scrollHeight);
-  for (const el of doc.querySelectorAll(`[${PINNED_ATTR}]`)) height = Math.max(height, Math.ceil(el.getBoundingClientRect().bottom));
+  for (const el of queryWithin(doc, `[${PINNED_ATTR}]`)) height = Math.max(height, Math.ceil(el.getBoundingClientRect().bottom));
   iframe.style.height = `${height}px`;
   return height;
 }
 
 /** Waits, briefly, for what the copy loads again: fonts and cross-origin stylesheets. Null when it loads none, or has them all in already. */
 function settle(doc: Document): Promise<unknown> | null {
-  const sheets = [...doc.querySelectorAll<HTMLLinkElement>("link[rel~=stylesheet]")]
+  const sheets = queryWithin<HTMLLinkElement>(doc, "link[rel~=stylesheet]")
     .filter((link) => !link.sheet)
     .map(
       (link) =>
@@ -483,11 +490,12 @@ const JUST_BEFORE_END = 0.001;
  * element. The copy does not inherit these animations, so their end state is
  * written onto it. CSS animations are replayed and finished in the copy itself.
  * Animations are seeked to just before their end and back, so the page carries on.
+ * Of `animations`, the page's: a document's, or a shadow root's.
  */
-function readAnimationEnds(live: Document): Map<Element, Map<string, string>> {
+function readAnimationEnds(animations: Animation[]): Map<Element, Map<string, string>> {
   const properties = new Map<Element, Set<string>>();
   const seeked: [Animation, CSSNumberish | null][] = [];
-  for (const animation of animationsIn(live)) {
+  for (const animation of animations) {
     if (animation instanceof CSSAnimation || animation instanceof CSSTransition) continue;
     const effect = animation.effect;
     if (!(effect instanceof KeyframeEffect) || !effect.target || effect.pseudoElement) continue;
@@ -514,23 +522,6 @@ function readAnimationEnds(live: Document): Map<Element, Map<string, string>> {
   }
   for (const [animation, time] of seeked) animation.currentTime = time;
   return ends;
-}
-
-/**
- * The animations in `doc`, those in its open shadow roots too, which its own
- * leave out; not those of the editor layer, nor of a dev server's overlay.
- */
-function animationsIn(doc: Document): Set<Animation> {
-  const animations = new Set(doc.getAnimations());
-  const add = (root: Document | ShadowRoot) => {
-    for (const el of root.querySelectorAll("*")) {
-      if (!el.shadowRoot || el.localName === HOST_TAG || NOT_THE_PAGES.has(el.localName)) continue;
-      for (const animation of el.shadowRoot.getAnimations()) animations.add(animation);
-      add(el.shadowRoot);
-    }
-  };
-  add(doc);
-  return animations;
 }
 
 /** Rules inserted through the CSSOM (CSS-in-JS) never show up in the element's text. */
@@ -603,14 +594,16 @@ const VIEWPORT_DEPENDENT = /\d[sld]?v(?:h|w|min|max|i|b)\b|@media[^{]*(?:width|h
  * run in the canvas, so `:defined` matches none of them there (ticket 135).
  * On the page it matched those defined by the time it was frozen: a component
  * hidden till its code loads (`:not(:defined)`) showed. So on the canvas
- * `:defined` matches every element, as it does any built-in one.
+ * `:defined` matches every element, as it does any built-in one, and weighs
+ * as much as it did: `:is(:defined, :not(:defined))`, a pseudo-class's
+ * specificity.
  */
 const DEFINED = /:defined\b/i;
 
 function resolveDefined(rules: CSSRuleList) {
   for (const rule of rules) {
     if ("selectorText" in rule && DEFINED.test(rule.selectorText as string)) {
-      (rule as CSSStyleRule).selectorText = (rule.selectorText as string).replace(/:defined\b/gi, ":is(*)");
+      (rule as CSSStyleRule).selectorText = (rule.selectorText as string).replace(/:defined\b/gi, ":is(:defined, :not(:defined))");
     }
     if ("cssRules" in rule) resolveDefined(rule.cssRules as CSSRuleList);
   }

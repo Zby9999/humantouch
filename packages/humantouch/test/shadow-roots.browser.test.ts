@@ -197,6 +197,48 @@ describe("an open shadow root on the page (ticket 135)", () => {
     expect(read((await restore(serializeCanvas(canvas), iframe())).document)).toBe("rgb(9, 9, 9)");
   });
 
+  test("a still drawn in a shadow root is drawn on the canvas, and again once the round is put back; its pixels are not kept on it", async () => {
+    const live = livePage(SHADOW, (doc) => {
+      withShadowRoots(doc);
+      const still = Object.assign(doc.createElement("canvas"), { id: "still", width: 4, height: 4 });
+      doc.getElementById("host")!.shadowRoot!.append(still);
+      const ink = still.getContext("2d")!;
+      ink.fillStyle = "#f00";
+      ink.fillRect(0, 0, 4, 4);
+    });
+    const red = (doc: Document) => [...(inShadow(doc, "still") as HTMLCanvasElement).getContext("2d")!.getImageData(1, 1, 1, 1).data];
+    const canvas = await freeze(live, iframe());
+    expect(red(canvas.document)).toEqual([255, 0, 0, 255]);
+    const saved = serializeCanvas(canvas);
+    expect(saved).toContain("data-ht-pixels");
+    const back = await restore(saved, iframe());
+    expect(red(back.document)).toEqual([255, 0, 0, 255]);
+    expect(inShadow(back.document, "still")!.hasAttribute("data-ht-pixels")).toBe(false);
+    expect(serializeCanvas(back)).toBe(saved);
+  });
+
+  test("a popover open, a modal dialog and a box scrolled in a shadow root stay so on the canvas, and once put back", async () => {
+    const live = livePage(SHADOW, (doc) => {
+      withShadowRoots(doc);
+      const shadow = doc.getElementById("host")!.shadowRoot!;
+      const more = doc.createElement("template");
+      more.innerHTML = `<div id="pop" popover="manual">Pop</div><dialog id="dialog">Dialog</dialog>
+<div id="scroller" style="height: 50px; overflow: auto"><div style="height: 500px"></div></div>`;
+      shadow.append(more.content);
+      (shadow.getElementById("pop") as HTMLElement).showPopover();
+      (shadow.getElementById("dialog") as HTMLDialogElement).showModal();
+      shadow.getElementById("scroller")!.scrollTop = 120;
+    });
+    const expectAsOnPage = (doc: Document) => {
+      expect(inShadow(doc, "pop")!.matches(":popover-open")).toBe(true);
+      expect(inShadow(doc, "dialog")!.matches(":modal")).toBe(true);
+      expect(inShadow(doc, "scroller")!.scrollTop).toBe(120);
+    };
+    const canvas = await freeze(live, iframe());
+    expectAsOnPage(canvas.document);
+    expectAsOnPage((await restore(serializeCanvas(canvas), iframe())).document);
+  });
+
   test("a custom element hidden till it is defined, defined on the page, shows on the canvas and in each view", async () => {
     const live = livePage(`<!DOCTYPE html><style>x-late:not(:defined) { display: none } x-late:defined { color: rgb(0, 99, 0) }</style><x-late id="late">Late</x-late>`, (doc) => {
       const win = doc.defaultView as Window & typeof globalThis;
@@ -208,6 +250,19 @@ describe("an open shadow root on the page (ticket 135)", () => {
       expect(getComputedStyle(doc.getElementById("late")!).display).toBe("inline");
       expect(getComputedStyle(doc.getElementById("late")!).color).toBe("rgb(0, 99, 0)");
     }
+  });
+
+  test("a rule on `:defined` weighs on the canvas as on the page, over a later rule without it", async () => {
+    const live = livePage(
+      `<!DOCTYPE html><style>.bar x-icon:defined { color: rgb(255, 0, 0) } .bar x-icon { color: rgb(0, 0, 255) }</style><div class="bar"><x-icon id="icon">i</x-icon></div>`,
+      (doc) => {
+        const win = doc.defaultView as Window & typeof globalThis;
+        win.customElements.define("x-icon", class extends win.HTMLElement {});
+      },
+    );
+    expect(getComputedStyle(live.document.getElementById("icon")!).color).toBe("rgb(255, 0, 0)");
+    const canvas = await freeze(live, iframe());
+    expect(getComputedStyle(canvas.document.getElementById("icon")!).color).toBe("rgb(255, 0, 0)");
   });
 
   test("a custom element of the page's is copied as it is, none of its code run in the copy", async () => {

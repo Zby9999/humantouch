@@ -1,11 +1,14 @@
 <!--
   Put at the top of the example's page by shadow-roots.spec.ts (ticket 135), so the example itself is left as it is.
   An open shadow root, styled by a style element in it and by a constructable stylesheet, each answering to the width,
-  with a script's animation under way in it.
+  with a script's animation under way in it; and a closed shadow root.
 -->
 <div id="shadow-host"></div>
+<div id="closed-host"><span>Light of the closed host</span></div>
 <script>
   (() => {
+    // A closed one: nothing of it can be read, so the canvas shows the host as one with none.
+    document.getElementById("closed-host").attachShadow({ mode: "closed" }).innerHTML = "<b>Closed content</b><slot></slot>";
     const shadow = document.getElementById("shadow-host").attachShadow({ mode: "open" });
     shadow.innerHTML = `<style>
   .title { margin: 0; font: 700 24px/32px sans-serif; color: rgb(200, 0, 0) }
