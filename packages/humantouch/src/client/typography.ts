@@ -266,13 +266,13 @@ export interface Font {
  */
 export function fontsOf(doc: Document): Font[] {
   const fonts = new Map<string, { family: string; weights: Set<number> }>();
+  // A weight split into subsets by `unicode-range`, a face each, is one weight: listed once.
   const add = (family: string, weights: number[]) => {
     const key = family.toLowerCase();
     if (!fonts.has(key)) fonts.set(key, { family, weights: new Set() });
     for (const weight of weights) fonts.get(key)!.weights.add(weight);
   };
   doc.fonts.forEach((face) => {
-    // A weight split into subsets by `unicode-range` is one weight: listed once.
     if (face.status !== "error") add(unquoted(face.family), weightsOf(face.weight));
   });
   for (const el of textOf(doc)) {
