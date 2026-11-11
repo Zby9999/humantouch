@@ -339,15 +339,32 @@ describe("doctor", () => {
     expect(output).toContain("✗ .agents/skills/humantouch/SKILL.md is missing");
   });
 
-  test("a production build with editor layer code in it fails", async () => {
+  test.each([
+    ["the toggle", `var t="human-touch",g="__HUMAN_TOUCH__";customElements.define(t,class{})`],
+    ["the token header", `fetch("/round",{headers:{"X-Human-Touch-Token":k}})`],
+    ["an element's source marker", `jsx("h1",{"data-ht-loc":"src/App.tsx:21:11"})`],
+    ["the edits' CSS layer", `s.textContent="@layer human-touch-edits;"`],
+  ])("a production build with editor layer code in it fails: %s", async (_, code) => {
     viteProject();
-    const { exec } = fakeExec(builtPage(`customElements.define("human-touch",class{})`));
+    const { exec } = fakeExec(builtPage(code));
+    await cli(exec, "init");
+
+    const { code: exit, output } = await cli(exec, "doctor");
+
+    expect(exit).toBe(1);
+    expect(output).toMatch(/✗ A production build has editor layer code in it: assets[/\\]index\.js/);
+  });
+
+  test("a production build that only uses the words human touch, as a class, a slug, text or another package, passes", async () => {
+    viteProject();
+    const ordinary = `el.className="human-touch";fetch("/blog/human-touch");h1.textContent="A Human Touch";import("human-touch");document.createElement("human-touch-card")`;
+    const { exec } = fakeExec(builtPage(ordinary));
     await cli(exec, "init");
 
     const { code, output } = await cli(exec, "doctor");
 
-    expect(code).toBe(1);
-    expect(output).toMatch(/✗ A production build has editor layer code in it: assets[/\\]index\.js/);
+    expect(output).toContain("✓ A production build has none of the editor layer");
+    expect(code).toBe(0);
   });
 
   test("a production build that fails is reported, with what it printed", async () => {

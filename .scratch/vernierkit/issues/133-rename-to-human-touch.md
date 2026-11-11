@@ -158,7 +158,24 @@
 
 **风险**
 
-- `doctor` 查正式构建残留时找的是字符串 `human-touch`。npm 上有个工具就叫 `human-touch`；用了它的项目，或者页面文字里正好写着 human-touch，都会被当成残留，误报 ✗。以前的 `third-kind` 没这么常见。可以改成找 `customElements.define("human-touch"` 这样更窄的字样。这次没改，保持行为不变。
+- 风险 1 已修，见下面「风险 1 的修法」。
 - 合进 main 以后：示例项目里存着的旧画布 `.03kind/` 要挪成 `.humantouch/`（本 worktree 里没有）。包目录换了位置，各个 worktree 要重新 `pnpm install`。
 - 包目录换位置后，第一次跑 vitest 可能因为 Vite 重新预构建依赖而失败（ticket 70 遇到过）。这次在新 worktree 里第一次就过了。
 - 按 install.spec 的口径，切换按钮离上限只剩 114 B。
+
+### 风险 1 的修法（2026-11-11，规划会话要求，同一分支）
+
+- 问题：`doctor` 查正式构建残留的列表里有单独的 `human-touch`。正式构建里正常出现这个词（类名、网址、页面文字、npm 上那个同名的包）时，会误报 ✗。
+- 先看了我们发出的每一份代码，留进正式构建时各带哪些字样（`pnpm build` 后的 dist）：
+  - 切换按钮那份共用代码（`chunk-*.js`）：`data-ht-`、`__HUMAN_TOUCH__`、`X-Human-Touch-Token`，还有宿主元素名 `"human-touch"`。
+  - 编辑层（`editor.dev.js`）：`data-ht-`、`human-touch-edits`。
+  - 开发用的 React 入口（`react.dev.js`）：自己没有这些字样，但它导入切换按钮那份代码，一起打进去就带着那三样。正式入口 `react.js` 只是一个返回 null 的组件，什么都不带。
+  - Vite 插件和 Next.js 的 loader：往页面代码里写 `data-ht-loc`、`data-ht-usage`。
+- 改成：`RESIDUE = ["data-ht-", SERVICE_GLOBAL, TOKEN_HEADER, "human-touch-edits"]`，也就是 `data-ht-`、`__HUMAN_TOUCH__`、`X-Human-Touch-Token`、`human-touch-edits`。后两个直接取 `service-protocol.ts` 的常量，以后改名不会漏。
+  - 去掉了单独的 `human-touch`。上面每一份残留都至少带一样新字样，所以原来抓得到的残留现在照样抓得到。
+  - 没有用 `customElements.define("human-touch"`：压缩以后宿主元素名是一个变量（`Dt="human-touch"`），define 的参数不是这个字面量，这个字样抓不到。
+- 测试（`test/install.test.ts`）：
+  - 原来那条「正式构建里有编辑层代码就报 ✗」拆成 4 条，每条放一种真实的残留：切换按钮（宿主元素名和 `__HUMAN_TOUCH__`）、请求头、元素的源码标记 `data-ht-loc`、编辑样式的 CSS layer。都报 ✗。
+  - 新加 1 条：正式构建里只有平常用到的 human-touch（类名 `human-touch`、网址 `/blog/human-touch`、文字 "A Human Touch"、`import("human-touch")`、元素 `human-touch-card`），`doctor` 报 ✓、退出码 0。
+- 数字：`pnpm typecheck` 通过；vitest 1212 passed、1 skipped（原来 1208：一条拆成 4 条，再加 1 条）；node 测试 129 全过；`HT_E2E_PORT=6100` 跑 install.spec、next-install.spec、production-build.spec，14 passed。
+- 风险：要是以后改了切换按钮或编辑层，让它不再带这四样字样里的任何一样，残留就查不出来了。现在靠上面这份逐个核对；没有测试拿打包出来的 dist 去比。

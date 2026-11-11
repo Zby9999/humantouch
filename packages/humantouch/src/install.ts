@@ -9,6 +9,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SERVICE_GLOBAL, TOKEN_HEADER } from "./service-protocol";
 import { addVitePlugin, insert, mountInEntry, mountInLayout, undo, wrapNextConfig, type Edit, type FileEdit } from "./source-edits";
 import { readChangeSet, readIfThere, readOffCanvas, readState, humanTouchFolder, writeAtomically } from "./human-touch-folder";
 
@@ -37,8 +38,17 @@ const SKILL_TEMPLATE = fileURLToPath(new URL("../skill/SKILL.md", import.meta.ur
 const SKILL_FILE = `${SKILL_FOLDERS[0]}/SKILL.md`;
 const AGENTS_LINE = `Human Touch: to apply the designer's design changes, or undo the last round, follow \`${SKILL_FILE}\`.`;
 const IGNORE_LINE = ".humantouch/";
-/** What only the editor layer brings: none of it may be in a production build. */
-const RESIDUE = ["human-touch", "data-ht-", "__HUMAN_TOUCH__"];
+/**
+ * What only the editor layer brings: none of it may be in a production build.
+ * Each part that could be left in one carries some of these: the toggle, which
+ * the editor layer and the dev React entry load, has the attribute prefix, the
+ * service global and the token header; the editor layer has the attribute prefix
+ * and the edits' CSS layer; the Vite plugin and the Next.js loader write the
+ * attribute prefix into the page's code. The product's name in two words with a
+ * hyphen, the host element's name, is not one: a production build may have it in
+ * a class name, a slug, page text or another package (ticket 133).
+ */
+export const RESIDUE = ["data-ht-", SERVICE_GLOBAL, TOKEN_HEADER, "human-touch-edits"];
 
 type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
 
