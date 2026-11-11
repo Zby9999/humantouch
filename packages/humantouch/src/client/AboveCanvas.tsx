@@ -8,6 +8,7 @@
  */
 import type { TargetedPointerEvent } from "preact";
 import type { Camera } from "./camera";
+import { ALONE_ATTR } from "./canvas-style";
 import { Icon } from "./icons";
 import { role, type Layer } from "./layers";
 import { HANDLES, sides, type Handle } from "./resize";
@@ -22,18 +23,24 @@ interface SelectionToolbarProps {
   /** The layer has changes for its usage it can promote to its component. */
   promote: boolean;
   onPromote(layer: Layer): void;
+  /** The layer is one of the instances a loop renders, or in one (ticket 114): whether that instance edits alone, no longer following the others; null when it is in none. */
+  alone: boolean | null;
+  onEditAlone(layer: Layer, alone: boolean): void;
 }
 
 /**
  * On the top right of the layer selected alone, always there: the buttons
- * for that layer, in one row, so none covers another. Promote, while it has
- * changes for its usage to promote to its component. The second version
+ * for that layer, in one row, so none covers another. Edit alone, on one of
+ * the instances a loop renders or a layer in one (ticket 114): pressed, the
+ * instance no longer follows the others; pressed again, it follows them
+ * again. Promote, while it has changes for its usage to promote to its
+ * component, the wider of the two, last. The second version
  * puts States first, into the component's Sandbox (ADR 0007); not shown yet.
  * With no button to show, there is nothing.
  */
-export function SelectionToolbar({ layer, view, camera, promote, onPromote }: SelectionToolbarProps) {
+export function SelectionToolbar({ layer, view, camera, promote, onPromote, alone, onEditAlone }: SelectionToolbarProps) {
   const r = view.boxOf(layer);
-  if (!r || !promote) return null;
+  if (!r || (!promote && alone === null)) return null;
   return (
     <div
       class="ht-selection-toolbar"
@@ -44,10 +51,24 @@ export function SelectionToolbar({ layer, view, camera, promote, onPromote }: Se
       onPointerDown={(event) => event.stopPropagation()}
     >
       {/* States (second version, ADR 0007): first in the row, for a component. */}
-      <button type="button" class="ht-selection-tool" onClick={() => onPromote(layer)}>
-        <Icon name="promote" />
-        Promote
-      </button>
+      {alone !== null && (
+        <button
+          type="button"
+          class="ht-selection-tool"
+          aria-pressed={alone}
+          data-ht-tip={alone ? "Changes made here are made to this instance alone. Press to follow the others again." : "Change this instance alone, apart from the others the loop renders."}
+          onClick={() => onEditAlone(layer, !alone)}
+        >
+          <Icon name="alone" />
+          Edit alone
+        </button>
+      )}
+      {promote && (
+        <button type="button" class="ht-selection-tool" onClick={() => onPromote(layer)}>
+          <Icon name="promote" />
+          Promote
+        </button>
+      )}
     </div>
   );
 }
@@ -121,6 +142,8 @@ export function Outline({ layer, view, name, camera, box, hover, hidden, typing,
     <div
       class={hover ? "ht-hover" : "ht-selection"}
       data-kind={kind}
+      // In an instance of a loop that edits alone (ticket 114): dashed.
+      data-alone={(!layer.text && !!layer.el.closest(`[${ALONE_ATTR}]`)) || undefined}
       data-view={name}
       data-hidden={hidden || undefined}
       data-away={away || undefined}

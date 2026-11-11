@@ -20,12 +20,14 @@
 import type { OtherUsageChanged, OtherUsagesKept, OtherUsagesNote } from "../service-protocol";
 import type { OutsideChanged, OutsideNote } from "../outside-protocol";
 import type { Change } from "./changeset";
+import { breaksLines } from "../design-values";
 import { changedAround, changesTheSame as sameStyle, itself, outsideOf, valuesAt, wordsOn, type PageWidth } from "./check";
 import type { RoundOnCanvas } from "./moves";
 import { sameBreakpoint } from "./breakpoints";
 import { forOneUsage, foundByMarker } from "./checkable";
-import { originOf } from "./layers";
-import { otherUsagesOf } from "./page-elements";
+import { aloneOfKey } from "./canvas-style";
+import { originOf, usageKey } from "./layers";
+import { elementsOf, otherUsagesOf } from "./page-elements";
 import { readValue, type Property } from "./property-table";
 import { readUsageChain, type UsageLevel } from "./usage-chain";
 
@@ -39,7 +41,9 @@ export type OtherUsagesNoted = OtherUsagesNote<{ el?: Element }>;
 
 /** The round's notes, `noted` by change id, as kept in `.humantouch/` (ticket 82): with no elements. */
 export function keptOf(noted: Map<number, OtherUsagesNoted | null>): OtherUsagesKept {
-  return Object.fromEntries([...noted].map(([id, one]) => [id, one && { width: one.width, seen: one.seen.map(({ key, chain, value }) => ({ key, chain, value })), ...(one.outside && { outside: one.outside }) }]));
+  return Object.fromEntries(
+    [...noted].map(([id, one]) => [id, one && { width: one.width, seen: one.seen.map(({ key, chain, value, nth }) => ({ key, chain, value, ...(nth && { nth }) })), ...(one.outside && { outside: one.outside }) }]),
+  );
 }
 
 /** Notes kept in `.humantouch/` (`kept`), by change id, to go by: their elements to be found again on the page. */
@@ -47,9 +51,32 @@ export function notedFrom(kept: OtherUsagesKept): Map<number, OtherUsagesNoted |
   return new Map(Object.entries(kept).map(([id, one]) => [Number(id), one && { width: one.width, seen: one.seen.map((seen) => ({ ...seen })), ...(one.outside && { outside: one.outside }) }]));
 }
 
-/** Whether the page looks at the component's other usages for `change`: a style change, or new words (ticket 90), for one usage of it alone, to a layer it finds by its source marker. */
+/**
+ * Whether the page looks at the component's other usages for `change`: a
+ * style change, or new words (ticket 90), for one usage of it alone, to a
+ * layer it finds by its source marker; and at the loop's other instances, for
+ * a style change made on one of them alone (ticket 114).
+ */
 export function looksAtOtherUsages(change: Change): boolean {
-  return (change.kind === "style" || change.kind === "text") && change.scope === "usage" && !change.data && foundByMarker(change.target) && forOneUsage(change);
+  return (change.kind === "style" || change.kind === "text") && change.scope === "usage" && !change.data && foundByMarker(change.target) && (forOneUsage(change) || !!change.alone);
+}
+
+/**
+ * The elements the page looks at for a change, besides its own (`looksAtOtherUsages`), on the
+ * page `doc` now: the other usages of its component, every instance of each,
+ * by usage key, of a change for one usage alone; of one made on an instance
+ * alone (ticket 114), the loop's other instances too, under its own usage's
+ * key, each with its place among them. Leaves out the instances `skipped`.
+ */
+function othersOf(doc: Document, change: Change, skipped: Set<number> = new Set()): Map<string, { el: Element; nth?: number }[]> {
+  const others = new Map<string, { el: Element; nth?: number }[]>();
+  if (forOneUsage(change)) for (const [key, els] of otherUsagesOf(doc, change.target)) others.set(key, els.map((el) => ({ el })));
+  if (change.alone && change.instance && change.target.loc) {
+    const own = change.instance.nth;
+    const instances = elementsOf(doc, change.target).flatMap((el, i) => (i + 1 === own || skipped.has(i + 1) ? [] : [{ el, nth: i + 1 }]));
+    if (instances.length) others.set(usageKey(change.target.loc, change.target.chain), instances);
+  }
+  return others;
 }
 
 /** Whether `other`, another change of the round, changes what `change` changes: its property, or a CSS property its reference style names; new words, those of the same layer. */
@@ -61,7 +88,7 @@ function changesTheSame(change: Change, other: Change): boolean {
 
 /** What an element shows of what `change` changes: the value of its property, in design language; for new words, what it reads (ticket 90). */
 function shownOn(el: Element, change: Change): unknown {
-  return change.kind === "text" ? wordsOn(el) : readValue(el, change.property as Property);
+  return change.kind === "text" ? wordsOn(el, breaksLines(change)) : readValue(el, change.property as Property);
 }
 
 /**
@@ -79,11 +106,16 @@ export function noteOtherUsages(doc: Document, change: Change, round: Change[], 
   const changedThere = new Set(
     round.filter((other) => other.scope === "usage" && (changesTheSame(change, other) || (change.kind === "text" && !!other.data))).map((other) => JSON.stringify(other.target.chain)),
   );
+  // Made on one instance alone (ticket 114): nor the loop's other instances, once the round changes them all so, nor one it changes so alone too.
+  const shared = round.some((other) => other.scope === "usage" && !other.alone && other.layer === aloneOfKey(change.layer)?.id && changesTheSame(change, other));
+  const alone = new Set(round.flatMap((other) => (other.alone && other.instance && aloneOfKey(other.layer)?.id === aloneOfKey(change.layer)?.id && changesTheSame(change, other) ? [other.instance.nth] : [])));
   const seen: OtherUsagesNoted["seen"] = [];
-  for (const [key, els] of otherUsagesOf(doc, change.target)) {
-    const { chain } = originOf(els[0], readUsageChain(els[0]));
-    if (changedThere.has(JSON.stringify(chain))) continue;
-    for (const el of els) seen.push({ el, key, chain, value: shownOn(el, change) });
+  for (const [key, els] of othersOf(doc, change, alone)) {
+    const instances = els[0].nth !== undefined;
+    if (instances && shared) continue;
+    const { chain } = instances ? change.target : originOf(els[0].el, readUsageChain(els[0].el));
+    if (!instances && changedThere.has(JSON.stringify(chain))) continue;
+    for (const { el, nth } of els) seen.push({ el, key, chain, value: shownOn(el, change), ...(nth && { nth }) });
   }
   return { width, seen };
 }
@@ -183,19 +215,21 @@ export function notedFor(then: Change, now: Change): boolean {
 export function otherUsagesChanged(doc: Document, change: Change, noted: OtherUsagesNoted | null, width: number): OtherUsageChanged[] {
   if (!noted || noted.width !== width) return [];
   const found = new Map<string, OtherUsageChanged>();
-  let now: Map<string, Element[]> | undefined;
+  let now: Map<string, { el: Element; nth?: number }[]> | undefined;
   noted.seen.forEach((seen, i) => {
-    const { el, key, chain, value } = seen;
-    if (found.has(key)) return;
+    const { el, key, chain, value, nth } = seen;
+    // The loop's other instances (ticket 114): each apart.
+    const one = nth ? `${key} #${nth}` : key;
+    if (found.has(one)) return;
     let there: Element | undefined = el;
     if (!el?.isConnected) {
-      now ??= otherUsagesOf(doc, change.target);
-      there = now.get(key)?.[noted.seen.slice(0, i).filter((earlier) => earlier.key === key).length];
+      now ??= othersOf(doc, change);
+      there = nth ? now.get(key)?.find((other) => other.nth === nth)?.el : now.get(key)?.[noted.seen.slice(0, i).filter((earlier) => earlier.key === key).length]?.el;
       seen.el = there;
     }
     if (!there) return;
     const is = shownOn(there, change);
-    if (JSON.stringify(is) !== JSON.stringify(value)) found.set(key, { chain, was: value, is });
+    if (JSON.stringify(is) !== JSON.stringify(value)) found.set(one, { chain, was: value, is, ...(nth && { nth }) });
   });
   return [...found.values()];
 }

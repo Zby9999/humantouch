@@ -141,6 +141,109 @@ describe("claim", () => {
     expect(notes).toContain('- **Layer:** Stack, `<div id="root">` (Page › Stack)');
   });
 
+  test("a layer in a shadow root, located, says Location as any other, and that the change is to the styles of the component that renders into the shadow root, not global CSS; the rule that sets it now is named as the component's (ticket 137)", async () => {
+    const title = {
+      ...cards,
+      loc: "src/HeroCard.tsx:21:11",
+      chain: [{ component: "HeroCard", usage: "src/App.tsx:12:7", thirdParty: false }, APP],
+      component: "HeroCard",
+      instances: 1,
+      shadowRoot: '<hero-card id="hero">',
+      context: { path: ["Page", "hero-card", "Title"], element: '<h2 class="title">' },
+    };
+    const source = { properties: ["background-color"], kind: "rule", selector: ".title", file: null, layer: null, important: false, className: "title", declaration: "background: rgb(0, 128, 0)", shadowRoot: "hero-card" };
+    saveRound({ ...redFill, target: title, sources: [source] });
+
+    const notes = (await cli("claim")).output;
+
+    expect(section(notes, 1)).toContain("- **Location:** `src/HeroCard.tsx:21:11`\n");
+    expect(section(notes, 1)).toContain(
+      "- **Shadow root:** the layer is in the shadow root of `<hero-card id=\"hero\">`, which the page's CSS does not reach: the change is to the styles of the component that renders into its shadow root (see **Shadow roots**), not to global CSS.\n",
+    );
+    expect(section(notes, 1)).toContain("- **Currently set by:** class `title`: rule `.title` in no CSS layer, of the styles `<hero-card>` has in its shadow root, `background: rgb(0, 128, 0)`\n");
+    expect(notes).toContain("- **Shadow roots:** a layer in a shadow root");
+    expect(notes).not.toContain("- **Third-party Web Components:**");
+  });
+
+  test("a layer in a shadow root with no source marker, as a Lit template writes it, is not located, as any other such layer, and the page does not check it (ticket 137)", async () => {
+    const inLit = {
+      ...cards,
+      loc: null,
+      chain: [],
+      component: null,
+      instances: 1,
+      unlocated: true,
+      shadowRoot: "<lit-card>",
+      context: { path: ["Page", "lit-card", "Frame"], element: '<div class="card">' },
+    };
+    saveRound({ ...redFill, target: inLit });
+
+    const notes = (await cli("claim")).output;
+
+    expect(section(notes, 1)).toContain("- **Location:** **Not located.**");
+    expect(section(notes, 1)).toContain("- **Shadow root:** the layer is in the shadow root of `<lit-card>`");
+    expect(notes).toContain("a change to a layer the page cannot find");
+  });
+
+  test("a layer in the shadow root of a custom element a dependency defines is changed from its usage, by what it takes there, `::part()` among them; not the React third-party rule (ticket 137)", async () => {
+    const chip = {
+      ...cards,
+      loc: null,
+      chain: [{ component: "acme-chip", usage: "src/App.tsx:30:9", thirdParty: true, webComponent: true }, APP],
+      component: "acme-chip",
+      instances: 1,
+      locked: true,
+      unlocated: true,
+      shadowRoot: "<acme-chip>",
+      context: { path: ["Page", "acme-chip", "acme-chip"], element: '<span part="label">' },
+    };
+    saveRound({ ...redFill, target: chip });
+
+    const notes = (await cli("claim")).output;
+
+    expect(section(notes, 1)).toContain("a custom element a dependency defines: change it from where `<acme-chip>` is used");
+    expect(notes).toContain("- **Third-party Web Components:**");
+    expect(notes).toContain("`::part()` rules for the parts it exposes");
+    expect(notes).not.toContain("- **Third-party components:**");
+    expect(notes).not.toContain("- **Shadow roots:**");
+  });
+
+  test("a layer a third-party React component draws in the project's own shadow root (a React portal into one) gets the React third-party rule and the shadow root's, not the Web Component's (ticket 137)", async () => {
+    const trigger = {
+      ...cards,
+      loc: null,
+      chain: [{ component: "DropdownMenuTrigger", usage: "src/Hero.tsx:40:9", thirdParty: true }, { component: "Hero", usage: "src/App.tsx:12:7", thirdParty: false }, APP],
+      component: "DropdownMenuTrigger",
+      instances: 1,
+      locked: true,
+      unlocated: true,
+      shadowRoot: '<section class="hero">',
+      context: { path: ["Page", "section", "DropdownMenuTrigger"], element: "<button>" },
+    };
+    saveRound({ ...redFill, target: trigger });
+
+    const notes = (await cli("claim")).output;
+
+    expect(section(notes, 1)).toContain("- **Shadow root:** the layer is in the shadow root of `<section class=\"hero\">`, which the page's CSS does not reach: the change is to the styles of the component that renders into its shadow root");
+    expect(section(notes, 1)).not.toContain("a custom element a dependency defines");
+    expect(notes).toContain("- **Third-party components:**");
+    expect(notes).toContain("- **Shadow roots:**");
+    expect(notes).not.toContain("- **Third-party Web Components:**");
+  });
+
+  test("a layer in a shadow root is told its Variable as a CSS variable, and an exact value with no Tailwind class: no class reaches into it (ticket 137)", async () => {
+    const title = { ...cards, loc: "src/HeroCard.tsx:21:11", chain: [{ component: "HeroCard", usage: "src/App.tsx:12:7", thirdParty: false }, APP], component: "HeroCard", instances: 1, shadowRoot: '<hero-card id="hero">' };
+    const brand = { name: "brand-500", group: "color", value: "#ff0000", from: "tailwind", css: "var(--color-brand-500)", own: true };
+    saveRound({ ...redFill, target: title, variables: { "": brand } }, { ...redFill, id: 2, layer: "2", target: title, variables: { "": null } });
+
+    const notes = (await cli("claim")).output;
+
+    expect(section(notes, 1)).toContain("- **Variables:** the fill is the Variable `brand-500`, from the Tailwind theme: in the shadow root's styles, use `var(--color-brand-500)`.\n");
+    expect(section(notes, 2)).toContain("- **Variables:** no Variable has the fill's value: use the exact value, not a Variable whose value is close.\n");
+    expect(notes).not.toContain("bg-brand-500");
+    expect(notes).not.toContain("arbitrary value");
+  });
+
   test("a layer the outermost component writes is changed where it is written, with no other usages to spare", async () => {
     const inApp = { ...cards, loc: "src/App.tsx:27:9", chain: [APP], component: "App", instances: 1 };
     saveRound({ ...redFill, target: inApp });
@@ -1755,6 +1858,30 @@ describe("claim, new layers, words, deleting and copying", () => {
     expect(section(output, 4)).toContain("- **Brief:** “A pricing table with two plans”, in place of the brief the copy was made with, “A pricing table with three plans”\n");
     expect(section(output, 5)).toContain("- **Design intent:** Make this copy without what the brief it was copied with asks for: leave it a Frame as the designer drew it.\n");
     expect(section(output, 5)).toContain("- **Brief:** none: taken off, in place of the brief the copy was made with, “A pricing table with three plans”\n");
+  });
+
+  test("new words with a line break say where it is, line by line, and how to write it; a break taken out says so (ticket 144)", async () => {
+    saveRound(
+      change(1, "text", { property: "text", before: "Third Kind", after: "Third\nKind" }),
+      change(2, "text", { property: "text", before: "One\nTwo", after: "One Two", target: cards }),
+    );
+
+    const output = (await cli("claim")).output;
+
+    expect(section(output, 1)).toContain("- **Design intent:** Change the text from “Third Kind” to “Third↵Kind”. The new words are in 2 lines: “Third” and “Kind”, a line break where ↵ is.\n");
+    expect(section(output, 2)).toContain("- **Design intent:** Change the text from “One↵Two” to “One Two”. The new words are on one line, with no line break.\n");
+    expect(output).toContain("- **Line breaks:** the notes give the new words line by line, each line break shown as ↵.");
+    expect(output).toContain("`<br />`");
+    expect(output).toContain("line breaks in the words by where the page breaks their lines");
+  });
+
+  test("new words with no line break say nothing of lines", async () => {
+    saveRound(change(1, "text", { property: "text", before: "Get started", after: "Start now" }));
+
+    const output = (await cli("claim")).output;
+
+    expect(output).not.toContain("line break");
+    expect(output).not.toContain("Line breaks");
   });
 
   test("new words, and in a loop, new words that come from data", async () => {

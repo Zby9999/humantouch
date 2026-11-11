@@ -7,6 +7,7 @@ import {
   AS_STACK_ATTR,
   BRIEF_ATTR,
   changesOn,
+  ALONE_ATTR,
   copyRules,
   declare,
   lookRules,
@@ -45,7 +46,7 @@ export function insertNew(doc: Document, id: string, created: Created, style: Re
     // Written in the JSX its container is written in.
     const chain = container.getAttribute(CHAIN_ATTR);
     if (chain) el.setAttribute(CHAIN_ATTR, chain);
-    if (created.text !== undefined) el.textContent = created.text;
+    if (created.text !== undefined) writeWords(el, created.text);
     if (created.brief) el.setAttribute(BRIEF_ATTR, created.brief);
     keepOriginal(el);
     container.insertBefore(el, slotsOf(container)[created.place.slot] ?? null);
@@ -69,7 +70,8 @@ export function insertCopies(originals: Element[], containers: Element[], id: st
         continue;
       }
       // Changes to the original are not the copy's: it starts as it looks.
-      for (const attr of [LAYER_ID_ATTR, MOVE_ATTR, AS_STACK_ATTR, REFERENCE_ATTR, TEXT_ATTR, ORIGINAL_TEXT_ATTR]) el.removeAttribute(attr);
+      // Nor is an instance that edits alone (ticket 114): the copy follows the others.
+      for (const attr of [LAYER_ID_ATTR, MOVE_ATTR, AS_STACK_ATTR, REFERENCE_ATTR, TEXT_ATTR, ORIGINAL_TEXT_ATTR, ALONE_ATTR]) el.removeAttribute(attr);
       // Nor is a brief on a layer that is there, which is for that usage of it; a new Frame's says what to make of it, and a copy of it is made by it too.
       if (el.getAttribute(NEW_ATTR) !== "frame") el.removeAttribute(BRIEF_ATTR);
       // It looks as the original does, at every width, with styles of its own.
@@ -98,6 +100,7 @@ export function insertPutBack(doc: Document, id: string, source: Element, place:
     const chain = container.getAttribute(CHAIN_ATTR);
     for (const [, el] of pairs) {
       el.setAttribute(MADE_ATTR, id);
+      el.removeAttribute(ALONE_ATTR);
       if (chain) el.setAttribute(CHAIN_ATTR, chain);
       else el.removeAttribute(CHAIN_ATTR);
     }
@@ -196,11 +199,16 @@ export function writeText(doc: Document, id: string, property: string, text: str
     if (!el.hasAttribute(ORIGINAL_TEXT_ATTR)) el.setAttribute(ORIGINAL_TEXT_ATTR, words.innerHTML);
     // The white space around the words stays: loose text keeps its distance from what it runs on beside.
     const [, before, , after] = /^(\s*)([\s\S]*?)(\s*)$/.exec(words.textContent!)!;
-    words.textContent = before + text + after;
+    writeWords(words, before + text + after);
   }
 }
 
-/** An element's words, as one reads them: white space between them as one space. */
-export function wordsOf(el: Element): string {
-  return el.textContent!.replace(/\s+/g, " ").trim();
+/** Gives `el` the words `text`, in place of all it holds: each line break in them ("\n") a `<br>`, as JSX writes one. */
+export function writeWords(el: Element, text: string) {
+  const lines = text.split("\n");
+  if (lines.length === 1) {
+    el.textContent = text;
+    return;
+  }
+  el.replaceChildren(...lines.flatMap((line, i) => (i ? [el.ownerDocument.createElement("br"), line] : [line])).filter((part) => part !== ""));
 }

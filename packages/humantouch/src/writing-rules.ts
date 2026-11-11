@@ -7,7 +7,7 @@
 import { dissolvesGrid, drawnIn, makesGrid, type Change, type Composed, type Created, type Dissolved, type Place, type Target } from "./client/changeset";
 import { checkable, forOneUsage, foundByMarker, isEndOffset, makerOf, PLACING, textMovedInPlace, type PlacedAlong } from "./client/checkable";
 import type { Property } from "./client/property-table";
-import { listed } from "./design-values";
+import { breaksLines, listed } from "./design-values";
 import type { ClassHelper, WhereToLook } from "./where-to-look";
 
 /** How to write one kind of change: its name in the notes, the changes it is for, and what it says. */
@@ -32,11 +32,28 @@ const HOW_TO_WRITE: HowToWrite[] = [
   {
     // Said only for a layer a third-party component draws (ticket 120): an Agent reached into one from its usage, and the notes of every other round stay as they were.
     name: "Third-party components",
-    calledFor: (change) => layersStyled(change).some(drawnByThirdParty),
+    calledFor: (change) => layersStyled(change).some((target) => drawnByThirdParty(target) && !inThirdPartyWebComponent(target)),
     text:
       "change a layer a third-party component draws by what the component takes from its usage (a prop, a `className` or `style` it passes on); " +
       "an element around it may place or size it as a whole, but do not reach into its elements from the usage: no child or descendant selectors on any element around it (`[&>span]:w-[90px]`, `*:…`, `:has()`), no global rule on its class names. " +
       "Those depend on how the library draws its elements, and stop working, with no error, once it draws them otherwise: a change that cannot be made without them is left out and reported.",
+  },
+  {
+    // Said only for a layer in an open shadow root (ticket 137, ADR 0017): no rounds before had one.
+    name: "Shadow roots",
+    calledFor: (change) => layersStyled(change).some((target) => !!target.shadowRoot && !inThirdPartyWebComponent(target)),
+    text:
+      "a layer in a shadow root (its **Shadow root** line) is styled by the styles of the component that renders into that shadow root, not by the page's CSS: no global stylesheet, Tailwind class on an element around it, or CSS Module of the page reaches into it. " +
+      "Change the rule **Currently set by** names where the component writes it: the `<style>` it renders into its shadow root, or the styles it adopts there (a `static styles`, a constructed stylesheet); with no rule to change, add one there for the layer, " +
+      "or style the layer's element itself at Location as the component already styles its elements. Leave global CSS as it is.",
+  },
+  {
+    // Said only for a layer a third-party Web Component draws in its shadow root (ticket 137): as a third-party React component's, from its usage.
+    name: "Third-party Web Components",
+    calledFor: (change) => layersStyled(change).some(inThirdPartyWebComponent),
+    text:
+      "a layer in the shadow root of a custom element a dependency defines is changed by what the element takes from its usage, where it is written in the project: its attributes, the content slotted into it, " +
+      "the CSS custom properties it reads, and `::part()` rules for the parts it exposes (`part=\"…\"`), in the project's own CSS. Never change the dependency, nor reach into its shadow root otherwise: a change that cannot be made so is left out and reported.",
   },
   {
     name: "What sets the value now",
@@ -57,7 +74,8 @@ const HOW_TO_WRITE: HowToWrite[] = [
   },
   {
     name: "A rule in no CSS layer",
-    calledFor: (change) => !!change.sources?.some((source) => source.kind === "rule" && source.layer === null),
+    // Not for a shadow root's own rule (ticket 137): no utility class of the page's reaches in to be beaten by it.
+    calledFor: (change) => !!change.sources?.some((source) => source.kind === "rule" && source.layer === null && !source.shadowRoot),
     text:
       "it beats every class in a CSS layer, whatever their specificity. Tailwind v4 puts its utilities in one, so a utility class added over the rule does not show: " +
       "one that overrides it for this layer only takes its important form (`bg-[#2563EB]!`, `rounded-lg!`).",
@@ -128,6 +146,14 @@ const HOW_TO_WRITE: HowToWrite[] = [
     text: (_list, look) =>
       "change the layer at the usage given (a prop, a `className` passed in, a variant), not the component for every usage; all the instances that one usage renders (a loop) change together. " +
       `When a class inside the component sets the value, do not add a second, conflicting class at the usage (\`rounded-xl rounded-sm\`): make the component's class a default the usage can replace (${replaceBy(look?.helper)}).`,
+  },
+  {
+    name: "One instance alone",
+    calledFor: (change) => !!change.alone,
+    text:
+      "a change marked **One instance alone** is for one of the instances a loop renders, apart from the others: give it to that instance by a field of its item in the data the loop goes through, its `id` where it has one (`choice.id === \"dark\"`), or a condition on its item, never by its index, which changes as the data does. " +
+      "The other instances keep what they have. A change to the same property for every instance changes them all but this one, which keeps its own value: write it so (its own value after the shared one, a class that wins over it). " +
+      "Its other properties follow the others: change only those given.",
   },
   {
     name: "The component itself",
@@ -250,6 +276,14 @@ const HOW_TO_WRITE: HowToWrite[] = [
     text: "change the words in the JSX, and keep the bold, links and other pieces around them where they still fit. When the words come from a prop or a variable, change them where they are given.",
   },
   {
+    // Said only for words with a line break, before or after (ticket 144): the notes of every other round stay as they were.
+    name: "Line breaks",
+    calledFor: breaksLines,
+    text:
+      "the notes give the new words line by line, each line break shown as ↵. Break the line there the way the project already breaks lines in text; in JSX with no way of its own, `<br />`. " +
+      "Take out a line break the new words no longer have. No space around a break is part of the words.",
+  },
+  {
     name: "Copies",
     calledFor: (change) => !!change.copiedBreakpoints?.length,
     text:
@@ -287,6 +321,9 @@ interface HowChecked {
 /** Whether a third-party component draws the layer (ticket 120): the innermost level of its usage chain is a dependency's. */
 const drawnByThirdParty = (target: Target) => !!target.chain[0]?.thirdParty;
 
+/** Whether the layer is in the shadow root of a custom element a dependency defines (ticket 137): not a third-party React component's, though in a shadow root. */
+const inThirdPartyWebComponent = (target: Target) => !!target.chain[0]?.webComponent;
+
 /**
  * The layers a change styles (ticket 120): its own, and those it gives styles
  * of their own: each layer of a Stack or Grid dissolved (absolute, placed and
@@ -320,10 +357,16 @@ const placedSo = (change: Change, so: (how: PlacedAlong) => boolean) =>
 /** What the page reads, and where, kind by kind, in the order said. */
 const HOW_CHECKED: HowChecked[] = [
   {
-    calledFor: (change, list) => checkable(change, list) && change.kind === "style" && !placing(change),
+    calledFor: (change, list) => checkable(change, list) && change.kind === "style" && !placing(change) && !change.alone,
     text:
       "a style change by the value the browser computes (`getComputedStyle`) for the CSS its reference style names, on the layer in every instance, whatever class or rule gives it, and on nothing else: " +
       "an edit that also changes elements outside the scope is wrong, though `done` says it shows",
+  },
+  {
+    calledFor: (change, list) => checkable(change, list) && change.kind === "style" && !!change.alone,
+    text:
+      "a change for one instance alone by the value the browser computes for it on the layer in that instance, the one given (its place among those the loop renders on the page, its words), " +
+      "and by the loop's other instances, which are to show what they did as the round was claimed: one that changes with it means it is not shown",
   },
   {
     calledFor: (change, list) => checkable(change, list) && change.kind === "style" && !change.breakpoint,
@@ -368,6 +411,10 @@ const HOW_CHECKED: HowChecked[] = [
   {
     calledFor: (change, list) => checkable(change, list) && change.kind === "text",
     text: "new words by the words in the layer, its bold runs, links and other pieces with it, white space as one space, in every instance",
+  },
+  {
+    calledFor: (change, list) => checkable(change, list) && breaksLines(change),
+    text: "line breaks in the words by where the page breaks their lines: at a `<br>`, or at a new line the text keeps (`white-space: pre-line`, say), none more and none fewer",
   },
   {
     calledFor: (change, list) => checkable(change, list) && change.kind === "text" && forOneUsage(change),

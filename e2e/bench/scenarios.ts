@@ -119,6 +119,8 @@ export interface Scenario {
   id: string;
   /** The example project it runs on; the Vite + React 19 + Tailwind v4 one when not given. */
   example?: Example;
+  /** The page of the example it runs on, its path (`/shadow`); its first page when not given. */
+  path?: string;
   /** What the designer does, in words. */
   title: string;
   /** Makes the round in the editor layer, and waits until it is saved. */
@@ -141,6 +143,8 @@ export interface Scenario {
 
 /** The example project a scenario runs on. */
 export const exampleOf = (scenario: Scenario): Example => scenario.example ?? "vite-react19-tw4";
+/** The address of the page a scenario runs on, of its example's dev server at `url`. */
+export const pageOf = (scenario: Scenario, url: string): string => url + (scenario.path ?? "");
 
 export const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
 export const phone = (page: Page) => page.locator('iframe[title="Phone 390"]');
@@ -253,6 +257,8 @@ export async function saved(desk: Desk, count: number) {
 }
 
 const HERO = '[data-testid="hero"]';
+/** The panel the page `/shadow` has in a shadow root (ticket 137): Playwright's locators go into open shadow roots. */
+const SHADOW_PANEL = '[data-testid="shadow-panel"] .panel';
 /** The intro paragraph's layer, by its words. */
 const INTRO = "A Framer-style editor layer for any page.";
 
@@ -576,7 +582,7 @@ export const SCENARIOS: Scenario[] = [
       await layer(page, "Third Kind").click();
       await desktop(page).contentFrame().locator("h1").dblclick();
       await page.keyboard.type("Third Kind Studio");
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("Escape");
       await saved(desk, 3);
     },
     changes: [
@@ -608,6 +614,34 @@ export const SCENARIOS: Scenario[] = [
       await desk.edit("src/App.tsx", freeze, `${freeze}\n  ${freeze}`);
       await desk.edit("src/App.tsx", "{features.map((feature) => (\n          <Card key={feature.title}", "{features.map((feature, i) => (\n          <Card key={i}");
       await desk.edit("src/App.tsx", ">Third Kind</h1>", ">Third Kind Studio</h1>");
+    },
+  },
+  {
+    id: "text-line-break",
+    title: "The title's words broken over two lines, Return typed between them: “Third” on the first line, “Kind” on the second (ticket 144).",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "Third Kind").click();
+      await desktop(page).contentFrame().locator("h1").dblclick();
+      // All the words selected: ← puts the caret before them, then past “Third”.
+      await page.keyboard.press("ArrowLeft");
+      for (let i = 0; i < "Third".length; i++) await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Escape");
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "text",
+        expect: "The title reads “Third” on one line and “Kind” on the line below it.",
+        // Found by its source marker, the title's words are checked, and where its lines break (ticket 144).
+        checkable: true,
+        shows: () => (document.querySelector("h1") as HTMLElement | null)?.innerText === "Third\nKind",
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", ">Third Kind</h1>", ">Third<br />Kind</h1>");
     },
   },
   {
@@ -647,7 +681,7 @@ export const SCENARIOS: Scenario[] = [
       await page.mouse.move(paragraph.x + 721.5 * zoom, paragraph.y + paragraph.height + 36 * zoom, { steps: 6 });
       await page.mouse.up();
       await page.keyboard.type("Works with any Agent.");
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("Escape");
       await page.keyboard.press("Escape");
       await saved(desk, 2);
       await moveOffTheCanvas(page, "A Framer-style editor layer for any page.", canvas.locator(`${HERO} > p`).first());
@@ -968,6 +1002,29 @@ export const SCENARIOS: Scenario[] = [
     ],
     async apply(desk) {
       await desk.edit("src/App.tsx", '<section className="flex h-screen flex-col justify-center" data-testid="hero">', '<section className="flex h-screen flex-col justify-between" data-testid="hero">');
+    },
+  },
+  // Ticket 146 (ADR 0016): the fixed width written another way, as a maximum the hero is wide enough for: drawn the same, so shown.
+  {
+    id: "panel-width-as-maximum",
+    title: "The Get started button made Fixed, 200px wide.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "Button").click();
+      await setField(page, "Width", "200");
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The Get started button is 200px wide.",
+        checkable: true,
+        shows: () => Math.abs(document.querySelector('[data-testid="hero"] button')!.getBoundingClientRect().width - 200) <= 0.5,
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", "self-start px-4 py-2 text-white", "w-full max-w-[200px] self-start px-4 py-2 text-white");
     },
   },
   {
@@ -1699,6 +1756,81 @@ export const SCENARIOS: Scenario[] = [
       await desk.edit("src/App.tsx", `sm:grid-cols-3 ${AREAS}">`, `sm:grid-cols-3 ${AREAS} max-md:flex max-md:flex-col">`);
     },
   },
+  {
+    id: "card-alone",
+    title: "The Arrange card, the second the features loop renders, set to edit alone and filled red; then the loop's cards given 4px corners from the first, the Arrange card's too (ticket 114).",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "Card", 1).click();
+      await page.getByRole("toolbar", { name: "Selection" }).getByRole("button", { name: "Edit alone" }).click();
+      await setField(page, "Fill color", "ff0000");
+      await layer(page, "Card", 0).click();
+      await setField(page, "Corner radius", "4");
+      await saved(desk, 2);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The Arrange card is red; Freeze, Apply and Your turn stay white.",
+        checkable: true,
+        shows: () => {
+          const fills = [...document.querySelectorAll("article")].map((card) => getComputedStyle(card).backgroundColor);
+          return fills.join() === ["rgb(255, 255, 255)", "rgb(255, 0, 0)", "rgb(255, 255, 255)", "rgb(255, 255, 255)"].join();
+        },
+      },
+      {
+        kind: "style",
+        expect: "The three cards of the loop have 4px corners, the Arrange card's too; the fourth keeps 12px.",
+        checkable: true,
+        variable: ["rounded-sm", "--radius-sm"],
+        shows: () => [...document.querySelectorAll("article")].map((card) => getComputedStyle(card).borderTopLeftRadius).join() === "4px,4px,4px,12px",
+      },
+    ],
+    async apply(desk) {
+      // The Card takes its corners and fill from its usage; the loop tells the Arrange card apart by its title, a field of its data, not by its place.
+      await desk.edit("src/components/Card.tsx", "{ title, body }: { title: string; body: string }", '{ title, body, className = "rounded-xl bg-white" }: { title: string; body: string; className?: string }');
+      await desk.edit("src/components/Card.tsx", '<article className="rounded-xl border border-stone-200 bg-white p-5 shadow-sm">', "<article className={`border border-stone-200 p-5 shadow-sm ${className}`}>");
+      await desk.edit(
+        "src/App.tsx",
+        "<Card key={feature.title} title={feature.title} body={feature.body} />",
+        '<Card key={feature.title} title={feature.title} body={feature.body} className={feature.title === "Arrange" ? "rounded-sm bg-[#ff0000]" : "rounded-sm bg-white"} />',
+      );
+    },
+  },
+  // Ticket 137: a layer in an open shadow root, styled by the component's own style element there, as the website's hero is.
+  {
+    id: "shadow-root-style",
+    path: "/shadow",
+    title:
+      "The panel at the top of the page `/shadow`, which its component renders into a shadow root of its own, styled by a style element there (as the website's hero is): fill blue (#2563EB), corner radius 10px.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await pick(page, desktop(page), SHADOW_PANEL);
+      await setField(page, "Fill color", "2563eb");
+      await setField(page, "Corner radius", "10");
+      await saved(desk, 2);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The panel at the top of `/shadow` is blue (#2563EB), in its shadow root; nothing else on the page changes.",
+        checkable: true,
+        shows: () => getComputedStyle(document.querySelector('[data-testid="shadow-panel"]')!.shadowRoot!.querySelector(".panel")!).backgroundColor === "rgb(37, 99, 235)",
+      },
+      {
+        kind: "style",
+        expect: "The panel at the top of `/shadow` has 10px corners.",
+        checkable: true,
+        shows: () => getComputedStyle(document.querySelector('[data-testid="shadow-panel"]')!.shadowRoot!.querySelector(".panel")!).borderTopLeftRadius === "10px",
+      },
+    ],
+    async apply(desk) {
+      // As the notes say: the styles of the component that renders into its shadow root, not the page's CSS, which does not reach in.
+      await desk.edit("src/shadow/ShadowPanel.tsx", ".panel { padding: 16px; border-radius: 16px; background: #fde68a; }", ".panel { padding: 16px; border-radius: 10px; background: #2563eb; }");
+    },
+  },
 ];
 
 /**
@@ -1773,7 +1905,7 @@ export async function openObservers(browser: Browser, scenario: Scenario, url: s
       contexts.push(context);
       await context.route((target) => target.hostname === "127.0.0.1", (route) => route.abort());
       const page = await context.newPage();
-      await page.goto(url);
+      await page.goto(pageOf(scenario, url));
       await page.locator("main").waitFor();
       pages.set(width, page);
     }

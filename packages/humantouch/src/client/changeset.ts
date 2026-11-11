@@ -28,6 +28,12 @@ export interface Target {
   run?: number;
   /** The only text of a Frame, as a button's words are: it has no element of its own, and its styles are written on the Frame's, at `loc`, which its words inherit. */
   onlyText?: true;
+  /**
+   * The layer is in an open shadow root (ticket 137, ADR 0017): its host, as
+   * an opening tag. No CSS of the document reaches it: the component's own
+   * styles for its shadow root do, and `::part()` rules for the parts it exposes.
+   */
+  shadowRoot?: string;
   /** Where the layer is on the page, for the Agent to find it by when its source is not known. */
   context: {
     /** Layer names from the page down to the layer itself. */
@@ -288,8 +294,15 @@ export interface Change {
   madeOffCanvas?: SavedOffCanvasLayer;
   /** A change to one of the instances a loop renders alone (a move, new words, a copy, deleting it): in the code, the data the loop goes through changes. */
   data?: true;
-  /** Of a change to one of a loop's instances alone (`data`): which of them it is, from 1, as the page renders them, those deleted on the canvas too, and its words (ticket 65). */
+  /** Of a change to one of a loop's instances alone (`data`, `alone`): which of them it is, from 1, as the page renders them, those deleted on the canvas too, and its words (ticket 65). */
   instance?: { nth: number; words?: string };
+  /**
+   * A style change made on one of a loop's instances alone, which no longer
+   * follows the others (ticket 114): its `layer` is `aloneKey`, and it shows
+   * on that instance alone (`instance`), over what the instances share. In
+   * the code, by a field of its item in the data, not by its place.
+   */
+  alone?: true;
   /**
    * A change to the width or height of a layer in a Grid's cell, as it was
    * when first made (ticket 109): its Fill takes its cell's area, its column's
@@ -423,7 +436,7 @@ export interface ChangeSet {
     layerId: string,
     change: Pick<
       Change,
-      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "cell" | "placedInGrid" | "layerOrders" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "madeOffCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "centeredOn" | "placedOtherwiseAt" | "offsetInLayoutAt" | "uncenteredAt" | "instance"
+      "target" | "scope" | "breakpoint" | "property" | "before" | "after" | "style" | "sources" | "asStack" | "cell" | "placedInGrid" | "layerOrders" | "data" | "wrap" | "reference" | "within" | "order" | "copiedBreakpoints" | "brief" | "offCanvas" | "madeOffCanvas" | "keeps" | "variables" | "margins" | "placedFrom" | "centeredOn" | "placedOtherwiseAt" | "offsetInLayoutAt" | "uncenteredAt" | "instance" | "alone"
     > & {
       kind?: Change["kind"];
     },

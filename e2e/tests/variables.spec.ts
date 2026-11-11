@@ -1,5 +1,5 @@
 import { DEV_URL, NEXT_URL, REACT18_URL, TOGGLE_LABEL } from "../playwright.config";
-import { canvasInPlace, expect, steadyBox, test, type Page } from "./fixtures";
+import { canvasInPlace, expect, steadyBox, test, type Locator, type Page } from "./fixtures";
 
 /** Variables on the React 18 + Tailwind v3 example: its config's own, and Tailwind's defaults. */
 
@@ -760,6 +760,137 @@ test("with nothing selected, a ramp on steps of its own (1–12) has a column a 
   // brand, on Tailwind's steps, keeps its 11.
   const brand = colors.locator(".ht-variants-ramp").filter({ has: page.locator(".ht-variants-ramp-name").getByText("brand", { exact: true }) });
   await expect(brand.locator(".ht-variants-swatch, .ht-variants-empty")).toHaveCount(11);
+});
+
+/** The website's ramps (ticket 143), under names of no Tailwind color: neutral's 14 steps, 0, 150 and 250 off Tailwind's; blue's 50–700; purple's 100, 200, 400–700. */
+const WEBSITE_RAMPS: [string, string][] = [
+  ...Object.entries({ 0: "#ffffff", 50: "#fafafa", 100: "#f5f5f5", 150: "#ededec", 200: "#e5e5e4", 250: "#dddddc", 300: "#d4d4d3", 400: "#a0a19f", 500: "#737472", 600: "#525351", 700: "#3f403f", 800: "#262625", 900: "#171716", 950: "#0a0a09" }).map(([step, value]): [string, string] => [`graphite-${step}`, value]),
+  ...Object.entries({ 50: "#eef7ff", 100: "#daecff", 200: "#bcddff", 300: "#8cc6ff", 400: "#3fa5fe", 500: "#008ff0", 600: "#007dd2", 700: "#0067b0" }).map(([step, value]): [string, string] => [`ocean-${step}`, value]),
+  ...Object.entries({ 100: "#efe4ff", 200: "#e2cfff", 400: "#b87dff", 500: "#aa57ff", 600: "#9a3cee", 700: "#812eca" }).map(([step, value]): [string, string] => [`orchid-${step}`, value]),
+];
+
+/** A ramp's 500s line up, as wide as brand's, on Tailwind's 11 only; its steps off them, folded, are under the step below each, opened. */
+async function linedUp(swatch: (name: string) => Locator) {
+  const brand = await steadyBox(swatch("brand-500"));
+  for (const ramp of ["graphite", "ocean", "orchid"]) {
+    const box = await steadyBox(swatch(`${ramp}-500`));
+    expect(box.x, `${ramp}-500 under brand-500`).toBeCloseTo(brand.x, 0);
+    expect(box.width, `${ramp}-500 as wide as brand-500`).toBeCloseTo(brand.width, 0);
+  }
+  return brand;
+}
+
+async function under(swatch: (name: string) => Locator) {
+  for (const [extra, step] of [["0", "50"], ["150", "100"], ["250", "200"]]) {
+    const [box, above] = await Promise.all([steadyBox(swatch(`graphite-${extra}`)), steadyBox(swatch(`graphite-${step}`))]);
+    expect(box.x, `graphite-${extra} under graphite-${step}`).toBeCloseTo(above.x, 0);
+    expect(box.width).toBeCloseTo(above.width, 0);
+    expect(box.y).toBeGreaterThan(above.y + above.height - 0.5);
+  }
+}
+
+test("a ramp mostly on Tailwind's steps is on its 11 columns, the same number in the same column; its other steps in a second line, folded, opened by the chevron by its name, in the Variables tab and the color picker (ticket 143)", async ({ page }) => {
+  await addColors(page, WEBSITE_RAMPS);
+  await enterEditMode(page);
+  const colors = design(page).getByRole("region", { name: "Color" });
+  const swatch = (name: string) => colors.getByRole("button", { name: new RegExp(`^${name}, `) });
+  await swatch("graphite-500").scrollIntoViewIfNeeded();
+  const brand = await linedUp(swatch);
+  expect(brand.width).toBeCloseTo(20, 0);
+
+  // Folded at first: one chevron, graphite's, the only ramp with steps off Tailwind's.
+  await expect(colors.locator(".ht-variants-more-button")).toHaveCount(1);
+  const fold = colors.getByRole("button", { name: "graphite, more steps" });
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
+  await expect(fold).toHaveText("graphite");
+  for (const step of ["0", "150", "250"]) await expect(swatch(`graphite-${step}`)).toBeHidden();
+  const name = await steadyBox(fold);
+  const chevron = await steadyBox(fold.locator(".ht-icon"));
+  // In the gutter left of the name, which keeps its place.
+  expect(chevron.x + chevron.width).toBeLessThanOrEqual(name.x + 0.5);
+  // It controls the line, by id.
+  const controls = await fold.getAttribute("aria-controls");
+  expect(await colors.locator('[aria-label^="graphite-150,"]').evaluate((el, id) => el.closest(".ht-variants-more")!.id === id, controls)).toBe(true);
+  // Folded, Tab passes its line by: from graphite's last to ocean's first.
+  await swatch("graphite-950").focus();
+  await page.keyboard.press("Tab");
+  await expect(swatch("ocean-50")).toBeFocused();
+
+  await fold.click();
+  await expect(fold).toHaveAttribute("aria-expanded", "true");
+  await under(swatch);
+  // Open, Tab reaches it: from graphite's last to its 0.
+  await swatch("graphite-950").focus();
+  await page.keyboard.press("Tab");
+  await expect(swatch("graphite-0")).toBeFocused();
+  // Nothing more in its other columns: no placeholders.
+  await expect(colors.locator(".ht-variants-more .ht-variants-empty")).toHaveCount(0);
+  await linedUp(swatch);
+
+  // Folded with the focus in its line, the focus goes to the button, not lost.
+  await swatch("graphite-150").focus();
+  await fold.evaluate((el) => (el as HTMLElement).click());
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
+  await expect(fold).toBeFocused();
+  for (const step of ["0", "150", "250"]) await expect(swatch(`graphite-${step}`)).toBeHidden();
+
+  // Searched, a color found on a folded line shows: every line open while there is something searched for.
+  const search = design(page).getByRole("searchbox", { name: "Search variables" });
+  await search.fill("graphite-1");
+  await expect(swatch("graphite-150")).toBeVisible();
+  await search.fill("");
+  await expect(swatch("graphite-150")).toBeHidden();
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
+
+  // The color picker's palette: the same columns, the chevron in its gutter, as it shows no names.
+  await selectRow(page, "Card");
+  await design(page).getByRole("button", { name: "Fill color picker" }).click();
+  let picker = page.getByRole("dialog", { name: "Fill color" });
+  await picker.getByRole("tab", { name: "Variables" }).click();
+  let option = (name: string) => picker.getByRole("listbox", { name: "Variables" }).getByRole("option", { name, exact: true });
+  await linedUp(option);
+  const bare = picker.getByRole("button", { name: "graphite, more steps" });
+  await expect(bare).toHaveAttribute("aria-expanded", "false");
+  const lineId = await bare.getAttribute("aria-controls");
+  expect(await picker.locator('[aria-label="graphite-150"]').evaluate((el, id) => el.closest(".ht-variants-more")!.id === id, lineId)).toBe(true);
+  await expect(option("graphite-150")).toBeHidden();
+  const [chevronBox, line] = await Promise.all([steadyBox(bare), steadyBox(option("graphite-50"))]);
+  expect(chevronBox.x + chevronBox.width).toBeLessThanOrEqual(line.x + 0.5);
+  await bare.click();
+  await under(option);
+  await option("graphite-150").click();
+  await expect(picker).toBeHidden();
+  const chip = design(page).getByRole("button", { name: "Fill color variable", exact: true });
+  await expect(chip).toHaveText("graphite-150");
+  await expect.poll(async () => (await cardStyles(page, "backgroundColor"))[0]).toBe("rgb(237, 237, 236)");
+
+  // Opened again with it picked, its line opens by itself, its ring seen; folded by the chevron.
+  await chip.click();
+  picker = page.getByRole("dialog", { name: "Fill color" });
+  option = (name: string) => picker.getByRole("listbox", { name: "Variables" }).getByRole("option", { name, exact: true });
+  await expect(option("graphite-150")).toBeVisible();
+  await expect(option("graphite-150")).toHaveAttribute("aria-selected", "true");
+  await picker.getByRole("button", { name: "graphite, more steps" }).click();
+  await expect(option("graphite-150")).toBeHidden();
+});
+
+test("with reduced motion, a ramp's second line opens and folds at once: no height eased, no swatch fading in after another, the chevron not turning (ticket 143)", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await addColors(page, WEBSITE_RAMPS);
+  await enterEditMode(page);
+  const colors = design(page).getByRole("region", { name: "Color" });
+  const fold = colors.getByRole("button", { name: "graphite, more steps" });
+  await fold.scrollIntoViewIfNeeded();
+  await fold.click();
+  const motion = (selector: string) =>
+    colors.locator(selector).first().evaluate((el) => {
+      const style = getComputedStyle(el);
+      return { duration: style.transitionDuration, delay: style.transitionDelay, opacity: style.opacity };
+    });
+  // The last of the three, the one the stagger would hold back longest.
+  for (const selector of [".ht-variants-more", ".ht-variants-more .ht-variants-swatch:last-child", ".ht-variants-more-button > .ht-icon"])
+    expect(await motion(selector), selector).toMatchObject({ duration: "0s", delay: "0s", opacity: "1" });
+  await expect(colors.getByRole("button", { name: /^graphite-250, / })).toBeVisible();
 });
 
 test("with nothing selected, colors of no ramp are named: each its swatch and its name, two a row, a name's group together; pointed at, it tells its value", async ({ page }) => {

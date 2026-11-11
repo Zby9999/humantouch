@@ -7,6 +7,7 @@ import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import { MADE_ATTR } from "./canvas-style";
 import type { Target } from "./changeset";
 import { chainOf, originOf, usageKey, type Origin } from "./layers";
+import { queryDeep } from "./shadow-roots";
 import { readUsageChain, type UsageLevel } from "./usage-chain";
 
 /**
@@ -21,6 +22,8 @@ export interface SavedCanvas {
   usages(component: string, file: string): ReadonlySet<string>;
   /** The canvas, parsed. */
   doc(): Document;
+  /** Whether it holds open shadow roots (ticket 137): the page's are looked in too, as its markers are in them. */
+  shadows: boolean;
 }
 
 /** A canvas as saved, `html`, read once each is asked for: its markers file by file, then the whole of it. */
@@ -61,6 +64,7 @@ export function savedCanvas(html: string, parse: (html: string) => Document): Sa
       return found;
     },
     doc: () => (doc ??= parse(html)),
+    shadows: html.includes("shadowrootmode"),
   };
 }
 
@@ -82,18 +86,28 @@ export function elementsOf(doc: Document, target: Target, canvas: () => SavedCan
   const key = usageKey(target.loc, target.chain);
   // Of another tag, it is not the layer, though at its place in the code: an element the Agent wrote where the layer was, say, around it.
   const tag = tagOf(target);
-  const there = [...keysIn(doc.documentElement, new Set([target.loc]))];
+  const saved = canvas();
+  const there = [...keysIn(doc.documentElement, new Set([target.loc]), deepFor(target, saved))];
   const els = there.filter(([el, k]) => k === key && (!tag || el.localName === tag)).map(([el]) => el);
   if (!els.length) return movedElementsOf(doc, target, canvas);
-  const saved = canvas();
   return saved && (markersMoved(doc, [target.loc, ...target.chain.map((level) => level.usage)], saved) || usagesMoved(there, target, saved)) ? movedElementsOf(doc, target, () => saved) : els;
 }
 
 /** Whether markers written in the files of `locs` (a layer's element's, say, and each usage's on its chain) are not where the canvas has them: an edit to one moved them, or added or took some away. */
 function markersMoved(doc: Document, locs: (string | null)[], saved: SavedCanvas): boolean {
   const files = new Set(locs.map((loc) => parseLoc(loc)?.file).filter((file) => file !== undefined));
-  for (const file of files) if (!sameSet(saved.markers(file), markersOn(doc, file))) return true;
+  for (const file of files) if (!sameSet(saved.markers(file), markersOn(doc, file, saved.shadows))) return true;
   return false;
+}
+
+/**
+ * Whether a layer is looked for in the open shadow roots of the live page too
+ * (ticket 137): one in a shadow root on the canvas, or any of a round whose
+ * canvas holds some, where markers of its files may be. Else the page's own
+ * tree alone, as before.
+ */
+function deepFor(target: Target, saved: SavedCanvas | null): boolean {
+  return !!target.shadowRoot || !!saved?.shadows;
 }
 
 /**
@@ -141,19 +155,23 @@ function forget(read: { files: Map<string, Set<string>>; moved: WeakMap<SavedCan
   read.moved = new WeakMap();
 }
 
-/** The locations of the markers on page `doc` in `file`. */
-function markersOn(doc: Document, file: string): ReadonlySet<string> {
+/**
+ * The locations of the markers on page `doc` in `file`; with `deep`, those in
+ * its open shadow roots too, read anew each time: what changes in them is
+ * not watched (`readOffPage`).
+ */
+function markersOn(doc: Document, file: string, deep = false): ReadonlySet<string> {
   const { files } = readOffPage(doc);
-  let now = files.get(file);
+  let now = deep ? undefined : files.get(file);
   if (!now) {
     now = new Set();
-    for (const el of doc.querySelectorAll(`[${LOC_ATTR}^="${CSS.escape(`${file}:`)}"], [${USAGE_ATTR}^="${CSS.escape(`${file}:`)}"]`)) {
+    for (const el of queryDeep(doc, `[${LOC_ATTR}^="${CSS.escape(`${file}:`)}"], [${USAGE_ATTR}^="${CSS.escape(`${file}:`)}"]`, deep)) {
       for (const attr of [LOC_ATTR, USAGE_ATTR]) {
         const loc = el.getAttribute(attr);
         if (loc?.startsWith(`${file}:`)) now.add(loc);
       }
     }
-    files.set(file, now);
+    if (!deep) files.set(file, now);
   }
   return now;
 }
@@ -185,7 +203,7 @@ export function componentElementsOf(doc: Document, target: Target, apart: string
 /** The elements of `target`'s tag written at `loc` in every usage of its component, but those with the usage keys `apart`; where there are none, those of `target`'s own usage (`elementsOf`). */
 function writtenAt(doc: Document, target: Target, loc: string, apart: string[], canvas: () => SavedCanvas | null): Element[] {
   const tag = tagOf(target);
-  const els = [...keysIn(doc.documentElement, new Set([loc]))].filter(([el, key]) => key.startsWith(`${loc} `) && !apart.includes(key) && (!tag || el.localName === tag)).map(([el]) => el);
+  const els = [...keysIn(doc.documentElement, new Set([loc]), deepFor(target, canvas()))].filter(([el, key]) => key.startsWith(`${loc} `) && !apart.includes(key) && (!tag || el.localName === tag)).map(([el]) => el);
   return els.length ? els : elementsOf(doc, target, canvas);
 }
 
@@ -200,7 +218,7 @@ export function otherUsagesOf(doc: Document, target: Target): Map<string, Elemen
   if (!target.loc) return usages;
   const own = usageKey(target.loc, target.chain);
   const tag = tagOf(target);
-  for (const [el, key] of keysIn(doc.documentElement, new Set([target.loc]))) {
+  for (const [el, key] of keysIn(doc.documentElement, new Set([target.loc]), !!target.shadowRoot)) {
     if (key === own || !key.startsWith(`${target.loc} `) || (tag && el.localName !== tag)) continue;
     usages.set(key, [...(usages.get(key) ?? []), el]);
   }
@@ -249,27 +267,29 @@ export function mayBeOf(doc: Document, target: Target, canvas: () => SavedCanvas
   const file = parseLoc(target.loc)?.file;
   if (!tag || file === undefined) return [];
   const key = usageKey(target.loc!, target.chain);
-  const there = [...keysIn(doc.documentElement, new Set([target.loc!]))];
   const saved = canvas();
+  const deep = deepFor(target, saved);
+  const there = [...keysIn(doc.documentElement, new Set([target.loc!]), deep)];
   if (there.some(([el, k]) => k === key && el.localName === tag) && saved && !markersMoved(doc, [target.loc, ...target.chain.map((level) => level.usage)], saved) && !usagesMoved(there, target, saved)) return [];
   const components = componentsOf(target.chain);
-  const now = layersIn(doc, file, tag, components, readUsageChain);
-  const paired = saved && pairedWith(target.loc!, pointsIn(saved.doc(), file, layersIn(saved.doc(), file, tag, components, chainOf), chainOf), pointsIn(doc, file, now, readUsageChain));
+  const now = layersIn(doc, file, tag, components, readUsageChain, deep);
+  const paired = saved && pairedWith(target.loc!, pointsIn(saved.doc(), file, layersIn(saved.doc(), file, tag, components, chainOf, deep), chainOf, deep), pointsIn(doc, file, now, readUsageChain, deep));
   return now.filter(({ origin }) => !paired || paired.to.includes(origin.loc!)).map(({ el }) => el);
 }
 
 /** The elements of `target`, of `tag`, written in `file`, where its locations went (`movedElementsOf`). */
 function followed(doc: Document, target: Target, tag: string, file: string, canvas: SavedCanvas): Element[] {
   const components = componentsOf(target.chain);
-  const now = layersIn(doc, file, tag, components, readUsageChain);
+  const deep = deepFor(target, canvas);
+  const now = layersIn(doc, file, tag, components, readUsageChain, deep);
   if (!now.length) return [];
   const saved = canvas.doc();
-  const was = layersIn(saved, file, tag, components, chainOf);
+  const was = layersIn(saved, file, tag, components, chainOf, deep);
   const files = new Map<string, [Point[], Point[]]>();
   const where = (loc: string): string | null => {
     const of = parseLoc(loc)?.file;
     if (of === undefined) return null;
-    if (!files.has(of)) files.set(of, [pointsIn(saved, of, was, chainOf), pointsIn(doc, of, now, readUsageChain)]);
+    if (!files.has(of)) files.set(of, [pointsIn(saved, of, was, chainOf, deep), pointsIn(doc, of, now, readUsageChain, deep)]);
     const [before, after] = files.get(of)!;
     return movedTo(loc, before, after);
   };
@@ -291,10 +311,10 @@ function componentsOf(chain: UsageLevel[]): string {
 }
 
 /** The elements in `root` of `tag` written in `file` by `components` (`componentsOf`), with where each comes from; none made this round. */
-function layersIn(root: Document, file: string, tag: string, components: string, chainFor: (el: Element) => UsageLevel[]): { el: Element; origin: Origin }[] {
+function layersIn(root: Document, file: string, tag: string, components: string, chainFor: (el: Element) => UsageLevel[], deep: boolean): { el: Element; origin: Origin }[] {
   const prefix = CSS.escape(`${file}:`);
   const found: { el: Element; origin: Origin }[] = [];
-  for (const el of root.querySelectorAll(`${tag}[${LOC_ATTR}^="${prefix}"], ${tag}[${USAGE_ATTR}]:not([${LOC_ATTR}])`)) {
+  for (const el of queryDeep(root, `${tag}[${LOC_ATTR}^="${prefix}"], ${tag}[${USAGE_ATTR}]:not([${LOC_ATTR}])`, deep)) {
     if (el.hasAttribute(MADE_ATTR)) continue;
     const origin = originOf(el, chainFor(el));
     if (origin.loc?.startsWith(`${file}:`) && componentsOf(origin.chain) === components) found.push({ el, origin });
@@ -316,7 +336,7 @@ interface Point {
  * (`originOf`), by its tag and `via`; and each usage there on the chains of
  * `layers` (`layersIn`), by its component's name. None made this round.
  */
-function pointsIn(root: Document, file: string, layers: { origin: Origin }[], chainFor: (el: Element) => UsageLevel[]): Point[] {
+function pointsIn(root: Document, file: string, layers: { origin: Origin }[], chainFor: (el: Element) => UsageLevel[], deep: boolean): Point[] {
   const kinds = new Map<string, Set<string>>();
   const add = (loc: string | null, kind: string) => {
     if (!loc?.startsWith(`${file}:`)) return;
@@ -324,7 +344,7 @@ function pointsIn(root: Document, file: string, layers: { origin: Origin }[], ch
     kinds.get(loc)!.add(kind);
   };
   const prefix = CSS.escape(`${file}:`);
-  for (const el of root.querySelectorAll(`[${LOC_ATTR}^="${prefix}"], [${USAGE_ATTR}^="${prefix}"]:not([${LOC_ATTR}])`)) {
+  for (const el of queryDeep(root, `[${LOC_ATTR}^="${prefix}"], [${USAGE_ATTR}^="${prefix}"]:not([${LOC_ATTR}])`, deep)) {
     if (el.hasAttribute(MADE_ATTR)) continue;
     if (el.hasAttribute(LOC_ATTR)) add(el.getAttribute(LOC_ATTR), el.localName);
     else add(originOf(el, chainFor(el)).loc, `${el.localName} via`);
@@ -403,9 +423,9 @@ function parseLoc(loc: string | null): { file: string; line: number; column: num
   return match ? { file: match[1], line: Number(match[2]), column: Number(match[3]) } : null;
 }
 
-/** Elements in `root` (itself included) that may be layers at `locs`, with their usage keys and chains. */
-function* keysIn(root: Element, locs: Set<string>): Generator<[Element, string, UsageLevel[]]> {
-  for (const el of [root, ...root.querySelectorAll(`[${LOC_ATTR}], [${USAGE_ATTR}]`)]) {
+/** Elements in `root` (itself included) that may be layers at `locs`, with their usage keys and chains; with `deep`, those in its open shadow roots too. */
+function* keysIn(root: Element, locs: Set<string>, deep = false): Generator<[Element, string, UsageLevel[]]> {
+  for (const el of deep ? queryDeep(root, `[${LOC_ATTR}], [${USAGE_ATTR}]`, true) : [root, ...root.querySelectorAll(`[${LOC_ATTR}], [${USAGE_ATTR}]`)]) {
     const own = el.getAttribute(LOC_ATTR);
     // Without a location of its own, it may pass a usage's props on; its origin says.
     if (own ? !locs.has(own) : !el.hasAttribute(USAGE_ATTR)) continue;

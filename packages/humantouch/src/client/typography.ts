@@ -9,8 +9,9 @@ import { declaredByEdit, rematch } from "./canvas-style";
 import type { Fragment } from "./changeset";
 import { openingTag } from "./layer-target";
 import type { Definition } from "./property-table";
-import { wordsOf } from "./layer-changes";
+import { wordsOf } from "./words";
 import { cssColor, type Color, type ColorReader } from "./paint";
+import { flatParent } from "./shadow-roots";
 import { sourcesOf } from "./style-source";
 
 export type TextAlign = "left" | "center" | "right" | "justify";
@@ -94,7 +95,7 @@ function keepsOwn<V>(css: string, read: (el: Element, colors: ColorReader) => V)
       keeps = (el) => !follows(el) && (follows(el.parentElement!) || a.get(el) !== a.get(el.parentElement!));
     }
     return fragments.flatMap((el) => {
-      const text = wordsOf(el);
+      const text = wordsOf(el, false);
       if (!text || getComputedStyle(el).display === "none" || !keeps(el)) return [];
       return [{ element: openingTag(el), text: text.length > MAX_WORDS ? `${text.slice(0, MAX_WORDS - 1)}…` : text, value: read(el, colors) }];
     });
@@ -229,7 +230,7 @@ function inheritedFrom(css: string) {
  * (null where a stylesheet that cannot be read may). Undefined: nowhere, the browser's default.
  */
 function declaring(el: Element, css: string): { el: Element; value: string | null } | undefined {
-  for (let e: Element | null = el; e; e = e.parentElement) {
+  for (let e: Element | null = el; e; e = flatParent(e)) {
     const [source] = sourcesOf(e, [css]);
     if (source.kind === "unknown") return { el: e, value: null };
     if (!source.declaration) continue;
@@ -263,6 +264,12 @@ export interface Font {
  * and of each stack of fonts its text uses, the first that is there (a font of
  * the system), in the weights the text uses it in. Not every font of the
  * system: those the page uses only. By name.
+ *
+ * A family whose faces only name fonts of the system (`local()`, no `url()`),
+ * as next/font's `__X_Fallback_…` sizing a font's fallback does, is one of the
+ * system's under another name: offered as those are, only where the text uses
+ * it first (ticket 149). So is one whose files `next dev` alone serves, its
+ * overlay's `__nextjs-Geist`: not the project's, not on the site (ticket 154).
  */
 export function fontsOf(doc: Document): Font[] {
   const fonts = new Map<string, { family: string; weights: Set<number> }>();
@@ -272,17 +279,84 @@ export function fontsOf(doc: Document): Font[] {
     if (!fonts.has(key)) fonts.set(key, { family, weights: new Set() });
     for (const weight of weights) fonts.get(key)!.weights.add(weight);
   };
+  const others = notTheProjects(doc);
   doc.fonts.forEach((face) => {
-    if (face.status !== "error") add(unquoted(face.family), weightsOf(face.weight));
+    const family = unquoted(face.family);
+    if (face.status !== "error" && !others.has(family.toLowerCase())) add(family, weightsOf(face.weight));
   });
   for (const el of textOf(doc)) {
     const style = getComputedStyle(el);
     const family = firstThere(doc, style.fontFamily);
-    if (!isWebFont(doc, family)) add(family, [Number(style.fontWeight)]);
+    if (!isWebFont(doc, family) || others.has(family.toLowerCase())) add(family, [Number(style.fontWeight)]);
   }
   return [...fonts.values()]
     .map(({ family, weights }) => ({ family, weights: [...weights].sort((a, b) => a - b) }))
     .sort((a, b) => a.family.localeCompare(b.family));
+}
+
+/**
+ * The families, lowercased, whose every face the page has is an `@font-face`
+ * rule it can read whose `src` has no `url()` of the project's: only `local()`,
+ * or files from `/__nextjs_font/`, the Next dev overlay's, served by `next dev`
+ * only. Read from the rules, as a `FontFace` does not tell its `src`. A family
+ * with a face from a sheet that cannot be read (another origin's) or added by
+ * script is not one: whether that face is the project's cannot be told.
+ */
+function notTheProjects(doc: Document): Set<string> {
+  const rules = new Map<string, { others: number; own: boolean }>();
+  const visit = (list: CSSRuleList) => {
+    for (const rule of list) {
+      // Rules live in the canvas's realm, so they are told by type, not `instanceof`.
+      if (rule.type === CSSRule.FONT_FACE_RULE) {
+        const style = (rule as CSSFontFaceRule).style;
+        const key = unquoted(style.getPropertyValue("font-family").trim()).toLowerCase();
+        const family = rules.get(key) ?? { others: 0, own: false };
+        if (projectsUrl(style.getPropertyValue("src"), rule.parentStyleSheet?.href ?? doc.baseURI)) family.own = true;
+        else family.others++;
+        rules.set(key, family);
+      } else if (rule.type === CSSRule.IMPORT_RULE) {
+        const sheet = (rule as CSSImportRule).styleSheet;
+        if (sheet) read(sheet);
+      } else if ("cssRules" in rule) visit(rule.cssRules as CSSRuleList);
+    }
+  };
+  const read = (sheet: CSSStyleSheet) => {
+    try {
+      visit(sheet.cssRules);
+    } catch {
+      // Another origin's sheet: its faces cannot be read; they are counted below as faces no rule accounts for.
+    }
+  };
+  for (const sheet of doc.styleSheets) read(sheet);
+  for (const sheet of doc.adoptedStyleSheets ?? []) read(sheet);
+  const faces = new Map<string, number>();
+  doc.fonts.forEach((face) => {
+    const key = unquoted(face.family).toLowerCase();
+    faces.set(key, (faces.get(key) ?? 0) + 1);
+  });
+  const others = new Set<string>();
+  for (const [key, family] of rules) if (!family.own && (faces.get(key) ?? 0) <= family.others) others.add(key);
+  return others;
+}
+
+/**
+ * Whether a face's `src` has a `url()` of the project's: one not of the Next dev
+ * overlay's fonts. Told by the path, `/__nextjs_font/`, as the overlay injects
+ * its `@font-face` rules in a `<style>` with no mark of its own, and the views
+ * copy them with the dev server's address before it.
+ */
+function projectsUrl(src: string, base: string): boolean {
+  for (const [, , quoted, bare] of src.matchAll(/\burl\(\s*(?:(["'])((?:[^\\]|\\.)*?)\1|([^)]*?))\s*\)/gi)) {
+    const url = (quoted ?? bare).replace(/\\(.)/g, "$1");
+    let path = url;
+    try {
+      path = new URL(url, base).pathname;
+    } catch {
+      // A base it cannot be read from (`about:blank`): the address as written.
+    }
+    if (!path.startsWith("/__nextjs_font/")) return true;
+  }
+  return false;
 }
 
 /** A face's weights: one, or each hundred in a range (a variable font's). */

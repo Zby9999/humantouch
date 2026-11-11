@@ -61,7 +61,7 @@ export default defineConfig([
     platform: "browser",
     target: "es2022",
     external: ["react"],
-    noExternal: ["preact"],
+    noExternal: ["preact", "fflate"],
     // So a Next.js server component, such as the root layout, can render <HumanTouch />.
     banner: { js: '"use client";' },
     dts: { entry: { react: "src/react.ts" } },

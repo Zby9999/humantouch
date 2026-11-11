@@ -3,6 +3,16 @@
 @import "@fontsource/space-grotesk/500.css";
 @import "@fontsource/space-grotesk/700.css";
 
+/* The fallback next/font writes for a font, sized to it before it loads: the system's Arial under another name, offered by no font menu (ticket 149). */
+@font-face {
+  font-family: "__Space_Grotesk_Fallback_149";
+  src: local("Arial");
+  ascent-override: 89.9%;
+  descent-override: 26.67%;
+  line-gap-override: 0%;
+  size-adjust: 104.67%;
+}
+
 /* No rule for the body: `claim` names the project's body rules for new text, and this page is not the one the bench edits. */
 .fonts-page {
   max-width: 40rem;
@@ -12,7 +22,7 @@
 }
 
 .fonts-page h1 {
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "Space Grotesk", "__Space_Grotesk_Fallback_149", sans-serif;
   font-weight: 500;
   font-size: 2.5rem;
 }

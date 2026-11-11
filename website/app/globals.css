@@ -1,0 +1,218 @@
+@import "tailwindcss";
+
+/* `dark:` follows the footer's theme: the system's, unless Light or Dark is picked. */
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+  &:where([data-theme="dark"] *) {
+    @slot;
+  }
+}
+
+/* Neutral steps from the designer's palette (Figma, Components: "Palette · neutral (OKLCH)"). */
+@theme {
+  --color-neutral-0: #ffffff;
+  --color-neutral-50: #fafafa;
+  --color-neutral-100: #f5f5f5;
+  --color-neutral-150: #ededec;
+  --color-neutral-200: #e5e5e4;
+  /* Between 200 and 300, for the cards (designer, 2026-11-11: "200 I wanted as 250"). */
+  --color-neutral-250: #dddddc;
+  --color-neutral-300: #d4d4d3;
+  --color-neutral-400: #a0a19f;
+  --color-neutral-500: #737472;
+  --color-neutral-600: #525351;
+  --color-neutral-700: #3f403f;
+  --color-neutral-800: #262625;
+  --color-neutral-900: #171716;
+  --color-neutral-950: #0a0a09;
+
+  /* The accents (Figma, Components: "Palette · accents (OKLCH)"): blue for selection and progress, purple for components. */
+  --color-blue-50: #eef7ff;
+  --color-blue-100: #daecff;
+  --color-blue-200: #bcddff;
+  --color-blue-300: #8cc6ff;
+  --color-blue-400: #3fa5fe;
+  --color-blue-500: #008ff0;
+  --color-blue-600: #007dd2;
+  --color-blue-700: #0067b0;
+  --color-purple-100: #efe4ff;
+  --color-purple-200: #e2cfff;
+  --color-purple-400: #b87dff;
+  --color-purple-500: #aa57ff;
+  --color-purple-600: #9a3cee;
+  --color-purple-700: #812eca;
+
+  /* What the site's parts are drawn in, light and dark below. */
+  --color-page: var(--page);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-sunk: var(--sunk);
+  --color-ink: var(--ink);
+  --color-ink-strong: var(--ink-strong);
+  --color-label: var(--label);
+  --color-muted: var(--muted);
+  --color-notch: var(--notch);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-label: var(--font-rajdhani), var(--font-inter), sans-serif;
+  --font-editor: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+:root {
+  --page: var(--color-neutral-50);
+  --surface: var(--color-neutral-150);
+  --raised: #f5f5f5;
+  --sunk: #a0a19f;
+  --ink: #262625;
+  --ink-strong: #171716;
+  --label: #525351;
+  --muted: #a0a19f;
+  --notch: #3f403f;
+  --raised-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 1px 1.5px rgb(0 0 0 / 0.1);
+  color-scheme: light;
+}
+
+/* Dark: the editor's own dark colors (packages/humantouch/src/client/styles.ts, the shell in dark mode). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #1e1e1e;
+    --surface: #2c2c2c;
+    --raised: #383838;
+    --sunk: #444444;
+    --ink: #e6e6e6;
+    --ink-strong: #ffffff;
+    --label: #a6a6a6;
+    --muted: #8c8c8c;
+    --notch: #e6e6e6;
+    --raised-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.08), 0 1px 1.5px rgb(0 0 0 / 0.4);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #1e1e1e;
+  --surface: #2c2c2c;
+  --raised: #383838;
+  --sunk: #444444;
+  --ink: #e6e6e6;
+  --ink-strong: #ffffff;
+  --label: #a6a6a6;
+  --muted: #8c8c8c;
+  --notch: #e6e6e6;
+  --raised-shadow: 0 0 0 0.5px rgb(255 255 255 / 0.08), 0 1px 1.5px rgb(0 0 0 / 0.4);
+  color-scheme: dark;
+}
+
+/*
+ * No bounce past the page's top or foot (designer, 2026-11-12): pulled down at the top, the notch over the tab shown
+ * came away from the window's edge it hangs from.
+ */
+html,
+body {
+  overscroll-behavior-y: none;
+}
+
+/* The hero's picture: hidden for its first second, then shown at once (HeroEditor.tsx). */
+@keyframes hero-picture-in {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
+  }
+}
+html {
+  background: var(--page);
+}
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@utility shadow-raised {
+  box-shadow: var(--raised-shadow);
+}
+
+/* The small uppercase labels: HUMAN TOUCH, RECENT UPDATE. */
+@utility label {
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 20px;
+  line-height: 18px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--label);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/*
+ * The hero's editor, in the editor's own colors (packages/humantouch/src/client/styles.ts, `.ht-shell`), light and dark.
+ */
+.ht-ed {
+  --ed-panel: #f5f5f5;
+  --ed-canvas: #e5e5e4;
+  --ed-border: #d4d4d3;
+  --ed-text: #0a0a09;
+  --ed-muted: #737472;
+  --ed-title: #3f403f;
+  --ed-field: #ededec;
+  --ed-input: #fafafa;
+  --ed-input-shadow: 0 1px 1px rgb(0 0 0 / 0.15), inset 0 0 0 0.5px rgb(0 0 0 / 0.1);
+  --ed-row-hover: #ededec;
+  --ed-row-selected: #daecff;
+  --ed-tool: #ffffff;
+  --ed-icon: #525351;
+  --ed-accent: #008ff0;
+  --ed-instance: #9a3cee;
+  --ed-view-label: #3f403f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ht-ed {
+    --ed-panel: #2c2c2c;
+    --ed-canvas: #1e1e1e;
+    --ed-border: #444444;
+    --ed-text: #ffffff;
+    --ed-muted: #a6a6a6;
+    --ed-title: #e6e6e6;
+    --ed-field: #383838;
+    --ed-input: #383838;
+    --ed-input-shadow: none;
+    --ed-row-hover: #383838;
+    --ed-row-selected: #0067b0;
+    --ed-tool: #4a4a4a;
+    --ed-icon: #e6e6e6;
+    --ed-view-label: #e6e6e6;
+  }
+}
+:root[data-theme="dark"] .ht-ed {
+  --ed-panel: #2c2c2c;
+  --ed-canvas: #1e1e1e;
+  --ed-border: #444444;
+  --ed-text: #ffffff;
+  --ed-muted: #a6a6a6;
+  --ed-title: #e6e6e6;
+  --ed-field: #383838;
+  --ed-input: #383838;
+  --ed-input-shadow: none;
+  --ed-row-hover: #383838;
+  --ed-row-selected: #0067b0;
+  --ed-tool: #4a4a4a;
+  --ed-icon: #e6e6e6;
+  --ed-view-label: #e6e6e6;
+}

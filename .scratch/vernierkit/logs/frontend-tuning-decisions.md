@@ -317,3 +317,47 @@
   - 拖动、改圆角、改 Stack 间距和 main 相当，个别软指标两边都偶尔没达到。
 - 切换按钮 gzip：Vite 提供时 10119 B，发布的包 9958 B（上限 10240 B）。
 - README 的界面用词：只有第 46 行写到 Brief 卡片在视图旁、有虚线连到图层，仍然对。
+
+# 第 3 轮（2026-11-11，分支 claude/musing-hellman-3caa3c）
+
+开始前 ff 到 main 7535c54；收尾前并入 main 44c4721（网站线、136、140、134 等），没有冲突。
+
+## 编辑模式下页面不再跟着滚（f622586）
+
+- 设计师看到：编辑模式里在没有滚动区的地方（Show layers 按钮、工具栏）滑动，底下的页面会滚；Mac 上还会把整个编辑器回弹拖开，窗口边上露出一条。
+- 做法：`.ht-shell` 加 `overflow: hidden; overscroll-behavior: none`，滚轮在编辑器里没有能滚的东西时就停在外壳上。测试在 `e2e/tests/shell.spec.ts`。
+- 设计师还提到编辑器右侧有一条空隙，是在 Claude 的 Browser 面板里看到的。无头浏览器在 1280×800、1440×900 下检查了 vite 示例和网站，外壳都正好是 `[0, 0, w, h]`，没有空隙，`scrollWidth` 等于窗口宽，`visualViewport` 缩放为 1。判断是 Browser 面板的视口模拟或外框造成的，不是产品问题，没有改代码。临时检查脚本已删。
+
+## 暗色模式（32c3ac9、5f4a7b9）
+
+起因：设计师发现暗色下对齐手柄没变色，看不清。于是把面板里暗色下仍按亮色画的地方都过了一遍。亮色前后逐像素一致。
+
+- 新 token（亮色值等于原来的颜色）：`--ht-disclosure`、`--ht-disclosure-shadow`、`--ht-ink`、`--ht-check-off`、`--ht-text-faint`、`--ht-sample`、`--ht-popup`、`--ht-rule-soft`、`--ht-instance-ink`、`--ht-shadow-sample`、`--ht-bar`、`--ht-radius-block`。
+- Layers 展开的箭头和 Effects 的折叠按钮：原来暗色下是白方块，现在用暗色的凸起灰，箭头浅色。
+- 对齐手柄选中的点在暗色网格上用浅色；勾选框勾上浅色、未勾在凸起灰上。
+- Layers 行悬停：两种模式都用选中行底色的 60%。
+- 实例：名字和图标用紫 600 同色相调亮的 #bc85fe，底色 16%（规划会话代设计师定，保持这样）。
+- Variables：选中 tab 的字、色阶名和颜色名用浅色；计数、样本、in-use 项、画布上的条和阴影卡片都换成暗色 token。
+- 阴影样本块暗色下用浅灰 #f2f2f2，外面的卡片仍是暗底，阴影才看得出来（规划会话定）。Add effect 菜单里阴影 Variable 的预览也一样。
+- 间距条：亮色 #bcddff 的色相和彩度不变，OKLCH 亮度从 0.88 降到 0.36，得到 #24405b。对面板的对比度亮色 1.29:1，暗色 1.30:1；方向也一致，都是条和面板拉开一档（规划会话定，要求记下数值）。
+- 圆角块暗色下用 #5a5a5a，普通卡片 #383838、in-use 卡片 #4a4a4a，块都比卡片亮一档，不用描边也看得出形状（规划会话定）。
+- 测试：`e2e/tests/dark-mode.spec.ts` 共 7 条，旧 build 上新加的条目失败，新 build 上通过。
+- 网站：main 里网站线留了临时暗色补丁 `DARK_UNTIL_THE_PRODUCT`（`website/scripts/editor-css.mjs`），注释写明产品暗色这一轮合并后删除。已删（1bd4e75）；重新生成的编辑器 CSS 里有产品自己的暗色块，并按网站主题复制了 8 处 `:host([data-theme="dark"])`。补丁里实例紫色是 #b87dff，现在跟产品一致用 #bc85fe。
+
+## 测试记录
+
+都在临时 worktree 里跑，端口 5960，走两槽重活锁，不碰 5350 的预览。
+
+- 1bd4e75（并入 main 44c4721 后）：
+  - 类型检查和单元测试通过，1248 条通过，1 条跳过。
+  - 整套 e2e：621 条通过，1 条跳过，1 条失败，用时 13.9 分钟。失败的是 `applying-bench.spec.ts:1527`（Promote 到 Card 本身）：`scope` 期望是 `component`，实际是 `usage`。
+- 59748c0（并入 main 15e0492 后）：
+  - 单元测试 1261 条通过，1 条跳过。
+  - 1527 那条单独重跑 3 次，失败 2 次。
+  - dark-mode、shell、variables 三个 spec 共 32 条全部通过。
+- 1527 不是这一轮造成的。本分支相对 main 只改了 `styles.ts`（CSS）、两个 spec 和网站脚本。main 的 ba689c0 已记下：114 合入后这条在 main 上也会失败（之前就时好时坏），已退回 114 线。
+- 收尾时又并入 main 14e74b2（154），没有冲突，没有重跑。
+- 测量台和性能没有跑：这一轮只改 CSS 颜色和外壳的 overflow，碰不到认领说明和交互耗时。
+- 截图在 `.scratch/round3/`（未提交）：
+  - `dark/` 里有暗色修改前后、亮色修改前后，第二批以 `before2-`、`after2-` 开头。
+  - `gap/` 里是外壳宽度检查。

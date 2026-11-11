@@ -35,7 +35,7 @@ import type { Axis } from "./client/snap";
 import type { UsageLevel } from "./client/usage-chain";
 import { variablesLine } from "./variable-notes";
 import { writingRules } from "./writing-rules";
-import { changeTitle, kindTitle, layerName, listed, moveKind, ordinal, propertyName, quoted, stackSettings, usagePlace, usedAt, value } from "./design-values";
+import { changeTitle, breaksLines, inLines, kindTitle, layerName, listed, moveKind, ordinal, propertyName, quoted, quotedWords, stackSettings, usagePlace, usedAt, value } from "./design-values";
 import type { WhereToLook } from "./where-to-look";
 
 export interface NotesOptions {
@@ -91,15 +91,17 @@ function section(change: Change, list: Change[], root: string, status: string | 
     `**Kind:** ${kindTitle(change)}`,
     `**Layer:** ${newLayerIn(change) ?? layer(target)}`,
     `**Location:** ${target.made ? (madeBefore(target, list) ? MADE_BEFORE : newLayer(target.made, list)) : target.loc ? `\`${target.loc}\`` : NOT_LOCATED}`,
-    `**Scope:** ${change.scope === "component" ? componentScope(target) : scope(target, look)}`,
+    `**Scope:** ${change.scope === "component" ? componentScope(target) : scope(target, look, !!change.alone)}`,
     `**Breakpoint:** ${breakpoint(change)}`,
     `**Design intent:** ${intent(change, list, look)}`,
+    ...(target.shadowRoot ? [shadowRootLine(target)] : []),
     ...(change.kind === "style" ? [variablesLine(change)].filter((line) => line !== null) : []),
     ...(change.copiedBreakpoints?.length ? [copiedBreakpoints(change.copiedBreakpoints, list)] : []),
     ...(change.asStack && !madeGridAfter(change, list) ? [AS_STACK] : []),
     ...(change.marginsDropped?.length ? [dropMarginsBetween(change)] : []),
     ...(change.kind === "style" ? gridNotes(change) : []),
     ...(change.data ? [dataChange(change)] : []),
+    ...(change.alone ? [aloneLine(change)] : []),
     ...(change.wrap ? [change.kind === "move" ? WRAP : WRAP_TO_PLACE] : []),
     ...(change.kind === "style" && target.onlyText ? [onlyTextLine(target)] : []),
     ...(change.placedFrom ? [placementLine(change)] : []),
@@ -212,10 +214,15 @@ function intent(change: Change, list: Change[], look?: WhereToLook): string {
       const { type, place, width, height, text } = change.after as Created;
       if (type === "frame") return `Add a Frame, Fixed ${width} × ${height}px, with no fill, ${placement(place, placeOnceApplied(change, list))}.`;
       const wide = width === null ? "" : `, ${width}px wide`;
-      return `Add text that reads ${quoted(text ?? "")}${wide}, ${placement(place, placeOnceApplied(change, list))}. Give it the page's body text style, as the reference style shows, from what the page already uses for body text${bodyText(look)}.`;
+      const lines = breaksLines(change) ? ` It reads ${inLines(text!)}, a line break where ↵ is.` : "";
+      return `Add text that reads ${quotedWords(text ?? "")}${wide}, ${placement(place, placeOnceApplied(change, list))}.${lines} Give it the page's body text style, as the reference style shows, from what the page already uses for body text${bodyText(look)}.`;
     }
-    case "text":
-      return `Change the text from ${quoted(change.before as string)} to ${quoted(change.after as string)}.`;
+    case "text": {
+      const [before, after] = [change.before as string, change.after as string];
+      // Only words with a line break, before or after, say so (ticket 144): every other round's notes stay as they were.
+      const lines = breaksLines(change) ? ` The new words are ${after.includes("\n") ? `${inLines(after)}, a line break where ↵ is` : "on one line, with no line break"}.` : "";
+      return `Change the text from ${quotedWords(before)} to ${quotedWords(after)}.${lines}`;
+    }
     case "brief":
       if (!change.after) return "Make this copy without what the brief it was copied with asks for: leave it a Frame as the designer drew it.";
       return (
@@ -711,7 +718,7 @@ function sketch(change: Change, list: Change[]): string[] {
   const items = drawnIn(change.layer, list).map((c) => {
     const place = placedAt(c)!;
     const made = c.kind === "create" ? (c.after as Created) : null;
-    const what = made ? (made.type === "text" ? `Text ${quoted(made.text ?? "")}` : "Frame") : `${layerName(c)} (${c.kind === "move" ? "moved in" : c.kind === "putBack" ? "put back" : "a copy"})`;
+    const what = made ? (made.type === "text" ? `Text ${quotedWords(made.text ?? "")}` : "Frame") : `${layerName(c)} (${c.kind === "move" ? "moved in" : c.kind === "putBack" ? "put back" : "a copy"})`;
     const at = laidOut.indexOf(c.layer);
     let where = `${ordinal(at === -1 ? place.nth : at + 1)} in its layout`;
     if (place.absolute) where = `X ${latest(c.layer, "x", place.absolute.x)}px, Y ${latest(c.layer, "y", place.absolute.y)}px`;
@@ -873,9 +880,18 @@ export function container({ container: { target } }: Place, located = true): str
   return `${target.context.path.at(-1)} (\`${target.context.element}\`, ${where}${usage})`;
 }
 
+/** Which of a loop's instances a change made on one alone is for (ticket 114), and how the Agent tells it apart. */
+function aloneLine({ target: { instances }, instance }: Change): string {
+  const which = instance ? `the ${ordinal(instance.nth)} of the ${instances} instances a loop renders${instance.words ? ` (it reads ${quoted(instance.words)})` : ""}` : `one of the ${instances} instances a loop renders`;
+  return (
+    `**One instance alone:** the layer is in ${which}, which the designer changed apart from the others. ` +
+    "Tell it apart by a field of its item in the data the loop goes through (its `id`, say) or a condition on it, never by its index; the other instances stay as they are."
+  );
+}
+
 /** What a change to one of a loop's instances alone asks of the data the loop goes through. */
 function dataChange({ kind, target: { instances }, instance }: Change): string {
-  const which = instance ? `, the ${ordinal(instance.nth)} of them${instance.words ? `, which reads ${quoted(instance.words)}` : ""}` : "";
+  const which = instance ? `, the ${ordinal(instance.nth)} of them${instance.words ? `, which reads ${quotedWords(instance.words)}` : ""}` : "";
   const one = `**Data change:** the layer is one of the ${instances} instances a loop renders${which}`;
   const outside = "if the data comes from outside the code (an API, a CMS), say so in the report.";
   if (kind === "text") return `${one}, each with words of its own: they come from the data the loop goes through. Change them there; ${outside}`;
@@ -918,6 +934,18 @@ const AS_STACK =
 
 const NOT_LOCATED =
   "**Not located.** The layer carries no source marker: it may be markup outside the components (such as `index.html`) or code written without JSX. Find it in the source from its place on the page, above.";
+
+/**
+ * Where a layer in an open shadow root is styled (ticket 137, ADR 0017): by
+ * the styles of the component that renders into it, not the page's CSS; drawn by a
+ * dependency's custom element, from its usage.
+ */
+function shadowRootLine({ shadowRoot, chain }: Target): string {
+  if (chain[0]?.webComponent) {
+    return `**Shadow root:** the layer is in the shadow root of \`${shadowRoot}\`, a custom element a dependency defines: change it from where \`<${chain[0].component}>\` is used, by what it takes there (see **Third-party Web Components**), never inside the dependency.`;
+  }
+  return `**Shadow root:** the layer is in the shadow root of \`${shadowRoot}\`, which the page's CSS does not reach: the change is to the styles of the component that renders into its shadow root (see **Shadow roots**), not to global CSS.`;
+}
 
 function layer({ context, onlyText }: Target): string {
   const name = context.path.at(-1);
@@ -967,19 +995,20 @@ function otherUsages({ component, usage }: UsageLevel, look: WhereToLook | undef
   return `${said}: ${others.slice(0, USAGES_NAMED).map(code).join(", ")} and ${rest.length} more, in ${where}.`;
 }
 
-/** Which instances the change is for: those of the usage the layer sits in. */
-function scope({ chain, instances, locked, context }: Target, look?: WhereToLook): string {
+/** Which instances the change is for: those of the usage the layer sits in. `alone`: one of them alone (ticket 114). */
+function scope({ chain, instances, locked, context }: Target, look?: WhereToLook, alone = false): string {
   if (!chain.length) return "This layer only.";
   const [own, ...outer] = chain;
+  const together = instances > 1 ? (alone ? ` It renders ${instances} instances: this change is for one of them alone (**One instance alone**).` : ` It renders ${instances} instances, which change together.`) : "";
   if (!outer.length && own.usage) {
-    return `Change it where it is written, at Location. ${own.component}, which writes it, is used at \`${own.usage}\`, outside any other component.${instances > 1 ? ` It renders ${instances} instances, which change together.` : ""}`;
+    return `Change it where it is written, at Location. ${own.component}, which writes it, is used at \`${own.usage}\`, outside any other component.${together}`;
   }
   if (own.usage === null && !own.thirdParty) {
     return `**Usage not determined.** ${own.component} is used from code Human Touch could not locate. Change only the usage the layer is in, found from its place on the page${context.page ? ` at \`${context.page}\`` : ""} (Layer, above), and leave the other usages of ${own.component} as they are.`;
   }
   const where = chain.map(usedAt);
   let text = `This usage only: ${where[0]}${outer.length ? `, inside ${where.slice(1).join(", inside ")}` : ""}.`;
-  if (instances > 1) text += ` It renders ${instances} instances, which change together.`;
+  text += together;
   text += ` ${otherUsages(own, look)}`;
   if (locked) text += " The layer is drawn by a dependency: change it from the usage, never inside the dependency.";
   return text;
@@ -1007,7 +1036,9 @@ function setBy(sources: StyleSource[], root: string): string {
     const declaration = source.declaration && `\`${source.declaration}${source.important ? " !important" : ""}\``;
     if (source.kind === "inline") return `the element's style attribute, ${declaration}`;
     let text = `rule \`${source.selector}\` ${source.layer ? `in CSS layer \`${source.layer}\`` : "in no CSS layer"}`;
-    if (source.file) text += `${source.layer ? "" : ","} of \`${projectPath(source.file, root)}\``;
+    // A shadow root's own: the component's styles for it, written where it renders them (ticket 137).
+    if (source.shadowRoot) text += `${source.layer ? "" : ","} of the styles \`<${source.shadowRoot}>\` has in its shadow root`;
+    else if (source.file) text += `${source.layer ? "" : ","} of \`${projectPath(source.file, root)}\``;
     if (source.className) text = `class \`${source.className}\`: ${text}`;
     return `${text}, ${declaration}`;
   };

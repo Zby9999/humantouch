@@ -17,6 +17,7 @@ import { freeze, restore } from "./freezer";
 import { ENTER_MARK } from "./host";
 import { CHANGE_GLIDE_MS, chromePush, EASE_IN_OUT, EASE_OUT, easeInOut, MODE_FADE_MS, MODE_SWITCH_MS, ping, prefersReducedMotion } from "./motion";
 import { framedText, nodeOf, type Layer, type LayerTree } from "./layers";
+import { spaceOutNewLines, wordsOf } from "./words";
 import { createLater } from "./later";
 import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
 import { GradientHandles } from "./GradientHandles";
@@ -120,6 +121,8 @@ interface Props {
   onSetBrief(layer: Layer, brief: string): Layer;
   /** Promote, from the selection toolbar: the layer's changes made changes to its component. */
   onPromote(layer: Layer): void;
+  /** Edit alone, from the selection toolbar (ticket 114): the instance of a loop the layer is, or is in, stops following the others, or follows them again. */
+  onEditAlone(layer: Layer, alone: boolean): void;
   /** Typing in a text layer begins: returns the layer with an element of its own to type in. */
   onBeginText(layer: Layer): Layer;
   /** Typing in a text layer ends, with these words. */
@@ -145,7 +148,7 @@ function gapFor(doc: Document): number | undefined {
 
 /** The middle column: the frozen page, scaled and panned inside a viewport. */
 export function CanvasView(props: Props) {
-  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, rowHovered, rowHoveredRange, focus, onSelect, editor, onMove, onResize, onCancelResize, onResized, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, animate } = props;
+  const { restoreFrom, takeIn, startAt, cameraNow, onCanvas, offCanvas, onMoveOff, onPlaceOff, onPutBack, onMoveInto, onCarry, onPartOff, onMakeOff, tree, selected, hideSelection, rowHovered, rowHoveredRange, focus, onSelect, editor, onMove, onResize, onCancelResize, onResized, gradientHandles, onFillEdited, onDuplicate, tool, onTool, onCreate, onSetBrief, onPromote, onEditAlone, onBeginText, onEditText, onWorkIn, playing, playedWidth, onPlay, onStopPlaying, animate } = props;
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   /** Where on the stage the layers off the canvas are shown. */
@@ -245,6 +248,8 @@ export function CanvasView(props: Props) {
   const typedPress = useRef<{ pointerId: number | null; in: Shown; time: number; x: number; y: number; count: number } | null>(null);
   /** The text being typed in, outlined in blue; null when none is. */
   const [typingLayer, setTypingLayer] = useState<Layer | null>(null);
+  /** The pointer is over the text typed in, where a press places the caret: the I-beam shows (ticket 144). */
+  const [overTyped, setOverTyped] = useState(false);
   /** A press with the Brief tool, till it is let go: there, it writes the brief of the layer under it (ticket 121). */
   const briefPress = useRef<{ pointerId: number; release(): void } | null>(null);
   /** Where the cards of the briefs are on the stage, as last drawn: ⇧1 fits them in too. */
@@ -712,6 +717,24 @@ export function CanvasView(props: Props) {
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  // The viewport never scrolls: the camera moves over the stage. The browser scrolls it all the same to show the caret
+  // as text typed in runs past its edge (ticket 144): the canvas then showed elsewhere than every press, drag and box
+  // reckons with it, by as far as it scrolled. So the scroll becomes the camera's move, the canvas where it is now shown.
+  useEffect(() => {
+    const el = viewport.current!;
+    const onScroll = () => {
+      const { scrollLeft: dx, scrollTop: dy } = el;
+      if (!dx && !dy) return;
+      el.scrollLeft = 0;
+      el.scrollTop = 0;
+      // Playing, the camera keeps to the page played, as the wheel and the keys keep it.
+      const played = playingRef.current ? latest.current.played : null;
+      setCamera((v) => (played ? scrolled({ ...v, x: v.x - dx, y: v.y - dy }, played, el.getBoundingClientRect()) : { ...v, x: v.x - dx, y: v.y - dy }));
+    };
+    el.addEventListener("scroll", onScroll);
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
   const primary = selected.at(-1) ?? null;
   /** The view under the pointer, or the layer off the canvas (those first: they are drawn over the views), and where the pointer is in it, in its px. */
   const viewAt = (event: At, among: Placed[] = [...outside.slice().reverse(), ...placed]): { at: Shown; x: number; y: number } | null => {
@@ -738,7 +761,7 @@ export function CanvasView(props: Props) {
     const over = viewAt(event);
     // While text is typed in, a press in it places the caret, as in the page; anywhere else, typing ends as the viewport takes the focus.
     const typed = typing.current;
-    if (typed && over && event.button === 0 && !spaceHeld && over.at.view === typed.view && within(typed.el.getBoundingClientRect(), over)) {
+    if (typed && over && event.button === 0 && !spaceHeld && inTyped(over)) {
       pressInTyped(event, typed.el, over.at, over);
       return;
     }
@@ -805,9 +828,30 @@ export function CanvasView(props: Props) {
     else selection.collapse(caret.node, caret.offset);
   };
 
+  /** Whether a point the pointer is at, in the view it is over, is in the text typed in, where a press places the caret. */
+  const inTyped = (over: { at: Shown; x: number; y: number } | null): boolean => {
+    const typed = typing.current;
+    return !!typed && !!over && over.at.view === typed.view && within(typed.el.getBoundingClientRect(), over);
+  };
+
+  /** Whether a point of the window, `x`, `y`, is in the text typed in, looked at in the frame it is typed in, as that frame is scaled on the stage now. */
+  const pointsAtTyped = (x: number, y: number): boolean => {
+    const el = typing.current?.el;
+    const frame = el?.ownerDocument.defaultView?.frameElement as HTMLIFrameElement | null | undefined;
+    if (!el || !frame?.offsetWidth) return false;
+    const box = frame.getBoundingClientRect();
+    const scale = box.width / frame.offsetWidth;
+    // Within a screen px of it: text made where clicked starts there, its frame placed to a part of a px off.
+    const near = el.getBoundingClientRect();
+    const slack = 1 / scale;
+    return within(new DOMRect(near.x - slack, near.y - slack, near.width + 2 * slack, near.height + 2 * slack), { x: (x - box.left) / scale, y: (y - box.top) / scale });
+  };
+
   const onPointerMove = (event: TargetedPointerEvent<HTMLDivElement>) => {
     if (playing) return;
     const selecting = typedPress.current;
+    // Over the words typed in, or selecting them, the I-beam; elsewhere, the arrow, as ever.
+    if (typing.current) setOverTyped(selecting?.pointerId === event.pointerId || inTyped(viewAt(event)));
     if (selecting?.pointerId === event.pointerId) {
       // Dragged from where it was pressed, the words passed over are selected.
       const el = typing.current?.el;
@@ -876,7 +920,13 @@ export function CanvasView(props: Props) {
       release();
       setDrawn(null);
       const type = drawsWith(tool);
-      if (event.type === "pointerup" && type && editor) draw(type, shown, start, boxFrom(start, toIn(event, shown)));
+      if (event.type === "pointerup" && type && editor) {
+        draw(type, shown, start, boxFrom(start, toIn(event, shown)));
+        // New text, typed in at once: under the pointer, the I-beam.
+        // A layer off the canvas just made is not among those laid out yet: the element typed in is looked at in its own frame, once placed.
+        const { clientX: x, clientY: y } = event;
+        requestAnimationFrame(() => setOverTyped(pointsAtTyped(x, y)));
+      }
       return;
     }
     if (briefPress.current?.pointerId === event.pointerId) {
@@ -1130,8 +1180,9 @@ export function CanvasView(props: Props) {
 
   /**
    * Types in a text layer, in the view it was double-clicked or drawn in: the
-   * words show in every view as they are typed. Enter, Esc or going elsewhere
-   * ends it, and the words are set on the canvas, as an edit.
+   * words show in every view as they are typed. Return and ⇧Return break the
+   * line at the caret; Esc, ⌘Return or going elsewhere ends it, and the words
+   * are set on the canvas, as an edit, their line breaks kept (ticket 144).
    */
   const beginTyping = (layer: Layer, view: View) => {
     const own = onBeginText(layer);
@@ -1142,13 +1193,16 @@ export function CanvasView(props: Props) {
     typing.current = { layer: own, html, view, el };
     typedPress.current = null;
     setTypingLayer(own);
+    // Typed in, the words keep their new lines (`pre-wrap`): one drawn as a space is made a space first, or it would be read as a line break.
+    spaceOutNewLines(el);
     el.contentEditable = "plaintext-only";
     el.focus({ preventScroll: true });
     el.ownerDocument.getSelection()?.selectAllChildren(el);
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" && !(event.key === "Enter" && !event.shiftKey)) return;
+      // Return and ⇧Return are the page's own: a line break at the caret, the words typed till then kept.
+      if (event.isComposing || (event.key !== "Escape" && !(event.key === "Enter" && (event.metaKey || event.ctrlKey)))) return;
       event.preventDefault();
-      // Typed in a view's own document, the key never reaches the Shell: held down on a value's icon, say, Enter sets nothing (ADR 0012).
+      // Typed in a view's own document, the key never reaches the Shell: held down on a value's icon, say, ⌘Return sets nothing (ADR 0012).
       if (event.key === "Enter" && pointerHeld()) return;
       el.blur();
     };
@@ -1158,11 +1212,13 @@ export function CanvasView(props: Props) {
       el.removeEventListener("input", onInput);
       el.removeEventListener("blur", end);
       setTypingLayer(null);
+      setOverTyped(false);
       const saved = typing.current;
       typing.current = null;
       typedPress.current = null;
+      // A run of spaces on a line as one, the line breaks typed kept: read while it is typed in, as it keeps new lines (`pre-wrap`) then.
+      const text = wordsOf(el);
       el.removeAttribute("contenteditable");
-      const text = el.textContent!.replace(/\s+/g, " ").trim();
       typed.done();
       // The words are set as an edit, from what was there before typing.
       onCanvas.innerHTML = saved!.html;
@@ -1181,8 +1237,10 @@ export function CanvasView(props: Props) {
     const layer = hit && !event.metaKey && !event.ctrlKey && !event.shiftKey && selectOnDoubleClick(hit, primary);
     // On the text selected, a double click types in it, in the view clicked in; on a Frame drawn around its text alone selected, as a button is, in its text.
     const text = layer && (layer === primary ? (layer.kind === "text" ? layer : framedText(layer)) : primary && layer === framedText(primary) ? layer : null);
-    if (text && over && editor) beginTyping(text, over.at.view);
-    else if (layer) onSelect([layer]);
+    if (text && over && editor) {
+      beginTyping(text, over.at.view);
+      setOverTyped(inTyped(over));
+    } else if (layer) onSelect([layer]);
   }
 
   /** The press on a layer is over: moving the pointer drags nothing, and the keys edit again. */
@@ -1296,7 +1354,7 @@ export function CanvasView(props: Props) {
   /** The layer of the canvas selected alone, with the selection toolbar on its top right, in `toolbarIn`. */
   const toolbar =
     toolbarIn && editor && primary && selected.length === 1 && primary.el.ownerDocument === canvas?.document && !travelling && !playing && !drag && !resize && !hideSelection && !typingLayer
-      ? { layer: primary, in: toolbarIn, promote: editor.canPromote(primary) }
+      ? { layer: primary, in: toolbarIn, promote: editor.canPromote(primary), alone: editor.canEditAlone(primary) ? editor.editsAlone(primary) : null }
       : null;
   /**
    * The layer selected alone that can be resized, with handles in every view that shows it: not the page,
@@ -1421,7 +1479,7 @@ export function CanvasView(props: Props) {
   return (
     <div
       ref={viewport}
-      class={`ht-viewport${panning ? " is-panning" : spaceHeld ? " is-pan-ready" : tool === "brief" ? " is-briefing" : tool ? " is-drawing" : ""}${travelling ? " is-travelling" : ""}`}
+      class={`ht-viewport${panning ? " is-panning" : spaceHeld ? " is-pan-ready" : overTyped ? " is-over-typed" : tool === "brief" ? " is-briefing" : tool ? " is-drawing" : ""}${travelling ? " is-travelling" : ""}`}
       style={resize ? { cursor: handleCursor(resize.handle) } : undefined}
       role="region"
       aria-label="Canvas viewport"
@@ -1430,7 +1488,10 @@ export function CanvasView(props: Props) {
       onPointerMove={onPointerMove}
       onPointerUp={endPan}
       onPointerCancel={endPan}
-      onPointerLeave={() => setHover(null)}
+      onPointerLeave={() => {
+        setHover(null);
+        setOverTyped(false);
+      }}
     >
       <div
         ref={stage}
@@ -1537,6 +1598,8 @@ export function CanvasView(props: Props) {
           camera={cameraIn(camera, toolbar.in)}
           promote={toolbar.promote}
           onPromote={onPromote}
+          alone={toolbar.alone}
+          onEditAlone={onEditAlone}
         />
       )}
       {!travelling &&

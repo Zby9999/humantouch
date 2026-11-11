@@ -13,6 +13,7 @@ import { BRIEF_ATTR, declarePromoted, LAYER_ID_ATTR, WRAP_ATTR } from "./canvas-
 import type { Breakpoint } from "./breakpoints";
 import { BRIEF, type Change, type ChangeSet } from "./changeset";
 import { chainOf, isOnlyText, originOf, type Layer } from "./layers";
+import { queryWithin } from "./shadow-roots";
 
 /** What a change to the component itself, that writes the elements at `loc`, is recorded under, in place of a layer's id. */
 export function componentKey(loc: string): string {
@@ -62,8 +63,9 @@ export function promoteIn(changes: ChangeSet, taken: Change[], loc: string, inst
 
 /** The canvas elements the component writes at `loc`, in every usage, in page order. */
 export function componentElements(doc: Document, loc: string): Element[] {
-  const candidates = doc.querySelectorAll(`[${LOC_ATTR}="${CSS.escape(loc)}"], [${USAGE_ATTR}]:not([${LOC_ATTR}])`);
-  return [...candidates].filter((el) => !el.hasAttribute(WRAP_ATTR) && originOf(el, chainOf(el)).loc === loc);
+  // Those in its shadow roots too (ticket 137).
+  const candidates = queryWithin(doc, `[${LOC_ATTR}="${CSS.escape(loc)}"], [${USAGE_ATTR}]:not([${LOC_ATTR}])`);
+  return candidates.filter((el) => !el.hasAttribute(WRAP_ATTR) && originOf(el, chainOf(el)).loc === loc);
 }
 
 /** The brief the component that writes `el` has, as changed itself this round; "" when none. */
