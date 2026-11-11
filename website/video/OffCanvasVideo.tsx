@@ -5,14 +5,14 @@ import { AbsoluteFill, continueRender, delayRender, Easing, interpolate, interpo
 import { PointerShape, TIP } from "@/components/demos/parts";
 import { DemoPage } from "@/components/editor/DemoPage";
 import { EDITOR_CSS } from "@/components/editor/editor-css.generated";
-import { styleOf } from "@/components/editor/model";
 import { FONT_VARS, geist } from "./fonts";
 
 /*
- * The Off canvas card's video (designer, 2026-11-11): a 3D close-up of the canvas. Acme's button, selected at Phone, is
- * dragged off the view, and the page closes up under it; off the page, on its own, it is changed: its fill, its corners,
- * its words retyped; then it is dragged back in, the page opening for it, and the camera draws back to show the page with
- * the new button. Shallow depth of field and motion blur, as the Brief and Variables videos.
+ * The Off canvas card's video (designer, 2026-11-11): a 3D close-up of the canvas. Beside Acme's Phone view, off the
+ * page, a new layer is made on its own: a frame drawn, filled, its corners rounded, its words typed: a sign-up card. Then
+ * it is dragged into the page; the line where it will go shows under the hero, and as it is let go the page opens for it,
+ * the layers under it moving down. The camera draws back to show the page with the card in it. Shallow depth of field
+ * and motion blur, as the Brief and Variables videos.
  * Render from website/: `npx remotion render OffCanvas public/videos/off-canvas.mp4`.
  */
 
@@ -22,42 +22,41 @@ const EASE_OUT = Easing.bezier(0.16, 1, 0.3, 1);
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 const VIEW_WIDTH = 390;
 /** The camera at its closest; the plane is laid out this much larger and only ever scaled down (see the Brief video). */
-const CLOSEST = 3;
-/** Where it is left off the page: this far left of the view, a little above where it was. */
-const OFF_GAP = 64;
-const OFF_RISE = 28;
-
-const BUTTON = styleOf("button");
-const WORDS = styleOf("buttonText");
-const FROM = { fill: String(BUTTON.fill), text: "Read the issue" };
-const TO = { fill: "#c2410c", radius: 6, text: "Subscribe" };
+const CLOSEST = 2.4;
+/** The card: as wide as the page's column, this tall; made this far left of the view, this far above where it goes. */
+const CARD_HEIGHT = 112;
+const OFF_GAP = 72;
+const OFF_RISE = 150;
+const WORDS = "Get the next issue in your inbox.";
+const FILL = "#e8d9c5";
+const RADIUS = 12;
 
 /** The video's moments, in frames. */
 const T = {
-  press: 20,
-  out: [26, 62],
-  fill: [72, 88],
-  radius: [92, 108],
-  pick: 116,
-  type: [128, 156],
-  grab: 166,
-  back: [172, 206],
-  pullBack: [208, 230],
+  draw: [16, 42],
+  fill: [50, 62],
+  radius: [64, 76],
+  click: 84,
+  type: [90, 122],
+  grab: 130,
+  carry: [134, 170],
+  open: [170, 184],
+  pullBack: [186, 214],
 } as const;
 
 type Box = { x: number; y: number; width: number; height: number };
 
 /**
- * The button's box on the page as it first is, in the page's own pixels: offsets, which the camera's transforms leave
- * alone. Measured on a copy of the page kept as it is, unseen, as a frame may be one where the button is off the page.
+ * The cover's box on the page as it first is, in the page's own pixels: offsets, which the camera's transforms leave
+ * alone, on a copy of the page kept as it is, unseen. The card goes in above it, as wide as it.
  */
-function useButton(page: React.RefObject<HTMLDivElement | null>) {
+function useCover(page: React.RefObject<HTMLDivElement | null>) {
   const [box, setBox] = useState<Box | null>(null);
-  const [handle] = useState(() => delayRender("Measuring the button"));
+  const [handle] = useState(() => delayRender("Measuring the cover"));
   useLayoutEffect(() => {
     const measure = () => {
       const root = page.current!;
-      let el = root.querySelector<HTMLElement>('[data-ht="button"]');
+      let el = root.querySelector<HTMLElement>('[data-ht="cover"]');
       const b = { x: 0, y: 0, width: el!.offsetWidth, height: el!.offsetHeight };
       while (el && el !== root) {
         b.x += el.offsetLeft;
@@ -100,67 +99,90 @@ function Handles({ px, opacity }: { px: number; opacity: number }) {
   );
 }
 
+/** The sign-up card, as it is at a moment of its making: its fill, corners and words so far, the caret after them. */
+function Card({ width, height, fill, radius, words, caret, caretWidth }: { width: number; height: number; fill: string; radius: number; words: string; caret?: boolean; caretWidth?: number }) {
+  return (
+    <div style={{ position: "relative", boxSizing: "border-box", width, height, padding: 20, background: fill, borderRadius: radius }}>
+      <p style={{ margin: 0, maxWidth: 260, fontFamily: "var(--font-instrument-serif), Georgia, serif", fontSize: 28, lineHeight: 1.1, letterSpacing: "-0.01em", color: "#161614" }}>
+        {words}
+        {caret !== undefined && <span style={{ display: "inline-block", width: caretWidth, height: 28, marginLeft: 1, verticalAlign: -5, background: "var(--ht-accent)", opacity: caret ? 1 : 0 }} />}
+      </p>
+    </div>
+  );
+}
+
 const Stage: React.FC<{ frame: number }> = ({ frame }) => {
   const { width, height } = useVideoConfig();
-  const page = useRef<HTMLDivElement>(null);
-  const button = useButton(page);
-  const b = button ?? { x: 24, y: 360, width: 150, height: 45 };
-  const off = { x: -OFF_GAP - b.width, y: b.y - OFF_RISE };
+  const reference = useRef<HTMLDivElement>(null);
+  const cover = useCover(reference);
+  const c = cover ?? { x: 24, y: 420, width: 342, height: 260 };
+  const W = c.width;
+  // Where it is made, off the page; where it goes, above the cover, in the room the page opens for it.
+  const off = { x: -OFF_GAP - W, y: c.y - OFF_RISE };
+  const slot = { x: c.x, y: c.y };
 
-  // The button: on the page, carried out, left off it, carried back, on the page again with its changes.
-  const goOut = interpolate(frame, T.out, [0, 1], { ...clamp, easing: EASE_IN_OUT });
-  const goBack = interpolate(frame, T.back, [0, 1], { ...clamp, easing: EASE_IN_OUT });
-  const away = goOut * (1 - goBack);
-  const outside = frame >= T.out[0] && frame < T.back[1];
-  const carried = { x: b.x + (off.x - b.x) * away, y: b.y + (off.y - b.y) * away };
-  const dragging = (frame >= T.out[0] && frame < T.out[1]) || (frame >= T.back[0] && frame < T.back[1]);
-  // The page closes up as the button leaves and opens as it comes back, a little behind it.
-  const room = Math.min(interpolate(frame, [T.out[0] + 4, T.out[1] - 4], [0, 1], { ...clamp, easing: EASE_IN_OUT }), 1 - interpolate(frame, [T.back[0] + 4, T.back[1] - 4], [0, 1], { ...clamp, easing: EASE_IN_OUT }));
+  // Made: drawn from its top left corner to its bottom right, then filled, rounded and written in.
+  const drawn = interpolate(frame, T.draw, [0, 1], { ...clamp, easing: EASE_IN_OUT });
+  const made = frame >= T.draw[0];
+  const fill = interpolateColors(frame, T.fill, ["#ffffff", FILL]);
+  const radius = interpolate(frame, T.radius, [0, RADIUS], { ...clamp, easing: EASE_IN_OUT });
+  const typed = Math.round(interpolate(frame, T.type, [0, WORDS.length], clamp));
+  const writing = frame >= T.click && frame < T.grab;
 
-  // Its changes, made off the page.
-  const fill = interpolateColors(frame, T.fill, [FROM.fill, TO.fill]);
-  const radius = interpolate(frame, T.radius, [b.height / 2, TO.radius], { ...clamp, easing: EASE_IN_OUT });
-  const typed = Math.round(interpolate(frame, T.type, [0, TO.text.length], clamp));
-  const editing = frame >= T.pick && frame < T.grab;
-  const picked = frame >= T.pick && frame < T.type[0];
-  const words = frame < T.type[0] ? FROM.text : TO.text.slice(0, typed);
-  const caret = editing && !picked && Math.floor(frame / 12) % 2 === 0;
-  const changed = frame >= T.back[1];
+  // Carried in, and let go: the page opens for it, and it is the page's.
+  const carry = interpolate(frame, T.carry, [0, 1], { ...clamp, easing: EASE_IN_OUT });
+  const at = { x: off.x + (slot.x - off.x) * carry, y: off.y + (slot.y - off.y) * carry };
+  const dragging = frame >= T.carry[0] && frame < T.carry[1];
+  const inPage = frame >= T.carry[1];
+  const open = interpolate(frame, T.open, [0, 1], { ...clamp, easing: EASE_OUT });
+  // Over the view, the line where it will go.
+  const over = interpolate(frame, [T.carry[0] + 18, T.carry[0] + 24], [0, 1], clamp) * interpolate(frame, [T.carry[1] - 1, T.carry[1]], [1, 0], clamp);
 
-  // Where the camera looks and how close: the button; along with it, off the page; back; then drawn back to see the page.
-  const atHome = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
-  const atOff = { x: off.x + b.width / 2, y: off.y + b.height / 2 };
-  const atPage = { x: VIEW_WIDTH / 2 - 30, y: b.y + 40 };
+  // The camera: on the canvas where it is made; with it into the page; then drawn back to see the page.
+  const atMaking = { x: off.x + W / 2 + 40, y: off.y + CARD_HEIGHT / 2 };
+  const atSlot = { x: slot.x + W / 2 - 40, y: slot.y + CARD_HEIGHT / 2 };
+  const atPage = { x: VIEW_WIDTH / 2 - 20, y: c.y - 30 };
+  const follow = interpolate(frame, [T.carry[0], T.carry[1] + 6], [0, 1], { ...clamp, easing: EASE_IN_OUT });
   const back = interpolate(frame, T.pullBack, [0, 1], { ...clamp, easing: EASE_IN_OUT });
-  const follow = interpolate(frame, [T.out[0] + 2, T.out[1] + 6], [0, 1], { ...clamp, easing: EASE_IN_OUT }) * (1 - interpolate(frame, [T.back[0] + 2, T.back[1] + 4], [0, 1], { ...clamp, easing: EASE_IN_OUT }));
   const look = {
-    x: atHome.x + (atOff.x - atHome.x) * follow + (atPage.x - atHome.x) * back,
-    y: atHome.y + (atOff.y - atHome.y) * follow + (atPage.y - atHome.y) * back,
+    x: atMaking.x + (atSlot.x - atMaking.x) * follow + (atPage.x - atSlot.x) * back,
+    y: atMaking.y + (atSlot.y - atMaking.y) * follow + (atPage.y - atSlot.y) * back,
   };
-  const zoom = interpolate(frame, [0, T.out[0], T.out[1], T.back[1], T.pullBack[1]], [CLOSEST, 2.8, 2.6, 2.6, 1.55], { ...clamp, easing: EASE_IN_OUT });
+  const zoom = interpolate(frame, [0, T.draw[1], T.carry[0], T.carry[1], T.pullBack[1]], [CLOSEST, 2.25, 2.15, 2.0, 1.3], { ...clamp, easing: EASE_IN_OUT });
   const px = 1 / zoom;
   const hair = 2.5 * px;
 
-  // The pointer: comes to the button and presses it; carries it out; types; carries it back; then leaves, deselecting.
-  // Held a third of the way in, inside the button with its old words and its new, shorter ones.
-  const grip = (box: { x: number; y: number }, w: number) => ({ x: box.x + w * 0.32, y: box.y + b.height * 0.55 });
-  const start = { x: b.x + b.width + 40, y: b.y + 110 };
+  // The pointer: draws the frame corner to corner; clicks into it to write; takes it by its middle left and carries it in.
+  const start = { x: off.x + 40, y: off.y + CARD_HEIGHT + 90 };
+  const grip = (box: { x: number; y: number }) => ({ x: box.x + W * 0.3, y: box.y + CARD_HEIGHT * 0.62 });
   const pointerAt = (() => {
-    const onHome = grip(b, b.width);
-    if (frame < T.press) return { x: interpolate(frame, [4, T.press - 2], [start.x, onHome.x], { ...clamp, easing: EASE_OUT }), y: interpolate(frame, [4, T.press - 2], [start.y, onHome.y], { ...clamp, easing: EASE_OUT }) };
-    const g = grip(carried, b.width);
-    // Out of the way of the words while they are typed, back to the button to carry it home.
-    const aside = Math.min(interpolate(frame, [T.pick + 9, T.type[0]], [0, 1], { ...clamp, easing: EASE_OUT }), 1 - interpolate(frame, [T.grab - 9, T.grab], [0, 1], { ...clamp, easing: EASE_IN_OUT }));
-    if (frame < T.back[1] + 4) return { x: g.x + 40 * aside, y: g.y + 46 * aside };
-    const leave = interpolate(frame, [T.back[1] + 4, T.back[1] + 22], [0, 1], { ...clamp, easing: EASE_OUT });
-    return { x: g.x + 70 * leave, y: g.y + 90 * leave };
+    if (frame < T.draw[0]) {
+      const t = interpolate(frame, [4, T.draw[0] - 1], [0, 1], { ...clamp, easing: EASE_OUT });
+      return { x: start.x + (off.x - start.x) * t, y: start.y + (off.y - start.y) * t };
+    }
+    if (frame < T.draw[1] + 4) return { x: off.x + W * drawn, y: off.y + CARD_HEIGHT * drawn };
+    const toText = interpolate(frame, [T.draw[1] + 6, T.click - 1], [0, 1], { ...clamp, easing: EASE_IN_OUT });
+    const corner = { x: off.x + W, y: off.y + CARD_HEIGHT };
+    const text = { x: off.x + 34, y: off.y + 40 };
+    // Out of the words' way while they are typed, then to the card to carry it.
+    const aside = interpolate(frame, [T.click + 4, T.type[0] + 4], [0, 1], { ...clamp, easing: EASE_OUT });
+    const toGrip = interpolate(frame, [T.type[1] + 2, T.grab - 1], [0, 1], { ...clamp, easing: EASE_IN_OUT });
+    if (frame < T.grab) {
+      const p = { x: corner.x + (text.x - corner.x) * toText, y: corner.y + (text.y - corner.y) * toText };
+      const q = { x: p.x + 30 * aside, y: p.y + 70 * aside };
+      const g = grip(off);
+      return { x: q.x + (g.x - q.x) * toGrip, y: q.y + (g.y - q.y) * toGrip };
+    }
+    const g = grip(at);
+    const leave = interpolate(frame, [T.carry[1] + 2, T.carry[1] + 20], [0, 1], { ...clamp, easing: EASE_OUT });
+    return { x: g.x + 60 * leave, y: g.y + 120 * leave };
   })();
-  const pressed = (frame >= T.press && frame < T.out[1]) || (frame >= T.grab && frame < T.back[1]) || (frame >= T.pick && frame < T.pick + 3) || (frame >= T.pick + 5 && frame < T.pick + 8);
-  const pointerScale = pressed ? 0.88 : 1;
+  const pressed = (frame >= T.draw[0] && frame < T.draw[1]) || (frame >= T.click && frame < T.click + 3) || (frame >= T.grab && frame < T.carry[1]);
 
-  const selected = frame >= T.press && frame < T.back[1];
-  const selectionOpacity = interpolate(frame, [T.press, T.press + 6], [0, 1], clamp);
-  const handles = selected && !dragging ? selectionOpacity : 0;
+  const selected = made && frame < T.carry[1] + 8;
+  const selection = interpolate(frame, [T.carry[1] + 2, T.carry[1] + 8], [1, 0], clamp);
+  const handles = !dragging && frame >= T.draw[1] ? selection : 0;
+  const size = { width: Math.max(W * drawn, 1), height: Math.max(CARD_HEIGHT * drawn, 1) };
 
   return (
     <AbsoluteFill style={{ perspective: 2000 }}>
@@ -181,7 +203,12 @@ const Stage: React.FC<{ frame: number }> = ({ frame }) => {
         }}
       >
         <div style={{ position: "absolute", left: -look.x, top: -look.y, zoom: CLOSEST }}>
-          {/* The view: its label, and Acme at Phone, closing up while the button is off it. */}
+          {/* The page as it first is, unseen: where the card goes is measured on it. */}
+          <div ref={reference} aria-hidden="true" style={{ position: "absolute", left: 0, top: 0, width: VIEW_WIDTH, visibility: "hidden" }}>
+            <DemoPage view="Phone" width={VIEW_WIDTH} onPick={() => {}} onHover={() => {}} hug />
+          </div>
+
+          {/* The view: its label, and Acme at Phone, opening for the card once it is let go. */}
           <div className="ht-view-label" style={{ left: 0, top: -24, width: VIEW_WIDTH, color: "rgb(255 255 255 / 0.6)" }}>
             <span className="ht-view-title">
               <span className="ht-view-name is-active" style={{ color: "#fff" }}>
@@ -190,9 +217,6 @@ const Stage: React.FC<{ frame: number }> = ({ frame }) => {
               <span className="ht-view-range">≤ 767</span>
             </span>
           </div>
-          <div ref={page} aria-hidden="true" style={{ position: "absolute", left: 0, top: 0, width: VIEW_WIDTH, visibility: "hidden" }}>
-            <DemoPage view="Phone" width={VIEW_WIDTH} onPick={() => {}} onHover={() => {}} hug />
-          </div>
           <div style={{ position: "absolute", left: 0, top: 0, width: VIEW_WIDTH, boxShadow: "0 0 0 0.5px rgb(0 0 0 / 0.2), 0 30px 80px -20px rgb(0 0 0 / 0.45)" }}>
             <DemoPage
               view="Phone"
@@ -200,44 +224,26 @@ const Stage: React.FC<{ frame: number }> = ({ frame }) => {
               onPick={() => {}}
               onHover={() => {}}
               hug
-              leaving={outside ? room : undefined}
-              styles={changed ? { button: { ...BUTTON, fill: TO.fill, radius: TO.radius } } : undefined}
-              texts={changed ? { buttonText: TO.text } : undefined}
+              inserted={inPage ? { node: <Card width={W} height={CARD_HEIGHT} fill={FILL} radius={RADIUS} words={WORDS} />, height: CARD_HEIGHT, open } : undefined}
             />
           </div>
 
-          {/* The button off the page: carried, or left on the canvas on its own, and changed there. */}
-          {outside && (
-            <div
-              style={{
-                position: "absolute",
-                left: carried.x,
-                top: carried.y,
-                background: fill,
-                borderRadius: radius,
-                padding: "14px 24px",
-                boxShadow: dragging ? "0 14px 30px -10px rgb(0 0 0 / 0.45)" : "0 6px 16px -8px rgb(0 0 0 / 0.35)",
-              }}
-            >
-              <p style={{ margin: 0, whiteSpace: "pre", fontFamily: "var(--font-inter), sans-serif", fontSize: 14, fontWeight: 500, color: String(WORDS.color), letterSpacing: "0.01em", lineHeight: 1.2, WebkitFontSmoothing: "antialiased" }}>
-                <span style={{ background: picked ? "rgb(0 143 240 / 0.45)" : "none" }}>{words}</span>
-                {editing && !picked && <span style={{ display: "inline-block", width: hair, height: 15, marginLeft: 1, verticalAlign: -2, background: "#fff", opacity: caret ? 1 : 0 }} />}
-                {/* Its height kept while its words are empty. */}
-                {!words && "​"}
-              </p>
-              {selected && (
-                <>
-                  <div style={{ position: "absolute", inset: 0, border: `${hair}px solid var(--ht-accent)`, opacity: selectionOpacity }} />
-                  <Handles px={px} opacity={handles} />
-                </>
+          {/* Where it will go: the line under the hero, as it is carried over the view. */}
+          {over > 0 && <div style={{ position: "absolute", left: slot.x, top: slot.y - hair, width: W, height: 2 * hair, borderRadius: hair, background: "var(--ht-accent)", opacity: over }} />}
+
+          {/* The card off the page: drawn, made, then carried in. */}
+          {made && !inPage && (
+            <div style={{ position: "absolute", left: at.x, top: at.y, boxShadow: dragging ? "0 18px 36px -12px rgb(0 0 0 / 0.4)" : "none", borderRadius: radius }}>
+              {frame < T.draw[1] ? (
+                <div style={{ width: size.width, height: size.height, background: "#ffffff" }} />
+              ) : (
+                <Card width={W} height={CARD_HEIGHT} fill={fill} radius={radius} words={WORDS.slice(0, typed)} caret={writing ? Math.floor(frame / 12) % 2 === 0 : undefined} caretWidth={hair} />
               )}
             </div>
           )}
-
-          {/* Selected on the page before it is carried out; put back, it is let go. */}
-          {selected && frame < T.out[0] && (
-            <div style={{ position: "absolute", left: b.x, top: b.y, width: b.width, height: b.height }}>
-              <div style={{ position: "absolute", inset: 0, border: `${hair}px solid var(--ht-accent)` }} />
+          {selected && (
+            <div style={{ position: "absolute", left: inPage ? slot.x : at.x, top: inPage ? slot.y : at.y, width: frame < T.draw[1] ? size.width : W, height: frame < T.draw[1] ? size.height : CARD_HEIGHT }}>
+              <div style={{ position: "absolute", inset: 0, border: `${hair}px solid var(--ht-accent)`, opacity: selection }} />
               <Handles px={px} opacity={handles} />
             </div>
           )}
@@ -254,8 +260,8 @@ const Stage: React.FC<{ frame: number }> = ({ frame }) => {
               top: pointerAt.y - TIP.y,
               overflow: "visible",
               transformOrigin: `${TIP.x}px ${TIP.y}px`,
-              scale: `${1.3 * pointerScale}`,
-              opacity: interpolate(frame, [4, 10, T.back[1] + 16, T.back[1] + 24], [0, 1, 1, 0], clamp),
+              scale: `${1.3 * (pressed ? 0.88 : 1)}`,
+              opacity: interpolate(frame, [4, 10, T.carry[1] + 12, T.carry[1] + 20], [0, 1, 1, 0], clamp),
             }}
           >
             <PointerShape />
@@ -271,7 +277,7 @@ const Scene: React.FC = () => {
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
   const wide = interpolate(frame, T.pullBack, [0, 1], clamp);
-  const focus = `radial-gradient(ellipse ${36 + 16 * wide}% ${42 + 8 * wide}% at 50% 50%, #000 45%, transparent 100%)`;
+  const focus = `radial-gradient(ellipse ${40 + 14 * wide}% ${44 + 8 * wide}% at 50% 50%, #000 45%, transparent 100%)`;
   return (
     <AbsoluteFill style={{ opacity: interpolate(frame, [0, 10, durationInFrames - 8, durationInFrames - 1], [0, 1, 1, 0], clamp) }}>
       <AbsoluteFill style={{ filter: "blur(7px)" }}>

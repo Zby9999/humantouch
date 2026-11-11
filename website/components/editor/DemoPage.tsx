@@ -19,47 +19,37 @@ type Props = {
   /** As tall as its content, its footer at its foot: not run on under an edge, as in the hero. */
   hug?: boolean;
   /**
-   * The button on its way off the page, 0 to 1, for a video: unseen, its room closing up as it goes, the layers under it
-   * moving up into it, till at 1 it takes none.
+   * A layer made off the page and put into it under the hero, for a video: `node`, `height` tall, its room opening as
+   * `open` goes from 0 to 1, the layers under it moving down out of its way.
    */
-  leaving?: number;
-  /** Words in place of a text layer's own, for a video's changes. */
-  texts?: Partial<Record<Key, string>>;
+  inserted?: { node: ReactNode; height: number; open: number };
 };
 
 const SERIF = "var(--font-instrument-serif), Georgia, serif";
 const SANS = "var(--font-inter), sans-serif";
 /** Tall enough to run on under the hero's bottom edge, as a page does past the canvas's; its footer is at its foot, out of sight. */
 const PAGE_MIN_HEIGHT = 3400;
-/** The button's height: its padding, 14px above and below, and a line of its 14px words at 1.2. */
-const BUTTON_HEIGHT = 14 + 14 * 1.2 + 14;
+/** Below a layer put in under the hero, before the cover. */
+const INSERTED_GAP = 32;
 
 /**
  * Acme, on one view of the canvas, at the view's width: a quiet, editorial landing page. Its sizes step down at the
  * Tablet and Phone widths, as its breakpoints say. A pointer down reports the layers under it, outermost first, for the
  * editor to pick from as Figma does.
  */
-export function DemoPage({ view, width, onPick, onHover, styles, hug = false, leaving, texts }: Props) {
+export function DemoPage({ view, width, onPick, onHover, styles, hug = false, inserted }: Props) {
   const s = (key: Key): Style => ({ ...styleOf(key), ...styles?.[key] });
   const phone = width < 768;
   const tablet = !phone && width < 1280;
   /** A size at Desktop, Tablet and Phone. */
   const at = (desktop: number, tab: number, ph: number) => (phone ? ph : tablet ? tab : desktop);
   const side = at(80, 48, 24);
-  const heroGap = at(32, 28, 20);
-  /** The leaving button's room, shrunk: its height (its padding and line), its margin and the hero's gap before it. */
-  const away = (key: Key, style: CSSProperties): CSSProperties => {
-    if (key !== "button" || leaving === undefined) return style;
-    const k = 1 - leaving;
-    const margin = Number(style.marginTop ?? 0);
-    return { ...style, visibility: "hidden", boxSizing: "border-box", height: k * BUTTON_HEIGHT, overflow: "hidden", paddingTop: 14 * k, paddingBottom: 14 * k, marginTop: margin * k - heroGap * (1 - k) };
-  };
 
   const layer = (target: Target, path: Target[], style: CSSProperties, children: ReactNode, Tag: "div" | "p" | "h1" | "h2" | "h3" | "blockquote" | "nav" | "footer" = "div") => (
     <Tag
       key={layerId(target)}
       data-ht={layerId(target)}
-      style={{ margin: 0, ...away(target.key, style), opacity: Number(s(target.key).opacity) / 100 }}
+      style={{ margin: 0, ...style, opacity: Number(s(target.key).opacity) / 100 }}
       onPointerDown={(e) => {
         e.stopPropagation();
         if (e.button === 0) onPick([...path, target], view);
@@ -126,9 +116,12 @@ export function DemoPage({ view, width, onPick, onHover, styles, hug = false, le
                 B,
                 [P, HE],
                 { marginTop: at(8, 4, 4), background: String(s("button").fill), borderRadius: Number(s("button").radius), padding: "14px 24px" },
-                layer({ key: "buttonText" }, [P, HE, B], { fontSize: 14, fontWeight: 500, color: color("buttonText"), letterSpacing: "0.01em", lineHeight: 1.2 }, texts?.buttonText ?? "Read the issue", "p"),
+                layer({ key: "buttonText" }, [P, HE, B], { fontSize: 14, fontWeight: 500, color: color("buttonText"), letterSpacing: "0.01em", lineHeight: 1.2 }, "Read the issue", "p"),
               )}
             </>,
+          )}
+          {inserted && (
+            <div style={{ position: "relative", zIndex: 1, height: inserted.open * (inserted.height + INSERTED_GAP) }}>{inserted.node}</div>
           )}
           {layer(
             C,
