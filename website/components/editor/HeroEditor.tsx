@@ -30,18 +30,13 @@ const FRAME_LEFT = VIEWS.map((_, i) => VIEWS.slice(0, i).reduce((x, v) => x + v.
 const STAGE_WIDTH = FRAME_LEFT.at(-1)! + VIEWS.at(-1)!.width;
 /**
  * The hero's frame, as the product's toggle has one (toggle-styles.ts): a ground round it, a hairline, the editor raised in
- * it. These are its sizes at the hero's full width; narrower, they scale with the editor (designer, 2026-11-11: at a phone's
- * width the corners looked too round), down to a floor, so the frame never goes square.
+ * it. 6px round the editor and its corners 12px at the hero's full width, 1200px; narrower, they scale with it
+ * (designer, 2026-11-11: at a phone's width the corners looked too round), down to 3px and 4px, so the frame never goes
+ * square. In CSS, by the width the page gives the hero (main is its container), so they are right before the script has
+ * come, and the editor's box is as tall as its width says.
  */
-const FRAME_PAD = 6;
-const EDITOR_RADIUS = 12;
-const FULL_SCALE = (1200 - 2 * FRAME_PAD) / W;
-function frame(scale: number) {
-  const k = Math.min(1, scale / FULL_SCALE);
-  const pad = Math.max(3, FRAME_PAD * k);
-  const radius = Math.max(4, EDITOR_RADIUS * k);
-  return { pad, radius, outer: pad + radius };
-}
+const FRAME_STYLE = { "--hero-pad": "clamp(3px, 0.5cqw, 6px)", "--hero-radius": "clamp(4px, 1cqw, 12px)", padding: "var(--hero-pad)", borderRadius: "calc(var(--hero-pad) + var(--hero-radius))" } as React.CSSProperties;
+const FULL_SCALE = (1200 - 12) / W;
 
 /** The product's timings for a level closed in the Layers (motion.ts). */
 const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
@@ -82,7 +77,9 @@ export function HeroEditor() {
   const host = useRef<HTMLDivElement>(null);
   const [shadow, setShadow] = useState<ShadowRoot | null>(null);
   const [scale, setScale] = useState(FULL_SCALE);
-  const { pad, radius, outer } = frame(scale);
+  /** The editor drawn, once the page's fonts are in: till then, its first frame as a picture shows in its place. */
+  const [fontsIn, setFontsIn] = useState(false);
+  const [drawn, setDrawn] = useState(false);
 
   useLayoutEffect(() => {
     const el = inner.current!;
@@ -96,23 +93,45 @@ export function HeroEditor() {
   useEffect(() => {
     const el = host.current!;
     setShadow(el.shadowRoot ?? el.attachShadow({ mode: "open" }));
-    return followSiteTheme(el);
+    let on = true;
+    // Drawn before its fonts are in, the editor would show the fallback's letters over the picture's, then swap them.
+    document.fonts.ready.then(() => on && setFontsIn(true));
+    const stop = followSiteTheme(el);
+    return () => {
+      on = false;
+      stop();
+    };
   }, []);
 
+  // The picture under the editor goes once the editor is on screen over it: the same pixels, so nothing shows the change.
+  useEffect(() => {
+    if (!shadow || !fontsIn) return;
+    let frame = requestAnimationFrame(() => (frame = requestAnimationFrame(() => setDrawn(true))));
+    return () => cancelAnimationFrame(frame);
+  }, [shadow, fontsIn]);
+
   return (
-    <section aria-label="Human Touch's editor, to try" className="relative isolate w-full max-w-[1200px] bg-neutral-0 shadow-[0_0_0_0.5px_var(--color-neutral-250)] dark:bg-raised dark:shadow-[0_0_0_0.5px_var(--color-surface)]" style={{ padding: pad, borderRadius: outer }}>
+    <section aria-label="Human Touch's editor, to try" className="relative isolate w-full max-w-[1200px] bg-neutral-0 shadow-[0_0_0_0.5px_var(--color-neutral-250)] dark:bg-raised dark:shadow-[0_0_0_0.5px_var(--color-surface)]" style={FRAME_STYLE}>
+      {/*
+       * Till the editor is drawn, its first frame as a picture (public/hero, scripts/hero-first-frame.mjs): on a slow
+       * network the script comes long after the page (some 16s on 3G, the picture in 3s). Only the theme's one loads;
+       * the layout's script asks for it first (themeScript).
+       */}
       <div
         ref={inner}
-        className="relative overflow-hidden bg-neutral-100 shadow-[0_1px_1px_rgb(0_0_0/0.15),0_0_0_0.5px_rgb(0_0_0/0.15)] dark:bg-transparent"
-        style={{ height: H * scale, borderRadius: radius }}
+        className={`relative overflow-hidden bg-neutral-100 bg-size-[100%_100%] shadow-[0_1px_1px_rgb(0_0_0/0.15),0_0_0_0.5px_rgb(0_0_0/0.15)] dark:bg-transparent ${
+          drawn ? "" : "bg-[url(/hero/first-light.webp)] dark:bg-[url(/hero/first-dark.webp)]"
+        }`}
+        style={{ aspectRatio: `${W} / ${H}`, borderRadius: "var(--hero-radius)" }}
       >
         <div className="absolute top-0 left-0 origin-top-left" style={{ width: W, height: H, transform: `scale(${scale})` }}>
           <div ref={host} />
         </div>
       </div>
-      <HeroShadow radius={outer} />
+      <HeroShadow />
       <ProgressiveBlur />
       {shadow &&
+        fontsIn &&
         createPortal(
           <>
             <style>{EDITOR_CSS + SITE_CSS}</style>
@@ -131,7 +150,7 @@ export function HeroEditor() {
  * the shadow reaches and ending there, as a mask on the frame itself would cut the shadow off at its edges.
  */
 const SHADOW_REACH = 120;
-function HeroShadow({ radius }: { radius: number }) {
+function HeroShadow() {
   const mask = "linear-gradient(to bottom, #000 30%, transparent 100%)";
   return (
     <div
@@ -141,7 +160,7 @@ function HeroShadow({ radius }: { radius: number }) {
     >
       <div
         className="absolute shadow-[0_1px_2px_rgb(0_0_0/0.04),0_10px_28px_-8px_rgb(0_0_0/0.10),0_36px_80px_-24px_rgb(0_0_0/0.14)] dark:shadow-[0_1px_2px_rgb(0_0_0/0.3),0_10px_28px_-8px_rgb(0_0_0/0.45),0_36px_80px_-24px_rgb(0_0_0/0.5)]"
-        style={{ top: SHADOW_REACH, left: SHADOW_REACH, right: SHADOW_REACH, bottom: -SHADOW_REACH, borderRadius: radius }}
+        style={{ top: SHADOW_REACH, left: SHADOW_REACH, right: SHADOW_REACH, bottom: -SHADOW_REACH, borderRadius: "calc(var(--hero-pad) + var(--hero-radius))" }}
       />
     </div>
   );

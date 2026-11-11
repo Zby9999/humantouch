@@ -21,12 +21,18 @@ export const metadata: Metadata = {
 
 /** Sets the theme picked in the footer before the page paints, so it does not flash. */
 const themeScript = `try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`;
+/**
+ * On the home page, the hero's first frame in the theme the page shows, asked for at once and first (designer,
+ * 2026-11-12): as the hero's background, the browser would ask for it only once the CSS is in.
+ */
+const heroFrameScript = `if(location.pathname==="/"){var t;try{t=localStorage.getItem("theme")}catch(e){}var d=t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);var l=document.createElement("link");l.rel="preload";l.as="image";l.fetchPriority="high";l.href=d?"/hero/first-dark.webp":"/hero/first-light.webp";document.head.appendChild(l)}`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning className={`${inter.variable} ${rajdhani.variable} ${geist.variable} ${geistMono.variable} ${instrumentSerif.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: heroFrameScript }} />
       </head>
       <body>
         <Nav />

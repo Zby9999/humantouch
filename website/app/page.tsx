@@ -19,7 +19,7 @@ const BUTTON_ACCENT =
 export default function Home() {
 
   return (
-    <main className="flex flex-col items-center gap-20 overflow-x-clip px-4 pt-[120px] pb-12 max-xl:pb-3.5 md:pt-[160px]">
+    <main className="@container flex flex-col items-center gap-20 overflow-x-clip px-4 pt-[120px] pb-12 max-xl:pb-3.5 md:pt-[160px]">
       <section className="flex w-full max-w-[800px] flex-col gap-6">
         <div className="flex flex-col gap-3 px-1.5">
           <h1 className="label font-sans font-medium text-ink-strong normal-case tracking-[-0.005em]">Human Touch</h1>
