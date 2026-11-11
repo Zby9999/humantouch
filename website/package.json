@@ -1,0 +1,25 @@
+{
+  "name": "humantouch-website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 6300",
+    "build": "next build",
+    "start": "next start -p 6310",
+    "typecheck": "next typegen && tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "^16.4.3",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "humantouch": "workspace:*",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^6.0.3"
+  }
+}
