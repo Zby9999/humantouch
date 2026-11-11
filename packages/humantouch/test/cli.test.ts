@@ -1766,7 +1766,7 @@ describe("claim, new layers, words, deleting and copying", () => {
     const output = (await cli("claim")).output;
 
     expect(section(output, 1)).toContain("- **Design intent:** Change the text from “Third Kind” to “Third↵Kind”. The new words are in 2 lines: “Third” and “Kind”, a line break where ↵ is.\n");
-    expect(section(output, 2)).toContain("- **Design intent:** Change the text from “One↵Two” to “One Two”. The new words are on one line: no line break.\n");
+    expect(section(output, 2)).toContain("- **Design intent:** Change the text from “One↵Two” to “One Two”. The new words are on one line, with no line break.\n");
     expect(output).toContain("- **Line breaks:** the notes give the new words line by line, each line break shown as ↵.");
     expect(output).toContain("`<br />`");
     expect(output).toContain("line breaks in the words by where the page breaks their lines");

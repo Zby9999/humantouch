@@ -7,7 +7,7 @@
 import { dissolvesGrid, drawnIn, makesGrid, type Change, type Composed, type Created, type Dissolved, type Place, type Target } from "./client/changeset";
 import { checkable, forOneUsage, foundByMarker, isEndOffset, makerOf, PLACING, textMovedInPlace, type PlacedAlong } from "./client/checkable";
 import type { Property } from "./client/property-table";
-import { listed } from "./design-values";
+import { breaksLines, listed } from "./design-values";
 import type { ClassHelper, WhereToLook } from "./where-to-look";
 
 /** How to write one kind of change: its name in the notes, the changes it is for, and what it says. */
@@ -393,12 +393,6 @@ const HOW_CHECKED: HowChecked[] = [
   { calledFor: (change, list) => checkable(change, list) && change.kind === "move" && !placing(change), text: "a reorder by the order of its container's layers" },
   { calledFor: (change, list) => checkable(change, list) && change.kind === "delete", text: "a deletion by the layer being gone, or not displayed, while its container is there" },
 ];
-
-/** Whether the change gives a layer's words a line break, or takes one out (ticket 144). */
-export function breaksLines(change: Change): boolean {
-  if (change.kind === "text") return [change.before, change.after].some((words) => typeof words === "string" && words.includes("\n"));
-  return change.kind === "create" && !!(change.after as Created).text?.includes("\n");
-}
 
 /** A move of a layer the page can find that it still cannot check (`checkable`). */
 const movedUnchecked = (change: Change, list: Change[]) => change.kind === "move" && !change.data && !change.target.made && !!change.target.loc && !textMovedInPlace(change) && !checkable(change, list);

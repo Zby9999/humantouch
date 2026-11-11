@@ -44,7 +44,8 @@ import {
   type StackSettings,
 } from "./changeset";
 import type { Destination, Editor } from "./edit-commands";
-import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, wordsOf, writeText, writeWords } from "./layer-changes";
+import { copiedBreakpointsOf, hide, insertCopies, insertNew, insertPutBack, removeMade, unhide, writeText, writeWords } from "./layer-changes";
+import { wordsOf } from "./words";
 import { BODY_TEXT } from "./look";
 import { instanceOf, targetOf } from "./layer-target";
 import { framedText, holdsLayers, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";

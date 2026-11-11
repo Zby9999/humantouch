@@ -134,10 +134,11 @@ test("in another view than the one typed in, the pointer over the same words is 
 
 for (const [name, view] of [
   ["desktop", desktop],
+  ["tablet", tablet],
   ["phone", phone],
 ] as const) {
   for (const zoom of [1, 2]) {
-    test(`in the ${name} view at ${zoom * 100}%, a press, a ⇧press and a drag land where they are made, after typing ran past the viewport's edge`, async ({ page }) => {
+    test(`in the ${name} view at ${zoom * 100}%, a press, a ⇧press, a drag, a double and a triple click land where they are made, after typing ran past the viewport's edge`, async ({ page }) => {
       const h1 = view(page).contentFrame().locator("h1");
       const area = (await viewportArea(page).boundingBox())!;
       const start = (await h1.boundingBox())!;
@@ -183,6 +184,17 @@ for (const [name, view] of [
       await page.mouse.move(last.x + (last.width * 3) / 4, last.y + last.height / 2, { steps: 6 });
       await page.mouse.up();
       await expect.poll(() => caretIn(h1)).toEqual({ at: word.index + word[0].length, selected: word[0] });
+
+      // A double click on another word selects that word; three clicks, all the words.
+      const other = words.find((m) => m !== word)!;
+      const middle = chars[other.index + Math.floor(other[0].length / 2)];
+      const at = { x: middle.x + middle.width / 2, y: middle.y + middle.height / 2 };
+      await page.waitForTimeout(DOUBLE_CLICK_MS);
+      await page.mouse.dblclick(at.x, at.y);
+      await expect.poll(() => caretIn(h1)).toMatchObject({ selected: other[0] });
+      await page.waitForTimeout(DOUBLE_CLICK_MS);
+      await page.mouse.click(at.x, at.y, { clickCount: 3 });
+      await expect.poll(() => caretIn(h1)).toMatchObject({ selected: text });
       await expect(h1).toHaveAttribute("contenteditable", "plaintext-only");
     });
   }

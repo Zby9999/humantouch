@@ -12,6 +12,7 @@
  */
 import { breakpointKey, breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
+import { breaksLines } from "../design-values";
 import { changeKey, isGridSettings, isReorder, keptIn, makesGrid, placedAt, type Change, type Composed, type Created, type Margins, type Place, type PutBack } from "./changeset";
 import { canvasOf, type RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
@@ -21,7 +22,7 @@ import { absolute, ARRANGED, ordersOf, placementOf, readValue, roomBetween, roun
 import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, mayBeOf, savedCanvas as savedCanvasOf, usageKeyOf, type SavedCanvas } from "./page-elements";
 import { MADE_ATTR } from "./canvas-style";
-import { tidyWords, wordsOf } from "./layer-changes";
+import { tidyWords, wordsOf } from "./words";
 import { LOC_ATTR } from "../markers";
 import type { Axis } from "./snap";
 import { readUsageChain } from "./usage-chain";
@@ -408,21 +409,13 @@ function spaced(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-/** What an element on the page reads, as a reader takes it (`spaced`): its inline pieces' words with its own, a line break (`<br>`) as the space it reads as. New text is found by these, and new words are checked by them (ticket 90). */
+/**
+ * What an element on the page reads, as a reader takes it (`spaced`): its inline pieces' words with its own, a line break (`<br>`) as the space it reads as.
+ * New text is found by these, and new words are checked by them (ticket 90). For words with a line break, before or after (`breaksLines`), `lines`:
+ * where the page breaks their lines too, at a `<br>` or a new line the text keeps (ticket 144).
+ */
 export function wordsOn(el: Element, lines = false): string {
-  // Words to read with their line breaks (ticket 144): where the page breaks their lines too, at a `<br>` or a new line the text keeps.
-  if (lines) return wordsOf(el);
-  if (!el.querySelector("br")) return spaced(el.textContent ?? "");
-  let text = "";
-  const walk = (node: Node) => {
-    for (const child of node.childNodes) {
-      if (child.nodeType === Node.TEXT_NODE) text += (child as Text).data;
-      else if ((child as Element).localName === "br") text += " ";
-      else walk(child);
-    }
-  };
-  walk(el);
-  return spaced(text);
+  return wordsOf(el, lines);
 }
 
 /** An element as the Agent finds it: its opening tag, and its words. */
@@ -763,7 +756,7 @@ function lookWords(doc: Document, change: Change, round: RoundOnCanvas): CheckRe
   const els = elementsOf(doc, change.target, savedCanvas(round));
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
   // A line break in the words, before or after: the lines read as the page breaks them (ticket 144).
-  const lines = [change.before, change.after].some((words) => typeof words === "string" && words.includes("\n"));
+  const lines = breaksLines(change);
   const words = lines ? tidyWords(change.after as string) : spaced(change.after as string);
   const wrong = els.find((el) => wordsOn(el, lines) !== words);
   return wrong ? { outcome: "not shown", actual: wordsOn(wrong, lines) } : { outcome: "shown" };

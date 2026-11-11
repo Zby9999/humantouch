@@ -12,7 +12,7 @@ import { movedBy, PLACED_BY, SIDES, type InLayout } from "./client/checkable";
 import type { Axis } from "./client/snap";
 import type { CheckResult } from "./service-protocol";
 import { outsideIn } from "./outside-protocol";
-import { changeTitle, otherUsagesWords, listed, otherUsagesWord, outsideWords, propertyName, quoted, value } from "./design-values";
+import { changeTitle, otherUsagesWords, listed, otherUsagesWord, outsideWords, propertyName, quoted, quotedWords, value } from "./design-values";
 
 /** The rules of the report, as `finish` and the Skill give them, word for word. */
 export const REPORT_RULES =
@@ -64,7 +64,7 @@ function pageShows(change: Change, check: CheckResult): string {
   // A new layer, not found where its change puts it, or found placed elsewhere (ticket 76).
   if (change.kind === "create") return `${at}the page does not have it where the change puts it`;
   // New words, what the layer reads on the page instead (ticket 90).
-  if (change.kind === "text") return `${at}the layer reads ${quoted(check.actual as string)} on the page, not ${quoted(change.after as string)}`;
+  if (change.kind === "text") return `${at}the layer reads ${quotedWords(check.actual as string)} on the page, not ${quotedWords(change.after as string)}`;
   // Where the canvas moves it in its container's layout still, by the value itself (ticket 84).
   if (PLACED_BY[change.property] && isOffsetInLayout(check.actual)) {
     const { toDo, how } = canvasOffset(change.property, change.after as number, check.actual.canvas);

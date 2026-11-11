@@ -7,6 +7,7 @@ import { LOC_ATTR, USAGE_ATTR } from "../markers";
 import { asPage, DELETED_ATTR, hiddenByEdit, LAYER_ID_ATTR, MADE_ATTR, ORIGINAL_TEXT_ATTR, WRAP_ATTR } from "./canvas-style";
 import { FROZEN } from "./freezer";
 import { CHAIN_ATTR, type UsageLevel } from "./usage-chain";
+import { wordsOf } from "./words";
 
 export type LayerKind = "stack" | "grid" | "frame" | "text" | "image" | "still" | "locked";
 
@@ -131,7 +132,8 @@ export function buildLayerTree(doc: Document): LayerTree {
     } else if (LEAVES.has(el.localName)) {
       set({ name: "Frame" });
     } else if (isText(el, view) && !drawsBoxAsPage(el, style)) {
-      set({ kind: "text", name: textName(el.textContent!) });
+      // Its lines, if broken, run on in its name: one line (ticket 144).
+      set({ kind: "text", name: textName(wordsOf(el, false)) });
     } else {
       const text = isText(el, view);
       // Text that draws a box around it, as a button does, is a Frame (or a Stack, a Grid) of one text layer: all its words, its inline fragments with them.

@@ -17,7 +17,7 @@ import { fitHeight, freeze, restore } from "./freezer";
 import { ENTER_MARK } from "./host";
 import { CHANGE_GLIDE_MS, chromePush, EASE_IN_OUT, EASE_OUT, easeInOut, MODE_FADE_MS, MODE_SWITCH_MS, ping, prefersReducedMotion } from "./motion";
 import { framedText, nodeOf, type Layer, type LayerTree } from "./layers";
-import { wordsOf } from "./layer-changes";
+import { wordsOf } from "./words";
 import { createLater } from "./later";
 import type { OffCanvasLayer, OffCanvas } from "./off-canvas";
 import { GradientHandles } from "./GradientHandles";
@@ -919,7 +919,11 @@ export function CanvasView(props: Props) {
       release();
       setDrawn(null);
       const type = drawsWith(tool);
-      if (event.type === "pointerup" && type && editor) draw(type, shown, start, boxFrom(start, toIn(event, shown)));
+      if (event.type === "pointerup" && type && editor) {
+        draw(type, shown, start, boxFrom(start, toIn(event, shown)));
+        // New text, typed in at once: under the pointer, the I-beam.
+        setOverTyped(inTyped(viewAt(event)));
+      }
       return;
     }
     if (briefPress.current?.pointerId === event.pointerId) {
