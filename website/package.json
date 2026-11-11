@@ -18,12 +18,16 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@remotion/cli": "4.0.538",
+    "@remotion/google-fonts": "4.0.538",
+    "@remotion/motion-blur": "4.0.538",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "esbuild": "^0.28.2",
     "humantouch": "workspace:*",
+    "remotion": "4.0.538",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3"
   }

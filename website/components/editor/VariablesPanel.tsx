@@ -31,10 +31,12 @@ const GROUPS: { group: string; title: string; entries: Entry[] }[] = [
   { group: "shadow", title: "Shadow", entries: TAILWIND_SHADOW.map(([name, value]) => ({ name, value, own: false })) },
 ];
 
-/** `typed`: a search typed from outside, as a demo types it; the field is the panel's own otherwise. */
-export function VariablesPanel({ typed }: { typed?: string } = {}) {
-  const [own, setSearch] = useState("");
-  const search = typed ?? own;
+/** A color's piece, by its Variable's name: how a video draws it as it lands; nothing on the site. */
+type Piece = (name: string) => React.CSSProperties | undefined;
+
+/** `piece`: see Piece. */
+export function VariablesPanel({ piece }: { piece?: Piece } = {}) {
+  const [search, setSearch] = useState("");
   const [source, setSource] = useState<Source>("all");
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const text = search.trim().toLowerCase();
@@ -91,7 +93,7 @@ export function VariablesPanel({ typed }: { typed?: string } = {}) {
                 list.length ? (
                   <div key={label} className="ht-variants-part">
                     <p className="ht-variants-subtitle">{label}</p>
-                    {view(group, list)}
+                    {view(group, list, piece)}
                   </div>
                 ) : null,
               )}
@@ -111,8 +113,8 @@ function Item({ entry, className, style, children }: { entry: Entry; className: 
   );
 }
 
-function view(group: string, entries: Entry[]) {
-  if (group === "color") return <Palette entries={entries} />;
+function view(group: string, entries: Entry[], piece?: Piece) {
+  if (group === "color") return <Palette entries={entries} piece={piece} />;
   if (group === "spacing")
     return entries.map((e) => (
       <div key={e.name} className="ht-variants-row is-length">
@@ -160,7 +162,7 @@ function view(group: string, entries: Entry[]) {
 }
 
 /** Colors: those in a ramp (a name and its steps, 50 to 950), a row each; the others, named, after them. */
-function Palette({ entries }: { entries: Entry[] }) {
+function Palette({ entries, piece }: { entries: Entry[]; piece?: Piece }) {
   const ramps = new Map<string, (Entry | undefined)[]>();
   const named: Entry[] = [];
   for (const e of entries) {
@@ -176,7 +178,7 @@ function Palette({ entries }: { entries: Entry[] }) {
       {[...ramps].map(([name, steps]) => (
         <div key={name} className="ht-variants-ramp" style={{ ["--ht-steps" as string]: `${steps.length}` }}>
           <span className="ht-variants-ramp-name">{name}</span>
-          {steps.map((e, i) => (e ? <Item key={e.name} entry={e} className="ht-variants-swatch" style={{ ["--ht-swatch" as string]: e.value }} /> : <span key={`empty ${i}`} className="ht-variants-empty" />))}
+          {steps.map((e, i) => (e ? <Item key={e.name} entry={e} className="ht-variants-swatch" style={{ ["--ht-swatch" as string]: e.value, ...piece?.(e.name) }} /> : <span key={`empty ${i}`} className="ht-variants-empty" />))}
         </div>
       ))}
       {named.length > 0 && (
@@ -185,7 +187,7 @@ function Palette({ entries }: { entries: Entry[] }) {
           <div className="ht-variants-names">
             {named.map((e) => (
               <Item key={e.name} entry={e} className="ht-variants-named-item">
-                <span className="ht-variants-named-swatch" style={{ ["--ht-swatch" as string]: e.value }} />
+                <span className="ht-variants-named-swatch" style={{ ["--ht-swatch" as string]: e.value, ...piece?.(e.name) }} />
                 <span className="ht-variants-named-name">{e.name}</span>
               </Item>
             ))}

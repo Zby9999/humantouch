@@ -5,14 +5,13 @@ import { createPortal } from "react-dom";
 import { DemoPage } from "@/components/editor/DemoPage";
 import { EDITOR_CSS } from "@/components/editor/editor-css.generated";
 import { Icon } from "@/components/editor/Icon";
-import { VariablesPanel } from "@/components/editor/VariablesPanel";
 import { EASE_IN_OUT, EASE_OUT, Handles, SCENE_CSS, SceneCursor, usePointer, useShadow, type Aim, type Box, type Step } from "./scene";
 import { usePhases } from "./usePhases";
 
 /*
- * The three small cards' pictures, in the product's own parts, as the big cards' are (designer, 2026-11-11): a Brief
- * written on a layer, a layer dragged off the canvas and back, and the project's Variables searched in the Design panel.
- * Each scene is drawn at its own size and fitted into its card, whole, in its middle.
+ * Two of the small cards' pictures, in the product's own parts, as the big cards' are (designer, 2026-11-11): a Brief
+ * written on a layer, and a layer dragged off the canvas and back. (The Variables card's is a video: MiniVideo.) Each
+ * scene is drawn at its own size and fitted into its card, whole, in its middle.
  */
 
 const MINI_CSS = `
@@ -334,76 +333,4 @@ const OFF_CSS = `
 
 export function OffCanvasMini() {
   return <Mini steps={OFF_STEPS} still={3} width={OFF_W} height={OFF_H} css={OFF_CSS} Scene={OffCanvasScene} />;
-}
-
-/* ——— Variables ——— */
-
-const VARS_W = 360;
-const VARS_H = 300;
-const VARS_QUERY = "stone";
-type VarsAim = { at: [number, number] } | { el: string; dx?: number };
-const VARS_STEPS: (Step & { aim: VarsAim })[] = [
-  /* 0 rest */ { aim: { at: [300, 270] }, move: 400, hold: 800 },
-  /* 1 the search field */ { aim: { el: ".ht-variants .ht-field", dx: 0.3 }, move: 650, hold: 300, click: true },
-  /* 2 typed: the project's stone, and Tailwind's */ { aim: { el: ".ht-variants .ht-field", dx: 0.3 }, move: 0, hold: 1300 },
-  /* 3 onto a swatch */ { aim: { el: ".ht-variants .ht-section .ht-swatch, .ht-variants .ht-section [style*='background']", dx: 0.5 }, move: 600, hold: 2600 },
-  /* 4 away; hold */ { aim: { at: [300, 270] }, move: 600, hold: 1400 },
-];
-
-function VariablesScene({ phase, root, k }: SceneProps) {
-  const scene = useRef<HTMLDivElement>(null);
-  const { shown, cursor, pressed, move } = usePointer({
-    phase,
-    steps: VARS_STEPS,
-    root,
-    scene,
-    width: VARS_W,
-    aim: (i): Aim => {
-      const aim = VARS_STEPS[i].aim;
-      return "at" in aim ? { x: aim.at[0], y: aim.at[1] } : { el: root.querySelector(aim.el), dx: aim.dx };
-    },
-  });
-  const [typed, setTyped] = useState(0);
-  useEffect(() => {
-    if (shown !== 2) return setTyped(shown > 2 ? VARS_QUERY.length : 0);
-    const start = performance.now();
-    const timer = setInterval(() => {
-      const n = Math.min(VARS_QUERY.length, Math.floor((performance.now() - start) / 90));
-      setTyped(n);
-      if (n === VARS_QUERY.length) clearInterval(timer);
-    }, 30);
-    return () => clearInterval(timer);
-  }, [shown]);
-
-  return (
-    <div ref={scene} className="ht-shell mini-scene" style={{ width: VARS_W, height: VARS_H, transform: `translate(-50%, -50%) scale(${k})` }}>
-      <aside className={`ht-panel is-design mini-panel${shown >= 1 && shown < 4 ? " is-searching" : ""}`} aria-label="Design">
-        <div className="ht-panel-header">
-          <h2 className="ht-panel-title">Variables</h2>
-          <button type="button" className="ht-icon-button" aria-label="Back to preview mode">
-            <Icon name="close" />
-          </button>
-        </div>
-        {/* The whole list, and the list searched, both kept: built again on each loop's clearing, the whole list held the main thread some 70ms. */}
-        <div style={{ display: typed ? "none" : "contents" }}>
-          <Variables />
-        </div>
-        <div style={{ display: typed ? "contents" : "none" }}>
-          <Variables typed={VARS_QUERY.slice(0, typed || VARS_QUERY.length)} />
-        </div>
-      </aside>
-      <SceneCursor at={cursor} ms={move} pressed={pressed} />
-    </div>
-  );
-}
-
-const Variables = memo(VariablesPanel);
-
-const VARS_CSS = `
-.mini-panel { position: absolute; left: 30px; right: 30px; top: 22px; bottom: -40px; overflow: hidden; padding-bottom: 200px; border-radius: 12px; box-shadow: 0 1px 1px rgb(0 0 0 / 0.15), 0 0 0 0.5px rgb(0 0 0 / 0.15), 0 24px 64px -12px rgb(0 0 0 / 0.45); }
-.mini-panel.is-searching .ht-variants > .ht-row > .ht-field { background-color: var(--ht-input-hover); box-shadow: var(--ht-input-focus-shadow); }
-`;
-
-export function VariablesMini() {
-  return <Mini steps={VARS_STEPS} still={3} width={VARS_W} height={VARS_H} css={VARS_CSS} Scene={VariablesScene} />;
 }
