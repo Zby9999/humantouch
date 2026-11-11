@@ -55,7 +55,10 @@ export const INSTALL_SHELL = [
   ...["install", "add", "run", "x", "dev"].map((sub) => `bun ${sub}`),
 ];
 
-/** Shell commands Claude is denied besides (deny wins there over a prefix allowed, as `rm` after `&&`); pi's rule lets by only what is listed. */
+/**
+ * Shell commands Claude is denied besides (deny wins there over a prefix allowed, as `rm` after `&&`); pi's rule lets by only what is listed.
+ * pi may `rm` a file git does not track (ticket 151, the list's `remove`); Claude may not: a prefix rule cannot tell such a file (代定).
+ */
 export const INSTALL_DENIED_SHELL = ["rm", "sudo", "kill", "pkill", "curl", "wget", "ssh", "scp", "open", "osascript", "git push"];
 
 /** Tools turned away: the web. */
@@ -106,7 +109,7 @@ export function prepareInstallPi(dir: string, folder: string): void {
   AGENTS.pi.prepare!(dir, folder);
   const extension = AGENTS.pi.args(folder).find((arg) => arg.endsWith("pi-extension.ts"));
   if (!extension) throw new Error("pi's command line loads no pi-extension.ts: the install list has nowhere to go");
-  const list: ShellList = { shell: INSTALL_SHELL, servers: INSTALL_SERVERS, runners: INSTALL_RUNNERS, flags: INSTALL_FLAGS, options: INSTALL_DENIED_OPTIONS };
+  const list: ShellList = { shell: INSTALL_SHELL, servers: INSTALL_SERVERS, runners: INSTALL_RUNNERS, flags: INSTALL_FLAGS, options: INSTALL_DENIED_OPTIONS, remove: true };
   writeFileSync(join(dirname(extension), INSTALL_LIST), `${JSON.stringify(list, null, 2)}\n`);
 }
 

@@ -783,9 +783,9 @@ const TEXT_PAGE = `<!DOCTYPE html>
  */
 const FONT_PAGE = `<!DOCTYPE html>
 <style>
-  @font-face { font-family: Brand; src: local("Arial"); font-weight: 400 700 }
-  @font-face { font-family: Brand; src: local("Arial Black"); font-weight: 900 }
-  @font-face { font-family: Unused; src: local("Arial") }
+  @font-face { font-family: Brand; src: local("Arial"), url("/brand-13.woff2") format("woff2"); font-weight: 400 700 }
+  @font-face { font-family: Brand; src: local("Arial Black"), url("/brand-900-13.woff2") format("woff2"); font-weight: 900 }
+  @font-face { font-family: Unused; src: local("Arial"), url("/unused-13.woff2") format("woff2") }
   body { margin: 0; font: 16px "No Such Font", Georgia, serif }
 </style>
 <body>
@@ -925,6 +925,38 @@ describe("text", () => {
     expect(status("300", "U+0-FF")).toBe("unloaded");
     expect(faces.filter((face) => face.status === "error")).toHaveLength(2);
     expect(fontsOf(doc)).toEqual([{ family: "Display", weights: [300, 600] }]);
+  });
+
+  test("a family whose faces are all of the system's fonts, by `local()` and no `url()`, as next/font's fallbacks are, is not offered; one with a `url()` face is; one the text uses first is (ticket 149)", async () => {
+    const { doc } = openCanvas(`<!DOCTYPE html>
+<style>
+  @font-face { font-family: "__Rajdhani_Fallback_1a2b3c"; src: local("Arial"); ascent-override: 92%; size-adjust: 104% }
+  @font-face { font-family: Handmade; src: local("Arial"), local("Helvetica"); font-weight: 400; size-adjust: 90% }
+  @font-face { font-family: Handmade; src: local("Arial Black"); font-weight: 900 }
+  @font-face { font-family: Mixed; src: local("Arial"); font-weight: 400 }
+  @font-face { font-family: Mixed; src: url("/mixed-700-149.woff2") format("woff2"); font-weight: 700 }
+  @font-face { font-family: Icons; src: url("/icons-149.woff2") format("woff2") }
+  @media screen { @font-face { font-family: Nested; src: local("Arial") } }
+  @font-face { font-family: Stand-in; src: local("Arial"); font-weight: 400 700 }
+  body { margin: 0; font: 16px Georgia, serif }
+</style>
+<body>
+  <p style="font-family: '__Rajdhani_149', '__Rajdhani_Fallback_1a2b3c', sans-serif">Missing, so its fallback stands in</p>
+  <p style="font-family: Stand-in, serif; font-weight: 600">First of its stack</p>
+</body>`);
+    await doc.fonts.ready;
+    // A face added by script, not by a rule: whether it is the system's cannot be read, so it is offered, as before.
+    const View = doc.defaultView as unknown as typeof globalThis;
+    doc.fonts.add(await new View.FontFace("Scripted", 'local("Arial")').load());
+
+    expect(fontsOf(doc)).toEqual([
+      // The text uses it first: offered, in the weight the text uses it in, as a font of the system is.
+      { family: "__Rajdhani_Fallback_1a2b3c", weights: [400] },
+      { family: "Icons", weights: [400] },
+      { family: "Mixed", weights: [400, 700] },
+      { family: "Scripted", weights: [400] },
+      { family: "Stand-in", weights: [600] },
+    ]);
   });
 
   test("a text layer's font is the first of its stack that is there; changed, it takes the stack the page uses that font in", async () => {
