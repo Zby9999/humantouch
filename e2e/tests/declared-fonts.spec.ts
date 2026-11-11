@@ -36,7 +36,7 @@ test("the weight menu lists every weight the project declares for a web font, no
   await expect(font).toHaveValue("Space Grotesk");
   await expect(weight).toHaveValue("500");
   // Light and Bold, declared but used by no text, are not loaded on the canvas: still in the menu, and can be chosen.
-  for (const view of views(page)) expect(await title(view, "300")).toEqual({ weight: "500", face: "unloaded" });
+  for (const view of views(page)) await expect.poll(() => title(view, "300")).toEqual({ weight: "500", face: "unloaded" });
   await expect(weight.getByRole("option")).toHaveText(["Light", "Medium", "Bold"]);
   for (const option of await weight.getByRole("option").all()) await expect(option).toBeEnabled();
 

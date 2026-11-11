@@ -65,9 +65,11 @@
 
 风险：
 
-1. next/font 会生成 `__X_Fallback_hash` 的 `@font-face`（`src: local("Arial")` 加 metric override）。现在它总会列在字体菜单里（Regular）；改前 swap 期间它常常也是 loaded，所以以前就可能出现。官网线（Next 16）最可能看到。要不要按「一个 family 的 face 全是 `local()`」跳过，请设计师定；需要的话另开 ticket。
+1. next/font 会生成 `__X_Fallback_hash` 的 `@font-face`（`src: local("Arial")` 加 metric override）。现在它总会列在字体菜单里（Regular）；改前 swap 期间它常常也是 loaded，所以以前就可能出现。官网线（Next 16）最可能看到。要不要按「一个 family 的 face 全是 `local()`」跳过，规划者在问设计师，需要的话另开 ticket；不挡 140。
 2. `fontsOf` 在面板渲染时算；face 的状态之后变了（比如选了的字重加载失败），菜单要等下一次渲染才更新。
 3. 用 `document.fonts.add(new FontFace(...))` 加的 face（不是样式表里的 `@font-face`）以前就不会复制到 Tablet / Phone 视图；现在没加载的也列出来，选了以后只在画布上显示，旁边的视图不显示。示例和测试都只用 CSS 声明。
 4. 单元测试靠这台机器有 Arial（原 FONT_PAGE 也是）。
 5. 做完要告诉官网线拿掉 493045bf 的绕法（ticket 里写了，这条线没碰官网）。
+6. `font-display: optional` 的 face：选了一个没加载的字重，过了约 100ms 的阻塞期还没加载完，Chrome 这次页面加载里就一直用后备字体，不再换回来，和 ticket 说的「短暂显示后备字体」不一样。next/font 和 Fontsource 默认是 swap，影响小。
+7. 只给部分 unicode-range 子集声明的字重（比如 300 只有 vietnamese 子集）也会列出；拉丁文字用它时，落到字体栈里的下一个字体。
 
