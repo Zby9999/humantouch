@@ -753,7 +753,7 @@ async function enterAgain(page: Page) {
 }
 
 /** The round's changes now, by their numbers and properties. */
-const changesNow = (): { id: number; property: string; kind: string; carried?: true; before: unknown }[] => readHumanTouchFile("changeset.json")?.changes ?? [];
+const changesNow = (): { id: number; property: string; kind: string; scope?: string; carried?: true; before: unknown }[] => readHumanTouchFile("changeset.json")?.changes ?? [];
 
 /** Whether edit mode froze the page afresh: no element of the canvas carries an edit or a layer id of a round's. */
 const frozenAfresh = (page: Page) => canvas(page).locator("[data-ht-layer], [data-ht-style]").count().then((n) => n === 0);
@@ -1234,7 +1234,7 @@ async function drawTextInTheCards(page: Page) {
   const body = (await canvas(page).locator("article p").first().boundingBox())!;
   await drawWith(page, "t", { x: body.x + 10, y: body.y + body.height - 2 }, { width: 120, height: 12 });
   await page.keyboard.type("Fresh");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect.poll(() => changesNow().map((change) => change.kind)).toEqual(["create"]);
 }
@@ -1276,7 +1276,7 @@ test("a page opened only once the round is claimed, in a browser of its own, fin
   const intro = (await canvas(page).locator('[data-testid="hero"] > p').boundingBox())!;
   await drawWith(page, "t", { x: intro.x + 20, y: intro.y + intro.height - 2 }, { width: 120, height: 12 });
   await page.keyboard.type("Fresh line");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   const area = (await page.getByRole("region", { name: "Canvas viewport" }).boundingBox())!;
   await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
@@ -1391,9 +1391,9 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
     await page.getByRole("tree", { name: "Layers" }).getByRole("treeitem", { name: "Card", exact: true }).nth(nth).click();
     for (const [field, value] of fields) await setField(page, field, value);
     if (promote) await page.getByRole("toolbar", { name: "Selection" }).getByRole("button", { name: "Promote" }).click();
-    await expect.poll(() => changesNow().map((change) => `${change.kind} ${change.property}`)).toEqual(fields.map(([field]) => `style ${field === "Gap" ? "gap" : "fill"}`));
-    // The change promoted is saved after the change itself: read once it is.
-    if (promote) await expect.poll(() => changesNow()[0]?.scope).toBe("component");
+    // As saved, Promote with it: the fill saved before Promote is the usage's, and the save on leaving edit mode is not waited for.
+    const scope = promote ? "component" : "usage";
+    await expect.poll(() => changesNow().map((change) => `${change.kind} ${change.property} ${change.scope}`)).toEqual(fields.map(([field]) => `style ${field === "Gap" ? "gap" : "fill"} ${scope}`));
     await leaveEditMode(page);
   }
 
@@ -1760,7 +1760,7 @@ test.describe("a text change (ticket 90)", () => {
         )
         .toBe(true);
       await page.keyboard.type(words);
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("Escape");
       await expect(where(page)).toHaveText(words);
     }
     await expect.poll(() => changesNow().map((change) => change.kind)).toEqual(edits.map(() => "text"));

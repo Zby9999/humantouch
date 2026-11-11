@@ -9,9 +9,13 @@
  * look is `page-checks.ts`'s. What the browser draws otherwise than written
  * is drawn on the page to compare where the code that writes it cannot be
  * read: on an element put in and taken out at once, before anything is painted.
+ * A style whose value does not compare is shown all the same where the page
+ * draws the same with the canvas's style for it put on, for a moment, before
+ * anything is painted (ADR 0016, `draws-alike.ts`).
  */
 import { breakpointKey, breakpointName, mediaOf, widthIn, type Breakpoint } from "./breakpoints";
 import { BRIEF_UNCHECKED, type CheckResult } from "../service-protocol";
+import { breaksLines } from "../design-values";
 import { changeKey, isGridSettings, isReorder, keptIn, makesGrid, placedAt, type Change, type Composed, type Created, type Margins, type Place, type PutBack } from "./changeset";
 import { canvasOf, type RoundOnCanvas } from "./moves";
 import { openingTag } from "./layer-target";
@@ -22,11 +26,13 @@ import { NOT_DRAWN, originOf, SIGN_WORDS, signOf, usageKey } from "./layers";
 import { componentElementsOf, elementsOf, mayBeOf, savedCanvas as savedCanvasOf, usageKeyOf, type SavedCanvas } from "./page-elements";
 import { htmlOf, parseCanvas } from "./shadow-roots";
 import { aloneOfKey, MADE_ATTR } from "./canvas-style";
+import { tidyWords, wordsOf } from "./words";
 import { LOC_ATTR } from "../markers";
 import type { Axis } from "./snap";
 import { readUsageChain } from "./usage-chain";
 import { colorReader } from "./paint";
 import { drawnStroke, showsStroke } from "./stroke-weight";
+import { drawsAlike, movedAlike, movedAsNoted, type Moved, type Restyled } from "./draws-alike";
 import type { TextLength } from "./typography";
 
 /**
@@ -34,8 +40,9 @@ import type { TextLength } from "./typography";
  * writes them, or else as the page draws them, the value after drawn on the
  * page first (`draw`), so a value the code writes right is not taken for one it
  * does not, nor one it writes wrong for one it does. Some draw nothing, and
- * only compare otherwise than value for value: 0 in any unit, or with a part
- * of the value no CSS carries left out.
+ * only compare otherwise than value for value: with a part of the value no
+ * CSS carries left out. Past these, a value that does not compare is looked
+ * at by what it draws (`lookStyle`).
  */
 const AS_WRITTEN: Partial<Record<Property, { draw(doc: Document, value: unknown): unknown; shows(el: Element, value: unknown, drawn: unknown): boolean }>> = {
   // A border is drawn a whole number of physical pixels wide: 1.5px is 1px on a 1x screen, as 1px is.
@@ -43,7 +50,7 @@ const AS_WRITTEN: Partial<Record<Property, { draw(doc: Document, value: unknown)
     draw: (doc, value) => drawnStroke(doc, value as Stroke | null),
     shows: (el, value, drawn) => showsStroke(el, colorReader(el.ownerDocument), value as Stroke | null, drawn as Stroke | null),
   },
-  // A letter spacing of 0 is 0 in any unit: Chrome computes 0px as normal, which reads as 0% (ticket 142). Any other length is compared by its unit.
+  // A letter spacing of 0 is 0 in any unit: Chrome computes 0px as normal, which reads as 0% (ticket 142). Kept past what is drawn (ADR 0016): it tells so where nothing is drawn to look at too.
   letterSpacing: {
     draw: () => null,
     shows: (el, value) => {
@@ -52,6 +59,7 @@ const AS_WRITTEN: Partial<Record<Property, { draw(doc: Document, value: unknown)
     },
   },
   // Spread evenly, a Stack is written space-between, which carries no point along it, read back as the start: with both spread evenly, only the point across it is compared (ticket 145).
+  // Kept past what is drawn (ADR 0016): a page that stretches its layers across where the canvas puts them at the start reads as the start too, though their boxes are wider.
   align: {
     draw: () => null,
     shows: (el, value) => {
@@ -141,11 +149,13 @@ export interface PageWidth {
   doc: Document;
   own: boolean;
   of(el: Element): Element | null;
+  /** What changes' styles moved, noted as the page first looked (ADR 0016): none, where the page notes nothing (`EffectNotes`). */
+  notes?: EffectNotes;
 }
 
 /** The page itself, as wide as its window. */
-export function itself(doc: Document): PageWidth {
-  return { width: doc.defaultView?.innerWidth ?? 0, doc, own: true, of: (el) => el };
+export function itself(doc: Document, notes?: EffectNotes): PageWidth {
+  return { width: doc.defaultView?.innerWidth ?? 0, doc, own: true, of: (el) => el, ...(notes && { notes }) };
 }
 
 /**
@@ -381,7 +391,10 @@ function findMade(doc: Document, id: string, round: RoundOnCanvas): Found {
   if ("unchecked" in outer) return outer;
   if ("missing" in outer || !outer.els.length) return { unchecked: "its container is not on the page now" };
   const written = round.filter((change) => change.kind === "text" && change.layer === id).at(-1)?.after as string | undefined;
-  const words = created.type === "text" ? spaced(written ?? created.text ?? "") : undefined;
+  const typed = written ?? created.text ?? "";
+  // New text in lines is found by its lines, as the page breaks them (ticket 144).
+  const lines = typed.includes("\n");
+  const words = created.type === "text" ? (lines ? tidyWords(typed) : spaced(typed)) : undefined;
   const among = maker.among;
   const range: [number, number] | null = place.absolute ? null : among ? [among.before, among.before + among.maybe] : [place.nth - 1, place.nth - 1];
   const els: Element[] = [];
@@ -391,7 +404,7 @@ function findMade(doc: Document, id: string, round: RoundOnCanvas): Found {
     const counts = new Map<string, number>();
     for (const el of layers) counts.set(signOf(el), (counts.get(signOf(el)) ?? 0) + 1);
     for (const sign of among?.signs ?? []) counts.set(sign, (counts.get(sign) ?? 0) - 1);
-    const matches = (el: Element) => (words === undefined || wordsOn(el) === words) && counts.get(signOf(el))! > 0;
+    const matches = (el: Element) => (words === undefined || wordsOn(el, lines) === words) && counts.get(signOf(el))! > 0;
     const here = range ? layers.slice(range[0], range[1] + 1).filter(matches) : layers.filter((el) => matches(el) && /^(absolute|fixed)$/.test(getComputedStyle(el).position));
     if (!here.length) {
       const there = range ? layers[range[0]] : undefined;
@@ -413,19 +426,13 @@ function spaced(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-/** What an element on the page reads, as a reader takes it (`spaced`): its inline pieces' words with its own, a line break (`<br>`) as the space it reads as. New text is found by these, and new words are checked by them (ticket 90). */
-export function wordsOn(el: Element): string {
-  if (!el.querySelector("br")) return spaced(el.textContent ?? "");
-  let text = "";
-  const walk = (node: Node) => {
-    for (const child of node.childNodes) {
-      if (child.nodeType === Node.TEXT_NODE) text += (child as Text).data;
-      else if ((child as Element).localName === "br") text += " ";
-      else walk(child);
-    }
-  };
-  walk(el);
-  return spaced(text);
+/**
+ * What an element on the page reads, as a reader takes it (`spaced`): its inline pieces' words with its own, a line break (`<br>`) as the space it reads as.
+ * New text is found by these, and new words are checked by them (ticket 90). For words with a line break, before or after (`breaksLines`), `lines`:
+ * where the page breaks their lines too, at a `<br>` or a new line the text keeps (ticket 144).
+ */
+export function wordsOn(el: Element, lines = false): string {
+  return wordsOf(el, lines);
 }
 
 /** An element as the Agent finds it: its opening tag, and its words. */
@@ -447,10 +454,10 @@ function within({ min, max }: Breakpoint, width: number): boolean {
  * breakpoint changed on its own keeps its value. `sources`: a style change
  * not shown says what sets the value shown instead too.
  */
-export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas, viewWidths: number[], at: (width: number) => PageWidth | null, sources = false): CheckResult {
+export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas, viewWidths: number[], at: (width: number) => PageWidth | null, sources = false, notes?: EffectNotes): CheckResult {
   const reason = notChecked(change, round);
   if (reason) return { outcome: "unchecked", reason };
-  const page = itself(doc);
+  const page = itself(doc, notes);
   const { own, others } = widthsOf(change, round, page.width, viewWidths);
   if (!own && !others.length && change.placedOtherwiseAt?.length) {
     // Its X or Y moves nothing where the canvas lays the layer out static (ticket 83).
@@ -459,26 +466,44 @@ export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas,
   }
   const apart = ownValues(change, round);
   let checked = false;
+  /** The first width it does not show at. Past it, the page looks on only at the widths it has noted nothing at yet: what the change's style moves there is noted before the change is applied (ADR 0016). */
+  let failed: CheckResult | null = null;
+  const unnoted = (width: number) => !!notes?.open && change.kind === "style" && !notes.noted.has(`${change.id}@${width}`);
+  // Looked at, a width is noted, if only as nothing to go by: a style looked at otherwise than by `lookStyle` (an X, a Grid's columns) notes nothing.
+  const looked = (width: number) => notes?.open && !notes.noted.has(`${change.id}@${width}`) && notes.noted.set(`${change.id}@${width}`, []);
   if (own) {
     const result = lookAt(doc, change, round, apart, page, sources);
-    if (result.outcome !== "shown") return result;
+    looked(page.width);
+    if (result.outcome !== "shown") {
+      if (!others.some(unnoted)) return result;
+      failed = result;
+    }
     checked = true;
   }
   for (const width of others) {
+    if (failed && !unnoted(width)) continue;
     const copy = at(width);
     if (!copy) {
+      if (failed) continue;
       const where = change.breakpoint ? `it applies ${breakpointName(change.breakpoint)} only, and` : "it applies at every width, but";
       return { outcome: "unchecked", reason: `${where} the page could not be shown ${width}px wide to check it` };
     }
     if (change.breakpoint && !copy.doc.defaultView?.matchMedia(mediaOf(change.breakpoint)).matches) {
+      if (failed) continue;
       return { outcome: "unchecked", reason: `it applies ${breakpointName(change.breakpoint)} only, and the page could not be shown ${width}px wide to check it` };
     }
-    const result = lookAt(doc, change, round, apart, copy, sources);
+    const result = lookAt(doc, change, round, apart, notes ? { ...copy, notes } : copy, sources);
+    looked(width);
+    if (failed) continue;
     // Not there at this width at all: nothing to show there.
     if (result.outcome === "unchecked") continue;
-    if (result.outcome === "not shown") return result;
+    if (result.outcome === "not shown") {
+      if (!others.some((other) => other !== width && unnoted(other))) return result;
+      failed = result;
+    }
     checked = true;
   }
+  if (failed) return failed;
   return checked ? { outcome: "shown" } : { outcome: "unchecked", reason: "the layer is not on the page now" };
 }
 
@@ -488,16 +513,16 @@ export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas,
  * page to bring up to date. Null when the change is not to show at that
  * width, and is looked at on copies of the page only.
  */
-export function checkHere(doc: Document, change: Change, round: RoundOnCanvas, viewWidths: number[]): CheckResult | null {
+export function checkHere(doc: Document, change: Change, round: RoundOnCanvas, viewWidths: number[], notes?: EffectNotes): CheckResult | null {
   if (notChecked(change, round)) return null;
-  const page = itself(doc);
+  const page = itself(doc, notes);
   return widthsOf(change, round, page.width, viewWidths).own ? lookAt(doc, change, round, ownValues(change, round), page) : null;
 }
 
-/** Whether the page shows the change as wide as its window; for tests, and a change the window is wide enough for. `round`: the changes of its round, placed on its canvas. */
-export function checkChange(doc: Document, change: Change, round: RoundOnCanvas): CheckResult {
+/** Whether the page shows the change as wide as its window; for tests, and a change the window is wide enough for. `round`: the changes of its round, placed on its canvas. `notes`: as the page's checks keep them. */
+export function checkChange(doc: Document, change: Change, round: RoundOnCanvas, notes?: EffectNotes): CheckResult {
   const reason = notChecked(change, round);
-  return reason ? { outcome: "unchecked", reason } : lookAt(doc, change, round, ownValues(change, round), itself(doc));
+  return reason ? { outcome: "unchecked", reason } : lookAt(doc, change, round, ownValues(change, round), itself(doc, notes));
 }
 
 /**
@@ -587,6 +612,7 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
     }
   }
   const margins = marginsFor(change, at);
+  const alone = () => !othersAround(doc, change, round, els);
   const placing = change.after !== null && PLACING.includes(property);
   // Where the canvas moves it in its container's layout still, relative or sticky: by the value itself (ticket 84).
   const inLayout = placing ? change.offsetInLayoutAt?.find(({ breakpoint }) => within(breakpoint, at.width))?.position : undefined;
@@ -603,8 +629,8 @@ function look(doc: Document, change: Change, round: RoundOnCanvas, apart: string
             uncentered: !!change.uncenteredAt?.some((range) => within(range, at.width)),
           })
         : property === "gap"
-          ? lookGap(els, change)
-          : lookStyle(els, property, change.after, at);
+          ? lookGap(els, change, at, alone)
+          : lookStyle(els, change, at, alone);
   // What sets the value shown instead, read on the element that shows it.
   return sources && result.outcome === "not shown" && wrong ? { ...result, sources: sourcesFor(wrong, property) } : result;
 }
@@ -664,13 +690,100 @@ function movedAlong(el: Element, axis: Axis): number {
   return movedBy(by, rounded(parseFloat(getComputedStyle(el).getPropertyValue(SIDES[axis][by])) || 0));
 }
 
-/** Whether every one of `els` shows `after`; not, the first that does not, and the value it shows. */
-function lookStyle(els: Element[], property: Property, after: unknown, at: PageWidth): [CheckResult, Element | null] {
+/**
+ * Whether every one of `els` shows `after`: its value read off it, or else
+ * what it draws with the canvas's `style` for the change put on it, the same
+ * as without (ADR 0016, `drawsAlike`). Not shown: the first that does
+ * neither, and the value it shows.
+ */
+function lookStyle(els: Element[], change: Change, at: PageWidth, alone: () => boolean): [CheckResult, Element | null] {
+  const property = change.property as Property;
+  const after = change.after;
   const comparison = AS_WRITTEN[property];
   const drawn = comparison && comparison.draw(at.doc, after);
   const shows = comparison ? (el: Element) => comparison.shows(el, after, drawn) : (el: Element) => sameValue(readValue(el, property), after);
-  const wrong = els.find((el) => !shows(el));
-  return wrong === undefined ? [{ outcome: "shown" }, null] : [{ outcome: "not shown", actual: readValue(wrong, property) }, wrong];
+  const off = els.filter((el) => !shows(el));
+  if (!off.length) {
+    seenAt(change, at, els);
+    return [{ outcome: "shown" }, null];
+  }
+  if (!WEIGHED_AS_WRITTEN.has(property) && drawnAsCanvas(change, els, off, at, (el) => [{ el, style: change.style }], alone)) return [{ outcome: "shown" }, null];
+  return [{ outcome: "not shown", actual: readValue(off[0], property) }, off[0]];
+}
+
+/**
+ * Properties compared as written alone, never by what is drawn: a stroke's
+ * weight, which a 1x screen draws 1.5px and 1px alike, and a 2x one does not
+ * (`stroke-weight.ts`): the change is to show on any screen.
+ */
+const WEIGHED_AS_WRITTEN = new Set<Property>(["stroke"]);
+
+/**
+ * What the style of each change of a claimed round moved, as the page drew
+ * it before the change was applied (ADR 0016, `Moved`): by change and width
+ * (`effectKey`), for each of its layer's elements in order; null for one it
+ * showed already, or where nothing could be noted. Noted the first time the
+ * page looks at the change at that width, and never again: noted later, the
+ * code may have changed. Kept by the page's checks while the round is claimed.
+ */
+export interface EffectNotes {
+  noted: Map<string, (Moved | null)[]>;
+  /**
+   * Whether the page may note still: so long as the code has not changed
+   * since the round was claimed, as far as this page can tell. Closed, a
+   * width not noted yet is never noted: what its style moves would be of the
+   * page as the Agent has edited it.
+   */
+  open: boolean;
+}
+
+/** Notes to keep for a claimed round, the page open to note them, or not (a page opened after the round was claimed). */
+export const effectNotes = (open: boolean): EffectNotes => ({ noted: new Map(), open });
+
+/** Of a layer's elements (a loop's instances), how many the page notes what a change's style moves of, by putting it on: the rest, by one of them laid out alike. */
+const NOTED_AT_MOST = 4;
+
+const effectKey = (change: Change, at: PageWidth) => `${change.id}@${at.width}`;
+
+/** Of a change the page shows at `at` by its value alone, as it first looks: nothing to note, nor to note later. */
+function seenAt(change: Change, at: PageWidth, els: Element[]) {
+  if (at.notes && !at.notes.noted.has(effectKey(change, at))) at.notes.noted.set(effectKey(change, at), els.map(() => null));
+}
+
+/**
+ * Whether the page draws each of `off`, the elements of `els` whose value
+ * does not compare, as the canvas draws the change (ADR 0016): the same with
+ * the canvas's style for it put on (`restyle`) as without (`drawsAlike`); or,
+ * each of them, moved as that style moved it before the change was applied
+ * (`movedAsNoted`), as the page noted the first time it looked, at this
+ * width. Then too, what the style moves is noted, of each of `off`: but for
+ * a change that paints alone, which moves nothing (`NOTED_AT_MOST`). Else the first alone,
+ * which settles most changes not applied yet at the cost of one, then the
+ * rest together.
+ */
+function drawnAsCanvas(change: Change, els: Element[], off: Element[], at: PageWidth, restyle: (el: Element) => Restyled[], alone: () => boolean): boolean {
+  const key = effectKey(change, at);
+  const noted = at.notes?.noted.get(key);
+  if (at.notes?.open && !noted) {
+    const noting = PAINT.has(change.property) ? [] : off.slice(0, NOTED_AT_MOST);
+    const first = drawsAlike(restyle(off[0]), noting.slice(0, 1));
+    // The rest: all looked at only where the first draws alike; else those to note alone, where the change moves things.
+    const others = first.alike ? off.slice(1) : noting.slice(1);
+    const rest = others.length ? drawsAlike(others.flatMap(restyle), noting.slice(1), first.alike) : null;
+    const moved = new Map([...first.moved, ...(rest?.moved ?? [])]);
+    // Past those noted, an element laid out as one of them was (a loop's instances, alike) is moved alike.
+    if (noting.length && off.length > noting.length) for (const [el, alike] of movedAlike(noting, moved, off.slice(noting.length))) moved.set(el, alike);
+    // A loop's instances: each moves the others along as it grows, by as much as the style moves them all, not one alone. What is in each, and how large it is, is its own.
+    if (els.length > 1) for (const [el, one] of moved) moved.set(el, new Map([...one].filter(([what]) => what === "size" || what.startsWith("d") || what.startsWith("t"))));
+    at.notes.noted.set(key, els.map((el) => moved.get(el) ?? null));
+    return first.alike && (!rest || rest.alike);
+  }
+  if (drawsAlike(restyle(off[0])).alike && (off.length === 1 || drawsAlike(off.slice(1).flatMap(restyle)).alike)) return true;
+  // Moved as noted, but by another change of the round that moves the same: not told so.
+  return !!noted && alone() && off.every((el) => {
+    const moved = noted[els.indexOf(el)];
+    return !!moved && movedAsNoted(el, moved);
+  });
 }
 
 /**
@@ -682,22 +795,35 @@ function lookStyle(els: Element[], property: Property, after: unknown, at: PageW
  * room between the layers, from the least to the most, and those margins
  * (`MarginsLeft`); else its gap as written.
  */
-function lookGap(els: Element[], change: Change): [CheckResult, Element | null] {
+function lookGap(els: Element[], change: Change, at: PageWidth, alone: () => boolean): [CheckResult, Element | null] {
   const after = change.after as number;
   const named = (margin: MarginBetween) =>
     change.marginsDropped?.find(({ target, margins }) => !!target.loc && margin.el.getAttribute(LOC_ATTR) === target.loc && margin.side in margins);
+  const off = new Map<Element, [CheckResult, Element]>();
+  const lefts = new Map<Element, MarginBetween[]>();
   for (const el of els) {
     const { written, spaces, margins } = roomBetween(el);
     const left = margins.filter(named);
     if (sameValue(written, after) && !left.length) continue;
-    if (!left.length) return [{ outcome: "not shown", actual: written }, el];
+    lefts.set(el, left);
+    if (!left.length) {
+      off.set(el, [{ outcome: "not shown", actual: written }, el]);
+      continue;
+    }
     const actual: MarginsLeft = {
       room: { min: Math.min(...spaces!), max: Math.max(...spaces!) },
       margins: left.map((margin) => ({ layer: unstopped(named(margin)!.target.context.path.at(-1)!), side: margin.side, px: rounded(margin.px) })),
     };
-    return [{ outcome: "not shown", actual }, el];
+    off.set(el, [{ outcome: "not shown", actual }, el]);
   }
-  return [{ outcome: "shown" }, null];
+  if (!off.size) {
+    seenAt(change, at, els);
+    return [{ outcome: "shown" }, null];
+  }
+  // Drawn as the canvas draws it, its gap given and the margins it takes off gone (ADR 0016): as with any style.
+  const restyle = (el: Element): Restyled[] => [{ el, style: change.style }, ...lefts.get(el)!.map((margin) => ({ el: margin.el, style: { [margin.side]: "0px" } }))];
+  if (drawnAsCanvas(change, els, [...off.keys()], at, restyle, alone)) return [{ outcome: "shown" }, null];
+  return [...off.values()][0];
 }
 
 /** A layer's name as a line names it: a text layer's words without the full stop they end with (ticket 122). */
@@ -789,9 +915,11 @@ function lookPlaced(doc: Document, change: Change, round: RoundOnCanvas, at: Pag
 function lookWords(doc: Document, change: Change, round: RoundOnCanvas): CheckResult {
   const els = elementsOf(doc, change.target, savedCanvas(round));
   if (!els.length) return { outcome: "unchecked", reason: "the layer is not on the page now" };
-  const words = spaced(change.after as string);
-  const wrong = els.find((el) => wordsOn(el) !== words);
-  return wrong ? { outcome: "not shown", actual: wordsOn(wrong) } : { outcome: "shown" };
+  // A line break in the words, before or after: the lines read as the page breaks them (ticket 144).
+  const lines = breaksLines(change);
+  const words = lines ? tidyWords(change.after as string) : spaced(change.after as string);
+  const wrong = els.find((el) => wordsOn(el, lines) !== words);
+  return wrong ? { outcome: "not shown", actual: wordsOn(wrong, lines) } : { outcome: "shown" };
 }
 
 /**
@@ -1138,6 +1266,32 @@ function drawnThere(placed: PlacedOnPage, to: { x?: number; y?: number }, canvas
     if (value === undefined) return true;
     const drawn = !!canvas && near(placed[side] + placed.margins[side], value + canvas.margins[side]);
     return drawn || ((!canvas || !canvas.known) && near(placed[side], value));
+  });
+}
+
+/**
+ * Whether another change of the round is to the layer of `change` (`els`, on
+ * the page), its container, a layer beside it, or one in it, or puts a layer
+ * in or takes one out of any of those: where it is applied, it may move what
+ * this change's style was noted to move (ADR 0016), so what is moved so does
+ * not tell this change apart. A layer made this round, by where its maker puts it.
+ */
+function othersAround(doc: Document, change: Change, round: RoundOnCanvas, els: Element[]): boolean {
+  const canvas = savedCanvas(round);
+  const near = (el: Element) => els.some((own) => el === own || el === own.parentElement || el.parentElement === own.parentElement || own.contains(el));
+  const targetOf = (target: Change["target"]): Change["target"] | null => {
+    if (!target.made) return target;
+    const made = madeLayer(target.made, round);
+    return made ? made.place.container.target : null;
+  };
+  const touches = (target: Change["target"] | null | undefined) => {
+    const found = target && targetOf(target);
+    return !!found && !found.made && foundByMarker(found) && elementsOf(doc, found, canvas).some(near);
+  };
+  return round.some((other) => {
+    if (other.id === change.id) return false;
+    const containers = other.kind === "style" ? [] : [other.before, other.after].map((place) => (place as Partial<Place> | null)?.container?.target);
+    return [other.target, ...containers].some(touches);
   });
 }
 

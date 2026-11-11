@@ -7,7 +7,7 @@
 import { dissolvesGrid, drawnIn, makesGrid, type Change, type Composed, type Created, type Dissolved, type Place, type Target } from "./client/changeset";
 import { checkable, forOneUsage, foundByMarker, isEndOffset, makerOf, PLACING, textMovedInPlace, type PlacedAlong } from "./client/checkable";
 import type { Property } from "./client/property-table";
-import { listed } from "./design-values";
+import { breaksLines, listed } from "./design-values";
 import type { ClassHelper, WhereToLook } from "./where-to-look";
 
 /** How to write one kind of change: its name in the notes, the changes it is for, and what it says. */
@@ -276,6 +276,14 @@ const HOW_TO_WRITE: HowToWrite[] = [
     text: "change the words in the JSX, and keep the bold, links and other pieces around them where they still fit. When the words come from a prop or a variable, change them where they are given.",
   },
   {
+    // Said only for words with a line break, before or after (ticket 144): the notes of every other round stay as they were.
+    name: "Line breaks",
+    calledFor: breaksLines,
+    text:
+      "the notes give the new words line by line, each line break shown as ↵. Break the line there the way the project already breaks lines in text; in JSX with no way of its own, `<br />`. " +
+      "Take out a line break the new words no longer have. No space around a break is part of the words.",
+  },
+  {
     name: "Copies",
     calledFor: (change) => !!change.copiedBreakpoints?.length,
     text:
@@ -403,6 +411,10 @@ const HOW_CHECKED: HowChecked[] = [
   {
     calledFor: (change, list) => checkable(change, list) && change.kind === "text",
     text: "new words by the words in the layer, its bold runs, links and other pieces with it, white space as one space, in every instance",
+  },
+  {
+    calledFor: (change, list) => checkable(change, list) && breaksLines(change),
+    text: "line breaks in the words by where the page breaks their lines: at a `<br>`, or at a new line the text keeps (`white-space: pre-line`, say), none more and none fewer",
   },
   {
     calledFor: (change, list) => checkable(change, list) && change.kind === "text" && forOneUsage(change),

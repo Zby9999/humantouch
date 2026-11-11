@@ -20,6 +20,7 @@
 import type { OtherUsageChanged, OtherUsagesKept, OtherUsagesNote } from "../service-protocol";
 import type { OutsideChanged, OutsideNote } from "../outside-protocol";
 import type { Change } from "./changeset";
+import { breaksLines } from "../design-values";
 import { changedAround, changesTheSame as sameStyle, itself, outsideOf, valuesAt, wordsOn, type PageWidth } from "./check";
 import type { RoundOnCanvas } from "./moves";
 import { sameBreakpoint } from "./breakpoints";
@@ -87,7 +88,7 @@ function changesTheSame(change: Change, other: Change): boolean {
 
 /** What an element shows of what `change` changes: the value of its property, in design language; for new words, what it reads (ticket 90). */
 function shownOn(el: Element, change: Change): unknown {
-  return change.kind === "text" ? wordsOn(el) : readValue(el, change.property as Property);
+  return change.kind === "text" ? wordsOn(el, breaksLines(change)) : readValue(el, change.property as Property);
 }
 
 /**
