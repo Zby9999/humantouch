@@ -3133,6 +3133,30 @@ describe("the report in three sections: applied, done differently, not shown (AD
     expect((await cli("finish")).output).toContain("↪ Done differently\n- 3. Width: <the layer>\n  Why: at Phone (390px) it draws 342px wide, not 500px: full width on phones, so it never scrolls sideways\n```");
   });
 
+  test("said done differently, but its layer breaks the layout at a width: no width may break, said or not (ADR 0016): done says how to fix it, it is not applied, and finish puts it under ⚠️", async () => {
+    saveRound(wide);
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: wide.after, breaks: [{ width: 390, kind: "page", of: "layer" }] }));
+
+    const { output } = await cli("done", "3", "--differently", WHY);
+    expect(output).toContain("Change 3 done: 0 of 1 change applied.\nChecked on the page: it does not show the change. At Phone (390px) change 3 makes the page wider than the screen");
+    expect(output).toContain("and run `npx humantouch done 3` again. Done differently on purpose or not, it is not to break the layout at any width.\n");
+
+    const finishedNow = (await cli("finish")).output;
+    expect(finished(finishedNow)).toBe("Round finished: 0 of 1 change applied. Not shown, breaking the layout at a width: 3.\n");
+    expect(finishedNow).toContain("```\n⚠️ Not shown\n- 3. Width: <the layer>\n");
+    expect(section((await cli("last")).output, 3)).toContain("- **Status:** Not applied\n");
+  });
+
+  test("a reason of digits alone is a reason, unless it is the number of a change of the round", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+
+    expect((await cli("done", "1", "--differently", "250")).code).toBe(0);
+    expect(JSON.parse(readFileSync(join(project, ".humantouch/state.json"), "utf8")).differently).toEqual({ 1: "250" });
+    expect((await cli("done", "1", "--differently", "2")).code).toBe(1);
+  });
+
   test("the Skill gives the report's headings as finish does", () => {
     const skill = readFileSync(join(import.meta.dirname, "../skill/SKILL.md"), "utf8");
     for (const heading of Object.values(REPORT_HEADINGS)) expect(skill).toContain(`\n${heading}\n- `);

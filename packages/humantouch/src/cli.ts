@@ -270,7 +270,7 @@ async function done(folder: HumanTouchFolder, args: string[], io: Io): Promise<n
     return 1;
   }
   const ids = changeSet.changes.map((change) => change.id);
-  const { numbers, why } = differentlyOf(args);
+  const { numbers, why } = differentlyOf(args, ids);
   if (why === "") {
     io.error(`Give your reason after --differently, in quotes: \`npx humantouch done ${numbers[0] ?? "<number>"} --differently "the designer asked for neutral-250 instead"\`.\n`);
     return 1;
@@ -292,7 +292,10 @@ async function done(folder: HumanTouchFolder, args: string[], io: Io): Promise<n
   const applied = appliedOf(claimed, (await readChecks(folder))?.results);
   const lines = changes.map((change) => {
     const reason = differently?.[change.id];
-    return reason === undefined ? checkLine(change, results.get(change.id), changeSet.changes) : differentlyLine(reason);
+    const result = results.get(change.id);
+    // Done differently or not, its layer is not to break the layout at any width (ADR 0016): that is still to fix.
+    if (reason !== undefined && breaksIn(result)?.length) return `${checkLine(change, result, changeSet.changes)} Done differently on purpose or not, it is not to break the layout at any width.`;
+    return reason === undefined ? checkLine(change, result, changeSet.changes) : differentlyLine(reason);
   });
   const one = changes.length === 1;
   io.write(`${one ? "Change" : "Changes"} ${listed(reported)} done: ${applied.length} of ${changesWord(ids.length)} applied.\n`);
@@ -304,16 +307,17 @@ async function done(folder: HumanTouchFolder, args: string[], io: Io): Promise<n
  * `done`'s arguments, the numbers of the changes, and the reason given with
  * `--differently "<why>"` (or `--differently=<why>`), for them all: done
  * differently on purpose (ticket 148). `why`: undefined with no
- * `--differently`; "" with one and no reason after it.
+ * `--differently`; "" with one and no reason after it (none, another
+ * option, or the number of a change of the round, `ids`).
  */
-function differentlyOf(args: string[]): { numbers: string[]; why?: string } {
+function differentlyOf(args: string[], ids: number[]): { numbers: string[]; why?: string } {
   const numbers: string[] = [];
   let why: string | undefined;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--differently") {
       const next = args[i + 1];
-      why = next === undefined || /^\d+$/.test(next) || next.startsWith("--") ? "" : next.trim();
+      why = next === undefined || ids.includes(Number(next)) || next.startsWith("--") ? "" : next.trim();
       if (why) i++;
     } else if (arg.startsWith("--differently=")) why = arg.slice("--differently=".length).trim();
     else numbers.push(arg);

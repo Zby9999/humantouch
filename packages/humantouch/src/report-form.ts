@@ -39,9 +39,12 @@ export type ReportSection = "applied" | "differently" | "notShown";
 /**
  * The section of the report `change` goes under: done differently, as the
  * Agent said (`differently`), or applied and adapted at a width (ticket
- * 147); else applied; else not shown. `last` labels each change by it too.
+ * 147); else applied; else not shown. One whose layer breaks the layout is
+ * not shown, said or not (ADR 0016: no width may break). `last` labels each
+ * change by it too.
  */
-export function sectionOf(id: number, applied: number[], checks: Record<number, CheckResult | undefined>, differently: Record<number, string> = {}): ReportSection {
+export function sectionOf(id: number, applied: number[], checks: Record<number, CheckResult | undefined>, differently: Record<string, string> = {}): ReportSection {
+  if (breaksIn(checks[id])?.length) return "notShown";
   if (differently[id] !== undefined) return "differently";
   if (!applied.includes(id)) return "notShown";
   return adaptedIn(checks[id])?.length ? "differently" : "applied";
@@ -51,11 +54,11 @@ export function sectionOf(id: number, applied: number[], checks: Record<number, 
  * The report for a round, laid out: under ✓ the changes applied; under ↪
  * those done differently, why: what the page draws (at the widths it adapted
  * them at, or of those it does not show), and the Agent's reason; under ⚠️
- * those the page does not show (why: what it shows instead) and those not
- * applied. The changes applied that the page cannot check stay under ✓ for
+ * the rest: those the page does not show (why: what it shows instead), and
+ * those not applied. The changes applied that the page cannot check stay under ✓ for
  * the Agent to move if it did not apply them exactly.
  */
-export function reportFor(changes: Change[], applied: number[], checks: Record<number, CheckResult | undefined>, differently: Record<number, string> = {}): string {
+export function reportFor(changes: Change[], applied: number[], checks: Record<number, CheckResult | undefined>, differently: Record<string, string> = {}): string {
   const line = (change: Change, what: string) => `- ${change.id}. ${changeTitle(change)}: ${what}`;
   const section = (change: Change) => sectionOf(change.id, applied, checks, differently);
   const notShown = (change: Change) => checks[change.id]?.outcome === "not shown";
