@@ -54,7 +54,7 @@ When the designer says "Apply my design changes", follow the Skill \`init\` adde
 2. Apply the changes in order.
 3. \`npx humantouch done <number> …\` after a change or a group of them: the designer's open page checks that each one shows.
 4. \`npx humantouch finish\` ends the round and lays out the report.
-5. End your reply with the report: ✓ Applied; ↪ Done differently, with why (\`npx humantouch done <number> --differently "<why>"\` for one done differently on purpose); and ⚠️ Not shown, with why and what you did instead.
+5. End your reply with the report: ✓ Applied; ↪ Done differently, with why (\`npx humantouch done <number> --differently "<why>"\` for one you chose to make differently, one change at a time; not for one you could not make show, nor one that breaks the layout, changes widths outside its range or other usages: those are still to fix); and ⚠️ Not shown, with why and what you did instead.
 
 If you stopped partway and the designer says "Continue applying my design changes", run \`npx humantouch claim\` again: it prints the changes not applied yet.
 

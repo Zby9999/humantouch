@@ -118,3 +118,50 @@ Skill 的用词保持英文（设计师 2026-11-04）。参考 ADR 0013、0016�
 4. 页面没及时回答 closing 时，`finish` 用的是最近一次结果，也可能是热更新只看窗口宽度的结果。同上，原来就有。
 
 后续（不编号，交给 planner）：代定 3（不改几何的样式要不要也严格）；真跑时看 `--differently` 的用法和误用。
+
+**2026-11-12，第二轮审查后的修改（同一分支，合了 main d9e0851）**
+
+审查的每条都对着代码核过，都成立。改了什么：
+
+1. 适配只限排版（planner 的第 1 条，原来做窄了）：原来只把删除、新建、改字排除在外，填色、文字颜色、圆角、透明度这些在 Phone 画得不一样也算适配，进 ↪，不用修（例：填红色，弱模型写 `bg-white md:bg-red-500`）。现在改成白名单 `ADAPTABLE`（`widths-protocol.ts`）加 `adaptable(change)`：只有挪动（`move`），和样式里的 x、y、right、bottom、absolute、宽高和最小最大、padding、gap、rowGap、columnGap、direction、align、wrap、columns、arrangement、fontSize、lineHeight 可以适配；其余（`DRAWS_NO_BREAK` 那些画法，字重、字体、字距、大小写、描边、显隐，删除、新建、改字、新建 Stack 等，以及以后新加、名单上没有的属性）在每个宽度严格。`check.ts` 的 `STRICT_EVERYWHERE` 删了。GLOSSARY「核对」按代码改了。147 那条 mock「填色适配」的 cli 测试改成 gap（「its gap is 8px, not 16px」）。`edits.browser.test.ts` 里 147 的「填色在 Phone 适配」改成 not shown（标题也改了）。
+2. `--differently` 不再盖住页面的事实，也不再绕过严格的核对：
+   - (a) `done` 先说页面画的是什么，再说原因：没显示时「Checked on the page: it does not show the change as on the canvas: the page shows the fill #FFFFFF, not #FF0000 at 50% opacity.」，适配了时「Checked on the page: it shows the change. At Phone (390px) …」，核对不了时「Not checked on the page: …」；然后「Done differently, as you said: “…”. It goes under ↪ in the report, with that reason: nothing to fix.」
+   - (b) 破版、范围外（104）、其他使用处（77）都压过说明（`stillToFix`，`widths-protocol.ts`）：`sectionOf` 放 ⚠️，`appliedOf` 不算落地，`done` 照旧给修法，再加一句：「Done differently on purpose or not, it is not to break the layout at any width.」/「… a change at a breakpoint is not to change the widths outside its range.」/「… a change for one usage is not to change its component's other usages.」
+3. Skill（英文）第 3 步那段改成：「A change you chose to make differently on purpose (the designer asked for something else in the conversation, say): run `npx humantouch done <number> --differently "<why>"`, one change at a time. It then goes under ↪ in the report with that reason. It is not for a change you could not make show: that goes under ⚠️. A break of the layout, a change outside its breakpoint's range, or one at other usages is still to fix, said or not.」去掉了「It is not to be fixed then」。website 两份副本同步；README 第 4 节、`website/lib/readme.ts` 跟着改。`REPORT_RULES` 没变，86 的逐字对照照旧过。
+4. (a) `--differently` 只收一个编号：给了几个就拒绝，说「Give one change with --differently, and its own reason: `npx humantouch done 1 --differently "the designer asked for neutral-250 instead"`. Run it again for each other change done differently; run `npx humantouch done <number> …` for the rest.」（对弱模型最简单：一条一个原因，不会把别的改动带进去。）(b) 原因里的空白和换行并成一个空格，``` 换成 '，不会截断报告的代码块或打乱 `checkReport`。(c) 拼错的选项（`--diferently`）说「Unknown option --diferently: `done` takes the numbers of the changes, and for one done differently on purpose, --differently and the reason: …」。
+5. `finish` 时页面没再看的改动（没在时限里回答 closing，或没有页面开着）：第一行末尾加「The page did not look again at 1 and 2: as last checked.」。每条照页面最后一次说的放（代定 12）：已显示的改动，页面存下的结果来自它最后一次在所有宽度一起看的时候（热更新只看窗口宽度，而且只在不显示时才写），所以 ✓/↪ 就是「最后一次完整核对」放的那栏，只是之后的编辑可能在别的宽度改了它，第一行说明这一点。
+6. 补的测试：见下。
+
+`finish` 输出的前后对比（这一轮新增的）：
+
+- 第一行：页面没再看时，末尾多「The page did not look again at …: as last checked.」。原来那条「页面关了，看到的照旧算」的测试（progress 那组）的第一行跟着变成「Round finished: 2 of 3 changes applied. The page does not show: 2. The page did not look again at 1 and 2: as last checked.」。
+- 桌面视图里的画法改动在其他宽度画得不一样：原来进 ↪（Why「at Phone (390px) its fill is #FFFFFF, not …: <why you did it so>」），现在进 ⚠️，第一行「The page does not show: N.」。
+- 说明了、但改到范围外或其他使用处的：原来进 ↪，现在进 ⚠️，第一行照 104/77 的说法。
+
+测试（这一轮）：
+
+- `cli.test.ts`：先说页面事实的 `done`；一个编号、拼错的选项、缺原因的错误；原因并成一行、``` 去掉、报告里只有两处 ```；说明了但范围外（104）、其他使用处（77）各一条：`done` 给修法和那句话、不算落地、`finish` 放 ⚠️；没页面再看时 `finish` 的第一行。三栏那组 7 → 11 条。
+- `breaks.browser.test.ts`：`adaptable` 白名单（排版的可以，画法、字重、字距、描边、显隐、名单外的属性、删除、新建、改字、Stack 不行）；填色在 Phone 不一样 → not shown、不带 `adapted`。
+- `edits.browser.test.ts`：147 的「填色适配」改成 not shown；删除那条照旧。
+
+数字（第二轮，合了 main d9e0851 之后）：
+
+- `pnpm typecheck` 过（website 也过）。`pnpm test`：vitest 60 个文件 1399 过、1 跳过；node 133 过、0 失败。
+- e2e（`HT_E2E_PORT=6900`，`pnpm build` 之后）：round.spec + applying-bench.spec + claim.spec + code-changes.spec + next-round.spec + off-canvas-round.spec + react18-round.spec，连同依赖的 project，607 过、0 失败；examples 没留改动。
+- `--dry`：41/41（main d9e0851 40/40）。`--claim-out` 和 main d9e0851 做 `diff -r`：已有 40 个场景逐字相同，只多 `report-done-differently.md`。临时 worktree 已删。
+- `--scripted`：32/32，一次过。
+- 结果有变的已有场景：这一轮没有（scripted 场景里没有靠画法适配的；width-500-adapted 仍在 ↪，report-done-differently 的三条照旧）。
+
+代定（接着上面的编号）：
+
+11. 能适配的属性用白名单（planner 的决定，coordinator 转达）：排版几何加字号、行高；新属性默认严格。`margin` 不在名单上，因为没有单独的外边距改动（外边距是别的改动的一部分）。textAlign 算画法，严格。
+12. 页面没再看的改动，照页面最后一次说的放，第一行说明；不挪到 ⚠️。
+13. `--differently` 一次只收一个编号。
+14. 原因的清理：空白并成一个空格，三个以上的反引号换成一个 '。
+15. 代定 3 作废（被第 1 条取代）；代定 7 扩成：破版、范围外、其他使用处都压过说明。代定 1 里「可以一次给几条」作废。
+
+风险（更新）：
+
+- 风险 3、4（没页面、没及时回答时用最后一次结果）：现在 `finish` 第一行会说出来，但结果本身还是旧的。
+- 新：白名单以后加属性时要记得想清楚能不能适配；不加就是严格（偏向 ⚠️，不会悄悄 ✓）。
+- 新：`done` 拒绝 `-` 开头的参数（当成未知选项），负数编号本来也不存在。

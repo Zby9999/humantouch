@@ -60,7 +60,7 @@ If the Agent stops partway, the toggle tells you "Your Agent seems to have stopp
 
 ### 4. Read the report
 
-The Agent ends its reply with a report of the round. Under ✓ are the changes applied as you made them; under ↪ those it did differently on purpose (you asked for something else in the conversation, say, or it adapted a change at a narrower view's width), each with why; under ⚠️ those the page does not show, each with why and what it did instead. For each change the page can check, what the page shows decides its heading, unless the Agent says it did it differently on purpose: then it is under ↪, with its reason.
+The Agent ends its reply with a report of the round. Under ✓ are the changes applied as you made them; under ↪ those it did differently on purpose (you asked for something else in the conversation, say, or it adapted how a layer is laid out at a narrower view's width), each with why; under ⚠️ those the page does not show, each with why and what it did instead. For each change the page can check, what the page shows decides its heading, unless the Agent says it chose to do it differently: then it is under ↪, with its reason and what the page draws. A change that breaks the layout at a width, changes the widths outside its breakpoint's range, or changes other usages of a component stays under ⚠️ all the same.
 
 ```text
 ✓ Applied

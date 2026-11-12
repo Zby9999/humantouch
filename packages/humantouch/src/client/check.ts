@@ -36,7 +36,7 @@ import { colorReader } from "./paint";
 import { drawnStroke, showsStroke } from "./stroke-weight";
 import { drawsAlike, movedAlike, movedAsNoted, type Moved, type Restyled } from "./draws-alike";
 import type { TextLength } from "./typography";
-import { DRAWS_NO_BREAK, type AdaptedAt, type ShownAdapted } from "../widths-protocol";
+import { adaptable, DRAWS_NO_BREAK, type AdaptedAt, type ShownAdapted } from "../widths-protocol";
 
 /**
  * Properties the browser draws otherwise than written: compared as the code
@@ -458,8 +458,9 @@ function within({ min, max }: Breakpoint, width: number): boolean {
  * not shown says what sets the value shown instead too. Made in the desktop
  * view and shown as wide as the window, a change drawn otherwise at another
  * width is shown, adapted there (`ShownAdapted`, ADR 0016); with no window's
- * width to show at, strict at every other. A delete, a new layer or new words
- * are strict at every width (`STRICT_EVERYWHERE`).
+ * width to show at, strict at every other. Only how it lays the layer out
+ * may be adapted (`adaptable`, ticket 148): any other change is strict at
+ * every width.
  */
 export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas, viewWidths: number[], at: (width: number) => PageWidth | null, sources = false, notes?: EffectNotes): CheckResult {
   const reason = notChecked(change, round);
@@ -472,8 +473,8 @@ export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas,
     return { outcome: "unchecked", reason: `at the widths the page is looked at, the canvas ${howTheCanvasPlacesIt}` };
   }
   const apart = ownValues(change, round);
-  // Made in the desktop view and shown as wide as the window, where it is to show as on the canvas: at other views' widths the Agent may adapt how it lays the layer out (ADR 0016). Not what is there: deleted, made or reworded in the desktop view, it is so at every width (ADR 0008, ticket 148).
-  const adapting = !change.breakpoint && own && !STRICT_EVERYWHERE.has(change.kind);
+  // Made in the desktop view and shown as wide as the window, where it is to show as on the canvas: at other views' widths the Agent may adapt how it lays the layer out (ADR 0016). Not what is there, nor how it is painted: deleted, made, reworded or filled in the desktop view, it is so at every width (ADR 0008, ticket 148).
+  const adapting = !change.breakpoint && own && adaptable(change);
   const adapted: AdaptedAt[] = [];
   let checked = false;
   /** The first width it does not show at. Past it, the page looks on only at the widths it has noted nothing at yet: what the change's style moves there is noted before the change is applied (ADR 0016). */
@@ -519,9 +520,6 @@ export function checkAcross(doc: Document, change: Change, round: RoundOnCanvas,
   const shown: ShownAdapted = adapted.length ? { outcome: "shown", adapted } : { outcome: "shown" };
   return shown;
 }
-
-/** The kinds of change to what the page has, not to how it lays it out: made in the desktop view, one is to show at every width, not adapted at any (ticket 148). */
-const STRICT_EVERYWHERE = new Set<Change["kind"]>(["delete", "create", "text"]);
 
 /** The sizes a change sets, whose width or height drawn says what is drawn instead: as on the screen. */
 const DRAWN_SIZES: Partial<Record<string, "width" | "height">> = { width: "width", height: "height", minWidth: "width", maxWidth: "width", minHeight: "height", maxHeight: "height" };

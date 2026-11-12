@@ -15,7 +15,7 @@ import { movedBy, PLACED_BY, SIDES, type InLayout } from "./client/checkable";
 import type { Axis } from "./client/snap";
 import type { CheckResult } from "./service-protocol";
 import { outsideIn } from "./outside-protocol";
-import { adaptedIn, breaksIn } from "./widths-protocol";
+import { adaptedIn, breaksIn, stillToFix } from "./widths-protocol";
 import { adaptedAtWords, brokenWords, changeTitle, otherUsagesWords, listed, otherUsagesWord, outsideWords, propertyName, quoted, quotedWords, value } from "./design-values";
 
 /** The report's headings, as `finish` and the Skill give them (ticket 148). */
@@ -39,12 +39,13 @@ export type ReportSection = "applied" | "differently" | "notShown";
 /**
  * The section of the report `change` goes under: done differently, as the
  * Agent said (`differently`), or applied and adapted at a width (ticket
- * 147); else applied; else not shown. One whose layer breaks the layout is
- * not shown, said or not (ADR 0016: no width may break). `last` labels each
- * change by it too.
+ * 147); else applied; else not shown. One the page found still to fix
+ * (`stillToFix`: its layer breaking the layout, a change outside its range,
+ * or at other usages) is not shown, said or not. `last` labels each change
+ * by it too.
  */
 export function sectionOf(id: number, applied: number[], checks: Record<number, CheckResult | undefined>, differently: Record<string, string> = {}): ReportSection {
-  if (breaksIn(checks[id])?.length) return "notShown";
+  if (stillToFix(checks[id])) return "notShown";
   if (differently[id] !== undefined) return "differently";
   if (!applied.includes(id)) return "notShown";
   return adaptedIn(checks[id])?.length ? "differently" : "applied";
@@ -94,8 +95,8 @@ export function reportFor(changes: Change[], applied: number[], checks: Record<n
   );
 }
 
-/** What the page shows of a change it does not show, as the report's Why. */
-function pageShows(change: Change, check: CheckResult): string {
+/** What the page shows of a change it does not show, as the report's Why, and `done`'s for one done differently (ticket 148). */
+export function pageShows(change: Change, check: CheckResult): string {
   if (check.outcome !== "not shown") return "<why it is not applied>";
   // Shown on the layer, but at other usages of its component too (ticket 77).
   if (check.otherUsages?.length) return `the page shows it at ${otherUsagesWord(change, check.otherUsages)} too, ${otherUsagesWords(change.property, check.otherUsages, false)}`;

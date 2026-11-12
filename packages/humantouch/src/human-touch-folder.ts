@@ -13,7 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { carryOver, type SavedChangeSet } from "./client/changeset";
 import type { CheckAsk, CheckResult, CodeSnapshot, OtherUsagesKept, SavedOffCanvasLayer, RoundStatus } from "./service-protocol";
-import { breaksIn } from "./widths-protocol";
+import { stillToFix } from "./widths-protocol";
 
 export const HUMAN_TOUCH_DIR = ".humantouch";
 
@@ -69,7 +69,8 @@ export interface RoundState {
  * not, and those the Agent reported done that it does not say it does not
  * show (it cannot check them, or no page is open), and those it said it did
  * differently on purpose (ticket 148): done, not left for the next round,
- * unless their layer breaks the layout (ADR 0016: at no width, said or not). Of
+ * unless the page found what is still to fix, said or not (`stillToFix`:
+ * a break of the layout, a change outside its range, or at other usages). Of
  * `results`, only this round's count: an earlier round's may have been
  * written back after it ended.
  */
@@ -79,7 +80,7 @@ export function appliedOf(state: RoundState, results: Checks["results"] = {}): n
     return result && (!state.claimedAt || result.at >= state.claimedAt) ? result : undefined;
   };
   const shown = Object.keys(results).map(Number).filter((id) => own(id)?.outcome === "shown");
-  const done = state.done.filter((id) => own(id)?.outcome !== "not shown" || (state.differently?.[id] !== undefined && !breaksIn(own(id))?.length));
+  const done = state.done.filter((id) => own(id)?.outcome !== "not shown" || (state.differently?.[id] !== undefined && !stillToFix(own(id))));
   return [...new Set([...shown, ...done])].sort((a, b) => a - b);
 }
 

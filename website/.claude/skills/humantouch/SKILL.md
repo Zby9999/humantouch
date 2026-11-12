@@ -14,7 +14,7 @@ The designer edits the page in Human Touch, which saves every change to `.humant
    - **it does not show the change**: something overrides your edit, at the width it names. Fix what sets the value there, and run `done` with that number again. Go on once it shows, or once you know it cannot: then report it.
    - **Not checked**: the page cannot tell this kind of change, or could not look. It is not an error: go on.
 
-   A change you did differently on purpose (the designer asked for something else in the conversation, say): run `npx humantouch done <number> --differently "<why>"`. It is not to be fixed then, and goes under ↪ in the report with that reason.
+   A change you chose to make differently on purpose (the designer asked for something else in the conversation, say): run `npx humantouch done <number> --differently "<why>"`, one change at a time. It then goes under ↪ in the report with that reason. It is not for a change you could not make show: that goes under ⚠️. A break of the layout, a change outside its breakpoint's range, or one at other usages is still to fix, said or not.
 4. **Finish.** When you have been through every change, run `npx humantouch finish`. It ends the round and unlocks the editor, and lays out the report for the round: each change under the heading the page's checks put it under, with what the page shows of those it does not.
 5. **Report.** End your reply with that report, filled in. Its form:
 

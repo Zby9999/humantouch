@@ -7,18 +7,18 @@
  */
 import { changes as changesWord, container as containerOf, describeChanges, heldWords, shareWords, toApply, type NotesOptions } from "./change-notes";
 import { breakpointName, tailwindOf } from "./client/breakpoints";
-import { adaptedWords, breakFix, breakingWith, brokenWords, otherUsagesWords, listed, ordinal, otherUsagesWord, outsideWords, propertyName, quoted, quotedWords, value } from "./design-values";
+import { adaptedAtWords, adaptedWords, breakFix, breakingWith, brokenWords, otherUsagesWords, listed, ordinal, otherUsagesWord, outsideWords, propertyName, quoted, quotedWords, value } from "./design-values";
 import type { MadeMissing, OffsetInLayout, PlacedOnPage } from "./client/check";
 import { AUTO_MARGINS, AUTO_MARGINS_CLASS, AXIS_SIZE, CENTERING_SIGN, centeringSides, movedBy, PLACED_BY, shareCss, SIDES, type Edge, type Share } from "./client/checkable";
 import type { Change, Composed, Created, GridSettings, Margins, Place, SavedChangeSet } from "./client/changeset";
 import type { Axis } from "./client/snap";
 import { defaultExec, doctor, init, remove, type Exec } from "./install";
-import { canvasOffset, isMarginsLeft, isOffsetInLayout, marginsLeftWords, movedWords, reportFor, roomWords, sectionOf, type ReportSection } from "./report-form";
+import { canvasOffset, isMarginsLeft, isOffsetInLayout, marginsLeftWords, movedWords, pageShows, reportFor, roomWords, sectionOf, type ReportSection } from "./report-form";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { BRIEF_UNCHECKED, CHECK_ARRIVE_MS, type CheckAsk, type CheckResult, type OtherUsageChanged } from "./service-protocol";
 import { outsideIn, type OutsideChanged } from "./outside-protocol";
-import { adaptedIn, breaksIn, type BreakFound } from "./widths-protocol";
+import { adaptedIn, breaksIn, stillToFix, type BreakFound } from "./widths-protocol";
 import { whereToLook } from "./where-to-look";
 import {
   appliedOf,
@@ -270,9 +270,19 @@ async function done(folder: HumanTouchFolder, args: string[], io: Io): Promise<n
     return 1;
   }
   const ids = changeSet.changes.map((change) => change.id);
-  const { numbers, why } = differentlyOf(args, ids);
+  const { numbers, why, unknown } = differentlyOf(args, ids);
+  const form = (id: string | undefined) => `\`npx humantouch done ${id ?? "<number>"} --differently "the designer asked for neutral-250 instead"\``;
+  if (unknown !== undefined) {
+    io.error(`Unknown option ${unknown}: \`done\` takes the numbers of the changes, and for one done differently on purpose, --differently and the reason: ${form(numbers[0])}.\n`);
+    return 1;
+  }
   if (why === "") {
-    io.error(`Give your reason after --differently, in quotes: \`npx humantouch done ${numbers[0] ?? "<number>"} --differently "the designer asked for neutral-250 instead"\`.\n`);
+    io.error(`Give your reason after --differently, in quotes: ${form(numbers[0])}.\n`);
+    return 1;
+  }
+  // One change to a reason (ticket 148): each done differently says why of its own.
+  if (why !== undefined && new Set(numbers).size > 1) {
+    io.error(`Give one change with --differently, and its own reason: ${form(numbers[0])}. Run it again for each other change done differently; run \`npx humantouch done <number> …\` for the rest.\n`);
     return 1;
   }
   const wrong = numbers.find((arg) => !ids.includes(Number(arg)));
@@ -293,9 +303,11 @@ async function done(folder: HumanTouchFolder, args: string[], io: Io): Promise<n
   const lines = changes.map((change) => {
     const reason = differently?.[change.id];
     const result = results.get(change.id);
-    // Done differently or not, its layer is not to break the layout at any width (ADR 0016): that is still to fix.
-    if (reason !== undefined && breaksIn(result)?.length) return `${checkLine(change, result, changeSet.changes)} Done differently on purpose or not, it is not to break the layout at any width.`;
-    return reason === undefined ? checkLine(change, result, changeSet.changes) : differentlyLine(reason);
+    if (reason === undefined) return checkLine(change, result, changeSet.changes);
+    // Done differently or not, what is still to fix is to fix (ticket 148): the page's words for it, as for any change.
+    const toFix = stillToFix(result);
+    if (toFix) return `${checkLine(change, result, changeSet.changes)} ${STILL_TO_FIX[toFix]}`;
+    return `${pageDraws(change, result)} ${differentlyLine(reason)}`;
   });
   const one = changes.length === 1;
   io.write(`${one ? "Change" : "Changes"} ${listed(reported)} done: ${applied.length} of ${changesWord(ids.length)} applied.\n`);
@@ -310,22 +322,43 @@ async function done(folder: HumanTouchFolder, args: string[], io: Io): Promise<n
  * `--differently`; "" with one and no reason after it (none, another
  * option, or the number of a change of the round, `ids`).
  */
-function differentlyOf(args: string[], ids: number[]): { numbers: string[]; why?: string } {
+function differentlyOf(args: string[], ids: number[]): { numbers: string[]; why?: string; unknown?: string } {
   const numbers: string[] = [];
   let why: string | undefined;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--differently") {
       const next = args[i + 1];
-      why = next === undefined || ids.includes(Number(next)) || next.startsWith("--") ? "" : next.trim();
+      why = next === undefined || ids.includes(Number(next)) || next.startsWith("--") ? "" : reasonOf(next);
       if (why) i++;
-    } else if (arg.startsWith("--differently=")) why = arg.slice("--differently=".length).trim();
+    } else if (arg.startsWith("--differently=")) why = reasonOf(arg.slice("--differently=".length));
+    else if (arg.startsWith("-")) return { numbers, why, unknown: arg.split("=")[0] };
     else numbers.push(arg);
   }
   return { numbers, why };
 }
 
-/** What `done` says of a change the Agent said it did differently on purpose (ticket 148): nothing to fix, and where the report has it. */
+/** The reason given with `--differently`, on one line, as the report has it: its white space one space, no fence (```) to end the report's block early (ticket 148). */
+const reasonOf = (text: string) => text.replace(/`{3,}/g, "'").replace(/\s+/g, " ").trim();
+
+/** What `done` says of a change done differently that the page found still to fix (`stillToFix`), after the page's words for it (ticket 148). */
+const STILL_TO_FIX = {
+  breaks: "Done differently on purpose or not, it is not to break the layout at any width.",
+  outside: "Done differently on purpose or not, a change at a breakpoint is not to change the widths outside its range.",
+  otherUsages: "Done differently on purpose or not, a change for one usage is not to change its component's other usages.",
+} as const;
+
+/** What the page draws of a change the Agent said it did differently, before what `done` says of that: what it shows instead, or where it adapted it; its check's words when it did not look (ticket 148). */
+function pageDraws(change: Change, result: CheckResult | undefined): string {
+  if (result?.outcome === "not shown") return `Checked on the page: it does not show the change as on the canvas: ${pageShows(change, result)}.`;
+  if (result?.outcome === "shown") {
+    const adapted = adaptedIn(result);
+    return `Checked on the page: it shows the change.${adapted?.length ? ` ${adaptedAtWords(change, adapted)}.` : ""}`;
+  }
+  return `Not checked on the page: ${result?.reason ?? (change.kind === "brief" ? BRIEF_UNCHECKED : "the page did not answer in time")}.`;
+}
+
+/** What `done` says of a change the Agent said it did differently on purpose (ticket 148): where the report has it, and nothing to fix. */
 function differentlyLine(why: string): string {
   return `Done differently, as you said: “${why}”. It goes under ↪ in the report, with that reason: nothing to fix.`;
 }
@@ -757,8 +790,12 @@ function isRunning(pid: number | undefined): boolean {
 async function finish(folder: HumanTouchFolder, io: Io): Promise<number> {
   const [state, changeSet] = await Promise.all([readState(folder), readChangeSet(folder)]);
   // The round's result is the page's (ADR 0013): it looks at every change it can once more, once the last edit has reached it.
+  let unanswered: number[] = [];
   if (state && changeSet) {
-    await askPages(folder, state, "closing", changeSet.changes.filter((change) => change.kind !== "brief").map((change) => change.id));
+    const { asked, results } = await askPages(folder, state, "closing", changeSet.changes.filter((change) => change.kind !== "brief").map((change) => change.id));
+    // Not looked at once more (no page answered in time, or none is open): what the page last said of them stands (ticket 148).
+    const own = (await readChecks(folder))?.results ?? {};
+    unanswered = [...results].filter(([id, answer]) => (answer as { answers?: string }).answers !== asked.closing?.key && own[id] && (!state.claimedAt || own[id].at >= state.claimedAt)).map(([id]) => id);
   }
   const result = changeSet && (await archiveRound(folder, "finished"));
   if (!result) {
@@ -785,6 +822,8 @@ async function finish(folder: HumanTouchFolder, io: Io): Promise<number> {
   // Said by the Agent, or adapted at a width (ticket 148): under ↪.
   const differently = ids.filter((id) => sectionOf(id, applied, result.checks, result.differently) === "differently");
   if (differently.length) text += ` Done differently: ${differently.join(", ")}.`;
+  // Each where the page last put it, at every width, as it looked last at them all: a later edit may have changed it at a view's width since (ticket 147's risk 3).
+  if (unanswered.length) text += ` The page did not look again at ${listed(unanswered.sort((a, b) => a - b))}: as last checked.`;
   io.write(`${text}\n\n${reportFor(changeSet.changes, applied, result.checks, result.differently)}`);
   return 0;
 }

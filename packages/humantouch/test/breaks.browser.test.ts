@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "vitest";
 import type { Change } from "../src/client/changeset";
 import { breakWidthsOf, checkAcross, effectNotes, itself, type PageWidth } from "../src/client/check";
 import { placedOnCanvas } from "../src/client/moves";
+import { adaptable } from "../src/widths-protocol";
 import { breaksNow, noteChange, noteRound, type OtherUsagesNoted } from "../src/client/other-usages";
 import { watchPage } from "../src/client/page-checks";
 import { CODE_EVENT, type CheckReport } from "../src/service-protocol";
@@ -197,6 +198,22 @@ test("a width made in the desktop view, drawn otherwise at a view's width: shown
   // At a breakpoint, strict in its range still.
   const atPhone = { ...width, breakpoint: { min: null, max: 768 } } as Change;
   expect(checkAcross(live, atPhone, onCanvas([atPhone]), [390], at)).toEqual({ outcome: "not shown", actual: { type: "fill" } });
+});
+
+test("adapted at other views' widths, only how a layer is laid out (ticket 148): its size, place, room, arrangement, font size and line height, and a move; a delete, a new layer, new words, a new Stack, a paint, a property not listed, never", () => {
+  for (const property of ["width", "maxWidth", "x", "right", "padding", "gap", "columns", "arrangement", "fontSize", "lineHeight"]) expect(adaptable({ kind: "style", property })).toBe(true);
+  for (const property of ["fill", "textColor", "radius", "opacity", "shadows", "layerBlur", "textDecoration", "fontWeight", "fontFamily", "letterSpacing", "textCase", "stroke", "visible", "textAlign", "someday"]) expect(adaptable({ kind: "style", property })).toBe(false);
+  expect(adaptable({ kind: "move", property: "move" })).toBe(true);
+  for (const kind of ["delete", "create", "text", "stack", "unstack", "duplicate"]) expect(adaptable({ kind, property: kind })).toBe(false);
+});
+
+test("a fill made in the desktop view, another at a view's width (`bg-white md:bg-red-500`): not shown there, strict (ticket 148)", () => {
+  const live = pageOf(PAGE("#box { background-color: rgb(255, 0, 0) }"), 1000);
+  const phone = pageOf(PAGE("#box { background-color: rgb(255, 255, 255) }"), 390);
+  const at = (w: number): PageWidth => ({ width: w, doc: phone, own: false, of: (el) => phone.getElementById(el.id) });
+  const fill = style(BOX, "fill", { before: { type: "solid", color: "#FFFFFF", opacity: 1 }, after: { type: "solid", color: "#FF0000", opacity: 1 }, style: { "background-color": "#FF0000" } });
+  expect(checkAcross(live, fill, onCanvas([fill]), [390], at)).toMatchObject({ outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 } });
+  expect(checkAcross(live, fill, onCanvas([fill]), [390], at)).not.toHaveProperty("adapted");
 });
 
 /** The page's checks of `round` on `page`, as a claimed round's are, the window its only width. */
