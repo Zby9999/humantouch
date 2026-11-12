@@ -13,6 +13,8 @@ The designer edits the page in Human Touch, which saves every change to `.humant
    - **it shows the change**: go on.
    - **it does not show the change**: something overrides your edit, at the width it names. Fix what sets the value there, and run `done` with that number again. Go on once it shows, or once you know it cannot: then report it.
    - **Not checked**: the page cannot tell this kind of change, or could not look. It is not an error: go on.
+
+   A change you chose to make differently on purpose (the designer asked for something else in the conversation, say): run `npx humantouch done <number> --differently "<why>"`, one change at a time. It then goes under ↪ in the report with that reason. It is not for a change you could not make show: that goes under ⚠️. A break of the layout, a change outside its breakpoint's range, or one at other usages is still to fix, said or not.
 4. **Finish.** When you have been through every change, run `npx humantouch finish`. It ends the round and unlocks the editor, and lays out the report for the round: each change under the heading the page's checks put it under, with what the page shows of those it does not.
 5. **Report.** End your reply with that report, filled in. Its form:
 
@@ -21,19 +23,23 @@ The designer edits the page in Human Touch, which saves every change to `.humant
 - 1. Fill: the cards of the feature grid, white → red
 - 2. Brief on Button: pressed, it shrinks a little and springs back (`active:scale-95` with a springy transition)
 
-⚠️ Not applied 1:1
-- 3. Corner radius: <which layer>
+↪ Done differently
+- 3. Fill: the hero's background
+  Why: the designer asked for neutral-250 instead
+
+⚠️ Not shown
+- 4. Corner radius: <which layer>
   Why: <the reason, e.g. the component library sets it and cannot be changed from the usage>
   Instead: <what you did, or “left as it was”>
 ```
 
-- List every change once, under one heading only. One applied, but not exactly as asked, goes under ⚠️ alone, not under ✓ as well; more to say of one applied exactly goes on its ✓ line.
-- Give each change under ⚠️ both lines, Why and Instead.
-- Leave the ⚠️ section out only when every change was applied exactly. Keep each line short.
+- List every change once, under one heading only. One done differently on purpose (the designer asked for it otherwise, say, or it is adapted at a width) goes under ↪ alone; one applied, but not exactly as asked, under ⚠️ alone; more to say of one applied exactly goes on its ✓ line.
+- Give each change under ↪ its Why, and each under ⚠️ both lines, Why and Instead.
+- Leave out ↪ and ⚠️ when no change is under them. Keep each line short.
 
 ## Undoing the last round
 
-When the designer asks to undo the last round of design changes, run `npx humantouch last`. It prints the notes of the round before, each change marked **Applied** or **Not applied**, and, in a git repository, the exact code changes of that round and a command that takes them back out. Do as it says, then tell the designer what you reverted. There is nothing to claim or finish for an undo.
+When the designer asks to undo the last round of design changes, run `npx humantouch last`. It prints the notes of the round before, each change marked **Applied**, **Done differently** or **Not applied**, and, in a git repository, the exact code changes of that round and a command that takes them back out. Do as it says, then tell the designer what you reverted. There is nothing to claim or finish for an undo.
 
 ## Removing Human Touch
 

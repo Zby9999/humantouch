@@ -1,10 +1,13 @@
 /**
  * The report the Agent ends its reply with (ticket 65). The designer reads
- * only the exceptions, so every change is listed once, under one heading, and
- * each under ⚠️ says why and what was done instead. `finish` lays it out for
- * the round, each change already under the heading the page's checks put it
- * under (ADR 0013: the round's result is the page's, not the Agent's word);
- * the Skill gives its form, and its rules in the very words `finish` does.
+ * only the exceptions, so every change is listed once, under one of three
+ * headings (ADR 0016, ticket 148): applied; done differently on purpose,
+ * each saying why; not shown, each saying why and what was done instead.
+ * `finish` lays it out for the round, each change already under the heading
+ * the page's checks put it under (ADR 0013: the round's result is the
+ * page's, not the Agent's word), or the Agent's `--differently`; the Skill
+ * gives its form, with these headings, and its rules in the very words
+ * `finish` does.
  */
 import type { Change } from "./client/changeset";
 import type { MarginsLeft, OffsetInLayout } from "./client/check";
@@ -12,38 +15,79 @@ import { movedBy, PLACED_BY, SIDES, type InLayout } from "./client/checkable";
 import type { Axis } from "./client/snap";
 import type { CheckResult } from "./service-protocol";
 import { outsideIn } from "./outside-protocol";
-import { breaksIn } from "./widths-protocol";
-import { brokenWords, changeTitle, otherUsagesWords, listed, otherUsagesWord, outsideWords, propertyName, quoted, quotedWords, value } from "./design-values";
+import { adaptedIn, breaksIn, stillToFix } from "./widths-protocol";
+import { adaptedAtWords, brokenWords, changeTitle, otherUsagesWords, listed, otherUsagesWord, outsideWords, propertyName, quoted, quotedWords, value } from "./design-values";
+
+/** The report's headings, as `finish` and the Skill give them (ticket 148). */
+export const REPORT_HEADINGS = { applied: "✓ Applied", differently: "↪ Done differently", notShown: "⚠️ Not shown" } as const;
 
 /** The rules of the report, as `finish` and the Skill give them, word for word. */
 export const REPORT_RULES =
-  "- List every change once, under one heading only. One applied, but not exactly as asked, goes under ⚠️ alone, not under ✓ as well; more to say of one applied exactly goes on its ✓ line.\n" +
-  "- Give each change under ⚠️ both lines, Why and Instead.\n" +
-  "- Leave the ⚠️ section out only when every change was applied exactly. Keep each line short.\n";
+  "- List every change once, under one heading only. One done differently on purpose (the designer asked for it otherwise, say, or it is adapted at a width) goes under ↪ alone; one applied, but not exactly as asked, under ⚠️ alone; more to say of one applied exactly goes on its ✓ line.\n" +
+  "- Give each change under ↪ its Why, and each under ⚠️ both lines, Why and Instead.\n" +
+  "- Leave out ↪ and ⚠️ when no change is under them. Keep each line short.\n";
 
 /** The second line of each change under ⚠️, for the Agent to fill in. */
 const INSTEAD = "  Instead: <what you did, or “left as it was”>";
 
+/** Under ↪, the Agent's reason, for it to fill in where it gave none (`--differently`). */
+const WHY_DIFFERENTLY = "<why you did it so>";
+
+/** Where a change of the round goes in the report (ticket 148), by the page's checks and the Agent's `--differently`. */
+export type ReportSection = "applied" | "differently" | "notShown";
+
 /**
- * The report for a round, laid out: under ✓ the changes applied, under ⚠️
- * those the page does not show (why: what it shows instead) and those not
- * applied; the changes applied that the page cannot check stay under ✓ for
+ * The section of the report `change` goes under: done differently, as the
+ * Agent said (`differently`), or applied and adapted at a width (ticket
+ * 147); else applied; else not shown. One the page found still to fix
+ * (`stillToFix`: its layer breaking the layout, a change outside its range,
+ * or at other usages) is not shown, said or not. `last` labels each change
+ * by it too.
+ */
+export function sectionOf(id: number, applied: number[], checks: Record<number, CheckResult | undefined>, differently: Record<string, string> = {}): ReportSection {
+  if (stillToFix(checks[id])) return "notShown";
+  if (differently[id] !== undefined) return "differently";
+  if (!applied.includes(id)) return "notShown";
+  return adaptedIn(checks[id])?.length ? "differently" : "applied";
+}
+
+/**
+ * The report for a round, laid out: under ✓ the changes applied; under ↪
+ * those done differently, why: what the page draws (at the widths it adapted
+ * them at, or of those it does not show), and the Agent's reason; under ⚠️
+ * the rest: those the page does not show (why: what it shows instead), and
+ * those not applied. The changes applied that the page cannot check stay under ✓ for
  * the Agent to move if it did not apply them exactly.
  */
-export function reportFor(changes: Change[], applied: number[], checks: Record<number, CheckResult | undefined>): string {
+export function reportFor(changes: Change[], applied: number[], checks: Record<number, CheckResult | undefined>, differently: Record<string, string> = {}): string {
   const line = (change: Change, what: string) => `- ${change.id}. ${changeTitle(change)}: ${what}`;
-  const isApplied = (change: Change) => applied.includes(change.id);
-  const notShown = (change: Change) => !isApplied(change) && checks[change.id]?.outcome === "not shown";
+  const section = (change: Change) => sectionOf(change.id, applied, checks, differently);
+  const notShown = (change: Change) => checks[change.id]?.outcome === "not shown";
   // Applied, as they count once done: the page has no look at them to stand on.
-  const appliedUnseen = changes.filter((change) => isApplied(change) && checks[change.id]?.outcome !== "shown");
-  const ok = changes.filter(isApplied).map((change) => line(change, "<the layer, and what you changed>"));
+  const appliedUnseen = changes.filter((change) => section(change) === "applied" && checks[change.id]?.outcome !== "shown");
+  const ok = changes.filter((change) => section(change) === "applied").map((change) => line(change, "<the layer, and what you changed>"));
+  const otherwise = changes
+    .filter((change) => section(change) === "differently")
+    .map((change) => {
+      const check = checks[change.id];
+      const adapted = adaptedIn(check);
+      const drawn = adapted?.length ? adaptedAtWords(change, adapted, false) : notShown(change) ? pageShows(change, check!) : null;
+      const why = differently[change.id] ?? WHY_DIFFERENTLY;
+      return [line(change, "<the layer>"), `  Why: ${drawn ? `${drawn}: ${why}` : why}`].join("\n");
+    });
   const warned = changes
-    .filter((change) => !isApplied(change))
+    .filter((change) => section(change) === "notShown")
     .map((change) => [line(change, "<the layer>"), `  Why: ${notShown(change) ? `${pageShows(change, checks[change.id]!)}: <what keeps it so>` : "<why it is not applied>"}`, INSTEAD].join("\n"));
-  const sections = [ok.length ? ["✓ Applied", ...ok].join("\n") : null, warned.length ? ["⚠️ Not applied 1:1", ...warned].join("\n") : null].filter((section) => section !== null);
+  const sections = ([
+    [REPORT_HEADINGS.applied, ok],
+    [REPORT_HEADINGS.differently, otherwise],
+    [REPORT_HEADINGS.notShown, warned],
+  ] as [string, string[]][])
+    .filter(([, items]) => items.length)
+    .map(([heading, items]) => [heading, ...items].join("\n"));
   const ids = appliedUnseen.map((change) => change.id);
   const move = ids.length
-    ? `- ${listed(ids)} the page cannot check: keep ${ids.length === 1 ? "it" : "each"} under ✓ if you applied it exactly as asked; if not, move it under ⚠️, with Why and Instead.\n`
+    ? `- ${listed(ids)} the page cannot check: keep ${ids.length === 1 ? "it" : "each"} under ✓ if you applied it exactly as asked; if you did it differently on purpose, move it under ↪, with Why; if you could not apply it as asked, move it under ⚠️, with Why and Instead.\n`
     : "";
   return (
     "End your reply with this report. Each change is under the heading the page's checks put it under: fill in each <…>, and keep each line short.\n\n" +
@@ -51,8 +95,8 @@ export function reportFor(changes: Change[], applied: number[], checks: Record<n
   );
 }
 
-/** What the page shows of a change it does not show, as the report's Why. */
-function pageShows(change: Change, check: CheckResult): string {
+/** What the page shows of a change it does not show, as the report's Why, and `done`'s for one done differently (ticket 148). */
+export function pageShows(change: Change, check: CheckResult): string {
   if (check.outcome !== "not shown") return "<why it is not applied>";
   // Shown on the layer, but at other usages of its component too (ticket 77).
   if (check.otherUsages?.length) return `the page shows it at ${otherUsagesWord(change, check.otherUsages)} too, ${otherUsagesWords(change.property, check.otherUsages, false)}`;

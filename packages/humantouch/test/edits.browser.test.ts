@@ -5959,17 +5959,17 @@ describe("breakpoints", () => {
     channel.port1.close();
   });
 
-  test("a change made in the desktop view is checked as wide as the window and as wide as each view: a width where the code gives another value is adapted there, with the value it shows (ADR 0016); one the round changed at a breakpoint of its own keeps its own", async () => {
+  test("a change made in the desktop view is checked as wide as the window and as wide as each view: a fill the code gives another value at a width is not shown, strict there (ticket 148: only how a layer is laid out may be adapted); one the round changed at a breakpoint of its own keeps its own", async () => {
     const { editor, changes, desktop, phone, layer } = await open(MOVES.replace(/ data-ht-chain='[^']*'/g, ""));
     editor.at(desktop);
     editor.set(layer("board"), "fill", RED);
     const [change] = changes.list();
-    // The code writes red at every width but below 640px, where a rule of its own keeps it white.
+    // The code writes red at every width but below 640px, where a rule of its own keeps it white: `bg-white md:bg-red-500`, say.
     const css = "#board { background-color: rgb(255, 0, 0) } @media (width < 640px) { #board { background-color: rgb(255, 255, 255) } }";
     const page = livePage(1000, css);
     const { at, widths } = copiesOf(page);
 
-    expect(checkAcross(page, change, onCanvas(changes.list()), [768, 390], at)).toEqual({ outcome: "shown", adapted: [{ width: 390, actual: { type: "solid", color: "#FFFFFF", opacity: 1 } }] });
+    expect(checkAcross(page, change, onCanvas(changes.list()), [768, 390], at)).toMatchObject({ outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 } });
     expect(widths).toEqual([768, 390]);
 
     // Changed in the phone view too, the board keeps that value below 800px: not looked at there.
@@ -5979,6 +5979,23 @@ describe("breakpoints", () => {
     const again = copiesOf(page);
     expect(checkAcross(page, desktopChange, onCanvas(changes.list()), [768, 390], again.at)).toEqual({ outcome: "shown" });
     expect(again.widths).toEqual([]);
+  });
+
+  test("a layer deleted in the desktop view that is still on the page at a view's width is not shown, not adapted there: deleted in the desktop view, it is deleted at every width (ADR 0008, ticket 148)", async () => {
+    const { editor, changes, desktop, layer } = await open(MOVES.replace(/ data-ht-chain='[^']*'/g, ""));
+    editor.at(desktop);
+    editor.remove(layer("b"));
+    const [change] = changes.list();
+    expect(change.kind).toBe("delete");
+    // The code hides it as wide as the window, not below 640px.
+    const page = livePage(1000, "#b { display: none } @media (width < 640px) { #b { display: block } }");
+    const { at, widths } = copiesOf(page);
+
+    expect(checkAcross(page, change, onCanvas(changes.list()), [768, 390], at)).toMatchObject({ outcome: "not shown", actual: "there" });
+    expect(widths).toEqual([768, 390]);
+    // Gone at every width: shown.
+    const gone = livePage(1000, "#b { display: none }");
+    expect(checkAcross(gone, change, onCanvas(changes.list()), [768, 390], copiesOf(gone).at)).toEqual({ outcome: "shown" });
   });
 
   test("the project's media queries are read from the page's stylesheets: each width one starts or stops holding at, named by the first there", () => {

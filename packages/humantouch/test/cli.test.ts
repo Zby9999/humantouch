@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { run } from "../src/cli";
 import type { Change } from "../src/client/changeset";
 import { uncheckable } from "../src/client/check";
-import { REPORT_RULES } from "../src/report-form";
+import { REPORT_HEADINGS, REPORT_RULES } from "../src/report-form";
 
 let project: string;
 
@@ -2954,7 +2954,7 @@ describe("a change for one usage, shown at another usage of its component too (t
     expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. Shown at other usages of its component too: 1.\n");
     expect(output).toContain("✓ Applied\n- 2. Corner radius: <the layer, and what you changed>\n");
     expect(output).toContain(
-      "⚠️ Not applied 1:1\n- 1. Fill: <the layer>\n  Why: the page shows it at another usage of Card too, Card used at `src/App.tsx:44:9`, its fill from #FFFFFF to #FF0000 at 50% opacity: <what keeps it so>\n",
+      "⚠️ Not shown\n- 1. Fill: <the layer>\n  Why: the page shows it at another usage of Card too, Card used at `src/App.tsx:44:9`, its fill from #FFFFFF to #FF0000 at 50% opacity: <what keeps it so>\n",
     );
   });
 });
@@ -2973,13 +2973,13 @@ describe("other views' widths adapted, any width never broken (ADR 0016, ticket 
     ],
   };
 
-  test("a change made in the desktop view drawn otherwise at a view's width is shown, and applied: done says what is drawn there, to say so in the report if adapted on purpose", async () => {
-    saveRound(redFill, smallRadius);
+  test("a change made in the desktop view drawn otherwise at a view's width is shown, and applied: done says what is drawn there, under ↪ in the report, to say why (ticket 148)", async () => {
+    saveRound({ ...redFill, property: "gap", before: 0, after: 16, style: {} }, smallRadius);
     await cli("claim");
-    closePage = openPage(() => ({ outcome: "shown", adapted: [{ width: 390, actual: WHITE }] }));
+    closePage = openPage(() => ({ outcome: "shown", adapted: [{ width: 390, actual: 8 }] }));
 
     expect((await cli("done", "1")).output).toBe(
-      "Change 1 done: 1 of 2 changes applied.\nChecked on the page: it shows the change. At Phone (390px) its fill is #FFFFFF, not #FF0000 at 50% opacity: if you adapted it there on purpose, say so in the report.\n",
+      "Change 1 done: 1 of 2 changes applied.\nChecked on the page: it shows the change. At Phone (390px) its gap is 8px, not 16px: done differently there, it goes under ↪ in the report, where you say why.\n",
     );
   });
 
@@ -2989,7 +2989,7 @@ describe("other views' widths adapted, any width never broken (ADR 0016, ticket 
     closePage = openPage(() => ({ outcome: "shown", adapted: [{ width: 768, actual: { type: "fill" }, drawn: 720 }, { width: 390, actual: { type: "fill" }, drawn: 342 }] }));
 
     expect((await cli("done", "1")).output).toContain(
-      "Checked on the page: it shows the change. At Tablet (768px) it draws 720px wide, not 500px; at Phone (390px) it draws 342px wide, not 500px: if you adapted it at those widths on purpose, say so in the report.\n",
+      "Checked on the page: it shows the change. At Tablet (768px) it draws 720px wide, not 500px; at Phone (390px) it draws 342px wide, not 500px: done differently at those widths, it goes under ↪ in the report, where you say why.\n",
     );
   });
 
@@ -3054,8 +3054,169 @@ describe("other views' widths adapted, any width never broken (ADR 0016, ticket 
 
     expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. Not shown, breaking the layout at a width: 1.\n");
     expect(output).toContain(
-      "⚠️ Not applied 1:1\n- 1. Width: <the layer>\n  Why: the page does not show it: at Phone (390px) the layer makes the page wider than the screen (it scrolls sideways) and itself wider than its container (500px in 342px): <what keeps it so>\n",
+      "⚠️ Not shown\n- 1. Width: <the layer>\n  Why: the page does not show it: at Phone (390px) the layer makes the page wider than the screen (it scrolls sideways) and itself wider than its container (500px in 342px): <what keeps it so>\n",
     );
+  });
+});
+
+describe("the report in three sections: applied, done differently, not shown (ADR 0016, ticket 148)", () => {
+  let closePage = () => {};
+  afterEach(() => closePage());
+  const WHITE = { type: "solid", color: "#FFFFFF", opacity: 1 };
+  const wide = { ...redFill, id: 3, property: "width", before: { type: "hug" }, after: { type: "fixed", value: 500 }, style: { width: "500px" } };
+  const WHY = "the designer asked for neutral-250 instead";
+  const page = (id: number) =>
+    id === 1 ? { outcome: "not shown", actual: WHITE } : id === 3 ? { outcome: "shown", adapted: [{ width: 390, actual: { type: "fill" }, drawn: 342 }] } : id === 2 ? { outcome: "not shown", actual: 12 } : { outcome: "shown" };
+
+  test("done with --differently: the change is done differently on purpose, its reason kept; done does not ask to fix it, and it counts as applied", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    closePage = openPage(page);
+
+    // What the page draws first, as for any change; then the reason.
+    expect((await cli("done", "1", "--differently", WHY)).output).toBe(
+      "Change 1 done: 1 of 2 changes applied.\nChecked on the page: it does not show the change as on the canvas: the page shows the fill #FFFFFF, not #FF0000 at 50% opacity. " +
+        `Done differently, as you said: “${WHY}”. It goes under ↪ in the report, with that reason: nothing to fix.\n`,
+    );
+    expect(JSON.parse(readFileSync(join(project, ".humantouch/state.json"), "utf8"))).toMatchObject({ done: [1], differently: { 1: WHY } });
+    // Said once, it stays so: done again with no reason does not take it back.
+    expect((await cli("done", "1")).output).toContain(`Done differently, as you said: “${WHY}”.`);
+    // Not said: not shown, and done asks to fix it, as ever.
+    expect((await cli("done", "2")).output).toContain("Checked on the page: it does not show the change.");
+    expect((await cli("done", "2")).output).toContain("run `npx humantouch done 2` again");
+  });
+
+  test("--differently= takes the reason too; with no reason, or a number after it, done refuses and says how; one change to a reason; a misspelt option is said to be unknown", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+    const form = '`npx humantouch done 1 --differently "the designer asked for neutral-250 instead"`';
+
+    expect(await cli("done", "1", "--differently")).toEqual({ code: 1, output: "", errors: `Give your reason after --differently, in quotes: ${form}.\n` });
+    expect((await cli("done", "--differently", "2")).code).toBe(1);
+    expect(await cli("done", "1", "2", `--differently=${WHY}`)).toEqual({
+      code: 1,
+      output: "",
+      errors: `Give one change with --differently, and its own reason: ${form}. Run it again for each other change done differently; run \`npx humantouch done <number> …\` for the rest.\n`,
+    });
+    expect(await cli("done", "1", "--diferently", WHY)).toEqual({
+      code: 1,
+      output: "",
+      errors: `Unknown option --diferently: \`done\` takes the numbers of the changes, and for one done differently on purpose, --differently and the reason: ${form}.\n`,
+    });
+    expect(JSON.parse(readFileSync(join(project, ".humantouch/state.json"), "utf8"))).not.toHaveProperty("differently");
+    expect((await cli("done", "2", `--differently=${WHY}`)).code).toBe(0);
+    expect(JSON.parse(readFileSync(join(project, ".humantouch/state.json"), "utf8")).differently).toEqual({ 2: WHY });
+  });
+
+  test("the reason on one line, as the report has it: its white space one space, no fence to end the report's block", async () => {
+    saveRound(redFill);
+    await cli("claim");
+    closePage = openPage(page);
+
+    await cli("done", "1", "--differently", "the designer\n  asked for ```neutral-250```\tinstead ");
+    const reason = "the designer asked for 'neutral-250' instead";
+    expect(JSON.parse(readFileSync(join(project, ".humantouch/state.json"), "utf8")).differently).toEqual({ 1: reason });
+    const output = (await cli("finish")).output;
+    expect(output.match(/```/g)).toHaveLength(2);
+    expect(output).toContain(`  Why: the page shows the fill #FFFFFF, not #FF0000 at 50% opacity: ${reason}\n`);
+  });
+
+  test.each([
+    ["outside its breakpoint's range (ticket 104)", { outcome: "not shown", actual: null, outside: [{ width: 1280, before: { type: "solid", color: "#FFFFFF", opacity: 1 }, now: { type: "solid", color: "#FF0000", opacity: 0.5 } }] }, "a change at a breakpoint is not to change the widths outside its range", "Shown outside its breakpoint's range too: 1."],
+    ["at another usage of its component (ticket 77)", { outcome: "not shown", actual: null, otherUsages: [{ loc: "src/App.tsx:44:9", chain: [], before: { type: "solid", color: "#FFFFFF", opacity: 1 }, now: { type: "solid", color: "#FF0000", opacity: 0.5 } }] }, "a change for one usage is not to change its component's other usages", "Shown at other usages of its component too: 1."],
+  ])("said done differently, but shown %s: still to fix, said or not; done gives the fix, it is not applied, finish puts it under ⚠️", async (_, check, words, finishedWords) => {
+    saveRound({ ...redFill, breakpoint: { min: null, max: 768 } });
+    await cli("claim");
+    closePage = openPage(() => check);
+
+    const { output } = await cli("done", "1", "--differently", WHY);
+    expect(output).toContain("Change 1 done: 0 of 1 change applied.\nChecked on the page: it shows the change, but ");
+    expect(output).toContain("run `npx humantouch done 1` again.");
+    expect(output).toContain(`Done differently on purpose or not, ${words}.\n`);
+    const finishedNow = (await cli("finish")).output;
+    expect(finished(finishedNow)).toBe(`Round finished: 0 of 1 change applied. ${finishedWords}\n`);
+    expect(finishedNow).toContain("```\n⚠️ Not shown\n- 1. Fill: <the layer>\n");
+  });
+
+  test("finish, the page not looking again at a change (none open): says so, each where the page last put it", async () => {
+    saveRound(wide);
+    await cli("claim");
+    pageSaw({ 3: { outcome: "shown", adapted: [{ width: 390, actual: { type: "fill" }, drawn: 342 }] } }, 0);
+
+    const { output } = await cli("finish");
+    expect(finished(output)).toBe("Round finished: 1 of 1 change applied. Done differently: 3. The page did not look again at 3: as last checked.\n");
+    expect(output).toContain("↪ Done differently\n- 3. Width: <the layer>\n");
+  });
+
+  test("finish: one said done differently under ↪ with its reason word for word, after what the page draws; one adapted at a width under ↪ too, for the reason; one not shown and not said under ⚠️; each once", async () => {
+    saveRound(redFill, smallRadius, wide, { ...redFill, id: 4 });
+    await cli("claim");
+    closePage = openPage(page);
+    await cli("done", "1", "--differently", WHY);
+    await cli("done", "2", "3", "4");
+
+    const { output } = await cli("finish");
+
+    expect(finished(output)).toBe("Round finished: 3 of 4 changes applied. The page does not show: 2. Done differently: 1, 3.\n");
+    expect(/```\n([\s\S]*?)\n```/.exec(output)![1]).toBe(
+      "✓ Applied\n" +
+        "- 4. Fill: <the layer, and what you changed>\n" +
+        "\n" +
+        "↪ Done differently\n" +
+        "- 1. Fill: <the layer>\n" +
+        `  Why: the page shows the fill #FFFFFF, not #FF0000 at 50% opacity: ${WHY}\n` +
+        "- 3. Width: <the layer>\n" +
+        "  Why: at Phone (390px) it draws 342px wide, not 500px: <why you did it so>\n" +
+        "\n" +
+        "⚠️ Not shown\n" +
+        "- 2. Corner radius: <the layer>\n" +
+        "  Why: the page shows the corner radius 12px, not 4px: <what keeps it so>\n" +
+        "  Instead: <what you did, or “left as it was”>",
+    );
+    expect(history()[0].result).toMatchObject({ applied: [1, 3, 4], differently: { 1: WHY } });
+
+    // `last` labels each as the report has it.
+    const last = (await cli("last")).output;
+    expect([1, 2, 3, 4].map((n) => /- \*\*Status:\*\* (.*)\n/.exec(section(last, n))![1])).toEqual(["Done differently", "Not applied", "Done differently", "Applied"]);
+  });
+
+  test("adapted, and its reason given with --differently: under ↪, what is drawn there and the reason", async () => {
+    saveRound(wide);
+    await cli("claim");
+    closePage = openPage(page);
+    await cli("done", "3", "--differently", "full width on phones, so it never scrolls sideways");
+
+    expect((await cli("finish")).output).toContain("↪ Done differently\n- 3. Width: <the layer>\n  Why: at Phone (390px) it draws 342px wide, not 500px: full width on phones, so it never scrolls sideways\n```");
+  });
+
+  test("said done differently, but its layer breaks the layout at a width: no width may break, said or not (ADR 0016): done says how to fix it, it is not applied, and finish puts it under ⚠️", async () => {
+    saveRound(wide);
+    await cli("claim");
+    closePage = openPage(() => ({ outcome: "not shown", actual: wide.after, breaks: [{ width: 390, kind: "page", of: "layer" }] }));
+
+    const { output } = await cli("done", "3", "--differently", WHY);
+    expect(output).toContain("Change 3 done: 0 of 1 change applied.\nChecked on the page: it does not show the change. At Phone (390px) change 3 makes the page wider than the screen");
+    expect(output).toContain("and run `npx humantouch done 3` again. Done differently on purpose or not, it is not to break the layout at any width.\n");
+
+    const finishedNow = (await cli("finish")).output;
+    expect(finished(finishedNow)).toBe("Round finished: 0 of 1 change applied. Not shown, breaking the layout at a width: 3.\n");
+    expect(finishedNow).toContain("```\n⚠️ Not shown\n- 3. Width: <the layer>\n");
+    expect(section((await cli("last")).output, 3)).toContain("- **Status:** Not applied\n");
+  });
+
+  test("a reason of digits alone is a reason, unless it is the number of a change of the round", async () => {
+    saveRound(redFill, smallRadius);
+    await cli("claim");
+
+    expect((await cli("done", "1", "--differently", "250")).code).toBe(0);
+    expect(JSON.parse(readFileSync(join(project, ".humantouch/state.json"), "utf8")).differently).toEqual({ 1: "250" });
+    expect((await cli("done", "1", "--differently", "2")).code).toBe(1);
+  });
+
+  test("the Skill gives the report's headings as finish does", () => {
+    const skill = readFileSync(join(import.meta.dirname, "../skill/SKILL.md"), "utf8");
+    for (const heading of Object.values(REPORT_HEADINGS)) expect(skill).toContain(`\n${heading}\n- `);
+    expect(skill).toContain('npx humantouch done <number> --differently "<why>"');
   });
 });
 
@@ -3087,7 +3248,7 @@ describe("new words, as the page checks them (ticket 90)", () => {
     const { output } = await cli("finish");
 
     expect(finished(output)).toBe("Round finished: 0 of 1 change applied. The page does not show: 1.\n");
-    expect(output).toContain("⚠️ Not applied 1:1\n- 1. Text: <the layer>\n  Why: the layer reads “Third Kind Studios” on the page, not “Third Kind Studio”: <what keeps it so>\n");
+    expect(output).toContain("⚠️ Not shown\n- 1. Text: <the layer>\n  Why: the layer reads “Third Kind Studios” on the page, not “Third Kind Studio”: <what keeps it so>\n");
   });
 
   test("shown, done says so, and finish puts it under ✓", async () => {
@@ -3124,12 +3285,12 @@ describe("progress, as the page shows it", () => {
     saveRound(redFill, smallRadius, brief);
     await cli("claim");
     await cli("done", "2", "3");
-    // The page that saw them is closed now: what it saw stands.
+    // The page that saw them is closed now: what it saw stands, and finish says it did not look again (ticket 148).
     pageSaw({ 1: { outcome: "shown" }, 2: { outcome: "not shown", actual: 12 } }, 0);
 
     const { output } = await cli("finish");
 
-    expect(finished(output)).toBe("Round finished: 2 of 3 changes applied. The page does not show: 2.\n");
+    expect(finished(output)).toBe("Round finished: 2 of 3 changes applied. The page does not show: 2. The page did not look again at 1 and 2: as last checked.\n");
     expect(history()[0].result).toMatchObject({ done: [2, 3], applied: [1, 3] });
     expect(section((await cli("last")).output, 1)).toContain("- **Status:** Applied\n");
     expect(section((await cli("last")).output, 2)).toContain("- **Status:** Not applied\n");
@@ -3203,7 +3364,7 @@ describe("finish", () => {
         "- 1. Fill: <the layer, and what you changed>\n" +
         "- 4. Brief: <the layer, and what you changed>\n" +
         "\n" +
-        "⚠️ Not applied 1:1\n" +
+        "⚠️ Not shown\n" +
         "- 2. Corner radius: <the layer>\n" +
         "  Why: at 390px wide, the page shows the corner radius 12px, not 4px: <what keeps it so>\n" +
         "  Instead: <what you did, or “left as it was”>\n" +
@@ -3211,7 +3372,7 @@ describe("finish", () => {
         "  Why: <why it is not applied>\n" +
         "  Instead: <what you did, or “left as it was”>\n" +
         "```\n\n" +
-        "- 4 the page cannot check: keep it under ✓ if you applied it exactly as asked; if not, move it under ⚠️, with Why and Instead.\n" +
+        "- 4 the page cannot check: keep it under ✓ if you applied it exactly as asked; if you did it differently on purpose, move it under ↪, with Why; if you could not apply it as asked, move it under ⚠️, with Why and Instead.\n" +
         REPORT_RULES,
     );
   });
@@ -3225,7 +3386,8 @@ describe("finish", () => {
     const form = (await cli("finish")).output;
 
     expect(form).toContain("```\n✓ Applied\n- 1. Fill: <the layer, and what you changed>\n```\n");
-    expect(form).not.toContain("⚠️ Not applied");
+    expect(form).not.toContain("⚠️ Not shown");
+    expect(form).not.toContain("↪ Done differently");
   });
 
   test("the Skill is the way through a round and the report only: a third as long as before ticket 65 at most (146 lines, 24935 characters)", () => {
@@ -3773,7 +3935,7 @@ describe("claim and done, layers made this round found on the page (ticket 76)",
 
     const { output } = await cli("finish");
 
-    expect(output).toContain("⚠️ Not applied 1:1\n- 1. New Frame: <the layer>\n  Why: the page does not have it where the change puts it: <what keeps it so>\n");
+    expect(output).toContain("⚠️ Not shown\n- 1. New Frame: <the layer>\n  Why: the page does not have it where the change puts it: <what keeps it so>\n");
   });
 });
 

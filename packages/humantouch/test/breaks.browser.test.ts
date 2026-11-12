@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "vitest";
 import type { Change } from "../src/client/changeset";
 import { breakWidthsOf, checkAcross, effectNotes, itself, type PageWidth } from "../src/client/check";
 import { placedOnCanvas } from "../src/client/moves";
+import { adaptable } from "../src/widths-protocol";
 import { breaksNow, noteChange, noteRound, type OtherUsagesNoted } from "../src/client/other-usages";
 import { watchPage } from "../src/client/page-checks";
 import { CODE_EVENT, type CheckReport } from "../src/service-protocol";
@@ -199,6 +200,22 @@ test("a width made in the desktop view, drawn otherwise at a view's width: shown
   expect(checkAcross(live, atPhone, onCanvas([atPhone]), [390], at)).toEqual({ outcome: "not shown", actual: { type: "fill" } });
 });
 
+test("adapted at other views' widths, only how a layer is laid out (ticket 148): its size, place, room, arrangement, font size and line height, and a move; a delete, a new layer, new words, a new Stack, a paint, a property not listed, never", () => {
+  for (const property of ["width", "maxWidth", "x", "right", "padding", "gap", "columns", "arrangement", "fontSize", "lineHeight"]) expect(adaptable({ kind: "style", property })).toBe(true);
+  for (const property of ["fill", "textColor", "radius", "opacity", "shadows", "layerBlur", "textDecoration", "fontWeight", "fontFamily", "letterSpacing", "textCase", "stroke", "visible", "textAlign", "someday"]) expect(adaptable({ kind: "style", property })).toBe(false);
+  expect(adaptable({ kind: "move", property: "move" })).toBe(true);
+  for (const kind of ["delete", "create", "text", "stack", "unstack", "duplicate"]) expect(adaptable({ kind, property: kind })).toBe(false);
+});
+
+test("a fill made in the desktop view, another at a view's width (`bg-white md:bg-red-500`): not shown there, strict (ticket 148)", () => {
+  const live = pageOf(PAGE("#box { background-color: rgb(255, 0, 0) }"), 1000);
+  const phone = pageOf(PAGE("#box { background-color: rgb(255, 255, 255) }"), 390);
+  const at = (w: number): PageWidth => ({ width: w, doc: phone, own: false, of: (el) => phone.getElementById(el.id) });
+  const fill = style(BOX, "fill", { before: { type: "solid", color: "#FFFFFF", opacity: 1 }, after: { type: "solid", color: "#FF0000", opacity: 1 }, style: { "background-color": "#FF0000" } });
+  expect(checkAcross(live, fill, onCanvas([fill]), [390], at)).toMatchObject({ outcome: "not shown", actual: { type: "solid", color: "#FFFFFF", opacity: 1 } });
+  expect(checkAcross(live, fill, onCanvas([fill]), [390], at)).not.toHaveProperty("adapted");
+});
+
 /** The page's checks of `round` on `page`, as a claimed round's are, the window its only width. */
 function watch(page: Document, round: Change[], more: Partial<Parameters<typeof watchPage>[0]> = {}) {
   const reports: CheckReport[] = [];
@@ -265,5 +282,29 @@ test("late notes, ticket 78's way: noted as wide as the window as the code began
   // The round claimed for the Agent once a change showed: the code has changed, the window's note goes from before it.
   const { checks, last } = watch(page, [width], { effects: effectNotes(false), otherUsages: before });
   await expect.poll(() => last(width.id)?.outcome).toBe("shown");
+  checks.stop();
+});
+
+test("ticket 147's risk 3, for ticket 148's report: a change shown, adapted at the phone's width, then broken there by a later edit: the checks as the code changes look again as wide as the window only, but `done` and `finish` ask, and the page looks at every width again: not shown, the break said", async () => {
+  const page = pageOf(PAGE(), 1000);
+  const width = style(BOX, "width", { before: { type: "fixed", value: 100 }, after: { type: "fixed", value: 500 }, style: { width: "500px" } });
+  const reports: CheckReport[] = [];
+  const { checks, noted } = watch(page, [width], { viewWidths: () => [390], report: (r) => reports.push(r) });
+  const last = () => reports.filter((r) => r.id === width.id && !r.answers).at(-1);
+  await expect.poll(() => noted.get(width.id)?.breaks?.map((note) => note.width).sort()).toEqual([1000, 390]);
+  const css = page.createElement("style");
+  // 500px from 640px up, the column's width below it: adapted at the phone's.
+  css.textContent = "main #box { width: 500px } @media (width < 640px) { main #box { width: 100% } }";
+  page.head.append(css);
+  await expect.poll(() => last()).toMatchObject({ outcome: "shown", adapted: [{ width: 390, drawn: 342 }] });
+
+  // A later edit: 500px at every width, wider than the phone's column.
+  css.textContent = "main #box { width: 500px }";
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  // Looked at again as wide as the window alone, it shows there still: nothing new said.
+  expect(last()?.outcome).toBe("shown");
+
+  checks.ask({ ids: [width.id], at: new Date().toISOString(), key: "done" });
+  await expect.poll(() => reports.find((r) => r.answers === "done"), { timeout: 8000 }).toMatchObject({ outcome: "not shown", breaks: [{ width: 390, kind: "page" }, { width: 390, kind: "wider" }] });
   checks.stop();
 });

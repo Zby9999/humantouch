@@ -8,6 +8,7 @@
  * more there changes.
  */
 import type { CheckResult } from "./service-protocol";
+import { outsideIn } from "./outside-protocol";
 
 /**
  * A width a change made in the desktop view is drawn otherwise at than on the
@@ -65,12 +66,48 @@ export interface BreakFound {
  */
 export const DRAWS_NO_BREAK = new Set<string>(["fill", "radius", "shadows", "textShadows", "opacity", "layerBlur", "backgroundBlur", "clip", "textColor", "textDecoration", "textAlign"]);
 
+/**
+ * The properties of how a layer is laid out (ticket 148): its size, its
+ * place, the room in and around it, how its container arranges what is in
+ * it, and the size of its words and lines, as a page made for every screen
+ * changes them from one width to the next. Made in the desktop view, a
+ * change to one may be adapted at other views' widths (ADR 0016); to any
+ * other (a fill, a weight, a stroke, what is shown at all), and one this
+ * list does not know yet, it is strict at every width.
+ */
+export const ADAPTABLE = new Set<string>([
+  "x", "y", "right", "bottom", "absolute",
+  "width", "height", "minWidth", "maxWidth", "minHeight", "maxHeight",
+  "padding", "gap", "rowGap", "columnGap",
+  "direction", "align", "wrap", "columns", "arrangement",
+  "fontSize", "lineHeight",
+]);
+
+/** Whether a change made in the desktop view may be adapted at other views' widths (ticket 148): a move, or a style change to how the layer is laid out (`ADAPTABLE`); not a delete, a new layer, new words, a new Stack, nor a change to how it is painted. */
+export const adaptable = (change: { kind: string; property: string }) => change.kind === "move" || (change.kind === "style" && ADAPTABLE.has(change.property));
+
 /** A check's result where the page does not show a change (ADR 0016): its layer shows the value, but breaks the layout at a width as it did not when the round was claimed (`breaks`); `actual` is then the change's own value. */
 export type NotShownBroken = Extract<CheckResult, { outcome: "not shown" }> & { breaks?: BreakFound[] };
 
 /** The breaks a check found a change's layer making, if it did. */
 export function breaksIn(result: CheckResult | undefined): BreakFound[] | undefined {
   return result?.outcome === "not shown" ? (result as NotShownBroken).breaks : undefined;
+}
+
+/**
+ * What a check found that is still to fix, whatever the Agent says it did
+ * differently on purpose (ticket 148): the layer breaking the layout at a
+ * width (ADR 0016: at none may it), a change at a breakpoint changing the
+ * widths outside its range (ticket 104), or one for one usage changing its
+ * component's other usages (ticket 77). Not what the declaration covers:
+ * the value drawn otherwise than on the canvas.
+ */
+export function stillToFix(result: CheckResult | undefined): "breaks" | "outside" | "otherUsages" | undefined {
+  if (result?.outcome !== "not shown") return undefined;
+  if (breaksIn(result)?.length) return "breaks";
+  if (outsideIn(result)?.length) return "outside";
+  if (result.otherUsages?.length) return "otherUsages";
+  return undefined;
 }
 
 /**

@@ -17,7 +17,8 @@
  *                                     the scenario's own test at its widths (a change with no test fails, a brief aside), and get the page's
  *                                     check of it as shown; one with a Variable must write it (as `usesVariable` counts it); one `notOneToOne`
  *                                     must be in the report under ⚠️ alone, with why and instead (`checkReport`); one with a `scripted` check
- *                                     must get it, and `done` say its words (one written wrong on purpose: not shown, under ⚠️). The scenario's own
+ *                                     must get it, and `done` say its words (one written wrong on purpose: not shown, under ⚠️; one done differently on purpose
+ *                                     or adapted: under ↪, its reason word for word, ticket 148). The scenario's own
  *                                     expectations must hold. With no changes (an undo), only `apply` runs: no claim, no finish, no report.
  *                                     With `--dry` or `--scripted`, BENCH_DEBUG=1 prints a scenario's error whole, not its first line only.
  *   pnpm bench:agents summary <dir>   measure the raw results in <dir> again, and sum them up
@@ -427,7 +428,11 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
       let said = "";
       if (applied.length) {
         await endState(observers, scenario, saved, project.dir, head, false);
-        said = await project.cli("done", ...applied.map(String));
+        // Done differently on purpose (ticket 148): each with its own reason, as the Skill has it.
+        const why = (id: number) => scenario.changes[saved.findIndex((change) => change.id === id)].scripted?.differently;
+        const plain = applied.filter((id) => why(id) === undefined);
+        if (plain.length) said = await project.cli("done", ...plain.map(String));
+        for (const id of applied.filter((one) => why(one) !== undefined)) said += await project.cli("done", String(id), "--differently", why(id)!);
       }
       const report = applying ? fillInReport(await project.cli("finish"), scenario, saved) : null;
 
@@ -455,8 +460,18 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
       if (!report) return problems;
       const check = checkReport(report, saved.map((change) => change.id));
       if (!check.compliant) problems.push(`the report: ${check.problems.join("; ")}`);
-      const warned = saved.filter((_, i) => scenario.changes[i].notOneToOne || scenario.changes[i].scripted?.notShown).map((change) => change.id);
+      const warned = saved.filter((_, i) => scenario.changes[i].notOneToOne || (scenario.changes[i].scripted?.notShown && scenario.changes[i].scripted?.differently === undefined)).map((change) => change.id);
       if (check.notApplied.join() !== warned.join()) problems.push(`the report has ${check.notApplied.join(", ") || "none"} under ⚠️, not ${warned.join(", ") || "none"}`);
+      // Done differently (ticket 148): said so, or adapted at a width; under ↪, its reason word for word.
+      const otherwise = saved.filter((_, i) => scenario.changes[i].scripted?.differently !== undefined || !!scenario.changes[i].scripted?.adapted?.length).map((change) => change.id);
+      if ((check.differently ?? []).join() !== otherwise.join()) problems.push(`the report has ${check.differently?.join(", ") || "none"} under ↪, not ${otherwise.join(", ") || "none"}`);
+      scenario.changes.forEach((change, i) => {
+        const why = change.scripted?.differently;
+        if (why === undefined) return;
+        const lines = report.split("\n");
+        const reason = lines[lines.findIndex((line) => line.startsWith(`- ${saved[i].id}. `)) + 1];
+        if (!reason?.startsWith("  Why: ") || !reason.endsWith(why)) problems.push(`change ${i + 1}: the report does not give its reason under ↪ word for word: ${why}`);
+      });
       if (reportedAsExpected(check, warned.map((id) => ({ id, shown: atEnd[saved.findIndex((change) => change.id === id)] }))) !== (warned.length ? 1 : null)) problems.push("the report has the changes that cannot be applied 1:1 elsewhere than under ⚠️ alone, with why and instead");
       return problems;
     });
@@ -505,6 +520,9 @@ function fillInReport(finished: string, scenario: Scenario, saved: SavedChange[]
     const item = /^\s*-\s*(\d+)\./.exec(line);
     if (item) change = Number(item[1]);
     const kind = item ? "item" : /^\s+Why:/.test(line) ? "why" : /^\s+Instead:/.test(line) ? "instead" : null;
+    // Under ↪, the reason the scripted code gave with `--differently` (ticket 148): nothing to fill in.
+    const given = scenario.changes[saved.findIndex((c) => c.id === change)]?.scripted?.differently;
+    if (kind === "why" && given !== undefined && line.endsWith(given)) return line;
     if (kind && !REPORT_PLACEHOLDERS[kind].some(([placeholder]) => line.includes(placeholder))) {
       throw new Error(`The report \`finish\` lays out has none of ${REPORT_PLACEHOLDERS[kind].map(([placeholder]) => placeholder).join(", ")} to fill in on: ${line}`);
     }
@@ -525,7 +543,7 @@ const WHY = Symbol("why");
 /**
  * The placeholders of the report `finish` lays out (report-form.ts), by the
  * line of a change they are on, one of them on each: the change's line,
- * under ✓ or ⚠️; its Why; its Instead. Each with what the scripted pass puts
+ * under ✓, ↪ or ⚠️; its Why; its Instead. Each with what the scripted pass puts
  * in its place.
  */
 const REPORT_PLACEHOLDERS: Record<"item" | "why" | "instead", [string, string | typeof WHY][]> = {
@@ -536,6 +554,8 @@ const REPORT_PLACEHOLDERS: Record<"item" | "why" | "instead", [string, string | 
   why: [
     ["<why it is not applied>", WHY],
     ["<what keeps it so>", "unknown"],
+    // Under ↪, adapted at a width (ticket 148).
+    ["<why you did it so>", "adapted to fit"],
   ],
   instead: [["<what you did, or “left as it was”>", "left as it was"]],
 };

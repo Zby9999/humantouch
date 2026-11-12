@@ -94,9 +94,12 @@ export interface ScenarioChange {
    * (ticket 147). `done`: words `done` says of it. `notShown`: the scripted
    * code writes it wrong on purpose, so the check says not shown, and the
    * report has it under ⚠️; `adapted`: the views' widths the check says it
-   * is adapted at.
+   * is adapted at, so the report has it under ↪ (ticket 148);
+   * `differently`: the scripted code does it differently on purpose, and
+   * says so with this reason (`done <number> --differently "<why>"`), so the
+   * report has it under ↪, with the reason word for word.
    */
-  scripted?: { done: string; notShown?: true; adapted?: number[] };
+  scripted?: { done: string; notShown?: true; adapted?: number[]; differently?: string };
 }
 
 /**
@@ -1093,7 +1096,7 @@ export const SCENARIOS: Scenario[] = [
           const unscrolled = document.documentElement.scrollWidth <= document.documentElement.clientWidth;
           return unscrolled && (width >= 768 ? Math.abs(button - 500) <= 0.5 : button <= hero + 0.5);
         },
-        scripted: { done: "it shows the change. At Phone (390px) it draws 342px wide, not 500px: if you adapted it there on purpose, say so in the report.", adapted: [390] },
+        scripted: { done: "it shows the change. At Phone (390px) it draws 342px wide, not 500px: done differently there, it goes under ↪ in the report, where you say why.", adapted: [390] },
       },
     ],
     async apply(desk) {
@@ -1123,6 +1126,65 @@ export const SCENARIOS: Scenario[] = [
     async apply(desk) {
       await notedAtClaim(desk, "what broke at the phone's width", (note) => !!note?.breaks?.some((one: { width: number }) => one.width === 390));
       await desk.edit("src/App.tsx", "self-start px-4 py-2 text-white", "w-[500px] self-start px-4 py-2 text-white");
+    },
+  },
+  // Ticket 148 (ADR 0016): the report in three sections. A colour done otherwise on purpose, the reason said with `--differently`: under ↪, the reason word for word;
+  // a width adapted at a phone's width, as in width-500-adapted: under ↪ too; a font size written wrong and not said: not shown, `done` asks to fix it, under ⚠️.
+  {
+    id: "report-done-differently",
+    title: "The intro paragraph's text #1A1A1A; the Get started button made Fixed, 500px wide (in the phone view, wider than the hero); the title at 46px.",
+    scriptedOnly: "the scripted code writes the paragraph's colour otherwise on purpose (as if the designer had asked for it in the conversation), and the title's size wrong, to show where the report puts each",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await pick(page, desktop(page), `${HERO} > p`);
+      await setField(page, "Fill color", "1a1a1a");
+      await layer(page, "Button").click();
+      await setField(page, "Width", "500");
+      await layer(page, "Third Kind").click();
+      await setField(page, "Font size", "46");
+      await saved(desk, 3);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The intro paragraph's text is stone-800 (#292524), not the canvas's #1A1A1A: the designer asked for it in the conversation.",
+        checkable: true,
+        shows: () => {
+          // Through a pixel: Tailwind v4's stone-800 is an oklch() color, #292524 in sRGB, give or take rounding.
+          const context = document.createElement("canvas").getContext("2d")!;
+          context.fillStyle = getComputedStyle(document.querySelector('[data-testid="hero"] p')!).color;
+          context.fillRect(0, 0, 1, 1);
+          const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+          return Math.abs(r - 41) <= 2 && Math.abs(g - 37) <= 2 && Math.abs(b - 36) <= 2;
+        },
+        scripted: { done: "Done differently, as you said: “the designer asked for stone-800 instead”.", notShown: true, differently: "the designer asked for stone-800 instead" },
+      },
+      {
+        kind: "style",
+        expect: "From 768px up the Get started button is 500px wide; below, it is no wider than the hero, and the page does not scroll sideways.",
+        checkable: true,
+        widths: [390, 768, 1280],
+        shows: ({ width }) => {
+          const button = document.querySelector('[data-testid="hero"] button')!.getBoundingClientRect().width;
+          const hero = document.querySelector('[data-testid="hero"]')!.getBoundingClientRect().width;
+          const unscrolled = document.documentElement.scrollWidth <= document.documentElement.clientWidth;
+          return unscrolled && (width >= 768 ? Math.abs(button - 500) <= 0.5 : button <= hero + 0.5);
+        },
+        scripted: { done: "it shows the change. At Phone (390px) it draws 342px wide, not 500px: done differently there, it goes under ↪ in the report, where you say why.", adapted: [390] },
+      },
+      {
+        kind: "style",
+        expect: "The title is 40px, as the scripted code writes it wrong.",
+        checkable: true,
+        shows: () => getComputedStyle(document.querySelector("h1")!).fontSize === "40px",
+        scripted: { done: "it does not show the change.", notShown: true },
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", '<p className="mt-4 text-stone-600">', '<p className="mt-4 text-stone-800">');
+      await desk.edit("src/App.tsx", "self-start px-4 py-2 text-white", "w-full md:w-[500px] self-start px-4 py-2 text-white");
+      await desk.edit("src/App.tsx", "font-display text-4xl font-bold", "font-display text-[40px] font-bold");
     },
   },
   // Ticket 147, as ticket 104 has it: a change in the phone view written without its breakpoint, so at every width, is no adaptation: outside its range it is not shown still.

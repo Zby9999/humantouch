@@ -1435,7 +1435,7 @@ test.describe("a change for one usage of the Card (ticket 77)", () => {
     applied,
     done: done.split("\n").slice(0, 2).join(" "),
     finished: finished.split("\n")[0],
-    warned: /⚠️ Not applied 1:1\n([\s\S]*?)(\n\n|\n```)/.exec(finished)?.[1] ?? "",
+    warned: /⚠️ Not shown\n([\s\S]*?)(\n\n|\n```)/.exec(finished)?.[1] ?? "",
   });
 
   /** Whether `done` and `finish` tell a leak, as ticket 77 has them: not applied, the other usage named, the property from what to what; under ⚠️, not ✓. */
@@ -2052,7 +2052,7 @@ test.describe("a change at a breakpoint, the widths outside its range kept (tick
     applied,
     done: done.split("\n").slice(1).join(" "),
     finished: finished.split("\n")[0],
-    warned: /⚠️ Not applied 1:1\n([\s\S]*?)(\n\n|\n```)/.exec(finished)?.[1] ?? "",
+    warned: /⚠️ Not shown\n([\s\S]*?)(\n\n|\n```)/.exec(finished)?.[1] ?? "",
   });
 
   test("playbook: the loop's cards filled red in the phone view; the Agent gives the Card a fill parameter, white by default, and passes `max-md:` red to the loop (pi, phone-breakpoints run-3 of ticket 88's rerun): 768px and wider, no fill at all", async ({ page }) => {

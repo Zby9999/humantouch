@@ -338,44 +338,57 @@ export function toolCallStats(calls: ToolCall[]): ToolCallStats {
 
 /** The report at the end of the Agent's reply, read against the Skill's form. */
 export interface ReportCheck {
-  /** Every change listed once, and each under ⚠️ with why and what was done instead. */
+  /** Every change listed once, each under ↪ with why, and each under ⚠️ with why and what was done instead. */
   compliant: boolean;
   /** The changes listed under ✓, and under ⚠️. */
   applied: number[];
   notApplied: number[];
+  /** The changes listed under ↪, done differently on purpose (ticket 148); there only when there are any. */
+  differently?: number[];
   problems: string[];
 }
 
 const ITEM = /^\s*[-*]\s*(\d+)[.)]/;
 
+/** The sections of the report, by their marks (ticket 148): ✓, ↪, ⚠️. */
+type Section = "applied" | "differently" | "warned";
+const SECTION_MARKS: [Section, RegExp][] = [
+  ["applied", /^\W*✓/],
+  ["differently", /^\W*↪/],
+  ["warned", /⚠/],
+];
+
 /**
- * Reads the last ✓ section of `text`, and the ⚠️ section after it (or the
- * last ⚠️ section alone, when no change was applied exactly). The
- * headings may be in the designer's language: the form is the marks, the
- * numbered lines, and under ⚠️ two indented lines for why and instead.
+ * Reads the last ✓ section of `text`, and the ↪ and ⚠️ sections after it
+ * (or, when no change was applied exactly, the last ↪ section and what
+ * follows, or the last ⚠️ section alone). The headings may be in the
+ * designer's language: the form is the marks, the numbered lines, under ↪
+ * an indented line for why, and under ⚠️ two for why and instead.
  */
 export function checkReport(text: string, ids: number[]): ReportCheck {
   const lines = text.split("\n");
   const heading = (mark: RegExp) => lines.findLastIndex((line) => mark.test(line.trim()) && !ITEM.test(line));
-  // Every change under ⚠️ is a report too: the ✓ section is left out when nothing was applied exactly.
-  const applied = heading(/^\W*✓/);
-  const start = applied >= 0 ? applied : heading(/^\W*⚠/);
+  const sectionOf = (line: string) => (ITEM.test(line) ? undefined : SECTION_MARKS.find(([, mark]) => mark.test(line.trim()))?.[0]);
+  // Every change under ↪ or ⚠️ is a report too: the ✓ section is left out when nothing was applied exactly.
+  const start = SECTION_MARKS.map(([, mark]) => heading(mark)).find((index) => index >= 0) ?? -1;
   if (start < 0) return { compliant: false, applied: [], notApplied: [], problems: ["no ✓ or ⚠️ section"] };
-  const listed: { id: number; warned: boolean; notes: number }[] = [];
-  let warned = applied < 0;
+  const listed: { id: number; section: Section; notes: number }[] = [];
+  let section: Section = sectionOf(lines[start])!;
   for (const line of lines.slice(start + 1)) {
-    if (/⚠/.test(line) && !ITEM.test(line)) warned = true;
+    section = sectionOf(line) ?? section;
     const item = ITEM.exec(line);
-    if (item) listed.push({ id: Number(item[1]), warned, notes: 0 });
-    else if (/^\s+\S.*[:：]/.test(line) && listed.at(-1)?.warned) listed.at(-1)!.notes++;
+    if (item) listed.push({ id: Number(item[1]), section, notes: 0 });
+    else if (/^\s+\S.*[:：]/.test(line) && listed.at(-1) && listed.at(-1)!.section !== "applied") listed.at(-1)!.notes++;
   }
   const problems: string[] = [];
   const timesListed = (id: number) => listed.filter((item) => item.id === id).length;
   for (const id of new Set(listed.map((item) => item.id))) if (timesListed(id) > 1) problems.push(`change ${id} listed more than once`);
-  for (const item of listed) if (item.warned && item.notes < 2) problems.push(unexplained(item.id));
+  for (const item of listed) if (item.section === "warned" && item.notes < 2) problems.push(unexplained(item.id));
+  for (const item of listed) if (item.section === "differently" && item.notes < 1) problems.push(`change ${item.id} under ↪ without why`);
   for (const id of ids) if (!timesListed(id)) problems.push(`change ${id} not listed`);
-  const unique = (warnedOnes: boolean) => [...new Set(listed.filter((item) => item.warned === warnedOnes).map((item) => item.id))];
-  return { compliant: !problems.length, applied: unique(false), notApplied: unique(true), problems };
+  const unique = (of: Section) => [...new Set(listed.filter((item) => item.section === of).map((item) => item.id))];
+  const differently = unique("differently");
+  return { compliant: !problems.length, applied: unique("applied"), notApplied: unique("warned"), ...(differently.length ? { differently } : {}), problems };
 }
 
 /** The problem of a change listed under ⚠️ without both lines, why and instead. */

@@ -261,20 +261,26 @@ const PLACEMENT = new Set(["x", "y", "right", "bottom", "absolute"]);
 /**
  * What the page draws of a change made in the desktop view at each view's
  * width it adapted it at (`AdaptedAt`, ticket 147), each "at Phone (390px)
- * it draws 342px wide, not 500px", the first opening a sentence; and that
- * an adaptation on purpose goes in the report. Where nothing it read says
- * it in a word, "it is drawn otherwise than on the canvas".
+ * it draws 342px wide, not 500px"; `opening`, the first opening a sentence.
+ * Where nothing it read says it in a word, "it is drawn otherwise than on
+ * the canvas". A delete, a new layer or new words are never adapted (ticket
+ * 148): only how a layer is laid out.
  */
+export function adaptedAtWords(change: Change, widths: AdaptedAt[], opening = true): string {
+  return widths
+    .map(({ width, actual, drawn }, i) => {
+      const where = `${i || !opening ? "at" : "At"} ${viewAt(width)}`;
+      if (change.kind !== "style" || PLACEMENT.has(change.property)) return `${where} the layer is drawn elsewhere than on the canvas`;
+      if (drawn !== undefined) return `${where} it draws ${drawn}px ${/[Hh]eight/.test(change.property) ? "tall" : "wide"}, not ${valueToUse(change)}`;
+      if (actual !== null && typeof actual === "object" && !Array.isArray(actual) && ("margins" in actual || "orders" in actual)) return `${where} it is drawn otherwise than on the canvas`;
+      return `${where} its ${propertyName(change.property)} is ${value(change.property, actual)}, not ${value(change.property, change.after)}`;
+    })
+    .join("; ");
+}
+
+/** What `done` says of a change adapted at views' widths (`adaptedAtWords`): what is drawn there, and that the report lists it under ↪, for the Agent to say why (ticket 148). */
 export function adaptedWords(change: Change, widths: AdaptedAt[]): string {
-  const at = widths.map(({ width, actual, drawn }, i) => {
-    const where = `${i ? "at" : "At"} ${viewAt(width)}`;
-    if (change.kind === "delete") return `${where} the layer is still on the page`;
-    if (change.kind !== "style" || PLACEMENT.has(change.property)) return `${where} the layer is drawn elsewhere than on the canvas`;
-    if (drawn !== undefined) return `${where} it draws ${drawn}px ${/[Hh]eight/.test(change.property) ? "tall" : "wide"}, not ${valueToUse(change)}`;
-    if (actual !== null && typeof actual === "object" && !Array.isArray(actual) && ("margins" in actual || "orders" in actual)) return `${where} it is drawn otherwise than on the canvas`;
-    return `${where} its ${propertyName(change.property)} is ${value(change.property, actual)}, not ${value(change.property, change.after)}`;
-  });
-  return `${at.join("; ")}: if you adapted it ${widths.length === 1 ? "there" : "at those widths"} on purpose, say so in the report`;
+  return `${adaptedAtWords(change, widths)}: done differently ${widths.length === 1 ? "there" : "at those widths"}, it goes under ↪ in the report, where you say why`;
 }
 
 /** A break of the layout, as a sentence goes on after its subject: "makes the page wider than the screen"; `self`, the layer as it is said there. */
