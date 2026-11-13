@@ -6,7 +6,7 @@ import { watchStall, type StallWatch } from "./agent-stall";
 import type { Camera } from "./camera";
 import { PAGE_CHANGED_MEASURE, watchCodeRuns, type CodeRun } from "./code-changes";
 import { readMediaBreakpoints, type ProjectBreakpoints } from "./breakpoints";
-import { putBackBy, withDependents, type Change, type RangePart } from "./changeset";
+import { offCanvasWithout, withDependents, type Change, type RangePart } from "./changeset";
 import { ENTER_MARK, HOST_TAG } from "./host";
 import { Icon } from "./icons";
 import { placedOnCanvas, type RoundOnCanvas } from "./moves";
@@ -36,19 +36,6 @@ interface ListStep {
 
 /** Where copies of the page at other widths go, for the check and for reading the parts of a change's range: apart from the page, so they never copy themselves. */
 const copiesIn = () => document.querySelector(HOST_TAG)?.shadowRoot ?? document.documentElement;
-
-/**
- * The layers off the canvas once `changes` are taken back: but those they
- * moved out, which are back on the canvas instead; and with those they put
- * back, which are off it again, as they were, unless moved out by them too.
- */
-function offCanvasWithout(layers: SavedOffCanvasLayer[], changes: Change[]): SavedOffCanvasLayer[] {
-  const out = new Set(changes.map((change) => change.offCanvas));
-  const known = new Set(layers.map((layer) => layer.id));
-  const back = putBackBy(changes).filter((layer) => !out.has(layer.id) && !known.has(layer.id));
-  if (!back.length && !layers.some((layer) => out.has(layer.id))) return layers;
-  return [...layers.filter((layer) => !out.has(layer.id)), ...back];
-}
 
 /**
  * Preview mode shows only the toggle; edit mode adds the shell around the

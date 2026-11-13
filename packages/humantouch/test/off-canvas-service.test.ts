@@ -101,6 +101,21 @@ describe("layers off the canvas, in the local service", () => {
     expect(saved().map((l) => l.id)).toEqual(["a"]);
   });
 
+  test("a round finished with changes off the canvas not applied takes them back, as Discard all does: a layer moved out is on the page still, one put back is off it again (ADR 0019); ended by the designer, they are carried over and kept as they are", async () => {
+    const moveOut = { id: 1, kind: "delete", layer: "2", property: "delete", before: null, after: null, offCanvas: "a" };
+    const putBack = { id: 2, kind: "putBack", layer: "3", property: "put back", before: null, after: { place: null, layer: layer("b", null) } };
+    const folder = humanTouchFolder(root);
+    for (const ended of ["unlocked", "finished"] as const) {
+      await call("PUT", OFF_CANVAS_PATH, { layers: [layer("a", null), layer("c", null)] });
+      await call("PUT", ROUND_PATH, { canvas: "<html></html>", changeSet: { lastId: 2, changes: [moveOut, putBack] } });
+      await writeState(folder, { status: "claimed", done: [] });
+
+      await archiveRound(folder, ended);
+
+      expect(saved().map((l) => l.id)).toEqual(ended === "unlocked" ? ["a", "c"] : ["c", "b"]);
+    }
+  });
+
   test("a layer put back carries its snippet into the round, as kept off the canvas when the editor layer had not heard it yet", async () => {
     await call("PUT", OFF_CANVAS_PATH, { layers: [layer("a", "src/App.tsx:4:7")] });
     writeFileSync(join(root, "src/App.tsx"), APP.replace(/ *<h1.*\n/, ""));

@@ -11,7 +11,7 @@ import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
-import { carryOver, type SavedChangeSet } from "./client/changeset";
+import { carryOver, offCanvasWithout, type SavedChangeSet } from "./client/changeset";
 import type { CheckAsk, CheckResult, CodeSnapshot, OtherUsagesKept, SavedOffCanvasLayer, RoundStatus } from "./service-protocol";
 import { stillToFix } from "./widths-protocol";
 
@@ -210,6 +210,13 @@ export async function archiveRound(folder: HumanTouchFolder, ended: RoundResult[
     const open = await readChecks(folder);
     if (open) await writeChecks(folder, { ...open, results: {} });
   } else {
+    // Not applied, and not carried over: what they did off the canvas is taken back, as Discard all does (ADR 0009), so the layers off it match the code.
+    const left = saved.changes.filter((change) => !result.applied!.includes(change.id));
+    if (left.length) {
+      const offCanvas = await readOffCanvas(folder);
+      const outside = offCanvasWithout(offCanvas, left);
+      if (outside !== offCanvas) await writeOffCanvas(folder, outside);
+    }
     await rm(folder.changeSet, { force: true });
     await rm(folder.canvas, { force: true });
     await rm(folder.checks, { force: true });

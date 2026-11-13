@@ -2197,8 +2197,9 @@ test.describe("a change at a breakpoint", () => {
  * on it, what was applied taken into it as it opens. On the large page, with
  * three changes to the 96 product cards (two to the card, one to its body's
  * Stack): entering edit mode on the round saved, not claimed (as before
- * ticket 68); then, the Agent having applied the corners and finished, on
- * the round carried over. Each run from a page loaded afresh, the saved
+ * ticket 68); then, the Agent having applied the corners and the designer
+ * ended the round by hand (a round the Agent finishes leaves nothing, ADR
+ * 0019), on the round carried over. Each run from a page loaded afresh, the saved
  * canvas put back, and once more without a reload; the long tasks from the
  * click to every view up are counted. The canvas is never saved meanwhile:
  * each entry takes what was applied in afresh.
@@ -2266,12 +2267,16 @@ test.describe("the same canvas again", () => {
     const saved = await entries(page);
     expect(changesSaved()?.changes.length).toBe(3);
 
-    // The Agent applies the corners, and finishes: the fill and the gap are left (ticket 68).
+    // The Agent applies the corners and stops; the designer ends the round, pressing and holding the toggle: the fill and the gap are left (ticket 68, ADR 0019).
     await npxHumanTouch("claim");
     writeFileSync(PARTS, readFileSync(PARTS, "utf8").replace(CARD, CARD.replace("rounded-card", "rounded-[20px]")));
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector("[data-testid=product]")!).borderTopLeftRadius), { timeout: 20_000 }).toBe("20px");
     await npxHumanTouch("done", "1");
-    await npxHumanTouch("finish");
+    await page.getByRole("button", { name: /^Human Touch: applying design changes/ }).hover();
+    await page.mouse.down();
+    await page.waitForTimeout(1200);
+    await page.mouse.up();
+    await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
     const carriedOver = changesSaved();
     const carried = carriedOver?.applied?.length ? await entries(page) : null;
     if (carried) expect(changesSaved()).toEqual(carriedOver);

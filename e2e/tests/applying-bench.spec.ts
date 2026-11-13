@@ -870,8 +870,10 @@ test("playbook: the Agent finishes with changes not applied (⚠️); the round 
   await npxHumanTouch("done", "1");
   const finished = (await npxHumanTouch("finish")).split("\n")[0];
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
-  const counted = await page.getByRole("button", { name: /not applied yet$/ }).count();
   const left = readHumanTouchFile("changeset.json");
+  // Read once the page has the round's end: a render as it unlocks may still count the round it had.
+  await expect(page.getByRole("button", { name: /not applied yet$/ })).toHaveCount(0);
+  const counted = await page.getByRole("button", { name: /not applied yet$/ }).count();
 
   await enterAgain(page);
   const refrozen = await frozenAfresh(page);
