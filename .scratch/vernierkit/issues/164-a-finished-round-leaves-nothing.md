@@ -13,13 +13,13 @@
 
 **Blocked by:** None (can start immediately)。在 ticket 24 之前做，做完发 0.1.1（设计师 2026-11-13 定）。
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Agent `finish` 时有 ⚠️ 的改动：一轮结束后没有改动单，切换按钮上没有数字；再进编辑模式，画布按新代码冻结（看得到 Agent 改过的代码）。有测试。
-- [ ] 设计师在 Agent 中途停下时结束一轮：没落地的改动照旧留到下一轮，同一张画布，从 1 重新编号。原来的测试照旧过。
-- [ ] `last` 列出 `finish` 那一轮的全部改动，⚠️ 的标 Not applied。有测试。
-- [ ] `--scripted` 里依赖「`finish` 后留到下一轮」的场景改成用 End this round 结束，或改判新的结果；改了哪些在 Comments 里说。
-- [ ] README、Skill、`finish` 的输出和 GLOSSARY 的说法跟新规则一致。
+- [x] Agent `finish` 时有 ⚠️ 的改动：一轮结束后没有改动单，切换按钮上没有数字；再进编辑模式，画布按新代码冻结（看得到 Agent 改过的代码）。有测试。
+- [x] 设计师在 Agent 中途停下时结束一轮：没落地的改动照旧留到下一轮，同一张画布，从 1 重新编号。原来的测试照旧过。
+- [x] `last` 列出 `finish` 那一轮的全部改动，⚠️ 的标 Not applied。有测试。
+- [x] `--scripted` 里依赖「`finish` 后留到下一轮」的场景改成用 End this round 结束，或改判新的结果；改了哪些在 Comments 里说。
+- [x] README、Skill、`finish` 的输出和 GLOSSARY 的说法跟新规则一致。
 
 ## Comments
 
@@ -48,3 +48,13 @@
 1. Agent 跑了 `finish` 却跳过几条的，这几条只在报告里（ADR 0019 已接受）；真实 Agent 数据要等下一次真跑。
 2. 画布外回退只覆盖 `offCanvasWithout` 认得的三类（`offCanvas` 删除、`putBack`、`madeOffCanvas`）；画布外图层自己的编辑（`edits`）不属于一轮，照旧。
 3. perf 那一处改成按住切换按钮后没实际跑过。
+
+**规划会话，2026-11-14**
+
+线上合并到 main dd6e522，我审过了：`archiveRound` 只在 `unlocked` 时 `carryOver`，`finished` 整轮归档，客户端同一张画布的逻辑留给 unlock，和 ADR 0019 一致。审查找到的画布外改动回退修得对：挪出画布的删除没落地，图层还在代码里，从 off-canvas 拿掉，下次冻结时它在画布上；拖回的没落地，放回画布外。
+
+代定：
+- 1、2、3 确认。
+- 4 改一下：website/ 下两份 SKILL.md 副本由我在 main 上同步了（只差第 4 步那一句），和 148 时一样，网站跟着包走。
+
+风险 1–3 接受。风险 3（perf 那处没跑过）由我在 main 上跑整套时带上无头 perf。
