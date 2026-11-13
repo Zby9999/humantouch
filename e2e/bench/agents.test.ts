@@ -271,6 +271,25 @@ test("Claude may run the Skill's undo and its viewing command for the run's own 
   assert.doesNotMatch(line, new RegExp(project));
 });
 
+test("an Agent whose stream says its turn is over, but that waits on what it started, is told Ctrl-C and ends with its result's code (Claude Code 2.1.321, the install bench)", async () => {
+  const folder = mkdtempSync(join(scratch, "end-at-result-"));
+  // Like Claude Code in print mode: its result printed, it waits for its background work until Ctrl-C, and then exits 130.
+  const waits = (subtype: string) =>
+    `console.log(JSON.stringify({ type: "result", subtype: "${subtype}", is_error: ${subtype !== "success"} })); process.on("SIGINT", () => process.exit(130)); setInterval(() => {}, 1000);`;
+  for (const [subtype, code] of [["success", 0], ["error_during_execution", 1]] as const) {
+    const began = Date.now();
+    const run = await runAgent("claude", folder, folder, 20_000, "", { spec: { binary: () => process.execPath, args: () => ["-e", waits(subtype)] }, leaveRunning: true, endAtResult: true });
+    assert.equal(run.exitCode, code, subtype);
+    assert.equal(run.timedOut, false);
+    assert.equal(run.endedAtResult, true);
+    assert.ok(Date.now() - began < 10_000, `took ${Date.now() - began} ms`);
+  }
+  // One that exits by itself after its result keeps its own code, and is not marked.
+  const run = await runAgent("claude", folder, folder, 20_000, "", { spec: { binary: () => process.execPath, args: () => ["-e", `console.log('{"type":"result","subtype":"success"}'); process.exit(0);`] }, leaveRunning: true, endAtResult: true });
+  assert.equal(run.exitCode, 0);
+  assert.equal(run.endedAtResult, undefined);
+});
+
 test("Claude has no rule for echo (ticket 101): Claude Code runs it as a read-only command already, and a rule would not govern where a redirect writes", () => {
   const args = AGENTS.claude.args("/run", PROMPT, "/project");
   const rules = args[args.indexOf("--allowedTools") + 1].split(",");

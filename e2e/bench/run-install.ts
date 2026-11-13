@@ -295,6 +295,8 @@ async function installOnce({
         spec,
         env,
         leaveRunning: true,
+        // Claude Code waits, in print mode, for the dev server it started in the background: ended at its result.
+        endAtResult: agent === "claude",
         onStart(pid) {
           servers.agentPid = agentGroup = pid;
           watching = watchForToggle(browser, () => servers.look(), start.port, () => endedAt, seen).catch((error) => {

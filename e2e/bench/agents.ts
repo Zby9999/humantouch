@@ -401,6 +401,8 @@ export interface AgentRun {
   headlessShell?: string | null;
   /** Each browser that came up under the Agent with a window, as the process table showed it once a second (one that lived less than a second can be missed): none, if the bench kept its promise. */
   headedBrowsers: string[];
+  /** Told Ctrl-C after its stream's `result` event, as it did not exit by itself (`endAtResult`): its `exitCode` is that result's. */
+  endedAtResult?: true;
 }
 
 export interface ProcessRow {
@@ -462,7 +464,17 @@ export interface RunOptions {
    * stopped on a timeout. The Agent's end is then its own exit, not its output closing, which a server can hold.
    */
   leaveRunning?: boolean;
+  /**
+   * Ends the Agent once its stream says its turn is over (a `result` event, as Claude Code prints with
+   * `--output-format stream-json`) and it has not exited a short while after: Claude Code (2.1.321) waits,
+   * in print mode, for what it started in the background (the dev server) before it exits. It is told
+   * Ctrl-C, as it asks; its end is then that result's: code 0 for a success, 1 for an error, not the signal's.
+   */
+  endAtResult?: boolean;
 }
+
+/** How long an Agent has, after its stream's `result` event, to exit by itself (`endAtResult`). */
+const RESULT_GRACE_MS = 3000;
 
 /**
  * Runs the Agent in `dir`, told `prompt`, its transcript to `transcript` and what else it
@@ -496,15 +508,48 @@ export async function runAgent(agent: AgentName, dir: string, folder: string, ti
     stopAll();
   }, timeoutMs);
   const closed = new Promise<number | null>((resolve) => child.on("close", resolve));
+  const exited = new Promise<number | null>((resolve) => child.on("exit", resolve));
+  // Its turn over by its own stream, the Agent that does not exit is told Ctrl-C (`endAtResult`).
+  let result: { error: boolean } | null = null;
+  let toldToEnd = false;
+  let grace: NodeJS.Timeout | undefined;
+  if (options.endAtResult) {
+    let pending = "";
+    child.stdout.on("data", (chunk: Buffer) => {
+      pending += chunk.toString("utf8");
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        if (result || !line.includes('"type":"result"')) continue;
+        try {
+          const event = JSON.parse(line) as { type?: string; subtype?: string; is_error?: boolean };
+          if (event.type !== "result") continue;
+          result = { error: event.is_error === true || event.subtype !== "success" };
+        } catch {
+          continue;
+        }
+        grace = setTimeout(() => {
+          toldToEnd = true;
+          try {
+            if (child.pid) process.kill(child.pid, "SIGINT");
+          } catch {
+            // Gone already.
+          }
+        }, RESULT_GRACE_MS);
+      }
+    });
+  }
   // What it leaves running may hold its output open (a dev server started with its stdout): its end is
   // its own exit, then what it printed gets a short while to come in.
-  const exitCode = options.leaveRunning ? await new Promise<number | null>((resolve) => child.on("exit", resolve)) : await closed;
+  const exitedWith = options.leaveRunning ? await exited : await closed;
+  clearTimeout(grace);
+  const exitCode = toldToEnd && result && !timedOut ? ((result as { error: boolean }).error ? 1 : 0) : exitedWith;
   if (options.leaveRunning) await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, LEFT_RUNNING_DRAIN_MS))]);
   clearTimeout(timer);
   clearInterval(watch);
   await looking;
   if (!options.leaveRunning) stopAll();
-  return { exitCode, timedOut, startedAt, endedAt: Date.now(), ...prepared, headedBrowsers: [...headed] };
+  return { exitCode, timedOut, startedAt, endedAt: Date.now(), ...prepared, headedBrowsers: [...headed], ...((toldToEnd as boolean) ? { endedAtResult: true as const } : {}) };
 }
 
 /** A file's text, or none when there is no such file. */
