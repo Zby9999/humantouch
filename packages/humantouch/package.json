@@ -1,6 +1,6 @@
 {
   "name": "humantouch",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "An editor layer for your project's local dev server: edit the page itself, visually, on a canvas, then have your Agent write the changes into the code.",
   "license": "MIT",
   "repository": {
