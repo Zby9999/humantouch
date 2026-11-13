@@ -6,16 +6,16 @@
 
 **Blocked by:** 88、91；包已发布到 npm（设计师自己操作，发布前把 GitHub 仓库设为公开）
 
-**Status:** ready-for-human
+**Status:** done
 
-- [ ] 跑之前先问设计师：2 家 × 10 个项目 = 20 次安装，估计用时；设计师同意了再跑
-- [ ] 10 个全新项目覆盖常见的起点，每个都用官方脚手架现建，不复用：Vite + React（TypeScript、JavaScript 各一）、Next.js App Router（Turbopack 默认、webpack 各一，有 `src/` 和没有各一）；包管理器 npm、pnpm、yarn、bun 都有；样式 Tailwind v4、Tailwind v3、CSS Modules、普通 CSS 都有；React 18 至少一个。具体十个由这条线列出来，跑之前给设计师看
-- [ ] 每次安装：从 Agent 收到「For Agents」的四步到切换按钮出现 ≤ 60 秒，全程没有人插手；`doctor` 全部 ✓；用户源码只改 ≤ 2 处（构建配置 1 行 + 挂载 1 行，goals「Light」）
-- [ ] 第 3 步：Agent 开不了浏览器时（无头跑就是这样），照样装完，最后告诉设计师下次打开页面右下角应有一个圆形按钮。切换按钮在不在由测量台用无头浏览器确认，不以 Agent 自报为准
-- [ ] 2 家 × 10 个项目 100% 成功；没成功的，记下卡在哪一步、为什么
-- [ ] 每个项目装完再 `remove`：`git diff` 为空，没有留下文件（goals「Reversible」）
-- [ ] 结论记在 Comments：要不要改 README / For Agents 的措辞，要改的另开 ticket（编号在 main 上取）
-- [ ] Cursor、Codex 不在这次验收里；goals 不改（以后有额度再验）
+- [x] 跑之前先问设计师：2 家 × 10 个项目 = 20 次安装，估计用时；设计师同意了再跑
+- [x] 10 个全新项目覆盖常见的起点，每个都用官方脚手架现建，不复用：Vite + React（TypeScript、JavaScript 各一）、Next.js App Router（Turbopack 默认、webpack 各一，有 `src/` 和没有各一）；包管理器 npm、pnpm、yarn、bun 都有；样式 Tailwind v4、Tailwind v3、CSS Modules、普通 CSS 都有；React 18 至少一个。具体十个由这条线列出来，跑之前给设计师看
+- [x] 每次安装：从 Agent 收到「For Agents」的四步到切换按钮出现 ≤ 60 秒，全程没有人插手；`doctor` 全部 ✓；用户源码只改 ≤ 2 处（构建配置 1 行 + 挂载 1 行，goals「Light」）
+- [x] 第 3 步：Agent 开不了浏览器时（无头跑就是这样），照样装完，最后告诉设计师下次打开页面右下角应有一个圆形按钮。切换按钮在不在由测量台用无头浏览器确认，不以 Agent 自报为准
+- [x] 2 家 × 10 个项目 100% 成功；没成功的，记下卡在哪一步、为什么
+- [x] 每个项目装完再 `remove`：`git diff` 为空，没有留下文件（goals「Reversible」）
+- [x] 结论记在 Comments：要不要改 README / For Agents 的措辞，要改的另开 ticket（编号在 main 上取）
+- [x] Cursor、Codex 不在这次验收里；goals 不改（以后有额度再验）
 
 ## 设计师决定（2026-11-03，重新分诊）
 
@@ -33,3 +33,18 @@
 
 - Claude 用 effort medium，pi 照旧 `--thinking high`，和 ticket 88 的真实跑一致（88 代定第 4 条）。安装测量台和落地测量台共用 Claude 的设置，88 已经改成 medium，不用另配。
 - 考虑过的别的做法：24 改回 high，为安装验收另配一份设置。
+
+## 结果（规划会话，2026-11-14）
+
+设计师 2026-11-13 同意用额度，让规划会话自己跑完。包是 npm 上的 `humantouch-dev@0.1.1`（npm 不让用 `humantouch`，ticket 163），第 1 步照 For Agents 原文 `npx -y humantouch-dev@latest init`。原始记录在 `bench-results/install/2026-11-13T17-17-35-537Z/`。
+
+| Agent | 成功 | 到切换按钮（秒） | 整个会话（秒） | 第 3 步告诉设计师去看按钮 |
+|---|---|---|---|---|
+| Claude Code 2.1.321，Sonnet 5.5，effort medium | 10 / 10 | 中位数 9.9，最长 13.8 | 中位数 20，最长 33.1 | 10 / 10 |
+| pi 1.5.2，DeepSeek v4.1 flash，`--thinking high`，pi-fff 0.11.0 | 10 / 10 | 中位数 15.4，最长 25.9 | 中位数 36.2，最长 79.9 | 10 / 10 |
+
+- 「成功」是 ticket 91 的六条都过：60 秒内出现切换按钮、Agent 自己结束、全程没人插手、`doctor` 全 ✓、用户源码只改 ≤ 2 处、`remove` 之后 `git diff` 为空且没留下我们的文件。没有超时。
+- 留下的日志文件（Agent 自己把开发服务器的输出写进项目，`dev.log` 或 `humantouch-dev.log`）：Claude 0 次，pi 5 次，都是 Next 的起点。按 91 的规矩不算 `remove` 没删干净。
+- 测量台修了一处（86dc108）：Claude Code 2.1.321 在 print 模式下，会等它在后台起的开发服务器结束才退出，第一次跑时卡到 10 分钟的上限。现在它的 `result` 出来 3 秒后还没退，测量台替它按 Ctrl-C，结束码按 `result` 算。第一次（修之前）那一轮停掉作废，不计。
+- 结论：README「For Agents」的措辞不用改，不开新票。pi 往项目里写日志是它自己的习惯，不影响装卸。
+- 之后：ticket 91 装的 yarn、bun 可以照 91 的步骤卸掉（要问设计师）。
