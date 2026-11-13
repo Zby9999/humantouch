@@ -1,6 +1,6 @@
 {
   "name": "humantouch",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "An editor layer for your project's local dev server: edit the page itself, visually, on a canvas, then have your Agent write the changes into the code.",
   "license": "MIT",
   "repository": {
@@ -47,6 +47,7 @@
   "devDependencies": {
     "@types/react": "^19.3.0",
     "@vitest/browser-playwright": "5.0.4",
+    "fflate": "0.8.3",
     "playwright": "1.64.1",
     "preact": "^11.0.1",
     "react": "^19.3.0",

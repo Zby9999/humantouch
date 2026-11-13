@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
-import type { CheckAsk, CheckReport, SavedOffCanvasLayer, RoundStatus, SavedRound } from "../service-protocol";
+import { CODE_EVENT, type CheckAsk, type CheckReport, type SavedOffCanvasLayer, type RoundStatus, type SavedRound } from "../service-protocol";
 import { ChangeList } from "./ChangeList";
 import { watchStall, type StallWatch } from "./agent-stall";
 import type { Camera } from "./camera";
@@ -11,7 +11,9 @@ import { ENTER_MARK, HOST_TAG } from "./host";
 import { Icon } from "./icons";
 import { placedOnCanvas, type RoundOnCanvas } from "./moves";
 import { showsAnyHere, watchPage, type PageChecks } from "./page-checks";
+import { effectNotes, type EffectNotes } from "./check";
 import { keptOf, notedFor, notedFrom, noteRound, type OtherUsagesNoted } from "./other-usages";
+import type { PageEntry, PagePrint } from "./page-print";
 import { PageToast, type PageToastMessage } from "./PageToast";
 import { createPartsReader } from "./range-parts";
 import { revertSaved, withPartsRead } from "./saved-round";
@@ -89,13 +91,55 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   const [status, setStatus] = useState<RoundStatus | undefined>(store ? undefined : { status: "editing" });
   const claimed = status?.status === "claimed" ? status : null;
 
+  /**
+   * The page the round's canvas reflects, printed (ticket 141): as loaded with the round, kept as edit mode puts the
+   * canvas up. Null when not known: a round carried over, the Agent's code in since; the page as it is next taken.
+   */
+  const reflected = useRef<PagePrint | null>(saved?.page ?? null);
+  /** The round was dropped, and the print kept with it went too: kept again if a round is made on the canvas still up. */
+  const pageDropped = useRef(false);
+  /**
+   * Whether the code is the code the page the canvas reflects was printed on, as the local service last said (ticket
+   * 141): the same, the page is too, whatever it draws as time goes by. Asked again as the page may have seen the code
+   * change: as it loads, comes back to the front, hears of a code change, leaves edit mode. Null while asked, or not known.
+   */
+  const codeSame = useRef<boolean | null>(null);
+  const asked = useRef(0);
+  const askCode = () => {
+    const ask = ++asked.current;
+    codeSame.current = null;
+    if (!reflected.current) return;
+    store?.pageCode().then(
+      (same) => void (ask === asked.current && (codeSame.current = same)),
+      (error: unknown) => console.warn(error),
+    );
+  };
+  useEffect(() => {
+    const again = () => document.visibilityState === "visible" && askCode();
+    window.addEventListener("focus", again);
+    window.addEventListener(CODE_EVENT, askCode);
+    document.addEventListener("visibilitychange", again);
+    return () => {
+      window.removeEventListener("focus", again);
+      window.removeEventListener(CODE_EVENT, askCode);
+      document.removeEventListener("visibilitychange", again);
+    };
+  }, []);
   const load = () =>
-    store?.load().then(setRound, (error: unknown) => {
-      console.warn(error);
-      setRound(null);
-    });
+    store?.load().then(
+      (round) => {
+        reflected.current = round?.page ?? null;
+        askCode();
+        setRound(round);
+      },
+      (error: unknown) => {
+        console.warn(error);
+        setRound(null);
+      },
+    );
   useEffect(() => {
     if (saved === undefined) void load();
+    else askCode();
     store?.breakpoints().then(setBreakpoints, (error: unknown) => {
       console.warn(error);
       setBreakpoints(null);
@@ -137,13 +181,29 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
    * round for the Agent before the code changed (ticket 82).
    */
   const otherUsages = useRef(new Map<number, OtherUsagesNoted | null>());
+  /**
+   * What each change's style moved as the page first looked at it (ADR 0016):
+   * kept as `otherUsages` is, but in this page alone. Open to note only on a
+   * page that saw the round before it was claimed: one opened or reloaded
+   * since may have the Agent's code already.
+   */
+  const effects = useRef<EffectNotes>(effectNotes(false));
+  // The code changing before the round is claimed (the Agent editing first): noted after, what a change's style moves is of the Agent's code.
+  useEffect(() => {
+    if (isClaimed) return;
+    const close = () => void (effects.current.open = false);
+    window.addEventListener(CODE_EVENT, close);
+    return () => window.removeEventListener(CODE_EVENT, close);
+  }, [isClaimed]);
   /** Whether the round, read before it was claimed, has been asked for again since (ticket 82). */
   const reread = useRef(false);
   useEffect(() => {
     if (isClaimed) return;
     otherUsages.current = new Map();
+    // Known not to be claimed: the page sees the round before the Agent's code.
+    effects.current = effectNotes(status !== undefined);
     reread.current = false;
-  }, [isClaimed]);
+  }, [isClaimed, status === undefined]);
   useLayoutEffect(() => {
     if (!isClaimed || !store || !round) return;
     // Read before it was claimed: what was kept with the claim comes as it is read again (ticket 82). Till then the page neither
@@ -171,6 +231,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       viewWidths: readViewWidths,
       copiesIn,
       otherUsages: otherUsages.current,
+      effects: effects.current,
       onNoted(id, noted) {
         if (!toKeep.size) {
           notedAt = new Date().toISOString();
@@ -254,12 +315,18 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   /** The round as saved last: what a reading that ends after the canvas has gone is saved into. */
   const roundNow = useRef(round);
   roundNow.current = round;
-  const save = (next: SavedRound | null) => {
+  const save = (next: SavedRound | null, leaving?: boolean) => {
     // The service keeps a claimed round as the Agent got it; a last edit, too late, goes with the canvas.
     if (lastStatus.current?.status === "claimed") return;
     roundNow.current = next;
     setRound(next);
-    store?.save(next).catch((error: unknown) => console.warn(error));
+    store?.save(next, leaving).catch((error: unknown) => console.warn(error));
+    // The page a round's canvas reflects goes with the round (ticket 141): dropped with it, kept again as a round is made on the same canvas.
+    if (!next) pageDropped.current = true;
+    else if (pageDropped.current && reflected.current) {
+      pageDropped.current = false;
+      store?.savePage(reflected.current).catch((error: unknown) => console.warn(error));
+    }
   };
 
   // What the page shows in each part of the range of a change saved with that yet to be read (ticket 65): read
@@ -285,10 +352,10 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
     const project = breakpoints ?? readMediaBreakpoints(document);
     for (const change of round.changeSet.changes) if (change.parts === null) partsReader.read(change, project, (parts) => partsRead(change.id, parts));
   }, [round, status?.status, breakpoints]);
-  const saveOffCanvas = (layers: SavedOffCanvasLayer[]) => {
+  const saveOffCanvas = (layers: SavedOffCanvasLayer[], leaving?: boolean) => {
     setOffCanvas(layers);
     return (
-      store?.saveOffCanvas(layers).catch((error: unknown) => {
+      store?.saveOffCanvas(layers, leaving).catch((error: unknown) => {
         console.warn(error);
         return {};
       }) ?? Promise.resolve({})
@@ -414,7 +481,10 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   // Edit mode on a round of none, the page frozen afresh: up to date.
   useEffect(() => {
     if (editing && !round) stale.current = false;
-    if (!editing) setPageToast(null);
+    if (!editing) {
+      setPageToast(null);
+      askCode();
+    }
   }, [editing]);
   /** The changes on the canvas as of the last render: what a run of code changes, told later, is told by. */
   const listedNow = useRef(listed);
@@ -481,6 +551,28 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
       stop();
     };
   }, [unclaimed]);
+  /**
+   * The canvas is up (ticket 141): the page it reflects from now on kept, when it is another; the page changed since
+   * the page it reflects, its structure too, told, the canvas as it was, and not again as the code changes till it is
+   * frozen afresh (ticket 78).
+   */
+  const keepPage = (page: PageEntry | { keep: PagePrint }) => {
+    if (page.keep) {
+      reflected.current = page.keep;
+      pageDropped.current = false;
+      const ask = ++asked.current;
+      codeSame.current = null;
+      // Printed on the code as it is: the same, till it changes.
+      store?.savePage(page.keep).then(
+        () => void (ask === asked.current && (codeSame.current = true)),
+        (error: unknown) => console.warn(error),
+      );
+    }
+    if (!("since" in page)) return;
+    // Its styles taken in, the canvas is up to date with the page, as it is frozen afresh.
+    stale.current = page.since === "structure";
+    if (stale.current) tell("since");
+  };
   const updateCanvas = () => {
     tell(null);
     discardRound();
@@ -530,6 +622,9 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
           onChanges={setLive}
           control={control}
           notice={editing && <PageToast message={pageToast} changes={listed.length} onUpdate={updateCanvas} />}
+          reflects={reflected.current}
+          codeSame={() => codeSame.current}
+          onPage={keepPage}
           startAt={startAt}
           cameraNow={cameraNow}
           animate={animate}

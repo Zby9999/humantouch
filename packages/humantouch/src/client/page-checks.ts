@@ -10,18 +10,21 @@
  *
  * A change for one usage of a component alone is not shown, though its layer
  * shows it, where the component's other usages show its property otherwise
- * than when the page began to check (ticket 77, `other-usages.ts`).
+ * than when the page began to check (ticket 77, `other-usages.ts`). Nor is
+ * a style change whose layer breaks the layout at a width it is looked at as
+ * it did not then (ticket 147).
  *
  * Looking is spread out so it never holds the page up for long: as many
  * changes as fit in a short slice of time, the rest after the page has had a turn.
  */
 import { CHECK_ARRIVE_MS, CHECK_SETTLE_MS, CODE_EVENT, type CheckAsk, type CheckReport, type CheckResult } from "../service-protocol";
 import type { Change } from "./changeset";
-import { checkAcross, checkHere, itself, outsideOf, uncheckable, widthsOf, type PageWidth } from "./check";
+import { breakWidthsOf, checkAcross, checkHere, effectNotes, itself, outsideOf, uncheckable, widthsOf, type EffectNotes, type PageWidth } from "./check";
 import { codeUpdates, sliced } from "./code-changes";
-import { otherUsagesChanged, looksAtOtherUsages, noteChange, noteOutside, outsideChanged, unnoted, withOutside, type OtherUsagesNoted } from "./other-usages";
+import { breaksNow, noteBreaksAt, otherUsagesChanged, looksAtOtherUsages, noteChange, noteOutside, outsideChanged, unnoted, unnotedBreaks, withBreaks, withOutside, type OtherUsagesNoted } from "./other-usages";
 import { CHECK_MEASURE } from "./host";
 import type { NotShownOutside } from "../outside-protocol";
+import type { NotShownBroken } from "../widths-protocol";
 import type { RoundOnCanvas } from "./moves";
 import { copyPage, type PageCopy } from "./page-copy";
 
@@ -53,6 +56,14 @@ interface Options {
   otherUsages?: Map<number, OtherUsagesNoted | null>;
   /** Each note taken into `otherUsages` as the page first looks at a change, to be kept with the claim (ticket 82). */
   onNoted?(id: number, noted: OtherUsagesNoted | null): void;
+  /**
+   * What each change's style moved as the page first looked at it (ADR 0016,
+   * `EffectNotes`): kept by the caller for as long as the round is claimed,
+   * as `otherUsages` is, so a page that checks the round anew, read again,
+   * goes by what was noted before the code changed. Not kept in `.humantouch/`:
+   * a page reloaded goes without.
+   */
+  effects?: EffectNotes;
 }
 
 /** The longest the page looks in one go before it lets the page have a turn. */
@@ -121,7 +132,7 @@ function hotUpdates(win: Window): HotUpdates | undefined {
  * check at all (a brief, a copy made this round) it never looks at by itself:
  * asked, it says why.
  */
-export function watchPage({ window: win, changes, report, onShown, viewWidths, copiesIn, otherUsages: others = new Map(), onNoted }: Options): PageChecks {
+export function watchPage({ window: win, changes, report, onShown, viewWidths, copiesIn, otherUsages: others = new Map(), onNoted, effects = effectNotes(true) }: Options): PageChecks {
   const doc = win.document;
   const code = () => codeUpdates(win);
   const shown = new Set<number>();
@@ -131,20 +142,34 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   const copies = new Map<number, PageCopy>();
   /** Of a change at a breakpoint, the widths outside its range its layer is to show its property at as it did (ticket 104). */
   const outside = (change: Change) => outsideOf(change, changes, win.innerWidth, viewWidths());
-  /** Noted, at every width outside its range it is looked at now too: one the page could not be shown at, or had not the layer at, or a view added since, is noted as soon as it can be. */
-  const noted = (change: Change) => (others.has(change.id) || !looksAtOtherUsages(change)) && !unnoted(others.get(change.id), outside(change)).length;
+  /** Of a style change, the widths it is looked at for breaks of the layout at (ticket 147). */
+  const breakWidths = (change: Change) => breakWidthsOf(change, changes, win.innerWidth, viewWidths());
+  /** Noted, at every width outside its range it is looked at now too, and every width it is looked at for breaks: one the page could not be shown at, or had not the layer at, or a view added since, is noted as soon as it can be. */
+  const noted = (change: Change) =>
+    (others.has(change.id) || (!looksAtOtherUsages(change) && !breakWidths(change).length)) &&
+    !unnoted(others.get(change.id), outside(change)).length &&
+    !unnotedBreaks(others.get(change.id), breakWidths(change)).length;
   /** The page `width` px wide: itself, as wide as its window, else a copy of it; null while the copy's stylesheets load. */
   const pageAt = (width: number) => (width === win.innerWidth ? itself(doc) : copyAt(width));
+  /**
+   * Whether the code may have changed since the round was claimed: as the
+   * dev server says, or, with no word from it, as the page changes. A page
+   * that could no more note what a change's style moves as it began (opened
+   * since the claim, or the code changed first) has seen it change too. What
+   * breaks of the layout it notes from then on is late (`BreaksNote.late`).
+   */
+  let codeChanged = !effects.open;
   const note = (change: Change) => {
     if (!others.has(change.id)) {
-      const notes = noteChange(doc, change, changes, win.innerWidth, outside(change), pageAt);
+      const notes = noteChange(doc, change, changes, win.innerWidth, outside(change), pageAt, breakWidths(change), codeChanged);
       others.set(change.id, notes);
       onNoted?.(change.id, notes);
       return;
     }
-    // Noted before, but not at every width outside its range (ticket 104): the rest, as soon as they can be.
+    // Noted before, but not at every width outside its range (ticket 104), or for breaks (ticket 147): the rest, as soon as they can be.
     const was = others.get(change.id) ?? null;
-    const notes = withOutside(was, win.innerWidth, noteOutside(doc, change, changes, unnoted(was, outside(change)), pageAt));
+    const more = withOutside(was, win.innerWidth, noteOutside(doc, change, changes, unnoted(was, outside(change)), pageAt));
+    const notes = withBreaks(more, win.innerWidth, noteBreaksAt(doc, change, changes, unnotedBreaks(was, breakWidths(change)), pageAt, codeChanged));
     if (notes === was) return;
     others.set(change.id, notes);
     onNoted?.(change.id, notes);
@@ -152,8 +177,10 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   /**
    * Shown on its layer (or not looked at there, at this width): not shown
    * after all where other usages of its component show it too (ticket 77),
-   * or, at a breakpoint, widths outside its range (ticket 104): of those, as
-   * wide as the window alone when not `everywhere`.
+   * or, at a breakpoint, widths outside its range (ticket 104), or where its
+   * layer breaks the layout at a width it is looked at, as it did not when the
+   * round was claimed, or at all where noted late (ticket 147): of those widths, as wide as the window
+   * alone when not `everywhere`.
    */
   const orAtOtherUsages = (change: Change, result: CheckResult | null, everywhere: boolean): CheckResult | null => {
     if (result && result.outcome !== "shown") return result;
@@ -168,8 +195,14 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       const notShown: NotShownOutside = { outcome: "not shown", actual: change.after, outside: beyond.changed };
       return notShown;
     }
-    // A copy outside its range still loading: looked at again once it has, as one in its range is.
-    return beyond.loading ? { outcome: "unchecked", reason: "loading" } : result;
+    const breaking = everywhere ? breakWidths(change) : breakWidths(change).filter((width) => width === win.innerWidth);
+    const broken = breaking.length ? breaksNow(doc, change, changes, notes, breaking, pageAt) : { found: [], loading: false };
+    if (broken.found.length) {
+      const notShown: NotShownBroken = { outcome: "not shown", actual: change.after, breaks: broken.found };
+      return notShown;
+    }
+    // A copy outside its range, or one looked at for breaks, still loading: looked at again once it has, as one in its range is.
+    return beyond.loading || broken.loading ? { outcome: "unchecked", reason: "loading" } : result;
   };
   /** The changes whose copies outside their range the page has waited to load once, to note them (ticket 104). */
   const waitedFor = new Set<number>();
@@ -220,7 +253,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   /** Looks at `change`, shown, again as wide as the window; null when it is to show on copies of the page only. */
   const checkAgain = (change: Change): CheckResult | null =>
     measured(change, () => {
-      const result = checkHere(doc, change, changes, viewWidths());
+      const result = checkHere(doc, change, changes, viewWidths(), effects);
       observer.takeRecords();
       return orAtOtherUsages(change, result, false);
     });
@@ -239,7 +272,7 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
       loading ||= !copy;
       return copy;
     };
-    const result = checkAcross(doc, change, changes, viewWidths(), at, sources);
+    const result = checkAcross(doc, change, changes, viewWidths(), at, sources, effects);
     observer.takeRecords();
     // A copy still loading its stylesheets: looked at again once it has.
     return loading && result.outcome === "unchecked" ? { outcome: "unchecked", reason: "loading" } : result;
@@ -356,10 +389,13 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
   follow();
   let waiting = false;
   const observer = new MutationObserver(() => {
+    // The page changing, its code may have: what a change's style moves is noted no more (ADR 0016).
+    effects.open = false;
     if (code()) {
       if (performance.now() < followUntil) look();
       return;
     }
+    codeChanged = true;
     // No word from the dev server: any change to the page may be the code's, but the page may change all the time.
     const wait = lastLook + LOOK_EVERY_MS - performance.now();
     if (wait <= 0) look();
@@ -372,6 +408,8 @@ export function watchPage({ window: win, changes, report, onShown, viewWidths, c
     }
   });
   const onCode = () => {
+    effects.open = false;
+    codeChanged = true;
     codeCameAt = performance.now();
     follow();
     look();

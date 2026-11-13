@@ -121,6 +121,16 @@ export const APPLIED_RISE_MS = 240;
 export const CHANGE_GLIDE_MS = 300;
 export const CHANGE_PING_MS = 1200;
 
+/**
+ * A palette ramp's second line opening or folding (ticket 143, prototype A): its height over `SECOND_LINE_MS` on
+ * `EASE_OUT`, its swatches fading in over `SECOND_LINE_FADE_MS` as they drop 3px into place, `SECOND_LINE_STAGGER_MS`
+ * after one another; the chevron turns over `CHEVRON_TURN_MS`. With reduced motion, none of it moves.
+ */
+export const SECOND_LINE_MS = 200;
+export const SECOND_LINE_FADE_MS = 160;
+export const SECOND_LINE_STAGGER_MS = 25;
+export const CHEVRON_TURN_MS = 160;
+
 /** Blinks `el` lighter (`.ht-ping`), started afresh if it is blinking still. */
 export function ping(el: Element): void {
   el.classList.remove("ht-ping");

@@ -88,6 +88,18 @@ export interface ScenarioChange {
    * the 1:1 rates.
    */
   notOneToOne?: string;
+  /**
+   * The scripted pass only (`apply`): what the page's check says of the
+   * change as the scripted code writes it, when not plainly that it shows it
+   * (ticket 147). `done`: words `done` says of it. `notShown`: the scripted
+   * code writes it wrong on purpose, so the check says not shown, and the
+   * report has it under ⚠️; `adapted`: the views' widths the check says it
+   * is adapted at, so the report has it under ↪ (ticket 148);
+   * `differently`: the scripted code does it differently on purpose, and
+   * says so with this reason (`done <number> --differently "<why>"`), so the
+   * report has it under ↪, with the reason word for word.
+   */
+  scripted?: { done: string; notShown?: true; adapted?: number[]; differently?: string };
 }
 
 /**
@@ -119,6 +131,8 @@ export interface Scenario {
   id: string;
   /** The example project it runs on; the Vite + React 19 + Tailwind v4 one when not given. */
   example?: Example;
+  /** The page of the example it runs on, its path (`/shadow`); its first page when not given. */
+  path?: string;
   /** What the designer does, in words. */
   title: string;
   /** Makes the round in the editor layer, and waits until it is saved. */
@@ -137,10 +151,18 @@ export interface Scenario {
    * Changes `notOneToOne` are left as they were.
    */
   apply?(desk: Desk): Promise<void>;
+  /**
+   * Why the scenario is for the scripted pass (and `--dry`) alone, never an
+   * Agent's run: its scripted code writes the round wrong on purpose, to show
+   * what the page's check says of it (ticket 147).
+   */
+  scriptedOnly?: string;
 }
 
 /** The example project a scenario runs on. */
 export const exampleOf = (scenario: Scenario): Example => scenario.example ?? "vite-react19-tw4";
+/** The address of the page a scenario runs on, of its example's dev server at `url`. */
+export const pageOf = (scenario: Scenario, url: string): string => url + (scenario.path ?? "");
 
 export const desktop = (page: Page) => page.locator('iframe[title="Canvas"]');
 export const phone = (page: Page) => page.locator('iframe[title="Phone 390"]');
@@ -253,6 +275,10 @@ export async function saved(desk: Desk, count: number) {
 }
 
 const HERO = '[data-testid="hero"]';
+/** The panel the page `/shadow` has in a shadow root (ticket 137): Playwright's locators go into open shadow roots. */
+const SHADOW_PANEL = '[data-testid="shadow-panel"] .panel';
+/** The words of the paragraph in that panel, its layer's name. */
+const SHADOW_BODY = "Styled by its own styles, which the page's CSS does not reach.";
 /** The intro paragraph's layer, by its words. */
 const INTRO = "A Framer-style editor layer for any page.";
 
@@ -299,6 +325,38 @@ const TILES = [
   [144, 86],
 ].map(([left, top]) => `        <div className="absolute left-[${left}px] top-[${top}px] h-10 w-[100px] bg-stone-300" />\n`);
 const TILES_FRAME = `      <div className="relative h-60">\n${TILES.join("")}      </div>\n`;
+
+/**
+ * Waits until the page has noted `what` of change 1 as it began to check the
+ * claimed round, kept in `.humantouch/` (`noted` of the note, tickets 82,
+ * 104, 147): a copy of the page at each width is made first, and the code
+ * written before would be noted as the round's baseline. The bench's copy
+ * only (`desk.shell`).
+ */
+async function notedAtClaim(desk: Desk, what: string, noted: (note: any) => boolean) {
+  for (let tries = 0; ; tries++) {
+    const file = await desk.shell!("cat .humantouch/other-usages.json").catch(() => "");
+    const kept = (() => {
+      try {
+        return JSON.parse(file).otherUsages?.["1"];
+      } catch {
+        return null;
+      }
+    })();
+    if (noted(kept)) return;
+    if (tries > 150) throw new Error(`The page did not note ${what} in 15 s`);
+    await desk.page.waitForTimeout(100);
+  }
+}
+
+/** The Get started button made Fixed, 500px wide, in the desktop view: in the phone view, 390px wide, the hero is 342px (ticket 147). */
+async function designWidth500(desk: Desk) {
+  const { page } = desk;
+  await enterEditMode(page);
+  await layer(page, "Button").click();
+  await setField(page, "Width", "500");
+  await saved(desk, 1);
+}
 
 // The tests below run in the page: each stands on its own, with no names from here.
 
@@ -576,7 +634,7 @@ export const SCENARIOS: Scenario[] = [
       await layer(page, "Third Kind").click();
       await desktop(page).contentFrame().locator("h1").dblclick();
       await page.keyboard.type("Third Kind Studio");
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("Escape");
       await saved(desk, 3);
     },
     changes: [
@@ -608,6 +666,34 @@ export const SCENARIOS: Scenario[] = [
       await desk.edit("src/App.tsx", freeze, `${freeze}\n  ${freeze}`);
       await desk.edit("src/App.tsx", "{features.map((feature) => (\n          <Card key={feature.title}", "{features.map((feature, i) => (\n          <Card key={i}");
       await desk.edit("src/App.tsx", ">Third Kind</h1>", ">Third Kind Studio</h1>");
+    },
+  },
+  {
+    id: "text-line-break",
+    title: "The title's words broken over two lines, Return typed between them: “Third” on the first line, “Kind” on the second (ticket 144).",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "Third Kind").click();
+      await desktop(page).contentFrame().locator("h1").dblclick();
+      // All the words selected: ← puts the caret before them, then past “Third”.
+      await page.keyboard.press("ArrowLeft");
+      for (let i = 0; i < "Third".length; i++) await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("Escape");
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "text",
+        expect: "The title reads “Third” on one line and “Kind” on the line below it.",
+        // Found by its source marker, the title's words are checked, and where its lines break (ticket 144).
+        checkable: true,
+        shows: () => (document.querySelector("h1") as HTMLElement | null)?.innerText === "Third\nKind",
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", ">Third Kind</h1>", ">Third<br />Kind</h1>");
     },
   },
   {
@@ -647,7 +733,7 @@ export const SCENARIOS: Scenario[] = [
       await page.mouse.move(paragraph.x + 721.5 * zoom, paragraph.y + paragraph.height + 36 * zoom, { steps: 6 });
       await page.mouse.up();
       await page.keyboard.type("Works with any Agent.");
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("Escape");
       await page.keyboard.press("Escape");
       await saved(desk, 2);
       await moveOffTheCanvas(page, "A Framer-style editor layer for any page.", canvas.locator(`${HERO} > p`).first());
@@ -968,6 +1054,166 @@ export const SCENARIOS: Scenario[] = [
     ],
     async apply(desk) {
       await desk.edit("src/App.tsx", '<section className="flex h-screen flex-col justify-center" data-testid="hero">', '<section className="flex h-screen flex-col justify-between" data-testid="hero">');
+    },
+  },
+  // Ticket 146 (ADR 0016): the fixed width written another way, as a maximum the hero is wide enough for: drawn the same, so shown.
+  {
+    id: "panel-width-as-maximum",
+    title: "The Get started button made Fixed, 200px wide.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "Button").click();
+      await setField(page, "Width", "200");
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The Get started button is 200px wide.",
+        checkable: true,
+        shows: () => Math.abs(document.querySelector('[data-testid="hero"] button')!.getBoundingClientRect().width - 200) <= 0.5,
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", "self-start px-4 py-2 text-white", "w-full max-w-[200px] self-start px-4 py-2 text-white");
+    },
+  },
+  // Ticket 147 (ADR 0016): a width made in the desktop view wider than the hero is at a phone's width, adapted there: shown, Phone adapted, and what is drawn there said.
+  {
+    id: "width-500-adapted",
+    title: "The Get started button made Fixed, 500px wide (in the phone view, wider than the hero).",
+    design: designWidth500,
+    changes: [
+      {
+        kind: "style",
+        expect: "From 768px up the Get started button is 500px wide; below, it is no wider than the hero, and the page does not scroll sideways.",
+        checkable: true,
+        widths: [390, 768, 1280],
+        shows: ({ width }) => {
+          const button = document.querySelector('[data-testid="hero"] button')!.getBoundingClientRect().width;
+          const hero = document.querySelector('[data-testid="hero"]')!.getBoundingClientRect().width;
+          const unscrolled = document.documentElement.scrollWidth <= document.documentElement.clientWidth;
+          return unscrolled && (width >= 768 ? Math.abs(button - 500) <= 0.5 : button <= hero + 0.5);
+        },
+        scripted: { done: "it shows the change. At Phone (390px) it draws 342px wide, not 500px: done differently there, it goes under ↪ in the report, where you say why.", adapted: [390] },
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", "self-start px-4 py-2 text-white", "w-full md:w-[500px] self-start px-4 py-2 text-white");
+    },
+  },
+  // Ticket 147 (ADR 0016): the same width written as given at every width: at a phone's width it makes the page wider than the screen, so not shown, and `done` says how to fix it.
+  {
+    id: "width-500-literal",
+    title: "The Get started button made Fixed, 500px wide (in the phone view, wider than the hero); written 500px wide at every width.",
+    scriptedOnly: "the scripted code writes the width as given at every width, which breaks the layout at a phone's width, to show the page's check says so",
+    design: designWidth500,
+    changes: [
+      {
+        kind: "style",
+        expect: "As wide as the window, the Get started button is 500px wide.",
+        checkable: true,
+        shows: () => Math.abs(document.querySelector('[data-testid="hero"] button')!.getBoundingClientRect().width - 500) <= 0.5,
+        scripted: {
+          done:
+            "it does not show the change. At Phone (390px) change 1 makes the page wider than the screen (it scrolls sideways) and the layer wider than its container (500px in 342px), which it did not when the round was claimed: " +
+            "use 500px only from a breakpoint up where it fits (a variant such as `md:`), or keep the layer within its container",
+          notShown: true,
+        },
+      },
+    ],
+    async apply(desk) {
+      await notedAtClaim(desk, "what broke at the phone's width", (note) => !!note?.breaks?.some((one: { width: number }) => one.width === 390));
+      await desk.edit("src/App.tsx", "self-start px-4 py-2 text-white", "w-[500px] self-start px-4 py-2 text-white");
+    },
+  },
+  // Ticket 148 (ADR 0016): the report in three sections. A colour done otherwise on purpose, the reason said with `--differently`: under ↪, the reason word for word;
+  // a width adapted at a phone's width, as in width-500-adapted: under ↪ too; a font size written wrong and not said: not shown, `done` asks to fix it, under ⚠️.
+  {
+    id: "report-done-differently",
+    title: "The intro paragraph's text #1A1A1A; the Get started button made Fixed, 500px wide (in the phone view, wider than the hero); the title at 46px.",
+    scriptedOnly: "the scripted code writes the paragraph's colour otherwise on purpose (as if the designer had asked for it in the conversation), and the title's size wrong, to show where the report puts each",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await pick(page, desktop(page), `${HERO} > p`);
+      await setField(page, "Fill color", "1a1a1a");
+      await layer(page, "Button").click();
+      await setField(page, "Width", "500");
+      await layer(page, "Third Kind").click();
+      await setField(page, "Font size", "46");
+      await saved(desk, 3);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The intro paragraph's text is stone-800 (#292524), not the canvas's #1A1A1A: the designer asked for it in the conversation.",
+        checkable: true,
+        shows: () => {
+          // Through a pixel: Tailwind v4's stone-800 is an oklch() color, #292524 in sRGB, give or take rounding.
+          const context = document.createElement("canvas").getContext("2d")!;
+          context.fillStyle = getComputedStyle(document.querySelector('[data-testid="hero"] p')!).color;
+          context.fillRect(0, 0, 1, 1);
+          const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
+          return Math.abs(r - 41) <= 2 && Math.abs(g - 37) <= 2 && Math.abs(b - 36) <= 2;
+        },
+        scripted: { done: "Done differently, as you said: “the designer asked for stone-800 instead”.", notShown: true, differently: "the designer asked for stone-800 instead" },
+      },
+      {
+        kind: "style",
+        expect: "From 768px up the Get started button is 500px wide; below, it is no wider than the hero, and the page does not scroll sideways.",
+        checkable: true,
+        widths: [390, 768, 1280],
+        shows: ({ width }) => {
+          const button = document.querySelector('[data-testid="hero"] button')!.getBoundingClientRect().width;
+          const hero = document.querySelector('[data-testid="hero"]')!.getBoundingClientRect().width;
+          const unscrolled = document.documentElement.scrollWidth <= document.documentElement.clientWidth;
+          return unscrolled && (width >= 768 ? Math.abs(button - 500) <= 0.5 : button <= hero + 0.5);
+        },
+        scripted: { done: "it shows the change. At Phone (390px) it draws 342px wide, not 500px: done differently there, it goes under ↪ in the report, where you say why.", adapted: [390] },
+      },
+      {
+        kind: "style",
+        expect: "The title is 40px, as the scripted code writes it wrong.",
+        checkable: true,
+        shows: () => getComputedStyle(document.querySelector("h1")!).fontSize === "40px",
+        scripted: { done: "it does not show the change.", notShown: true },
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/App.tsx", '<p className="mt-4 text-stone-600">', '<p className="mt-4 text-stone-800">');
+      await desk.edit("src/App.tsx", "self-start px-4 py-2 text-white", "w-full md:w-[500px] self-start px-4 py-2 text-white");
+      await desk.edit("src/App.tsx", "font-display text-4xl font-bold", "font-display text-[40px] font-bold");
+    },
+  },
+  // Ticket 147, as ticket 104 has it: a change in the phone view written without its breakpoint, so at every width, is no adaptation: outside its range it is not shown still.
+  {
+    id: "phone-padding-prefix-missed",
+    title: "In the phone view (below 768px only): the Get started button's top padding 16px; written without the breakpoint, at every width.",
+    scriptedOnly: "the scripted code leaves the breakpoint out, so the desktop view's padding changes too, to show the page's check says so",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await pick(page, phone(page), `${HERO} > button`);
+      await setField(page, "Padding top", "16");
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "Below 768px the Get started button's top padding is 16px.",
+        checkable: true,
+        // Four sides, each its own Variable: the top's the one written anew, the others as they were.
+        variable: ["pt-4"],
+        widths: [390],
+        shows: () => getComputedStyle(document.querySelector('[data-testid="hero"] button')!).paddingTop === "16px",
+        scripted: { done: "it shows the change, but outside its range too: at 1280px wide, its padding from", notShown: true },
+      },
+    ],
+    async apply(desk) {
+      await notedAtClaim(desk, "what the button showed outside the phone's range", (note) => !!note?.outside?.length);
+      await desk.edit("src/App.tsx", "self-start px-4 py-2 text-white", "self-start px-4 pt-4 pb-2 text-white");
     },
   },
   {
@@ -1741,6 +1987,99 @@ export const SCENARIOS: Scenario[] = [
       );
     },
   },
+  // Ticket 137: a layer in an open shadow root, styled by the component's own style element there, as the website's hero is.
+  {
+    id: "shadow-root-style",
+    path: "/shadow",
+    title:
+      "The panel at the top of the page `/shadow`, which its component renders into a shadow root of its own, styled by a style element there (as the website's hero is): fill blue (#2563EB), corner radius 10px.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await pick(page, desktop(page), SHADOW_PANEL);
+      await setField(page, "Fill color", "2563eb");
+      await setField(page, "Corner radius", "10");
+      await saved(desk, 2);
+    },
+    changes: [
+      {
+        kind: "style",
+        expect: "The panel at the top of `/shadow` is blue (#2563EB), in its shadow root; nothing else on the page changes.",
+        checkable: true,
+        shows: () => getComputedStyle(document.querySelector('[data-testid="shadow-panel"]')!.shadowRoot!.querySelector(".panel")!).backgroundColor === "rgb(37, 99, 235)",
+      },
+      {
+        kind: "style",
+        expect: "The panel at the top of `/shadow` has 10px corners.",
+        checkable: true,
+        shows: () => getComputedStyle(document.querySelector('[data-testid="shadow-panel"]')!.shadowRoot!.querySelector(".panel")!).borderTopLeftRadius === "10px",
+      },
+    ],
+    async apply(desk) {
+      // As the notes say: the styles of the component that renders into its shadow root, not the page's CSS, which does not reach in.
+      await desk.edit("src/shadow/ShadowPanel.tsx", ".panel { padding: 16px; border-radius: 16px; background: #fde68a; }", ".panel { padding: 16px; border-radius: 10px; background: #2563eb; }");
+    },
+  },
+  // Ticket 138: a change to the structure in a shadow root: its two layers swap places, in the same shadow root.
+  {
+    id: "shadow-root-structure",
+    path: "/shadow",
+    title: "In the panel at the top of the page `/shadow`, which its component renders into a shadow root of its own: the paragraph moved above the title.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      const panel = desktop(page).contentFrame().locator(SHADOW_PANEL);
+      await layer(page, SHADOW_BODY).click();
+      await drag(page, panel.locator(".body"), async () => {
+        const title = await boxOf(panel.locator(".title"));
+        return { x: title.x + title.width / 2, y: title.y + 2 };
+      });
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "move",
+        expect: "In the panel at the top of `/shadow`, in its shadow root, the paragraph comes before the title.",
+        checkable: true,
+        shows: () => [...document.querySelector('[data-testid="shadow-panel"]')!.shadowRoot!.querySelector(".panel")!.children].map((child) => child.localName).join() === "p,h2",
+      },
+    ],
+    async apply(desk) {
+      // In the component that renders into the shadow root, as the claim's Location says: the paragraph's line above the title's.
+      await desk.edit(
+        "src/shadow/ShadowPanel.tsx",
+        `              <h2 className="title">In a shadow root</h2>\n              <p className="body">${SHADOW_BODY}</p>\n`,
+        `              <p className="body">${SHADOW_BODY}</p>\n              <h2 className="title">In a shadow root</h2>\n`,
+      );
+    },
+  },
+  // Ticket 138: new words for a layer in a shadow root. Apart from the reorder above: with both, the two lines swap, which of the two markers is the title's cannot be told (ticket 99), and its words are not checked.
+  {
+    id: "shadow-root-text",
+    path: "/shadow",
+    title: "The title of the panel at the top of the page `/shadow`, which its component renders into a shadow root of its own, changed to “Inside a shadow root”.",
+    async design(desk) {
+      const { page } = desk;
+      await enterEditMode(page);
+      await layer(page, "In a shadow root").click();
+      await desktop(page).contentFrame().locator(`${SHADOW_PANEL} .title`).dblclick();
+      await page.keyboard.type("Inside a shadow root");
+      await page.keyboard.press("Escape");
+      await saved(desk, 1);
+    },
+    changes: [
+      {
+        kind: "text",
+        expect: "The panel's title at the top of `/shadow` reads “Inside a shadow root”.",
+        // Found by its source marker in the shadow root, its words are checked.
+        checkable: true,
+        shows: () => document.querySelector('[data-testid="shadow-panel"]')!.shadowRoot!.querySelector("h2")?.textContent === "Inside a shadow root",
+      },
+    ],
+    async apply(desk) {
+      await desk.edit("src/shadow/ShadowPanel.tsx", '<h2 className="title">In a shadow root</h2>', '<h2 className="title">Inside a shadow root</h2>');
+    },
+  },
 ];
 
 /**
@@ -1815,7 +2154,7 @@ export async function openObservers(browser: Browser, scenario: Scenario, url: s
       contexts.push(context);
       await context.route((target) => target.hostname === "127.0.0.1", (route) => route.abort());
       const page = await context.newPage();
-      await page.goto(url);
+      await page.goto(pageOf(scenario, url));
       await page.locator("main").waitFor();
       pages.set(width, page);
     }

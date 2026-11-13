@@ -124,7 +124,7 @@ test("T clicked in the blank space makes text there, typed in at once, in the pa
   await page.keyboard.press("t");
   await page.mouse.click(at.x, at.y);
   await page.keyboard.type("Hello there");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
 
   const text = offCanvas(page).contentFrame().locator("body > *");
   await expect(text).toHaveText("Hello there");
@@ -196,7 +196,7 @@ async function frameWithText(page: Page, offTheCanvas: boolean): Promise<string[
   await page.keyboard.press("t");
   await page.mouse.click(now.x + 4, now.y + 4);
   await page.keyboard.type("Launch");
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
 
   if (frame) {
     await expect(frame.contentFrame().getByText("Launch")).toBeVisible();

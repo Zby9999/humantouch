@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import type { ComponentChildren, TargetedFocusEvent, TargetedKeyboardEvent, TargetedPointerEvent } from "preact";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "preact/hooks";
 import type { ArrangeAs } from "./arrangement";
 import type { Editor, SetOptions } from "./edit-commands";
 import type { Align, Alignment, ColorStop, Fill, Gradient, Padding, Property, PropertyValues, Radius, Size, Stroke } from "./property-table";
@@ -57,6 +57,12 @@ interface Props {
   onDissolve(): void;
   /** The fill's picker opened, or closed, on a gradient: its handles show on the canvas while it is open. */
   onGradientPicker?(open: boolean): void;
+  /**
+   * Calls its listener on each step of a resize by a handle after the first,
+   * which the rest of the editor follows only once the handle is let go
+   * (ticket 153): the panel shows the new size at once. Returns what stops it.
+   */
+  onResizeStep?(listener: () => void): () => void;
 }
 
 /** A stroke added to a layer that has none, as in Figma. Fields in the order the editor reads them back in. */
@@ -100,7 +106,10 @@ type Shown<T> = T | typeof MIXED;
  * With several selected, only what all of them offer shows, and a value they
  * do not share shows as Mixed; a change goes to each of them, as one edit.
  */
-export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGradientPicker }: Props) {
+export function Properties({ editor, layers, onEdit, onStack, onDissolve, onGradientPicker, onResizeStep }: Props) {
+  // Each step of a resize: the panel alone is drawn anew, with the sizes as they are now.
+  const [, stepped] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => onResizeStep?.(() => stepped(undefined)), [onResizeStep]);
   /** The minimums and maximums added with the width field's menu, not set yet (designer, 2026-11-07); gone again for another selection. */
   const [limitsAdded, setLimitsAdded] = useState<{ key: string; added: Limit[] }>({ key: "", added: [] });
   const added = limitsAdded.key === keyOf(layers) ? limitsAdded.added : [];

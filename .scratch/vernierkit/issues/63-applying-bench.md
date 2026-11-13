@@ -83,13 +83,13 @@
 Claude Code，桌面 app 自带的那份（2.1.309；测量台在 `~/Library/Application Support/Claude/claude-code/<版本>/<hash>/claude.app/Contents/MacOS/claude` 里取最高版本，`VK_BENCH_CLAUDE` 可以改）：
 
 ```
-'/Users/bingyizhang/Library/Application Support/Claude/claude-code/2.1.309/5af865b9901c/claude.app/Contents/MacOS/claude' -p '落地我的设计改动' --output-format stream-json --verbose --model claude-sonnet-5-5 --effort high --debug-file '<run folder>/claude-debug.log' --setting-sources project,local --strict-mcp-config --no-chrome --no-session-persistence --permission-mode acceptEdits --allowedTools 'Read,Edit,MultiEdit,Write,Glob,Grep,TodoWrite,Skill,Bash(npx vernierkit:*),Bash(git diff:*),Bash(git status:*),Bash(git log:*),Bash(git show:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(grep:*),Bash(rg:*),Bash(find:*),Bash(npx tsc:*)' --disallowedTools WebFetch,WebSearch
+'~/Library/Application Support/Claude/claude-code/2.1.309/5af865b9901c/claude.app/Contents/MacOS/claude' -p '落地我的设计改动' --output-format stream-json --verbose --model claude-sonnet-5-5 --effort high --debug-file '<run folder>/claude-debug.log' --setting-sources project,local --strict-mcp-config --no-chrome --no-session-persistence --permission-mode acceptEdits --allowedTools 'Read,Edit,MultiEdit,Write,Glob,Grep,TodoWrite,Skill,Bash(npx vernierkit:*),Bash(git diff:*),Bash(git status:*),Bash(git log:*),Bash(git show:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(grep:*),Bash(rg:*),Bash(find:*),Bash(npx tsc:*)' --disallowedTools WebFetch,WebSearch
 ```
 
 Cursor，Cursor app 自带的 agent-cli（2026.10.22-27dcf5f；测量台用 `~/Library/Application Support/Cursor/User/globalStorage/anysphere.cursor-agent-worker/agent-cli/.local/bin/cursor-agent`，没有时退回 PATH 上的 `cursor-agent`，`VK_BENCH_CURSOR` 可以改）：
 
 ```
-'/Users/bingyizhang/Library/Application Support/Cursor/User/globalStorage/anysphere.cursor-agent-worker/agent-cli/.local/bin/cursor-agent' -p '落地我的设计改动' --output-format stream-json --model 'grok-4.7[context=256k,reasoning_effort=high,fast=false]' --trust --force --sandbox enabled
+'~/Library/Application Support/Cursor/User/globalStorage/anysphere.cursor-agent-worker/agent-cli/.local/bin/cursor-agent' -p '落地我的设计改动' --output-format stream-json --model 'grok-4.7[context=256k,reasoning_effort=high,fast=false]' --trust --force --sandbox enabled
 ```
 
 - 环境：只留 HOME、PATH（Cursor 的安装目录、Node、系统目录）、LANG、TERM、TMPDIR、USER、LOGNAME、SHELL，以及设计师 shell 里的代理变量（`.zshrc` 在 Clash 开着时设的 HTTPS_PROXY / HTTP_PROXY / NO_PROXY）。没有任何 ANTHROPIC_*、CLAUDE_*、模型设置，用设计师自己的登录。
@@ -435,8 +435,8 @@ Cursor，Cursor app 自带的 agent-cli（2026.10.22-27dcf5f；测量台用 `~/L
 - 验证（9 次 Cursor 冒烟，都在临时目录的示例项目副本里，不计入任何数字）：
   - 只回 OK 的一次，用的是测量台的 prepare 和命令行。每个名字只有一个 MCP 进程，参数里都带 headless：
     ```
-    npm exec @playwright/mcp@latest --headless --isolated --executable-path /Users/bingyizhang/Library/Caches/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-mac-arm64/chrome-headless-shell
-    npm exec chrome-devtools-mcp@1.11.0 --headless --isolated --executablePath /Users/bingyizhang/Library/Caches/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-mac-arm64/chrome-headless-shell
+    npm exec @playwright/mcp@latest --headless --isolated --executable-path ~/Library/Caches/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-mac-arm64/chrome-headless-shell
+    npm exec chrome-devtools-mcp@1.11.0 --headless --isolated --executablePath ~/Library/Caches/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-mac-arm64/chrome-headless-shell
     ```
   - 真的开浏览器的一次：让它用 playwright 的 `browser_navigate`、chrome-devtools 的 `new_page` 各打开一次 5623 上的临时页面，两次都读回了标题。起的两个浏览器主进程都是 headless shell，没有有窗口的 Chrome，`headedBrowsers` 为空：
     ```

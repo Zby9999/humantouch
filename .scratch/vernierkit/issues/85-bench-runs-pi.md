@@ -41,12 +41,12 @@
 
 Claude（没有改）：
 ```
-'/Users/bingyizhang/Library/Application Support/Claude/claude-code/2.1.309/5af865b9901c/claude.app/Contents/MacOS/claude' -p '落地我的设计改动' --output-format stream-json --verbose --model claude-sonnet-5-5 --effort high --debug-file '<run folder>/claude-debug.log' --setting-sources project,local --strict-mcp-config --no-chrome --no-session-persistence --permission-mode acceptEdits --allowedTools 'Read,Edit,MultiEdit,Write,Glob,Grep,TodoWrite,Skill,Bash(npx 03kind:*),Bash(git diff:*),Bash(git status:*),Bash(git log:*),Bash(git show:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(grep:*),Bash(rg:*),Bash(find:*),Bash(npx tsc:*)' --disallowedTools WebFetch,WebSearch
+'~/Library/Application Support/Claude/claude-code/2.1.309/5af865b9901c/claude.app/Contents/MacOS/claude' -p '落地我的设计改动' --output-format stream-json --verbose --model claude-sonnet-5-5 --effort high --debug-file '<run folder>/claude-debug.log' --setting-sources project,local --strict-mcp-config --no-chrome --no-session-persistence --permission-mode acceptEdits --allowedTools 'Read,Edit,MultiEdit,Write,Glob,Grep,TodoWrite,Skill,Bash(npx 03kind:*),Bash(git diff:*),Bash(git status:*),Bash(git log:*),Bash(git show:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(grep:*),Bash(rg:*),Bash(find:*),Bash(npx tsc:*)' --disallowedTools WebFetch,WebSearch
 ```
 
 pi：
 ```
-/Users/bingyizhang/.npm-global/bin/pi -p '落地我的设计改动' --mode json --provider command-code --model deepseek/deepseek-v4.1-flash --thinking high --no-session --offline --no-extensions -e '/Users/bingyizhang/.pi/agent/npm/node_modules/@commandcode/pi-commandcode-provider' -e '<run folder>/pi-extension/pi-extension.ts' --no-mcp --no-skills --skill .agents/skills/03kind --no-prompt-templates --no-themes --approve --tools read,bash,edit,write,grep,ls
+~/.npm-global/bin/pi -p '落地我的设计改动' --mode json --provider command-code --model deepseek/deepseek-v4.1-flash --thinking high --no-session --offline --no-extensions -e '~/.pi/agent/npm/node_modules/@commandcode/pi-commandcode-provider' -e '<run folder>/pi-extension/pi-extension.ts' --no-mcp --no-skills --skill .agents/skills/03kind --no-prompt-templates --no-themes --approve --tools read,bash,edit,write,grep,ls
 ```
 
 - `TK_BENCH_PI` 可指定别的 pi。环境照 `cleanEnv()`，没有任何 API key。

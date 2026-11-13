@@ -16,7 +16,9 @@
  *                                     for the changes it applies, `finish`, and fill in the report `finish` lays out. Each change must show by
  *                                     the scenario's own test at its widths (a change with no test fails, a brief aside), and get the page's
  *                                     check of it as shown; one with a Variable must write it (as `usesVariable` counts it); one `notOneToOne`
- *                                     must be in the report under ⚠️ alone, with why and instead (`checkReport`). The scenario's own
+ *                                     must be in the report under ⚠️ alone, with why and instead (`checkReport`); one with a `scripted` check
+ *                                     must get it, and `done` say its words (one written wrong on purpose: not shown, under ⚠️; one done differently on purpose
+ *                                     or adapted: under ↪, its reason word for word, ticket 148). The scenario's own
  *                                     expectations must hold. With no changes (an undo), only `apply` runs: no claim, no finish, no report.
  *                                     With `--dry` or `--scripted`, BENCH_DEBUG=1 prints a scenario's error whole, not its first line only.
  *   pnpm bench:agents summary <dir>   measure the raw results in <dir> again, and sum them up
@@ -46,7 +48,7 @@ import { checkReport, fffProblem, measureRun, parseTranscript, pooled, reportedA
 import { canvasUpdatedNoticesShown, pageChangedNoticesShown, recordNotices, stalledNoticesShown, unclaimedNoticesShown } from "./notices.ts";
 import { shellDenied } from "./pi-extension.ts";
 import { cloneBase, prepareBase, startDevServer, type RunProject } from "./project.ts";
-import { designProblems, exampleOf, held, openObservers, shown, type Desk, type Example, type SavedChange, type Scenario } from "./scenarios.ts";
+import { designProblems, exampleOf, held, openObservers, pageOf, shown, type Desk, type Example, type SavedChange, type Scenario } from "./scenarios.ts";
 import { STANDARD_SCENARIOS } from "./scenarios-other-examples.ts";
 import { showLayersOnEntry } from "../layers-on-entry.ts";
 
@@ -148,7 +150,10 @@ async function main(argv: string[]) {
   // The scripted pass takes the scenarios with scripted code, unless named.
   const scenarios = (
     option("scenarios") ? STANDARD_SCENARIOS.filter((scenario) => option("scenarios")!.split(",").includes(scenario.id)) : STANDARD_SCENARIOS.filter((scenario) => !scripted || scenario.apply)
-  ).filter((scenario) => !(argv.includes("--no-skill") && scenario.prompt));
+  )
+    .filter((scenario) => !(argv.includes("--no-skill") && scenario.prompt))
+    // One whose scripted code writes the round wrong on purpose (ticket 147) is no Agent's to run.
+    .filter((scenario) => scripted || argv.includes("--dry") || !scenario.scriptedOnly);
   const runs = Number(option("runs") ?? 3);
   const firstRun = Number(option("first-run") ?? 1);
   const maxRuns = Number(option("max-runs") ?? Infinity);
@@ -291,7 +296,7 @@ async function withScenario<T>(
     await showLayersOnEntry(context);
     await recordNotices(context);
     const page = await context.newPage();
-    await page.goto(server.url);
+    await page.goto(pageOf(scenario, server.url));
     await page.locator("main").waitFor();
     observers = await openObservers(browser, scenario, server.url);
     // A command line held to the rule pi's are (the bench's extension), before it runs: a command the Skill gives that the bench turns away is a gap the scripted pass finds.
@@ -420,9 +425,14 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
       await scenario.apply!(desk);
       const applied = saved.filter((_, i) => !scenario.changes[i].notOneToOne).map((change) => change.id);
       // The dev server brings the code in (Next.js slowly): then `done`, as an Agent runs it once the page has the change.
+      let said = "";
       if (applied.length) {
         await endState(observers, scenario, saved, project.dir, head, false);
-        await project.cli("done", ...applied.map(String));
+        // Done differently on purpose (ticket 148): each with its own reason, as the Skill has it.
+        const why = (id: number) => scenario.changes[saved.findIndex((change) => change.id === id)].scripted?.differently;
+        const plain = applied.filter((id) => why(id) === undefined);
+        if (plain.length) said = await project.cli("done", ...plain.map(String));
+        for (const id of applied.filter((one) => why(one) !== undefined)) said += await project.cli("done", String(id), "--differently", why(id)!);
       }
       const report = applying ? fillInReport(await project.cli("finish"), scenario, saved) : null;
 
@@ -430,7 +440,7 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
       const { atEnd, expectations, loaded } = await endState(observers, scenario, saved, project.dir, head, true);
       if (!loaded) problems.push(`the page did not load afresh at the end, in ${END_STATE_MS / 1000} s`);
       expectations.forEach((holds, i) => holds || problems.push(`expectation ${i + 1} does not hold: ${scenario.expectations![i].expect}`));
-      const checks: Record<string, { outcome: string }> = rounds().length > roundsBefore ? JSON.parse(readFileSync(join(history, rounds().at(-1)!, "result.json"), "utf8")).checks : {};
+      const checks: Record<string, { outcome: string; adapted?: { width: number }[] }> = rounds().length > roundsBefore ? JSON.parse(readFileSync(join(history, rounds().at(-1)!, "result.json"), "utf8")).checks : {};
       await sh("git", ["add", "-A"], project.dir);
       const diff = await sh("git", ["diff", "--cached", head], project.dir);
       scenario.changes.forEach((change, i) => {
@@ -438,15 +448,30 @@ async function applyScripted(browser: Browser, base: string, port: number, scena
         const id = saved[i].id;
         if (atEnd[i] === false) problems.push(`change ${i + 1} does not show: ${change.expect}`);
         if (atEnd[i] === null && change.kind !== "brief") problems.push(`change ${i + 1} has no test of its own (\`shows\`) to show it by`);
-        if (change.checkable && checks[id]?.outcome !== "shown") problems.push(`change ${i + 1}: the page's check says ${checks[id]?.outcome ?? "nothing"}`);
+        // Written wrong on purpose (ticket 147): the page's check is to say so.
+        const outcome = change.scripted?.notShown ? "not shown" : "shown";
+        if (change.checkable && checks[id]?.outcome !== outcome) problems.push(`change ${i + 1}: the page's check says ${checks[id]?.outcome ?? "nothing"}, not ${outcome}`);
+        if (change.scripted && !said.includes(change.scripted.done)) problems.push(`change ${i + 1}: \`done\` does not say “${change.scripted.done}”, but: ${said.trim()}`);
+        const adapted = (checks[id]?.adapted ?? []).map((one) => one.width).join();
+        if (adapted !== (change.scripted?.adapted ?? []).join()) problems.push(`change ${i + 1}: the page's check has it adapted at ${adapted || "no width"}, not ${change.scripted?.adapted?.join() || "none"}`);
         if (change.variable && !usesVariable(diff, change.variable)) problems.push(`change ${i + 1}: the code does not write ${variableParts(change.variable).map((names) => names.join(" or ")).join(", and ")}`);
         if (change.variableKept && !keepsVariable(diff, change.variableKept)) problems.push(`change ${i + 1}: the code does not keep ${variableParts(change.variableKept).map((names) => names.join(" or ")).join(", and ")}`);
       });
       if (!report) return problems;
       const check = checkReport(report, saved.map((change) => change.id));
       if (!check.compliant) problems.push(`the report: ${check.problems.join("; ")}`);
-      const warned = saved.filter((_, i) => scenario.changes[i].notOneToOne).map((change) => change.id);
+      const warned = saved.filter((_, i) => scenario.changes[i].notOneToOne || (scenario.changes[i].scripted?.notShown && scenario.changes[i].scripted?.differently === undefined)).map((change) => change.id);
       if (check.notApplied.join() !== warned.join()) problems.push(`the report has ${check.notApplied.join(", ") || "none"} under ⚠️, not ${warned.join(", ") || "none"}`);
+      // Done differently (ticket 148): said so, or adapted at a width; under ↪, its reason word for word.
+      const otherwise = saved.filter((_, i) => scenario.changes[i].scripted?.differently !== undefined || !!scenario.changes[i].scripted?.adapted?.length).map((change) => change.id);
+      if ((check.differently ?? []).join() !== otherwise.join()) problems.push(`the report has ${check.differently?.join(", ") || "none"} under ↪, not ${otherwise.join(", ") || "none"}`);
+      scenario.changes.forEach((change, i) => {
+        const why = change.scripted?.differently;
+        if (why === undefined) return;
+        const lines = report.split("\n");
+        const reason = lines[lines.findIndex((line) => line.startsWith(`- ${saved[i].id}. `)) + 1];
+        if (!reason?.startsWith("  Why: ") || !reason.endsWith(why)) problems.push(`change ${i + 1}: the report does not give its reason under ↪ word for word: ${why}`);
+      });
       if (reportedAsExpected(check, warned.map((id) => ({ id, shown: atEnd[saved.findIndex((change) => change.id === id)] }))) !== (warned.length ? 1 : null)) problems.push("the report has the changes that cannot be applied 1:1 elsewhere than under ⚠️ alone, with why and instead");
       return problems;
     });
@@ -495,6 +520,9 @@ function fillInReport(finished: string, scenario: Scenario, saved: SavedChange[]
     const item = /^\s*-\s*(\d+)\./.exec(line);
     if (item) change = Number(item[1]);
     const kind = item ? "item" : /^\s+Why:/.test(line) ? "why" : /^\s+Instead:/.test(line) ? "instead" : null;
+    // Under ↪, the reason the scripted code gave with `--differently` (ticket 148): nothing to fill in.
+    const given = scenario.changes[saved.findIndex((c) => c.id === change)]?.scripted?.differently;
+    if (kind === "why" && given !== undefined && line.endsWith(given)) return line;
     if (kind && !REPORT_PLACEHOLDERS[kind].some(([placeholder]) => line.includes(placeholder))) {
       throw new Error(`The report \`finish\` lays out has none of ${REPORT_PLACEHOLDERS[kind].map(([placeholder]) => placeholder).join(", ")} to fill in on: ${line}`);
     }
@@ -515,7 +543,7 @@ const WHY = Symbol("why");
 /**
  * The placeholders of the report `finish` lays out (report-form.ts), by the
  * line of a change they are on, one of them on each: the change's line,
- * under ✓ or ⚠️; its Why; its Instead. Each with what the scripted pass puts
+ * under ✓, ↪ or ⚠️; its Why; its Instead. Each with what the scripted pass puts
  * in its place.
  */
 const REPORT_PLACEHOLDERS: Record<"item" | "why" | "instead", [string, string | typeof WHY][]> = {
@@ -526,6 +554,8 @@ const REPORT_PLACEHOLDERS: Record<"item" | "why" | "instead", [string, string | 
   why: [
     ["<why it is not applied>", WHY],
     ["<what keeps it so>", "unknown"],
+    // Under ↪, adapted at a width (ticket 148).
+    ["<why you did it so>", "adapted to fit"],
   ],
   instead: [["<what you did, or “left as it was”>", "left as it was"]],
 };

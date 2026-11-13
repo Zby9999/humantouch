@@ -18,7 +18,8 @@ import { createEditor } from "./edits";
 import { createHistory, together } from "./undo-steps";
 import { cameInto, createOffCanvas, type OffCanvasLayer, type OffCanvas } from "./off-canvas";
 import { carry as carryOff, moveInto as moveIntoOff, partOff as partOffCanvas, takenBackOff, type Desk } from "./off-canvas-moves";
-import { serializeCanvas, type Canvas } from "./freezer";
+import { PAGE_ATTR, restyle, serializeCanvas, type Canvas } from "./freezer";
+import { compare, printOf, type PageEntry, type PagePrint } from "./page-print";
 import { takeInApplied } from "./saved-round";
 import { framedText, isOnlyText, nodeOf, type Layer, type LayerTree } from "./layers";
 import { LayerInfo } from "./LayerInfo";
@@ -66,10 +67,10 @@ interface Props {
   offCanvas: SavedOffCanvasLayer[];
   /** The project's breakpoints from its Tailwind theme; null: those of the page's media queries, if any. */
   breakpoints: ProjectBreakpoints | null;
-  /** The round, saved a moment after the last edit; null once it has no changes left. */
-  onSave(round: SavedRound | null): void;
+  /** The round, saved a moment after the last edit; null once it has no changes left. `leaving`: saved as the page goes (ticket 160). */
+  onSave(round: SavedRound | null, leaving?: boolean): void;
   /** The layers off the canvas, saved with the round, though no part of it. Answers with the JSX that writes each, as kept. */
-  onSaveOffCanvas(layers: SavedOffCanvasLayer[]): Promise<OffCanvasSaveAnswer["snippets"]>;
+  onSaveOffCanvas(layers: SavedOffCanvasLayer[], leaving?: boolean): Promise<OffCanvasSaveAnswer["snippets"]>;
   /** The round's changes, right after each edit. */
   onChanges(changes: Change[]): void;
   /** Set once there is a canvas, for the change list to reach it. */
@@ -82,6 +83,34 @@ interface Props {
   cameraNow?: { current: Camera | null };
   /** False: enter edit mode instantly (the toggle was pressed from the keyboard). */
   animate: boolean;
+  /** The page the saved canvas reflects, printed (ticket 141); null when not known, or with none to come back to. */
+  reflects?: PagePrint | null;
+  /** Whether the code is the code `reflects` was printed on (ticket 141): null when not known. */
+  codeSame?(): boolean | null;
+  /**
+   * The canvas is up (ticket 141): how the page stands to the one the saved canvas reflects (`same` for a canvas frozen
+   * afresh), and the print of the page it reflects from now on, to keep. Without `since`: that print alone, kept once
+   * the canvas that took the page's styles in is saved.
+   */
+  onPage?(page: PageEntry | { keep: PagePrint }): void;
+}
+
+/**
+ * How the page stands to the one a saved canvas, `doc`, reflects (ticket 141), as it is put back, before it is laid
+ * out: `reflects`, that one printed. Its styles alone changed since, the page's stylesheets as they are now go in
+ * place of those it was frozen with (`restyle`), and it reflects the page as it is now; its structure changed, it
+ * stays as it is. Not known (a round carried over since, the Agent's code in), it reflects the page as it is now, if
+ * frozen from this one.
+ */
+function pageSince(doc: Document, reflects: PagePrint | null, codeSame: boolean | null, windowHeight: number): PageEntry {
+  // The code as it was, the page is as it was: what it draws as time goes by is not a change (ADR 0018).
+  if (reflects && codeSame && reflects.path === window.location.pathname + window.location.search) return { since: "same", keep: null };
+  const now = printOf(window);
+  if (!reflects) return { since: "same", keep: doc.documentElement.getAttribute(PAGE_ATTR) === now.path ? now : null };
+  const since = compare(reflects, now);
+  if (since !== "styles") return { since, keep: null };
+  restyle(doc, window, windowHeight);
+  return { since, keep: now };
 }
 
 /** How long after the last edit the round is saved. */
@@ -92,7 +121,7 @@ const NUDGE_RUN_MS = 1000;
 const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 
 /** Edit mode: layers on the left, the canvas in the middle, properties on the right. */
-export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints, onSave, onSaveOffCanvas, onChanges, control, notice, startAt, cameraNow, animate }: Props) {
+export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints, onSave, onSaveOffCanvas, onChanges, control, notice, startAt, cameraNow, animate, reflects = null, codeSame, onPage }: Props) {
   /**
    * Hidden at first: the editor often opens in a browser built into another app, where room is short. Hidden on every
    * entry, whether it was shown or hidden the last time; shown, it stays so until edit mode is left (designer,
@@ -188,6 +217,8 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
 
   /** Only the round there was on entering counts: saves along the way do not restore anything. */
   const [restoreFrom] = useState(saved);
+  /** How the page stands to the one the saved canvas reflects, worked out as it is put back (ticket 141). */
+  const since = useRef<PageEntry | null>(null);
   const [restoreOffCanvas] = useState(savedOffCanvas);
   const [tree, setTree] = useState<LayerTree | null>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
@@ -260,26 +291,38 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   const pendingSave = useRef<ReturnType<typeof setTimeout>>(undefined);
   const latestOnSave = useRef(onSave);
   latestOnSave.current = onSave;
+  const latestOnPage = useRef(onPage);
+  latestOnPage.current = onPage;
+  /** The print of the page the canvas reflects, to keep once the canvas it goes with is saved (ticket 141). */
+  const pageToKeep = useRef<PagePrint | null>(null);
+  const keepPage = () => {
+    const keep = pageToKeep.current;
+    pageToKeep.current = null;
+    if (keep) latestOnPage.current?.({ keep });
+  };
+  /** A canvas frozen afresh, the page it reflects to print, once: as the canvas shows, or as edit mode is left before. */
+  const printFresh = useRef<(() => void) | null>(null);
   const latestOnSaveOffCanvas = useRef(onSaveOffCanvas);
   latestOnSaveOffCanvas.current = onSaveOffCanvas;
-  /** Saves now what is waiting to be saved. */
-  const flush = () => {
+  /** Saves now what is waiting to be saved. `leaving`: the page is going, closed, reloaded or navigated away from (ticket 160). */
+  const flush = (leaving = false) => {
     if (pendingSave.current === undefined || !round.current) return;
     clearTimeout(pendingSave.current);
     pendingSave.current = undefined;
     const { canvas, changeSet, offCanvas } = round.current;
-    latestOnSave.current(changeSet.list().length ? { canvas: serializeCanvas(canvas), changeSet: changeSet.save() } : null);
-    saveOffCanvas(offCanvas);
+    latestOnSave.current(changeSet.list().length ? { canvas: serializeCanvas(canvas), changeSet: changeSet.save() } : null, leaving);
+    saveOffCanvas(offCanvas, leaving);
+    keepPage();
   };
   /** The layers off the canvas as saved last: saved again only once they differ. */
   const savedOutside = useRef<string | null>(null);
-  const saveOffCanvas = (offCanvas: OffCanvas) => {
+  const saveOffCanvas = (offCanvas: OffCanvas, leaving = false) => {
     const layers = offCanvas.save();
     const json = JSON.stringify(layers);
     if (json === savedOutside.current) return;
     savedOutside.current = json;
     // Each keeps the JSX that writes it as the source had it: put back, it goes with it, though the source has it no more.
-    void latestOnSaveOffCanvas.current(layers).then((snippets) => {
+    void latestOnSaveOffCanvas.current(layers, leaving).then((snippets) => {
       // So does each layer that came into one from elsewhere (ticket 108), kept with the change that brought it in.
       const within = offCanvas.list().flatMap(cameInto);
       for (const [id, snippet] of Object.entries(snippets)) {
@@ -291,14 +334,19 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   };
   /** Edit mode is over: nothing is saved from here on. */
   const left = useRef(false);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    // The page going within the half second before a save: what is waiting is saved as it goes, as leaving edit mode saves it. Nothing waiting, nothing sent.
+    const going = () => flush(true);
+    window.addEventListener("pagehide", going);
+    return () => {
+      window.removeEventListener("pagehide", going);
       flush();
+      keepPage();
+      printFresh.current?.();
       control.current = null;
       left.current = true;
-    },
-    [],
-  );
+    };
+  }, []);
 
   /** The changes seen so far, by id: those of the round edit mode opened with, and those made since. A change at a breakpoint is marked for its parts to be read only as it is first seen, made (ticket 65). */
   const seenChanges = useRef(new Set<number>());
@@ -365,6 +413,15 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
     });
     onEdit();
   };
+  /** What follows each step of a resize after the first, which the rest of the editor follows once it is let go: the Design panel (ticket 153). */
+  const resizeSteps = useRef(new Set<() => void>());
+  const onResizeStep = useMemo(
+    () => (listener: () => void) => {
+      resizeSteps.current.add(listener);
+      return () => void resizeSteps.current.delete(listener);
+    },
+    [],
+  );
   const onEdit = (adjust = true) => {
     // A move builds the layers anew: the selection is found again in them.
     const next = editor?.tree();
@@ -390,7 +447,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   /** The layer a change is of, as the canvas has it now: one deleted, the layer it was in; one moved off the canvas, there. */
   const layerOfChange = (change: Change): Layer | null => {
     if (!tree || !offCanvas) return null;
-    // Made on one instance alone (ticket 114): its layer in that instance.
+    // Made on one instance alone (ticket 114): its layer in that instance. In a shadow root too (ticket 137, `elementsOf`).
     const byId = (doc: Document, id: string) => elementsOf(doc, id).find((el) => !el.hasAttribute(DELETED_ATTR)) ?? null;
     const moved = change.offCanvas ? offCanvas.list().find((outside) => outside.id === change.offCanvas)?.layer() : null;
     if (moved) return moved;
@@ -620,7 +677,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
   };
 
   /** ⌘C / ⌘X / ⌘V, within the editor. */
-  const clipboard = useMemo(() => (editor && round.current ? createClipboard(editor, round.current.changeSet) : null), [editor]);
+  const clipboard = useMemo(() => (editor && round.current ? createClipboard(editor, round.current.changeSet, showToast) : null), [editor, showToast]);
   /** Layers on the canvas: the clipboard holds only those. */
   const onCanvas = (layers: Layer[]) => layers.every((layer) => !outsideOf(layer));
   /** ⌘C: whether there was anything to copy. */
@@ -818,8 +875,16 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         restoreFrom={restoreFrom?.canvas ?? null}
         startAt={startAt}
         cameraNow={cameraNow}
-        // A round carried over (ticket 68): what was applied in the rounds before stays on the canvas, under what is left, as the page's own.
-        takeIn={restoreFrom?.changeSet.applied?.length ? (doc) => takeInApplied(doc, restoreFrom.changeSet) : undefined}
+        takeIn={
+          restoreFrom
+            ? (doc, windowHeight) => {
+                // A round carried over (ticket 68): what was applied in the rounds before stays on the canvas, under what is left, as the page's own.
+                if (restoreFrom.changeSet.applied?.length) takeInApplied(doc, restoreFrom.changeSet);
+                // The page changed since the page it reflects: its styles alone, they are taken in (ticket 141).
+                since.current = pageSince(doc, reflects, codeSame?.() ?? null, windowHeight);
+              }
+            : undefined
+        }
         onCanvas={(views, workspace) => {
           const changeSet = createChangeSet(restoreFrom?.changeSet);
           // A round saved before opens as it was: changes in it the page has yet to be read for are read by the editor layer as it is.
@@ -846,6 +911,27 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
           setTree(editor.tree());
           setEditor(editor);
           setOffCanvas(outside);
+          // The page the canvas reflects (ticket 141). Frozen afresh: the page as it is, printed once the canvas shows. Its
+          // styles taken in: the page as it is, kept once the canvas is saved with them, at once. Not known: the page as it
+          // is, kept. Its structure changed since: told.
+          const entry = since.current;
+          if (!restoreFrom) {
+            // Once the canvas shows; a hidden tab draws no frame, so not after a second either.
+            const print = () => {
+              if (printFresh.current !== print) return;
+              printFresh.current = null;
+              clearTimeout(late);
+              latestOnPage.current?.({ since: "same", keep: printOf(window) });
+            };
+            printFresh.current = print;
+            const late = setTimeout(print, 1000);
+            requestAnimationFrame(() => setTimeout(() => !left.current && print()));
+          }
+          else if (entry?.since === "styles") {
+            pageToKeep.current = entry.keep;
+            latestOnPage.current?.({ since: "styles", keep: null });
+            changed();
+          } else if (entry) latestOnPage.current?.(entry);
           /**
            * Taking `changes` back: the layers they moved off the canvas are back on it, and so no longer off it;
            * those they put back onto it are off it again, as they were, unless moved off by them too.
@@ -889,7 +975,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
               if (taken.length || parts.length || brought.length) saveOffCanvas(outside);
               edited(undefined);
             },
-            save: flush,
+            save: () => flush(),
             show(id) {
               const change = changeSet.list().find((change) => change.id === id);
               if (change) latest.current.show(change);
@@ -919,6 +1005,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         focus={focus}
         onSelect={select}
         editor={editor}
+        onHint={showToast}
         onMove={(layer: Layer, to: Destination) => {
           const moved = editorOf(layer)!.move(layer, to);
           onEdit();
@@ -926,8 +1013,13 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
         }}
         onResize={(layer, to, continues, at) => {
           editorOf(layer)!.resize(layer, to, { continues, along: at && movedWith(layer, at) });
-          onEdit(false);
+          // Each step after the first: the canvas shows it, and the Design panel its size; the rest of the editor follows
+          // once the handle is let go. Drawing the whole editor anew each frame keeps a resize under 60fps (ticket 153).
+          // The whole of a layer off the canvas, which moves too, has the editor follow each step, as ever.
+          if (continues && !at) for (const listener of resizeSteps.current) listener();
+          else onEdit(false);
         }}
+        onResized={() => onEdit(false)}
         onCancelResize={(layer) => {
           editorOf(layer)!.takeBack();
           onEdit(false);
@@ -1027,6 +1119,7 @@ export function Shell({ controls, saved, offCanvas: savedOffCanvas, breakpoints,
                   editor={editorOf(selected[0])!}
                   layers={selected}
                   onEdit={onEdit}
+                  onResizeStep={onResizeStep}
                   onStack={() => makeStack(selected)}
                   onDissolve={() => dissolve(selected)}
                   onGradientPicker={setGradientPicker}

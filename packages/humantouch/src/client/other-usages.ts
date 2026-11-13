@@ -16,11 +16,18 @@
  * elements again by their usage. A round the page claims for an Agent that
  * did not (ticket 78) goes by what the other usages showed as the code began
  * to change (`noteRound`), noted before the code it claims for is in.
+ *
+ * With them, what breaks of the layout each style change's layer made at
+ * each width it is looked at (ticket 147, `breaks.ts`): a break it makes
+ * later, that it did not then, is the round's, and the change not shown.
  */
 import type { OtherUsageChanged, OtherUsagesKept, OtherUsagesNote } from "../service-protocol";
 import type { OutsideChanged, OutsideNote } from "../outside-protocol";
+import type { BreakFound, BreaksNote } from "../widths-protocol";
+import { newBreaks, noteBreaks } from "./breaks";
 import type { Change } from "./changeset";
-import { changedAround, changesTheSame as sameStyle, itself, outsideOf, valuesAt, wordsOn, type PageWidth } from "./check";
+import { breaksLines } from "../design-values";
+import { breakWidthsOf, changedAround, changesTheSame as sameStyle, elementsAt, itself, outsideOf, valuesAt, wordsOn, type PageWidth } from "./check";
 import type { RoundOnCanvas } from "./moves";
 import { sameBreakpoint } from "./breakpoints";
 import { forOneUsage, foundByMarker } from "./checkable";
@@ -41,13 +48,16 @@ export type OtherUsagesNoted = OtherUsagesNote<{ el?: Element }>;
 /** The round's notes, `noted` by change id, as kept in `.humantouch/` (ticket 82): with no elements. */
 export function keptOf(noted: Map<number, OtherUsagesNoted | null>): OtherUsagesKept {
   return Object.fromEntries(
-    [...noted].map(([id, one]) => [id, one && { width: one.width, seen: one.seen.map(({ key, chain, value, nth }) => ({ key, chain, value, ...(nth && { nth }) })), ...(one.outside && { outside: one.outside }) }]),
+    [...noted].map(([id, one]) => [
+        id,
+        one && { width: one.width, seen: one.seen.map(({ key, chain, value, nth }) => ({ key, chain, value, ...(nth && { nth }) })), ...(one.outside && { outside: one.outside }), ...(one.breaks && { breaks: one.breaks }) },
+      ]),
   );
 }
 
 /** Notes kept in `.humantouch/` (`kept`), by change id, to go by: their elements to be found again on the page. */
 export function notedFrom(kept: OtherUsagesKept): Map<number, OtherUsagesNoted | null> {
-  return new Map(Object.entries(kept).map(([id, one]) => [Number(id), one && { width: one.width, seen: one.seen.map((seen) => ({ ...seen })), ...(one.outside && { outside: one.outside }) }]));
+  return new Map(Object.entries(kept).map(([id, one]) => [Number(id), one && { width: one.width, seen: one.seen.map((seen) => ({ ...seen })), ...(one.outside && { outside: one.outside }), ...(one.breaks && { breaks: one.breaks }) }]));
 }
 
 /**
@@ -87,7 +97,7 @@ function changesTheSame(change: Change, other: Change): boolean {
 
 /** What an element shows of what `change` changes: the value of its property, in design language; for new words, what it reads (ticket 90). */
 function shownOn(el: Element, change: Change): unknown {
-  return change.kind === "text" ? wordsOn(el) : readValue(el, change.property as Property);
+  return change.kind === "text" ? wordsOn(el, breaksLines(change)) : readValue(el, change.property as Property);
 }
 
 /**
@@ -129,18 +139,62 @@ export function noteRound(doc: Document, round: Change[], width: number, viewWid
   // Outside a breakpoint's range, as wide as the window alone: a copy of the page at another width takes a while to make, and the code is changing (ticket 104).
   const at = (w: number) => (w === width ? itself(doc) : null);
   const here = (change: Change) => outsideOf(change, round, width, viewWidths).filter((w) => w === width);
-  return new Map(round.filter((change) => looksAtOtherUsages(change) || here(change).length).map((change) => [change.id, noteChange(doc, change, round, width, here(change), at)]));
+  const breaksHere = (change: Change) => breakWidthsOf(change, round, width, viewWidths).filter((w) => w === width);
+  return new Map(
+    round.filter((change) => looksAtOtherUsages(change) || here(change).length || breaksHere(change).length).map((change) => [change.id, noteChange(doc, change, round, width, here(change), at, breaksHere(change))]),
+  );
 }
 
 /**
  * What the page notes of `change` as it begins to check the round, `width`
  * px wide: what the other usages of its component show (ticket 77), and, of a
  * change at a breakpoint, what its layer shows at each of the widths
- * `outside` its range, as `at` shows the page that wide (ticket 104). Null
- * when it looks at neither.
+ * `outside` its range, as `at` shows the page that wide (ticket 104); of a
+ * style change, what breaks of the layout its layer makes at each of
+ * `breaks` (ticket 147), `late` when the code has changed since. Null when
+ * it looks at none of these.
  */
-export function noteChange(doc: Document, change: Change, round: Change[], width: number, outside: number[], at: (width: number) => PageWidth | null): OtherUsagesNoted | null {
-  return withOutside(noteOtherUsages(doc, change, round, width), width, noteOutside(doc, change, round, outside, at));
+export function noteChange(doc: Document, change: Change, round: Change[], width: number, outside: number[], at: (width: number) => PageWidth | null, breaks: number[] = [], late = false): OtherUsagesNoted | null {
+  return withBreaks(withOutside(noteOtherUsages(doc, change, round, width), width, noteOutside(doc, change, round, outside, at)), width, noteBreaksAt(doc, change, round, breaks, at, late));
+}
+
+/** `noted`, with what breaks of the layout the layer made at more widths (`more`, ticket 147): as noted already when there are none. */
+export function withBreaks(noted: OtherUsagesNoted | null, width: number, more: BreaksNote[]): OtherUsagesNoted | null {
+  return more.length ? { ...(noted ?? { width, seen: [] }), breaks: [...(noted?.breaks ?? []), ...more] } : noted;
+}
+
+/** What breaks of the layout the layer of a style change makes at each of `widths`, as `at` shows the page that wide (ticket 147), `late` when the code has changed since the round was claimed: none at a width the page cannot be shown at now, or does not have the layer at. */
+export function noteBreaksAt(doc: Document, change: Change, round: Change[], widths: number[], at: (width: number) => PageWidth | null, late = false): BreaksNote[] {
+  const kept: BreaksNote[] = [];
+  for (const width of widths) {
+    const page = at(width);
+    const els = page ? elementsAt(doc, change, round as RoundOnCanvas, page) : [];
+    if (page && els.length) kept.push(noteBreaks(page.doc, els, width, late));
+  }
+  return kept;
+}
+
+/** Of `widths` a change is looked at for breaks at, those `noted` has nothing at yet. */
+export function unnotedBreaks(noted: OtherUsagesNoted | null | undefined, widths: number[]): number[] {
+  return widths.filter((width) => !noted?.breaks?.some((one) => one.width === width));
+}
+
+/**
+ * The breaks of the layout the layer of a style change makes now, at those
+ * of `widths` noted (`noted`, ticket 147), that it did not as noted, on the
+ * page `doc` as `at` shows it that wide; `loading`, where the page cannot be
+ * shown that wide now (a copy of it still loading its stylesheets).
+ */
+export function breaksNow(doc: Document, change: Change, round: RoundOnCanvas, noted: OtherUsagesNoted | null, widths: number[], at: (width: number) => PageWidth | null): { found: BreakFound[]; loading: boolean } {
+  const found: BreakFound[] = [];
+  let loading = false;
+  for (const note of noted?.breaks ?? []) {
+    if (!widths.includes(note.width)) continue;
+    const page = at(note.width);
+    loading ||= !page;
+    if (page) found.push(...newBreaks(page.doc, elementsAt(doc, change, round, page), note));
+  }
+  return { found, loading };
 }
 
 /** `noted`, with what the layer showed at more widths outside the range (`more`): as noted already when there are none. */

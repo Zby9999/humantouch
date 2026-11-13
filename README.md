@@ -60,15 +60,19 @@ If the Agent stops partway, the toggle tells you "Your Agent seems to have stopp
 
 ### 4. Read the report
 
-The Agent ends its reply with a report of the round. Under ✓ are the changes applied as you made them; under ⚠️ are those it could not apply exactly, each with why and what it did instead. For each change the page can check, what the page shows decides its heading, not the Agent's word.
+The Agent ends its reply with a report of the round. Under ✓ are the changes applied as you made them; under ↪ those it did differently on purpose (you asked for something else in the conversation, say, or it adapted how a layer is laid out at a narrower view's width), each with why; under ⚠️ those the page does not show, each with why and what it did instead. For each change the page can check, what the page shows decides its heading, unless the Agent says it chose to do it differently: then it is under ↪, with its reason and what the page draws. A change that breaks the layout at a width, changes the widths outside its breakpoint's range, or changes other usages of a component stays under ⚠️ all the same.
 
 ```text
 ✓ Applied
 - 1. Fill: the cards of the feature grid, white → red
 - 2. Brief on Button: pressed, it shrinks a little and springs back (`active:scale-95` with a springy transition)
 
-⚠️ Not applied 1:1
-- 3. Corner radius: the Sign up button
+↪ Done differently
+- 3. Fill: the hero's background
+  Why: you asked for neutral-250 instead
+
+⚠️ Not shown
+- 4. Corner radius: the Sign up button
   Why: the component library sets it, and it cannot be changed from this usage
   Instead: left as it was
 ```

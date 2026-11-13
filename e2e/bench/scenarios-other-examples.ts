@@ -183,7 +183,7 @@ export const OTHER_EXAMPLE_SCENARIOS: Scenario[] = [
       await layer(page, "bytes in production").click();
       await desktop(page).contentFrame().getByText("bytes in production").dblclick();
       await page.keyboard.type("bytes shipped to production");
-      await page.keyboard.press("Enter");
+      await page.keyboard.press("Escape");
       await pick(page, phone(page), `${STATS} > div`);
       await page.keyboard.press("Escape");
       await setField(page, "Columns", "1");

@@ -4,6 +4,7 @@
  * the layers off the canvas, which belong to no round (ADR 0009).
  * The local service and the command line both work through this module.
  */
+import type { PagePrint } from "./client/page-print";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -12,6 +13,7 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { carryOver, type SavedChangeSet } from "./client/changeset";
 import type { CheckAsk, CheckResult, CodeSnapshot, OtherUsagesKept, SavedOffCanvasLayer, RoundStatus } from "./service-protocol";
+import { stillToFix } from "./widths-protocol";
 
 export const HUMAN_TOUCH_DIR = ".humantouch";
 
@@ -29,6 +31,8 @@ export interface HumanTouchFolder {
   offCanvas: string;
   /** What a page noted of the other usages of the claimed round's changes for one usage alone (ticket 82): the claimed round's, gone as it ends. */
   otherUsages: string;
+  /** The page the canvas reflects, printed (ticket 141): gone as a round ends, the code then the Agent's. */
+  page: string;
 }
 
 /** What `checks.json` holds. */
@@ -56,13 +60,19 @@ export interface RoundState {
   closing?: CheckAsk;
   claimedAt?: string;
   code?: CodeSnapshot | null;
+  /** The changes the Agent said it did differently on purpose (`done <number> --differently "<why>"`, ticket 148), by id: why, in its own words. */
+  differently?: Record<string, string>;
 }
 
 /**
  * The changes that count as applied (ADR 0013): those the page shows, done or
  * not, and those the Agent reported done that it does not say it does not
- * show (it cannot check them, or no page is open). Of `results`, only this
- * round's count: an earlier round's may have been written back after it ended.
+ * show (it cannot check them, or no page is open), and those it said it did
+ * differently on purpose (ticket 148): done, not left for the next round,
+ * unless the page found what is still to fix, said or not (`stillToFix`:
+ * a break of the layout, a change outside its range, or at other usages). Of
+ * `results`, only this round's count: an earlier round's may have been
+ * written back after it ended.
  */
 export function appliedOf(state: RoundState, results: Checks["results"] = {}): number[] {
   const own = (id: string | number) => {
@@ -70,7 +80,7 @@ export function appliedOf(state: RoundState, results: Checks["results"] = {}): n
     return result && (!state.claimedAt || result.at >= state.claimedAt) ? result : undefined;
   };
   const shown = Object.keys(results).map(Number).filter((id) => own(id)?.outcome === "shown");
-  const done = state.done.filter((id) => own(id)?.outcome !== "not shown");
+  const done = state.done.filter((id) => own(id)?.outcome !== "not shown" || (state.differently?.[id] !== undefined && !stillToFix(own(id))));
   return [...new Set([...shown, ...done])].sort((a, b) => a - b);
 }
 
@@ -91,7 +101,7 @@ export async function roundStatus(folder: HumanTouchFolder): Promise<RoundStatus
 
 export function humanTouchFolder(root: string): HumanTouchFolder {
   const dir = join(root, HUMAN_TOUCH_DIR);
-  return { dir, canvas: join(dir, "canvas.html"), changeSet: join(dir, "changeset.json"), state: join(dir, "state.json"), history: join(dir, "history"), checks: join(dir, "checks.json"), offCanvas: join(dir, "off-canvas.json"), otherUsages: join(dir, "other-usages.json") };
+  return { dir, canvas: join(dir, "canvas.html"), changeSet: join(dir, "changeset.json"), state: join(dir, "state.json"), history: join(dir, "history"), checks: join(dir, "checks.json"), offCanvas: join(dir, "off-canvas.json"), otherUsages: join(dir, "other-usages.json"), page: join(dir, "page.json") };
 }
 
 /** The project a command runs for: the nearest folder up from `cwd` with a `.humantouch/`, else `cwd` itself. */
@@ -135,12 +145,36 @@ export interface RoundResult {
   done: number[];
   /** The changes applied, as the page shows them (`appliedOf`); the others were not. Missing in rounds archived before ticket 64: `done` then. */
   applied?: number[];
+  /** The changes the Agent said it did differently on purpose, by id: why (`RoundState.differently`, ticket 148). */
+  differently?: Record<string, string>;
   /** When, as an ISO date. */
   at: string;
   /** How the page answered the last check of each change. */
   checks: Checks["results"];
   /** In a git repository: the code as the round found it and as it left it. */
   code: { repository: string; before: string; after: string } | null;
+}
+
+/**
+ * What `page.json` holds (ticket 141): the page the canvas reflects, printed,
+ * and the code it was printed on, as a git tree (`snapshotCode`); null
+ * outside a git repository.
+ */
+export interface PageKept extends PagePrint {
+  code: string | null;
+}
+
+/** The page the canvas reflects, as kept; null when none is, or what is there cannot be read: the round goes on without it. */
+export async function readPage(folder: HumanTouchFolder): Promise<PageKept | null> {
+  const text = await readIfThere(folder.page);
+  if (text === null) return null;
+  try {
+    const kept = JSON.parse(text) as Partial<PageKept> | null;
+    if (!kept || typeof kept.path !== "string" || typeof kept.structure !== "string" || typeof kept.styles !== "string") return null;
+    return { path: kept.path, structure: kept.structure, styles: kept.styles, code: typeof kept.code === "string" ? kept.code : null };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -158,7 +192,7 @@ export async function archiveRound(folder: HumanTouchFolder, ended: RoundResult[
   // Only this round's checks: an earlier round's could have been written back after it ended.
   const results = Object.entries((await readChecks(folder))?.results ?? {}).filter(([, r]) => !state.claimedAt || r.at >= state.claimedAt);
   const checks = Object.fromEntries(results);
-  const result: RoundResult = { ended, done: state.done, applied: appliedOf(state, checks), at: new Date().toISOString(), checks, code };
+  const result: RoundResult = { ended, done: state.done, applied: appliedOf(state, checks), ...(state.differently && { differently: state.differently }), at: new Date().toISOString(), checks, code };
   const archive = join(folder.history, result.at.replace(/[:.]/g, "-"));
   await mkdir(archive, { recursive: true });
   // The round's own changes: what the rounds before applied, carried along with it for the canvas, is theirs.
@@ -180,6 +214,8 @@ export async function archiveRound(folder: HumanTouchFolder, ended: RoundResult[
   }
   // What was noted of the other usages is this round's alone (ticket 82).
   await rm(folder.otherUsages, { force: true });
+  // The page the canvas reflects is the page with the Agent's code in now: printed afresh as edit mode comes back to it (ticket 141).
+  await rm(folder.page, { force: true });
   await rm(folder.state, { force: true });
   return result;
 }

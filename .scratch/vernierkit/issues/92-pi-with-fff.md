@@ -44,12 +44,12 @@
 
 之前（85）：
 ```
-/Users/bingyizhang/.npm-global/bin/pi -p '落地我的设计改动' --mode json --provider command-code --model deepseek/deepseek-v4.1-flash --thinking high --no-session --offline --no-extensions -e '/Users/bingyizhang/.pi/agent/npm/node_modules/@commandcode/pi-commandcode-provider' -e '<run folder>/pi-extension/pi-extension.ts' --no-mcp --no-skills --skill .agents/skills/03kind --no-prompt-templates --no-themes --approve --tools read,bash,edit,write,grep,ls
+~/.npm-global/bin/pi -p '落地我的设计改动' --mode json --provider command-code --model deepseek/deepseek-v4.1-flash --thinking high --no-session --offline --no-extensions -e '~/.pi/agent/npm/node_modules/@commandcode/pi-commandcode-provider' -e '<run folder>/pi-extension/pi-extension.ts' --no-mcp --no-skills --skill .agents/skills/03kind --no-prompt-templates --no-themes --approve --tools read,bash,edit,write,grep,ls
 ```
 
 之后：
 ```
-/Users/bingyizhang/.npm-global/bin/pi -p '落地我的设计改动' --mode json --provider command-code --model deepseek/deepseek-v4.1-flash --thinking high --no-session --offline --no-extensions -e '/Users/bingyizhang/.pi/agent/npm/node_modules/@commandcode/pi-commandcode-provider' -e '/Users/bingyizhang/.pi/agent/npm/node_modules/@ff-labs/pi-fff' --fff-mode override --fff-frecency-db '<run folder>/fff/frecency' --fff-history-db '<run folder>/fff/history' --fff-follow-symlinks -e '<run folder>/pi-extension/pi-extension.ts' --no-mcp --no-skills --skill .agents/skills/03kind --no-prompt-templates --no-themes --approve --tools read,bash,edit,write,ls,grep,find
+~/.npm-global/bin/pi -p '落地我的设计改动' --mode json --provider command-code --model deepseek/deepseek-v4.1-flash --thinking high --no-session --offline --no-extensions -e '~/.pi/agent/npm/node_modules/@commandcode/pi-commandcode-provider' -e '~/.pi/agent/npm/node_modules/@ff-labs/pi-fff' --fff-mode override --fff-frecency-db '<run folder>/fff/frecency' --fff-history-db '<run folder>/fff/history' --fff-follow-symlinks -e '<run folder>/pi-extension/pi-extension.ts' --no-mcp --no-skills --skill .agents/skills/03kind --no-prompt-templates --no-themes --approve --tools read,bash,edit,write,ls,grep,find
 ```
 
 - pi-fff 取值的顺序是参数 > 环境变量 > `pi-fff.json`；`cleanEnv()` 不带任何 `FFF_*`，所以模式和两个库的路径都由参数定。设计师的 `pi-fff.json` 只有 `$schema` 和 `mode: override`。
