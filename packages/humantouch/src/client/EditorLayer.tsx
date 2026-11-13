@@ -53,9 +53,10 @@ function offCanvasWithout(layers: SavedOffCanvasLayer[], changes: Change[]): Sav
 /**
  * Preview mode shows only the toggle; edit mode adds the shell around the
  * canvas. A round with changes not yet applied keeps its canvas: edit mode
- * comes back to it, after a reload too, and after a round that ended with
- * changes not applied, carried over to the next on it (ticket 68). With none,
- * edit mode freezes the page afresh.
+ * comes back to it, after a reload too, and after a round the designer ended
+ * with changes not applied, carried over to the next on it (ticket 68). With
+ * none, or once the Agent finished the round (ADR 0019), edit mode freezes the
+ * page afresh.
  * The page always shows the code as it is: the changes are seen on the canvas,
  * played at full size (ADR 0010). Once the Agent claims the round, the editor
  * folds into the toggle, locked until the round ends, while the page checks
@@ -295,7 +296,7 @@ export function EditorLayer({ enter, saved }: { enter?: { animate: boolean }; sa
   useEffect(
     () =>
       store?.watch((next) => {
-        // Ended: what is left of it, carried over to the next round (ticket 68); nothing with all of it applied. Claimed, the round,
+        // Ended: what is left of it, carried over to the next round as the designer ended it (ticket 68); nothing once finished (ADR 0019). Claimed, the round,
         // as the Agent got it, is read again as the page begins to check it, with what was kept with the claim (ticket 82).
         if (lastStatus.current?.status === "claimed" && next.status !== "claimed") void load();
         lastStatus.current = next;

@@ -56,7 +56,7 @@ Tell your Agent:
 
 The Agent claims the round: edit mode closes if it is open, the toggle locks, and the ring around it fills as each change shows on the page. When the Agent is done, the page is the real result, in code.
 
-If the Agent stops partway, the toggle tells you "Your Agent seems to have stopped". Tell your Agent "Continue applying my design changes", or click End this round (pressing and holding the toggle does the same). Changes not applied yet stay for the next round, on the same canvas.
+If the Agent stops partway, the toggle tells you "Your Agent seems to have stopped". Tell your Agent "Continue applying my design changes", or click End this round (pressing and holding the toggle does the same). A round ended so, before the Agent finished it, leaves the changes not applied yet for the next round, on the same canvas. A round the Agent finishes leaves nothing: every change goes with it, those under ⚠️ too, and edit mode next freezes the page as the Agent left it. To try one of those again, make it on the new canvas, or ask the Agent in the conversation.
 
 ### 4. Read the report
 

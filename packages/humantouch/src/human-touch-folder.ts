@@ -68,7 +68,7 @@ export interface RoundState {
  * The changes that count as applied (ADR 0013): those the page shows, done or
  * not, and those the Agent reported done that it does not say it does not
  * show (it cannot check them, or no page is open), and those it said it did
- * differently on purpose (ticket 148): done, not left for the next round,
+ * differently on purpose (ticket 148): done, not carried over as the designer ends the round,
  * unless the page found what is still to fix, said or not (`stillToFix`:
  * a break of the layout, a change outside its range, or at other usages). Of
  * `results`, only this round's count: an earlier round's may have been
@@ -178,11 +178,12 @@ export async function readPage(folder: HumanTouchFolder): Promise<PageKept | nul
 }
 
 /**
- * Ends the claimed round: its ChangeSet and result go to the history. With
- * every change applied, the canvas is dropped and the folder is left with no
- * round: edit mode freezes the page afresh. With changes not applied, they
- * are carried over (ticket 68): the canvas stays, and the round is those
- * changes (`carryOver`). Null when no round is claimed.
+ * Ends the claimed round: its ChangeSet and result go to the history.
+ * `finished` by the Agent, with its report (ADR 0019), or with every change
+ * applied, the canvas is dropped and the folder is left with no round: edit
+ * mode freezes the page afresh. `unlocked` by the designer with changes not
+ * applied, they are carried over (ticket 68): the canvas stays, and the
+ * round is those changes (`carryOver`). Null when no round is claimed.
  */
 export async function archiveRound(folder: HumanTouchFolder, ended: RoundResult["ended"]): Promise<RoundResult | null> {
   const [state, changeSet] = await Promise.all([readState(folder), readIfThere(folder.changeSet)]);
@@ -201,7 +202,8 @@ export async function archiveRound(folder: HumanTouchFolder, ended: RoundResult[
   await writeFile(join(archive, "changeset.json"), saved.applied ? `${JSON.stringify(own, null, 2)}\n` : changeSet);
   await writeFile(join(archive, "result.json"), `${JSON.stringify(result, null, 2)}\n`);
   // The state goes last: once it is gone, the round is over for whoever watches it.
-  const next = carryOver(saved, result.applied!);
+  // A round the Agent finished leaves nothing, whatever it applied (ADR 0019): what it did not is in its report, and in `last`.
+  const next = ended === "unlocked" ? carryOver(saved, result.applied!) : null;
   if (next) {
     await writeAtomically(folder.changeSet, `${JSON.stringify(next, null, 2)}\n`);
     // The pages open still, with no checks: the next claim asks them what they show of what is left.
