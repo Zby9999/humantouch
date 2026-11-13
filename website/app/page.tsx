@@ -21,7 +21,8 @@ export default function Home() {
   return (
     <main className="@container flex flex-col items-center gap-20 overflow-x-clip px-4 pt-[120px] pb-12 max-xl:pb-3.5 md:pt-[160px]">
       <section className="flex w-full max-w-[800px] flex-col gap-6">
-        <div className="flex flex-col gap-3 px-1.5">
+        {/* The words, then the button: each rises in from a blur as the page opens (designer, 2026-11-12). */}
+        <div className="rise-in flex flex-col gap-3 px-1.5">
           <h1 className="label font-sans font-medium text-ink-strong normal-case tracking-[-0.005em]">Human Touch</h1>
           <div className="text-[16px] leading-[1.4] font-[440] tracking-[-0.04px] text-ink-strong">
             <p className="text-balance">An Agent native design layer, under 4 MB.</p>
@@ -29,7 +30,9 @@ export default function Home() {
             <p className="text-balance">then have your Agent write the changes into the code.</p>
           </div>
         </div>
-        <InstallButton surface={BUTTON_ACCENT} />
+        <div className="rise-in flex self-start [--rise-delay:480ms]">
+          <InstallButton surface={BUTTON_ACCENT} />
+        </div>
       </section>
 
       <HeroEditor />
