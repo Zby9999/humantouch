@@ -854,7 +854,7 @@ const METRICS: [string, (m: Measures) => number | null][] = [
   ["Agent 总用时（秒）", (m) => m.agentMs / 1000],
   ["每条平均工具调用", (m) => m.toolCallsPerChange],
   ["全仓搜索次数", (m) => m.repoWideSearches],
-  ["读 node_modules/humantouch（次）", (m) => m.packageReads],
+  ["读 node_modules/humantouch-dev（次）", (m) => m.packageReads],
   ["读入字数：Skill", (m) => m.charsRead.skill],
   ["读入字数：claim 输出", (m) => (m.changes ? m.charsRead.claim : null)],
   ["读入字数：全部工具输出", (m) => m.charsRead.total],

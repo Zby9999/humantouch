@@ -14,7 +14,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "humantouch": "workspace:*",
+    "humantouch-dev": "workspace:*",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^6.1.2",

@@ -125,7 +125,7 @@ function vite(root: string, packageManager: PackageManager): Framework {
   return {
     name: "Vite",
     config: VITE_CONFIGS.find((file) => existsSync(join(root, file))) ?? null,
-    hasPlugin: (code) => /["']humantouch\/vite["']/.test(code) && /\bhumanTouch\s*\(/.test(code),
+    hasPlugin: (code) => /["']humantouch-dev\/vite["']/.test(code) && /\bhumanTouch\s*\(/.test(code),
     addPlugin: addVitePlugin,
     async mountFile() {
       const html = await readIfThere(join(root, "index.html"));
@@ -134,8 +134,8 @@ function vite(root: string, packageManager: PackageManager): Framework {
       return ["src/main.tsx", "src/main.jsx", "src/index.tsx", "src/index.jsx"].find((file) => existsSync(join(root, file))) ?? null;
     },
     mount: mountInEntry,
-    pluginSteps: 'In the Vite config, import the plugin and put it first in `plugins`:\n\n  import humanTouch from "humantouch/vite";\n  …\n  plugins: [humanTouch(), …],',
-    mountSteps: 'In the entry module that renders the app, render the editor layer beside the app:\n\n  import { HumanTouch } from "humantouch/react";\n  …\n  <HumanTouch />',
+    pluginSteps: 'In the Vite config, import the plugin and put it first in `plugins`:\n\n  import humanTouch from "humantouch-dev/vite";\n  …\n  plugins: [humanTouch(), …],',
+    mountSteps: 'In the entry module that renders the app, render the editor layer beside the app:\n\n  import { HumanTouch } from "humantouch-dev/react";\n  …\n  <HumanTouch />',
     async build() {
       // Not over the project's own build.
       const dir = await mkdtemp(join(tmpdir(), "humantouch-build-"));
@@ -151,12 +151,12 @@ function next(root: string, packageManager: PackageManager, pkg: Project["pkg"])
   return {
     name: "Next.js",
     config: NEXT_CONFIGS.find((file) => existsSync(join(root, file))) ?? null,
-    hasPlugin: (code) => /["']humantouch\/next["']/.test(code) && /\bwithHumanTouch\s*\(/.test(code),
+    hasPlugin: (code) => /["']humantouch-dev\/next["']/.test(code) && /\bwithHumanTouch\s*\(/.test(code),
     addPlugin: wrapNextConfig,
     mountFile: async () => LAYOUTS.find((file) => existsSync(join(root, file))) ?? null,
     mount: mountInLayout,
-    pluginSteps: 'In the Next.js config, wrap the config it exports with `withHumanTouch()`:\n\n  import { withHumanTouch } from "humantouch/next";\n  …\n  export default withHumanTouch(nextConfig);',
-    mountSteps: 'In the root layout (`app/layout.tsx`), render the editor layer at the end of <body>:\n\n  import { HumanTouch } from "humantouch/react";\n  …\n  <body>\n    {children}\n    <HumanTouch />\n  </body>',
+    pluginSteps: 'In the Next.js config, wrap the config it exports with `withHumanTouch()`:\n\n  import { withHumanTouch } from "humantouch-dev/next";\n  …\n  export default withHumanTouch(nextConfig);',
+    mountSteps: 'In the root layout (`app/layout.tsx`), render the editor layer at the end of <body>:\n\n  import { HumanTouch } from "humantouch-dev/react";\n  …\n  <body>\n    {children}\n    <HumanTouch />\n  </body>',
     // Into `.next`, as `next build` always does: from Next.js 16, `next dev` keeps to `.next/dev`.
     build: async () => ({
       // With the bundler the project builds with.
@@ -240,17 +240,17 @@ export async function init(cwd: string, io: InstallIo): Promise<number> {
   const done: string[] = [];
   const byHand: string[] = [];
 
-  if (hasDependency(pkg, "humantouch")) {
-    done.push("humantouch is a dependency already");
+  if (hasDependency(pkg, "humantouch-dev")) {
+    done.push("humantouch-dev is a dependency already");
   } else {
-    const install = command(packageManager, "install", [process.env.HT_INSTALL_FROM ?? "humantouch"]);
+    const install = command(packageManager, "install", [process.env.HT_INSTALL_FROM ?? "humantouch-dev"]);
     const result = await io.exec(...install, { cwd: root });
     if (result.code !== 0) {
-      io.error(`${result.output}\nCould not install humantouch (\`${show(install)}\` failed, above). Install it yourself, then run \`npx humantouch init\` again.\n`);
+      io.error(`${result.output}\nCould not install humantouch-dev (\`${show(install)}\` failed, above). Install it yourself, then run \`npx humantouch init\` again.\n`);
       return 1;
     }
     record.dependency = true;
-    done.push(`Installed humantouch as a dev dependency (\`${show(install)}\`)`);
+    done.push(`Installed humantouch-dev as a dev dependency (\`${show(install)}\`)`);
   }
 
   // The project's source: the build config, and where the editor layer is mounted.
@@ -264,7 +264,7 @@ export async function init(cwd: string, io: InstallIo): Promise<number> {
       done.push(`${file}: ${what} already`);
       return;
     }
-    const result = code.includes("humantouch/") ? { reason: "it imports humantouch but does not add the plugin" } : edit(file, code);
+    const result = code.includes("humantouch-dev/") ? { reason: "it imports humantouch-dev but does not add the plugin" } : edit(file, code);
     if ("reason" in result) {
       byHand.push(`${steps}\n\n(${file}: ${result.reason}.)`);
       return;
@@ -324,7 +324,7 @@ function ignoresHumanTouch(gitignore: string) {
 async function findMount(root: string): Promise<string | null> {
   for (const file of await sourceFiles(root)) {
     const code = await readFile(join(root, file), "utf8");
-    if (code.includes("humantouch/react")) return file;
+    if (code.includes("humantouch-dev/react")) return file;
   }
   return null;
 }
@@ -358,7 +358,7 @@ export async function remove(cwd: string, io: InstallIo): Promise<number> {
   const record = await readRecord(root);
   if (!record) {
     const text = "Human Touch is not installed here: there is nothing to remove.";
-    io.write(found && hasDependency(found.pkg, "humantouch") ? `${text} humantouch is a dependency, but \`init\` did not install it: uninstall it, and take out its plugin and <HumanTouch /> by hand.\n` : `${text}\n`);
+    io.write(found && hasDependency(found.pkg, "humantouch-dev") ? `${text} humantouch-dev is a dependency, but \`init\` did not install it: uninstall it, and take out its plugin and <HumanTouch /> by hand.\n` : `${text}\n`);
     return 0;
   }
   if (await readState(folder)) {
@@ -397,10 +397,10 @@ export async function remove(cwd: string, io: InstallIo): Promise<number> {
     offCanvas ? `Deleted .humantouch/, with the ${offCanvas === 1 ? "layer" : `${offCanvas} layers`} the designer had moved off the canvas` : "Deleted .humantouch/",
   ];
   if (record.dependency) {
-    const uninstall = command(packageManagerOf(root, found?.pkg ?? {}), "uninstall", ["humantouch"]);
+    const uninstall = command(packageManagerOf(root, found?.pkg ?? {}), "uninstall", ["humantouch-dev"]);
     const result = await io.exec(...uninstall, { cwd: root });
-    if (result.code === 0) done.push(`Uninstalled humantouch (\`${show(uninstall)}\`)`);
-    else byHand.push(`Uninstall humantouch: \`${show(uninstall)}\` failed:\n\n${indent(result.output.trim())}`);
+    if (result.code === 0) done.push(`Uninstalled humantouch-dev (\`${show(uninstall)}\`)`);
+    else byHand.push(`Uninstall humantouch-dev: \`${show(uninstall)}\` failed:\n\n${indent(result.output.trim())}`);
   }
 
   io.write(`Human Touch removed:\n${done.map((line) => `- ${line}\n`).join("")}`);
@@ -432,7 +432,7 @@ export async function doctor(cwd: string, io: InstallIo): Promise<number> {
   const checks: [boolean, string][] = [];
   const check = (ok: boolean, good: string, bad: string) => checks.push([ok, ok ? good : bad]);
 
-  check(hasDependency(pkg, "humantouch"), "humantouch is a dependency", `humantouch is not a dependency: run \`${show(command(packageManager, "install", ["humantouch"]))}\``);
+  check(hasDependency(pkg, "humantouch-dev"), "humantouch-dev is a dependency", `humantouch-dev is not a dependency: run \`${show(command(packageManager, "install", ["humantouch-dev"]))}\``);
   const config = framework.config && (await readIfThere(join(root, framework.config)));
   check(Boolean(config && framework.hasPlugin(config)), `${framework.config}: adds the plugin`, `The build config does not add the plugin. ${framework.pluginSteps}`);
   const mount = await findMount(root);

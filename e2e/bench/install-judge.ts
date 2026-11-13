@@ -7,7 +7,7 @@
 import type { Transcript } from "./metrics.ts";
 
 /** Step 1's command, as README has it. */
-export const NPX_INIT = "npx -y humantouch@latest init";
+export const NPX_INIT = "npx -y humantouch-dev@latest init";
 
 /** The longest the toggle may take to show, from the Agent's start (docs/goals.md, Light). */
 const TOGGLE_BUDGET_MS = 60_000;
@@ -22,7 +22,7 @@ export function forAgents(readme: string): string {
 
 /**
  * The steps with step 1 installing the package packed from this repository,
- * at `tarball`, in place of humantouch@latest: the only change. As `file:`, for
+ * at `tarball`, in place of humantouch-dev@latest: the only change. As `file:`, for
  * npx runs a bare path as a program of its own.
  */
 export function withLocalPackage(prompt: string, tarball: string): string {

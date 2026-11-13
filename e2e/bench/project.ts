@@ -23,31 +23,31 @@ const exampleFolder = (example: Example) => fileURLToPath(new URL(`../../example
  */
 const HAND_WIRED: Record<Example, (dir: string) => void> = {
   "vite-react19-tw4": (dir) => {
-    replaceIn(dir, "vite.config.ts", 'import humanTouch from "humantouch/vite";\n');
+    replaceIn(dir, "vite.config.ts", 'import humanTouch from "humantouch-dev/vite";\n');
     replaceIn(dir, "vite.config.ts", "humanTouch(), ");
-    replaceIn(dir, "src/App.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "src/App.tsx", 'import { HumanTouch } from "humantouch-dev/react";\n');
     replaceIn(dir, "src/App.tsx", "      <HumanTouch />\n");
     // Its page of declared font weights mounts the editor layer too (ticket 140): `init` would see it mounted there, and leave App be.
-    replaceIn(dir, "src/fonts/FontsPage.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "src/fonts/FontsPage.tsx", 'import { HumanTouch } from "humantouch-dev/react";\n');
     replaceIn(dir, "src/fonts/FontsPage.tsx", "      <HumanTouch />\n");
     // So does its page that moves (ticket 141).
-    replaceIn(dir, "src/motion/MotionPage.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "src/motion/MotionPage.tsx", 'import { HumanTouch } from "humantouch-dev/react";\n');
     replaceIn(dir, "src/motion/MotionPage.tsx", "      <HumanTouch />\n");
   },
   "vite-react18-tw3": (dir) => {
-    replaceIn(dir, "vite.config.ts", 'import humanTouch from "humantouch/vite";\n');
+    replaceIn(dir, "vite.config.ts", 'import humanTouch from "humantouch-dev/vite";\n');
     replaceIn(dir, "vite.config.ts", "humanTouch(), ");
-    replaceIn(dir, "src/App.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "src/App.tsx", 'import { HumanTouch } from "humantouch-dev/react";\n');
     replaceIn(dir, "src/App.tsx", "      <HumanTouch />\n");
     // Its big page, for the performance tests, mounts the editor layer too: `init` would see it mounted there, and leave App be.
-    replaceIn(dir, "src/big/BigPage.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "src/big/BigPage.tsx", 'import { HumanTouch } from "humantouch-dev/react";\n');
     replaceIn(dir, "src/big/BigPage.tsx", "      <HumanTouch />\n");
   },
   // As `next-install.spec.ts` takes it out.
   "next-app-css-modules": (dir) => {
-    replaceIn(dir, "next.config.ts", 'import { withHumanTouch } from "humantouch/next";\n');
+    replaceIn(dir, "next.config.ts", 'import { withHumanTouch } from "humantouch-dev/next";\n');
     replaceIn(dir, "next.config.ts", "withHumanTouch(nextConfig)", "nextConfig");
-    replaceIn(dir, "app/layout.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "app/layout.tsx", 'import { HumanTouch } from "humantouch-dev/react";\n');
     replaceIn(dir, "app/layout.tsx", "        <HumanTouch />\n");
   },
 };
@@ -141,7 +141,7 @@ export async function cloneBase(base: string): Promise<RunProject> {
   };
   return {
     dir,
-    cli: (...args) => sh(process.execPath, [join(dir, "node_modules/humantouch/dist/cli.js"), ...args], dir),
+    cli: (...args) => sh(process.execPath, [join(dir, "node_modules/humantouch-dev/dist/cli.js"), ...args], dir),
     edit: async (file, from, to) => replaceIn(dir, file, from, to),
     settle: async (message) => {
       await sh("git", ["add", "-A"], dir);

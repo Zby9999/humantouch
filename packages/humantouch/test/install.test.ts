@@ -69,11 +69,11 @@ function fakeExec(build?: (outDir: string) => void) {
     commands.push([command, ...args].join(" "));
     const pkgFile = join(cwd, "package.json");
     const pkg = JSON.parse(readFileSync(pkgFile, "utf8"));
-    if (/^(add|install)$/.test(args[0]) && args.includes("humantouch")) {
-      pkg.devDependencies = { ...pkg.devDependencies, "humantouch": "^0.1.0" };
+    if (/^(add|install)$/.test(args[0]) && args.includes("humantouch-dev")) {
+      pkg.devDependencies = { ...pkg.devDependencies, "humantouch-dev": "^0.1.0" };
       writeFileSync(pkgFile, `${JSON.stringify(pkg, null, 2)}\n`);
     } else if (/^(remove|uninstall)$/.test(args[0])) {
-      delete pkg.devDependencies["humantouch"];
+      delete pkg.devDependencies["humantouch-dev"];
       writeFileSync(pkgFile, `${JSON.stringify(pkg, null, 2)}\n`);
     } else if (args.includes("build")) {
       const outDir = args[args.indexOf("--outDir") + 1];
@@ -99,7 +99,7 @@ describe("init, on a Vite project", () => {
     const { code } = await cli(exec, "init");
 
     expect(code).toBe(0);
-    expect(commands).toEqual(["pnpm add --save-dev humantouch"]);
+    expect(commands).toEqual(["pnpm add --save-dev humantouch-dev"]);
   });
 
   test("adds the plugin to the build config and mounts the editor layer in the root, and changes no other source", async () => {
@@ -109,7 +109,7 @@ describe("init, on a Vite project", () => {
 
     expect(read("vite.config.ts")).toBe(`import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-import humanTouch from "humantouch/vite";
+import humanTouch from "humantouch-dev/vite";
 
 export default defineConfig({
   plugins: [humanTouch(), react()],
@@ -118,7 +118,7 @@ export default defineConfig({
     expect(read("src/main.tsx")).toBe(`import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import { HumanTouch } from "humantouch/react";
+import { HumanTouch } from "humantouch-dev/react";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -133,9 +133,9 @@ createRoot(document.getElementById("root")!).render(
 
 describe("init, the package manager", () => {
   test.each([
-    ["package-lock.json", "npm install --save-dev humantouch"],
-    ["yarn.lock", "yarn add --dev humantouch"],
-    ["pnpm-lock.yaml", "pnpm add --save-dev humantouch"],
+    ["package-lock.json", "npm install --save-dev humantouch-dev"],
+    ["yarn.lock", "yarn add --dev humantouch-dev"],
+    ["pnpm-lock.yaml", "pnpm add --save-dev humantouch-dev"],
   ])("with %s, installs with `%s`", async (lockfile, command) => {
     viteProject(lockfile);
     const { exec, commands } = fakeExec();
@@ -148,7 +148,7 @@ describe("init, the package manager", () => {
   test("leaves the dependency alone when the project has it already", async () => {
     viteProject();
     const pkg = JSON.parse(read("package.json"));
-    write("package.json", JSON.stringify({ ...pkg, devDependencies: { ...pkg.devDependencies, "humantouch": "^0.1.0" } }));
+    write("package.json", JSON.stringify({ ...pkg, devDependencies: { ...pkg.devDependencies, "humantouch-dev": "^0.1.0" } }));
     const { exec, commands } = fakeExec();
 
     expect((await cli(exec, "init")).code).toBe(0);
@@ -163,7 +163,7 @@ describe("init, the package manager", () => {
 
     expect(code).toBe(1);
     expect(errors).toContain("npm ERR! network");
-    expect(errors).toContain("npm install --save-dev humantouch");
+    expect(errors).toContain("npm install --save-dev humantouch-dev");
     expect(read("vite.config.ts")).toBe(VITE_CONFIG);
     expect(there("AGENTS.md")).toBe(false);
   });
@@ -215,7 +215,7 @@ describe("init, when it cannot edit the project's source", () => {
     expect(code).toBe(1);
     expect(read("vite.config.ts")).toBe(config);
     expect(output).toContain("Finish by hand:");
-    expect(output).toContain('import humanTouch from "humantouch/vite";');
+    expect(output).toContain('import humanTouch from "humantouch-dev/vite";');
     expect(output).toContain("plugins: [humanTouch(), …]");
     expect(output).toContain("vite.config.ts: its exported config object could not be found");
     // The rest is done.
@@ -230,7 +230,7 @@ describe("init, when it cannot edit the project's source", () => {
     const { code, output } = await cli(fakeExec().exec, "init");
 
     expect(code).toBe(1);
-    expect(output).toContain('import { HumanTouch } from "humantouch/react";');
+    expect(output).toContain('import { HumanTouch } from "humantouch-dev/react";');
     expect(output).toContain("<HumanTouch />");
     expect(read("src/main.tsx")).toBe(`import { boot } from "./boot";\nboot();\n`);
   });
@@ -244,8 +244,8 @@ describe("init, other shapes of the source", () => {
 
     await cli(fakeExec().exec, "init");
 
-    expect(read("vite.config.ts")).toBe(`import { defineConfig } from 'vite'\nimport humanTouch from 'humantouch/vite'\n\nexport default defineConfig({\n  plugins: [humanTouch()],\n  server: { port: 3000 },\n})\n`);
-    expect(read("src/main.tsx")).toBe(`import ReactDOM from 'react-dom/client'\nimport App from './App'\nimport { HumanTouch } from 'humantouch/react'\n\nReactDOM.createRoot(document.getElementById('root')!).render(<><App /><HumanTouch /></>)\n`);
+    expect(read("vite.config.ts")).toBe(`import { defineConfig } from 'vite'\nimport humanTouch from 'humantouch-dev/vite'\n\nexport default defineConfig({\n  plugins: [humanTouch()],\n  server: { port: 3000 },\n})\n`);
+    expect(read("src/main.tsx")).toBe(`import ReactDOM from 'react-dom/client'\nimport App from './App'\nimport { HumanTouch } from 'humantouch-dev/react'\n\nReactDOM.createRoot(document.getElementById('root')!).render(<><App /><HumanTouch /></>)\n`);
   });
 
   test("a config made by a function, with plugins one per line", async () => {
@@ -277,7 +277,7 @@ describe("init, again", () => {
 
   test("leaves a project that mounts the editor layer somewhere else of its own as it is", async () => {
     viteProject();
-    write("src/App.tsx", `import { HumanTouch } from "humantouch/react";\n\nexport function App() {\n  return <h1>Hello<HumanTouch /></h1>;\n}\n`);
+    write("src/App.tsx", `import { HumanTouch } from "humantouch-dev/react";\n\nexport function App() {\n  return <h1>Hello<HumanTouch /></h1>;\n}\n`);
 
     await cli(fakeExec().exec, "init");
 
@@ -315,7 +315,7 @@ describe("doctor", () => {
     const { code, output } = await cli(exec, "doctor");
 
     expect(code).toBe(0);
-    expect(output).toContain("✓ humantouch is a dependency");
+    expect(output).toContain("✓ humantouch-dev is a dependency");
     expect(output).toContain("✓ vite.config.ts: adds the plugin");
     expect(output).toContain("✓ src/main.tsx: mounts the editor layer");
     expect(output).toContain("✓ .agents/skills/humantouch/SKILL.md");
@@ -333,7 +333,7 @@ describe("doctor", () => {
     const { code, output } = await cli(fakeExec(builtPage()).exec, "doctor");
 
     expect(code).toBe(1);
-    expect(output).toContain("✗ humantouch is not a dependency: run `pnpm add --save-dev humantouch`");
+    expect(output).toContain("✗ humantouch-dev is not a dependency: run `pnpm add --save-dev humantouch-dev`");
     expect(output).toContain("✗ The build config does not add the plugin.");
     expect(output).toContain("✗ Nothing mounts the editor layer.");
     expect(output).toContain("✗ .agents/skills/humantouch/SKILL.md is missing");
@@ -411,7 +411,7 @@ describe("remove", () => {
     expect(there(".humantouch")).toBe(false);
     expect(there(".agents")).toBe(false);
     expect(there(".claude")).toBe(false);
-    expect(commands.at(-1)).toBe("pnpm remove humantouch");
+    expect(commands.at(-1)).toBe("pnpm remove humantouch-dev");
     expect(output).toMatch(/removed/i);
   });
 
@@ -507,7 +507,7 @@ describe("remove", () => {
     expect(code).toBe(1);
     expect(output).toContain("vite.config.ts");
     expect(output).toContain("humanTouch()");
-    expect(read("vite.config.ts")).not.toContain("humantouch/vite");
+    expect(read("vite.config.ts")).not.toContain("humantouch-dev/vite");
     expect(read("src/main.tsx")).toBe(MAIN);
   });
 });
@@ -558,9 +558,9 @@ describe("init, on a Next.js project", () => {
 
     expect(code).toBe(0);
     expect(output).toContain("Next.js");
-    expect(commands).toEqual(["npm install --save-dev humantouch"]);
+    expect(commands).toEqual(["npm install --save-dev humantouch-dev"]);
     expect(read("next.config.ts")).toBe(`import type { NextConfig } from "next";
-import { withHumanTouch } from "humantouch/next";
+import { withHumanTouch } from "humantouch-dev/next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -570,7 +570,7 @@ export default withHumanTouch(nextConfig);
 `);
     expect(read("app/layout.tsx")).toBe(`import type { Metadata } from "next";
 import "./globals.css";
-import { HumanTouch } from "humantouch/react";
+import { HumanTouch } from "humantouch-dev/react";
 
 export const metadata: Metadata = { title: "App" };
 
@@ -596,7 +596,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
 
     expect((await cli(fakeExec().exec, "init")).code).toBe(0);
 
-    expect(read("next.config.js")).toBe(`const { withHumanTouch } = require("humantouch/next");\n/** @type {import('next').NextConfig} */\nconst nextConfig = {};\n\nmodule.exports = withHumanTouch(nextConfig);\n`);
+    expect(read("next.config.js")).toBe(`const { withHumanTouch } = require("humantouch-dev/next");\n/** @type {import('next').NextConfig} */\nconst nextConfig = {};\n\nmodule.exports = withHumanTouch(nextConfig);\n`);
     expect(read("src/app/layout.jsx")).toContain(`      <body>{children}<HumanTouch /></body>`);
   });
 
@@ -607,7 +607,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
 
     await cli(fakeExec().exec, "init");
 
-    expect(read("next.config.mjs")).toBe(`import createMDX from "@next/mdx";\nimport { withHumanTouch } from "humantouch/next";\n\nconst withMDX = createMDX();\n\nexport default withHumanTouch(withMDX({ pageExtensions: ["tsx", "mdx"] }));\n`);
+    expect(read("next.config.mjs")).toBe(`import createMDX from "@next/mdx";\nimport { withHumanTouch } from "humantouch-dev/next";\n\nconst withMDX = createMDX();\n\nexport default withHumanTouch(withMDX({ pageExtensions: ["tsx", "mdx"] }));\n`);
   });
 
   test("a root layout with no <body> to mount in: prints how to mount it", async () => {
@@ -720,12 +720,12 @@ describe("review fixes", () => {
 
   test("a config that imports the plugin but does not use it is not taken as done", async () => {
     viteProject();
-    write("vite.config.ts", `import humanTouch from "humantouch/vite";\n${VITE_CONFIG}`);
+    write("vite.config.ts", `import humanTouch from "humantouch-dev/vite";\n${VITE_CONFIG}`);
 
     const { code, output } = await cli(fakeExec().exec, "init");
 
     expect(code).toBe(1);
-    expect(output).toContain("vite.config.ts: it imports humantouch but does not add the plugin");
+    expect(output).toContain("vite.config.ts: it imports humantouch-dev but does not add the plugin");
     expect((await cli(fakeExec(builtPage()).exec, "doctor")).output).toContain("✗ The build config does not add the plugin.");
   });
 

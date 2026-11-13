@@ -12,7 +12,7 @@ type WebpackConfig = { module?: { rules?: unknown[] } };
 type ConfigFunction<Config> = (phase: string, context: { defaultConfig: Config }) => Config | Promise<Config>;
 
 const DEVELOPMENT_SERVER = "phase-development-server";
-const LOADER = "humantouch/next-loader";
+const LOADER = "humantouch-dev/next-loader";
 
 let service: Promise<Service> | undefined;
 

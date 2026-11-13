@@ -24,7 +24,7 @@ export const sh = async (command: string, args: string[], cwd: string, env: Node
 export async function pack(dir: string): Promise<string> {
   await sh("pnpm", ["pack", "--pack-destination", dir], PACKAGE);
   const { version } = JSON.parse(readFileSync(join(PACKAGE, "package.json"), "utf8"));
-  return join(dir, `humantouch-${version}.tgz`);
+  return join(dir, `humantouch-dev-${version}.tgz`);
 }
 
 /**
@@ -37,7 +37,7 @@ export async function copyWithoutHumanTouch(example: string, uninstall: (dir: st
   cpSync(example, dir, { recursive: true, filter: (from) => !/[\\/](node_modules|dist|\.humantouch|\.next)$/.test(from) });
   const pkgFile = join(dir, "package.json");
   const pkg = JSON.parse(readFileSync(pkgFile, "utf8"));
-  delete pkg.devDependencies["humantouch"];
+  delete pkg.devDependencies["humantouch-dev"];
   writeFileSync(pkgFile, `${JSON.stringify(pkg, null, 2)}\n`);
   uninstall(dir);
   appendFileSync(join(dir, ".gitignore"), "node_modules\ndist\n");

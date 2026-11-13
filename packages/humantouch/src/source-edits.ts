@@ -128,7 +128,7 @@ export function addVitePlugin(file: string, code: string): FileEdit {
   } else {
     return { reason: "its `plugins` is not a list" };
   }
-  return insert(file, code, [importAfterLast(code, program, "humanTouch", "humantouch/vite"), insertion]);
+  return insert(file, code, [importAfterLast(code, program, "humanTouch", "humantouch-dev/vite"), insertion]);
 }
 
 /**
@@ -140,7 +140,7 @@ export function wrapNextConfig(file: string, code: string): FileEdit {
   if (!program) return { reason: "it could not be read" };
   const exported = program.body.find((node: Node) => node.type === "ExportDefaultDeclaration")?.declaration;
   if (exported && !/Declaration$/.test(exported.type)) {
-    return insert(file, code, [importAfterLast(code, program, "{ withHumanTouch }", "humantouch/next"), ...wrap(exported)]);
+    return insert(file, code, [importAfterLast(code, program, "{ withHumanTouch }", "humantouch-dev/next"), ...wrap(exported)]);
   }
   const assigned = program.body.find(
     (node: Node) =>
@@ -153,7 +153,7 @@ export function wrapNextConfig(file: string, code: string): FileEdit {
   if (!assigned) return { reason: "its exported config could not be found" };
   const requires = program.body.filter((node: Node) => node.type === "VariableDeclaration" && node.declarations[0]?.init?.callee?.name === "require");
   const last: Node | undefined = requires.at(-1);
-  const line = 'const { withHumanTouch } = require("humantouch/next");';
+  const line = 'const { withHumanTouch } = require("humantouch-dev/next");';
   return insert(file, code, [last ? { at: last.end, text: `\n${line}` } : { at: 0, text: `${line}\n` }, ...wrap(assigned)]);
 }
 
@@ -177,7 +177,7 @@ export function mountInLayout(file: string, code: string): FileEdit {
     });
   }
   if (!program || !body) return { reason: "it renders no <body>" };
-  return insert(file, code, [importAfterLast(code, program, "{ HumanTouch }", "humantouch/react"), ...mountIn(code, body)]);
+  return insert(file, code, [importAfterLast(code, program, "{ HumanTouch }", "humantouch-dev/react"), ...mountIn(code, body)]);
 }
 
 /**
@@ -195,7 +195,7 @@ export function mountInEntry(file: string, code: string): FileEdit {
     });
   }
   if (!program || !tree) return { reason: "it renders no JSX with `render()`" };
-  return insert(file, code, [importAfterLast(code, program, "{ HumanTouch }", "humantouch/react"), ...mountIn(code, tree)]);
+  return insert(file, code, [importAfterLast(code, program, "{ HumanTouch }", "humantouch-dev/react"), ...mountIn(code, tree)]);
 }
 
 /** `<HumanTouch />` after the last child of `element`, or beside it in a fragment when it has none. */

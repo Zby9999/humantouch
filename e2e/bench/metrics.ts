@@ -301,8 +301,8 @@ export function fffProblem(extensions: Record<string, string | null> | undefined
   return null;
 }
 
-/** The Skill as `init` puts it in the project, or the package's own copy (`node_modules/humantouch/skill/SKILL.md`), which an Agent with none in the project may find. */
-const SKILL_FILE = /(skills\/humantouch|humantouch\/skill)\/SKILL\.md\b/;
+/** The Skill as `init` puts it in the project, or the package's own copy (`node_modules/humantouch-dev/skill/SKILL.md`), which an Agent with none in the project may find. */
+const SKILL_FILE = /(skills\/humantouch|humantouch-dev\/skill)\/SKILL\.md\b/;
 
 /** The Skill, loaded by name, read as a file, or printed in the shell (`cat …/SKILL.md`). */
 function readsTheSkill(call: ToolCall): boolean {
@@ -310,11 +310,11 @@ function readsTheSkill(call: ToolCall): boolean {
 }
 
 /** The package in the project's `node_modules`, as linked or in pnpm's store. */
-const IN_PACKAGE = /node_modules\/(?:\.pnpm\/[^\s"'`]*?\/node_modules\/)?humantouch(?:[\/\s"'`]|$)/;
+const IN_PACKAGE = /node_modules\/(?:\.pnpm\/[^\s"'`]*?\/node_modules\/)?humantouch-dev(?:[\/\s"'`]|$)/;
 
 /** A call that reads the package itself: not one that runs its command line, by `npx` or by its file. */
 function readsThePackage(call: ToolCall): boolean {
-  if (call.command !== undefined) return IN_PACKAGE.test(call.command) && !humanTouchCommands(call.command).length && !/humantouch\/dist\/cli\.js["'\s]+(claim|done|finish|last)\b/.test(call.command);
+  if (call.command !== undefined) return IN_PACKAGE.test(call.command) && !humanTouchCommands(call.command).length && !/humantouch(?:-dev)?\/dist\/cli\.js["'\s]+(claim|done|finish|last)\b/.test(call.command);
   return IN_PACKAGE.test(call.path ?? call.folder ?? "");
 }
 

@@ -21,13 +21,13 @@ Copy this to your Agent, in the project you want to edit:
 ```text
 Install Human Touch, an editor layer for this project's dev server, so I can edit the page and hand you the changes:
 
-1. In the project's root folder, run `npx -y humantouch@latest init`. If it prints "Finish by hand", make those edits. If it stops with an error instead, do what the error says; if you cannot, tell me why.
+1. In the project's root folder, run `npx -y humantouch-dev@latest init`. If it prints "Finish by hand", make those edits. If it stops with an error instead, do what the error says; if you cannot, tell me why.
 2. Start the dev server with the command `init` printed (if it printed none, the project's own `dev` script) and leave it running.
 3. If you can open a browser, open the page it serves and confirm the Human Touch toggle is at its bottom right: a round button named "Human Touch: enter edit mode". If you cannot, do not stop or wait for me: go on, and when you are done, tell me that the next time I open the page there should be a round button at its bottom right, and to tell you if it is not there.
 4. Run `npx humantouch doctor`. Fix whatever it marks ✗ and run it again, until it says "All good."
 ```
 
-`init` edits two files of your project's source, an import and a line in each: the build config (such as `vite.config.ts` or `next.config.ts`), and the file that renders the app (such as `src/main.tsx` or `app/layout.tsx`), which puts the toggle on the page. It also installs `humantouch` as a dev dependency, adds a Skill for your Agent in `.agents/skills/humantouch/` and `.claude/skills/humantouch/`, a line in `AGENTS.md` pointing to it, and a line in `.gitignore` for `.humantouch/`, the folder your changes are saved in.
+`init` edits two files of your project's source, an import and a line in each: the build config (such as `vite.config.ts` or `next.config.ts`), and the file that renders the app (such as `src/main.tsx` or `app/layout.tsx`), which puts the toggle on the page. It also installs `humantouch-dev` as a dev dependency, adds a Skill for your Agent in `.agents/skills/humantouch/` and `.claude/skills/humantouch/`, a line in `AGENTS.md` pointing to it, and a line in `.gitignore` for `.humantouch/`, the folder your changes are saved in.
 
 ## One round
 
@@ -93,7 +93,7 @@ It takes back out everything `init` added, uninstalls the package and deletes `.
 Human Touch removed:
 - Took the plugin, <HumanTouch />, the Skill and its lines in AGENTS.md and .gitignore back out
 - Deleted .humantouch/
-- Uninstalled humantouch (`npm uninstall humantouch`)
+- Uninstalled humantouch-dev (`npm uninstall humantouch-dev`)
 ```
 
 With two off-canvas layers, the second item reads "Deleted .humantouch/, with the 2 layers the designer had moved off the canvas" instead.

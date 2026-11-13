@@ -5,7 +5,7 @@ import { SITE_URL } from "@/lib/site";
  * The install prompt (designer, 2026-11-11): short, a pointer to the For Agents page, which has the steps, at the site's
  * own address, the same wherever the page is open (the dev server's included), as the Agent installs somewhere else.
  */
-export const INSTALL_PROMPT = `Install Human Touch, an editor layer for this project's dev server, so I can edit the page and hand you the changes. Follow the Install section of ${SITE_URL}/agents.md. If you cannot open it, run \`npx -y humantouch@latest init\` in the project's root folder and do what it prints.`;
+export const INSTALL_PROMPT = `Install Human Touch, an editor layer for this project's dev server, so I can edit the page and hand you the changes. Follow the Install section of ${SITE_URL}/agents.md. If you cannot open it, run \`npx -y humantouch-dev@latest init\` in the project's root folder and do what it prints.`;
 
 /**
  * "Copy prompt to install", with the prompt it copies shown in a card under it while the pointer rests on it, or the

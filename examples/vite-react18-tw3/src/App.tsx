@@ -1,5 +1,5 @@
 import { Badge, Surface } from "acme-ui";
-import { HumanTouch } from "humantouch/react";
+import { HumanTouch } from "humantouch-dev/react";
 import { Button } from "./components/Button";
 import { Card } from "./components/Card";
 import { cn } from "./lib/utils";

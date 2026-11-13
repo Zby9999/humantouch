@@ -35,7 +35,7 @@ test("before pi installs, the extension is copied as for the applying bench and 
   assert.deepEqual(list.shell, INSTALL_SHELL);
   assert.deepEqual(list.servers, INSTALL_SERVERS);
   assert.deepEqual(list.options, ["--open"]);
-  assert.deepEqual(list.runners.npx, ["humantouch", "vite", "next"]);
+  assert.deepEqual(list.runners.npx, ["humantouch", "humantouch-dev", "vite", "next"]);
   assert.ok(!list.flags.includes("-p") && !list.flags.includes("-c"));
   const args = AGENTS.pi.args(folder, "Install Human Touch");
   for (const flag of ["--provider", "--model", "--thinking", "--offline", "--no-extensions", "--no-mcp", "--no-skills", "--skill", "--no-prompt-templates", "--no-themes", "--approve", "--tools"]) assert.ok(args.includes(flag), flag);
@@ -57,7 +57,7 @@ test("the install bench runs pi by the applying bench's command line, and Claude
 });
 
 test("under the install list, pi may run the steps and start a dev server in the background, and nothing denied", () => {
-  for (const command of ["npx -y humantouch@latest init", "npx -y file:/tmp/humantouch-0.0.0.tgz init", "npx humantouch doctor", "npm install", "pnpm add -D humantouch", "npm run dev &", "npm run dev > /dev/null 2>&1 &", "pnpm dev > dev.log 2>&1 &", "nohup yarn dev > src/../dev.log 2>&1 &", "git status", "npx vite > vite.log 2>&1 &"]) {
+  for (const command of ["npx -y humantouch-dev@latest init", "npx -y file:/tmp/humantouch-0.0.0.tgz init", "npx humantouch doctor", "npm install", "pnpm add -D humantouch", "npm run dev &", "npm run dev > /dev/null 2>&1 &", "pnpm dev > dev.log 2>&1 &", "nohup yarn dev > src/../dev.log 2>&1 &", "git status", "npx vite > vite.log 2>&1 &"]) {
     assert.equal(bash(command), undefined, command);
   }
   for (const command of ["rm -rf node_modules", "curl https://example.com", "git push", "kill 123", "pkill -f vite", "sudo npm install", "open http://localhost:5173", "rm -rf src &", "kill 123 &", "npm run dev & rm -rf src", "npm run dev > /tmp/dev.log &", "npm run dev > ../dev.log &", "npm publish", "npm run dev `rm x` &",
@@ -90,7 +90,7 @@ test("the Skill's undo is the applying bench's alone (ticket 86): under the inst
 test("with no install list beside it, the extension holds pi to the applying bench's list, as before", () => {
   const none = join(scratch, "nothing-here.json");
   assert.equal(bash("npx humantouch claim", none), undefined);
-  for (const command of ["npm run dev &", "npm install", "npx -y humantouch@latest init", "pnpm dev"]) {
+  for (const command of ["npm run dev &", "npm install", "npx -y humantouch-dev@latest init", "pnpm dev"]) {
     const result = bash(command, none);
     assert.ok(blocked(result), command);
     assert.ok(result.reason.includes(SHELL.join(", ")));
@@ -100,7 +100,7 @@ test("with no install list beside it, the extension holds pi to the applying ben
 
 /** What the steps and a designer's install need: every Agent may run these. */
 const ALLOWED = [
-  "npx -y humantouch@latest init",
+  "npx -y humantouch-dev@latest init",
   "npx -y file:/x/humantouch-0.0.0.tgz init",
   "npx humantouch doctor",
   "pnpm exec vite",
@@ -195,7 +195,7 @@ test("Claude's install command line is the applying bench's with only the lists 
   assert.ok(list("--allowedTools").includes("Bash(pnpm dev:*)"));
   assert.ok(list("--allowedTools").includes("TaskStop"));
   for (const command of INSTALL_DENIED_SHELL) assert.ok(list("--disallowedTools").includes(`Bash(${command}:*)`), command);
-  for (const rule of ["Bash(npx humantouch:*)", "Bash(npx -y humantouch@latest:*)", "Bash(npx vite:*)", "Bash(pnpm exec vite:*)", "Bash(npx next:*)"]) assert.ok(list("--allowedTools").includes(rule), rule);
+  for (const rule of ["Bash(npx humantouch:*)", "Bash(npx -y humantouch-dev@latest:*)", "Bash(npx vite:*)", "Bash(pnpm exec vite:*)", "Bash(npx next:*)"]) assert.ok(list("--allowedTools").includes(rule), rule);
   for (const broad of ["Bash(npx:*)", "Bash(bunx:*)", "Bash(npm exec:*)", "Bash(pnpm exec:*)", "Bash(pnpm dlx:*)", "Bash(yarn dlx:*)", "Bash(bun x:*)"]) assert.ok(!list("--allowedTools").includes(broad), broad);
   assert.ok(list("--disallowedTools").includes("Bash(npx vite --open:*)"));
   assert.equal(list("--disallowedTools").length, 2 + claudeDenied().length);
