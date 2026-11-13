@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 import { fileURLToPath } from "node:url";
-import { withHumanTouch } from "humantouch/next";
+import { withHumanTouch } from "humantouch-dev/next";
 
 /**
  * The site is a package of the repository's workspace: its dependencies, and the README it reads, are in the folder

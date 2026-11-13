@@ -1,4 +1,4 @@
-import { HumanTouch } from "humantouch/react";
+import { HumanTouch } from "humantouch-dev/react";
 import { useEffect, useRef, useState } from "react";
 
 const SLIDES = ["Plan", "Build", "Ship"];

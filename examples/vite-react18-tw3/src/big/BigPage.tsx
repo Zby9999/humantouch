@@ -1,5 +1,5 @@
 import { Badge } from "acme-ui";
-import { HumanTouch } from "humantouch/react";
+import { HumanTouch } from "humantouch-dev/react";
 import { avatar, picture } from "./images";
 import { ArticleCard, ProductCard, StatTile, Testimonial, UserRow } from "./parts";
 

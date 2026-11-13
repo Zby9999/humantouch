@@ -249,10 +249,10 @@ test("fff's searches are over the project, or a folder of it, unless held to one
 test("fff-multi-grep's constraints are the path it searches, as far as the bench looks: one into the Human Touch package reads it", () => {
   const transcript = parseTranscript(
     "pi",
-    lines({ type: "message_end", message: { role: "assistant", provider: "command-code", model: "m", content: [{ type: "toolCall", id: "a", name: "fff-multi-grep", arguments: { patterns: ["claim"], constraints: "node_modules/humantouch/" } }] } }),
+    lines({ type: "message_end", message: { role: "assistant", provider: "command-code", model: "m", content: [{ type: "toolCall", id: "a", name: "fff-multi-grep", arguments: { patterns: ["claim"], constraints: "node_modules/humantouch-dev/" } }] } }),
   );
 
-  assert.deepEqual(transcript.toolCalls.map(({ output, ...call }) => call), [{ name: "fff-multi-grep", path: "node_modules/humantouch/" }]);
+  assert.deepEqual(transcript.toolCalls.map(({ output, ...call }) => call), [{ name: "fff-multi-grep", path: "node_modules/humantouch-dev/" }]);
   assert.equal(toolCallStats(transcript.toolCalls).packageReads, 1);
 });
 
@@ -502,8 +502,8 @@ test("subagents are counted apart: Claude Code's Task or Agent calls and the oth
 
 test("the Skill read from the package's own copy, as an Agent with none in the project may find it, is the Skill read too (ticket 65)", () => {
   const calls: ToolCall[] = [
-    { name: "Read", path: "/p/node_modules/humantouch/skill/SKILL.md", output: "S".repeat(12) },
-    { name: "Bash", command: "cat node_modules/humantouch/skill/SKILL.md", output: "C".repeat(5) },
+    { name: "Read", path: "/p/node_modules/humantouch-dev/skill/SKILL.md", output: "S".repeat(12) },
+    { name: "Bash", command: "cat node_modules/humantouch-dev/skill/SKILL.md", output: "C".repeat(5) },
     { name: "Read", path: "/p/src/skill/SKILL.md", output: "x" },
   ];
 
@@ -512,12 +512,12 @@ test("the Skill read from the package's own copy, as an Agent with none in the p
 
 test("calls that read the Human Touch package itself are counted, not those that run its command line (ticket 65)", () => {
   const calls: ToolCall[] = [
-    { name: "read", path: "/t/run/node_modules/humantouch/dist/cli.js", output: "x" },
-    { name: "grep", path: "/t/run/node_modules/.pnpm/humantouch@file+..+pack/node_modules/humantouch/dist", output: "" },
-    { name: "shell", command: "node -e 'require(\"fs\").readFileSync(\"node_modules/humantouch/dist/editor.dev.js\")'", output: "" },
-    { name: "Read", path: "/p/node_modules/humantouch/skill/SKILL.md", output: "" },
+    { name: "read", path: "/t/run/node_modules/humantouch-dev/dist/cli.js", output: "x" },
+    { name: "grep", path: "/t/run/node_modules/.pnpm/humantouch-dev@file+..+pack/node_modules/humantouch-dev/dist", output: "" },
+    { name: "shell", command: "node -e 'require(\"fs\").readFileSync(\"node_modules/humantouch-dev/dist/editor.dev.js\")'", output: "" },
+    { name: "Read", path: "/p/node_modules/humantouch-dev/skill/SKILL.md", output: "" },
     { name: "Bash", command: "npx humantouch done 1", output: "" },
-    { name: "Bash", command: "node node_modules/humantouch/dist/cli.js claim", output: "" },
+    { name: "Bash", command: "node node_modules/humantouch-dev/dist/cli.js claim", output: "" },
     { name: "Read", path: "/p/node_modules/humantouchred/index.js", output: "" },
     { name: "Read", path: "/p/src/App.tsx", output: "" },
   ];
@@ -528,10 +528,10 @@ test("calls that read the Human Touch package itself are counted, not those that
 test("Cursor's glob in a folder of the package is a call there, by its target folder (ticket 65)", () => {
   const transcript = parseTranscript(
     "cursor",
-    lines({ type: "tool_call", subtype: "completed", tool_call: { globToolCall: { args: { targetDirectory: "/t/node_modules/humantouch", globPattern: "**/*" }, result: { success: { content: "" } } } } }),
+    lines({ type: "tool_call", subtype: "completed", tool_call: { globToolCall: { args: { targetDirectory: "/t/node_modules/humantouch-dev", globPattern: "**/*" }, result: { success: { content: "" } } } } }),
   );
 
-  assert.equal(transcript.toolCalls[0].folder, "/t/node_modules/humantouch");
+  assert.equal(transcript.toolCalls[0].folder, "/t/node_modules/humantouch-dev");
   assert.equal(toolCallStats(transcript.toolCalls).packageReads, 1);
 });
 

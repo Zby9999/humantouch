@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react";
-import humanTouch from "humantouch/vite";
+import humanTouch from "humantouch-dev/vite";
 import { defineConfig } from "vite";
 
 // Tailwind v3 runs as a PostCSS plugin: see postcss.config.js and tailwind.config.js.

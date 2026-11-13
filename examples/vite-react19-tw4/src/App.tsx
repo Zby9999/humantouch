@@ -1,6 +1,6 @@
 import { Badge, Surface } from "acme-ui";
 import { useState } from "react";
-import { HumanTouch } from "humantouch/react";
+import { HumanTouch } from "humantouch-dev/react";
 import { Card } from "./components/Card";
 import { Dialog } from "./components/Dialog";
 

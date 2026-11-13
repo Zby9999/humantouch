@@ -7,7 +7,7 @@
  * headless shell only: nothing takes the designer's focus.
  *
  *   pnpm bench:install [--agents claude,pi,scripted] [--starts id,…] [--runs 1]
- *                      [--package npm|local]   humantouch@latest from the registry (the steps as README has them), or this
+ *                      [--package npm|local]   humantouch-dev@latest from the registry (the steps as README has them), or this
  *                                              repository's package, packed: step 1 then runs `npx -y file:<the .tgz> init`,
  *                                              and the Agent's environment has HT_INSTALL_FROM=<the .tgz> for `init`
  *                      [--plant no-dev-server|extra-edit|asks|leaves-file]   the scripted Agent goes wrong in that way
@@ -158,7 +158,7 @@ async function main(argv: string[]) {
     const steps = forAgents(readFileSync(README, "utf8"));
     const prompt = tarball ? withLocalPackage(steps, tarball) : steps;
     const out = option("out") ?? join(RESULTS, new Date().toISOString().replace(/[:.]/g, "-"));
-    console.log(`${agents.length * starts.length * runs} installs: ${agents.join(", ")} × ${starts.length} starts × ${runs}, humantouch from ${tarball ?? "npm (humantouch@latest)"}${plant ? `, planted ${plant}` : ""}. Raw results in ${out}`);
+    console.log(`${agents.length * starts.length * runs} installs: ${agents.join(", ")} × ${starts.length} starts × ${runs}, humantouch from ${tarball ?? "npm (humantouch-dev@latest)"}${plant ? `, planted ${plant}` : ""}. Raw results in ${out}`);
 
     const versions: Partial<Record<InstallAgent, string>> = {};
     for (const agent of agents) versions[agent] = agent === "scripted" ? `scripted-agent.ts, node ${process.version}` : await agentVersion(agent);
@@ -225,8 +225,8 @@ async function gitState(dir: string): Promise<{ status: string; diff: string }> 
 
 /** What the project's own command line prints for `command` (`doctor`, `remove`), whether it passes or not. */
 async function projectCli(dir: string, command: string, env: NodeJS.ProcessEnv): Promise<string> {
-  const cli = join(dir, "node_modules/humantouch/dist/cli.js");
-  if (!existsSync(cli)) return `node_modules/humantouch/dist/cli.js is not there: humantouch is not installed.\n`;
+  const cli = join(dir, "node_modules/humantouch-dev/dist/cli.js");
+  if (!existsSync(cli)) return `node_modules/humantouch-dev/dist/cli.js is not there: humantouch-dev is not installed.\n`;
   return new Promise((resolve) =>
     execFile(process.execPath, [cli, command], { cwd: dir, env, maxBuffer: 64 * 1024 * 1024, timeout: 5 * 60_000 }, (error, stdout, stderr) =>
       resolve(`${stdout}${stderr}${error ? `\n(exit code ${error.code ?? "?"}${error.killed ? ", stopped after 5 minutes" : ""})\n` : ""}`),
@@ -419,7 +419,7 @@ function writeSummary(out: string) {
       models: [...new Set(mine.map((raw) => raw.model ?? "?"))],
       extensions: [...new Set(mine.flatMap((raw) => Object.entries(raw.extensions ?? {}).map(([name, version]) => `${name} ${version ?? "（没装）"}`)))],
       efforts: [...new Set(mine.map((raw) => (raw.effort ? `${raw.effort.set}${raw.effort.seen ? `, seen ${raw.effort.seen}` : ""}` : "–")))],
-      packages: [...new Set(mine.map((raw) => raw.package.tarball ?? "humantouch@latest"))],
+      packages: [...new Set(mine.map((raw) => raw.package.tarball ?? "humantouch-dev@latest"))],
       plants: [...new Set(mine.map((raw) => raw.plant ?? "none"))],
       runs: mine.length,
       successes: mine.filter((raw) => raw.success).length,

@@ -22,17 +22,17 @@ test("with a local package, only step 1's command changes, to the packed file", 
   const local = withLocalPackage(prompt, "/tmp/pack/humantouch-0.1.0.tgz");
 
   assert.ok(local.includes("run `npx -y file:/tmp/pack/humantouch-0.1.0.tgz init`"));
-  assert.ok(!local.includes("humantouch@latest"));
+  assert.ok(!local.includes("humantouch-dev@latest"));
   assert.equal(local.replace("npx -y file:/tmp/pack/humantouch-0.1.0.tgz init", NPX_INIT), prompt);
 });
 
 test("a README with no For Agents block, or no step 1 command, stops the bench", () => {
   assert.throws(() => forAgents("# Human Touch\n\n## For Agents\n\nNothing to copy.\n"), /For Agents/);
-  assert.throws(() => withLocalPackage("Run `npx humantouch init`.", "/tmp/a.tgz"), /npx -y humantouch@latest init/);
+  assert.throws(() => withLocalPackage("Run `npx humantouch init`.", "/tmp/a.tgz"), /npx -y humantouch-dev@latest init/);
 });
 
 
-const INIT: ToolCall = { name: "Bash", command: "npx -y humantouch@latest init", output: "Installed. Start the dev server (`npm run dev`)…" };
+const INIT: ToolCall = { name: "Bash", command: "npx -y humantouch-dev@latest init", output: "Installed. Start the dev server (`npm run dev`)…" };
 const DEV: ToolCall = { name: "Bash", command: "npm run dev", output: "" };
 const DOCTOR_GOOD: ToolCall = { name: "Bash", command: "npx humantouch doctor", output: "✓ a\n\nAll good.\n" };
 const DOCTOR_BAD: ToolCall = { name: "Bash", command: "npx humantouch doctor", output: "✗ a\n\n1 to fix.\n" };
@@ -120,7 +120,7 @@ index 1..2 100644
 +++ b/src/main.tsx
 @@ -1,9 +1,11 @@
  import { StrictMode } from "react";
-+import { HumanTouch } from "humantouch/react";
++import { HumanTouch } from "humantouch-dev/react";
  import App from "./App";
 @@ -8,1 +9,2 @@
      <App />
@@ -130,7 +130,7 @@ index 1..2 100644
 --- a/vite.config.ts
 +++ b/vite.config.ts
 @@ -1,7 +1,8 @@
-+import humanTouch from "humantouch/vite";
++import humanTouch from "humantouch-dev/vite";
  import react from "@vitejs/plugin-react";
 -  plugins: [react()],
 +  plugins: [humanTouch(), react()],
@@ -138,14 +138,14 @@ diff --git a/package.json b/package.json
 --- a/package.json
 +++ b/package.json
 @@ -1 +1,2 @@
-+    "humantouch": "^0.1.0",
++    "humantouch-dev": "^0.1.0",
 `;
 
 const NEXT_DIFF = `diff --git a/next.config.ts b/next.config.ts
 --- a/next.config.ts
 +++ b/next.config.ts
 @@ -1,3 +1,4 @@
-+import { withHumanTouch } from "humantouch/next";
++import { withHumanTouch } from "humantouch-dev/next";
  import type { NextConfig } from "next";
 -export default nextConfig;
 +export default withHumanTouch(nextConfig);
@@ -153,7 +153,7 @@ diff --git a/src/app/layout.tsx b/src/app/layout.tsx
 --- a/src/app/layout.tsx
 +++ b/src/app/layout.tsx
 @@ -1,3 +1,4 @@
-+import { HumanTouch } from "humantouch/react";
++import { HumanTouch } from "humantouch-dev/react";
  import type { Metadata } from "next";
 @@ -20,1 +21,2 @@
          {children}
@@ -175,12 +175,12 @@ test("a third place, another file than the config and the render file, a file ch
   assert.match(third.problems.join("\n"), /3 places/);
 
   // Two places, but one of them the wrong file.
-  const wrong = sourceEdits(status(" M src/App.tsx", " M vite.config.ts"), `diff --git a/src/App.tsx b/src/App.tsx\n--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1 +1,2 @@\n+import { HumanTouch } from "humantouch/react";\n+      <HumanTouch />\n`, "vite");
+  const wrong = sourceEdits(status(" M src/App.tsx", " M vite.config.ts"), `diff --git a/src/App.tsx b/src/App.tsx\n--- a/src/App.tsx\n+++ b/src/App.tsx\n@@ -1 +1,2 @@\n+import { HumanTouch } from "humantouch-dev/react";\n+      <HumanTouch />\n`, "vite");
   assert.deepEqual(wrong.problems, ["src/App.tsx: neither the build config nor the file that renders the app"]);
   assert.match(sourceEdits(status(" M app/page.tsx"), "", "next").problems.join(), /app\/page\.tsx: neither/);
   assert.match(sourceEdits(status(" M src/main.tsx"), "", "next").problems.join(), /src\/main\.tsx: neither/);
 
-  const more = sourceEdits(status(" M src/main.tsx"), `diff --git a/src/main.tsx b/src/main.tsx\n--- a/src/main.tsx\n+++ b/src/main.tsx\n@@ -1 +1,4 @@\n+import { HumanTouch } from "humantouch/react";\n+import "./other.css";\n+    <HumanTouch />\n`, "vite");
+  const more = sourceEdits(status(" M src/main.tsx"), `diff --git a/src/main.tsx b/src/main.tsx\n--- a/src/main.tsx\n+++ b/src/main.tsx\n@@ -1 +1,4 @@\n+import { HumanTouch } from "humantouch-dev/react";\n+import "./other.css";\n+    <HumanTouch />\n`, "vite");
   assert.match(more.problems.join("\n"), /src\/main\.tsx: 3 lines added/);
 
   const untracked = sourceEdits(status(" M src/main.tsx", " M vite.config.ts", "?? src/HumanTouchMount.tsx"), VITE_DIFF, "vite");

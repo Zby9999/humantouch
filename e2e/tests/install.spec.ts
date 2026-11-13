@@ -20,15 +20,15 @@ test.beforeAll(async () => {
   test.setTimeout(120_000);
   packed = await pack(mkdtempSync(join(tmpdir(), "humantouch-pack-")));
   project = await copyWithoutHumanTouch(EXAMPLE, (dir) => {
-    replaceIn(dir, "vite.config.ts", 'import humanTouch from "humantouch/vite";\n');
+    replaceIn(dir, "vite.config.ts", 'import humanTouch from "humantouch-dev/vite";\n');
     replaceIn(dir, "vite.config.ts", "humanTouch(), ");
-    replaceIn(dir, "src/App.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "src/App.tsx", 'import { HumanTouch } from "humantouch-dev/react";\n');
     replaceIn(dir, "src/App.tsx", "      <HumanTouch />\n");
     // Its page of declared font weights mounts it too (ticket 140): `init` would see it mounted there, and leave App be.
-    replaceIn(dir, "src/fonts/FontsPage.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "src/fonts/FontsPage.tsx", 'import { HumanTouch } from "humantouch-dev/react";\n');
     replaceIn(dir, "src/fonts/FontsPage.tsx", "      <HumanTouch />\n");
     // So does its page that moves (ticket 141).
-    replaceIn(dir, "src/motion/MotionPage.tsx", 'import { HumanTouch } from "humantouch/react";\n');
+    replaceIn(dir, "src/motion/MotionPage.tsx", 'import { HumanTouch } from "humantouch-dev/react";\n');
     replaceIn(dir, "src/motion/MotionPage.tsx", "      <HumanTouch />\n");
   });
 });
@@ -39,7 +39,7 @@ test.afterAll(() => {
 });
 
 /** `npx humantouch …` once the project has it: its own copy, as installed. */
-const installed = (...args: string[]) => sh(process.execPath, [join(project, "node_modules/humantouch/dist/cli.js"), ...args], project);
+const installed = (...args: string[]) => sh(process.execPath, [join(project, "node_modules/humantouch-dev/dist/cli.js"), ...args], project);
 
 test("init installs Human Touch: once the dev server starts, the toggle is on the page, within 60 seconds", async ({ page }) => {
   const start = Date.now();
@@ -70,7 +70,7 @@ test("as installed, the page loads only the toggle, under 10KB gzipped as Vite s
     await settle(page);
 
     // From node_modules as published, not bundled again by Vite's dependency optimizer.
-    const ours = (await loaded.all()).filter((script) => script.url.includes("/node_modules/humantouch/dist/"));
+    const ours = (await loaded.all()).filter((script) => script.url.includes("/node_modules/humantouch-dev/dist/"));
     expect(ours.length).toBeGreaterThan(0);
     const served = gzipped(ours.map((script) => codeOf(script.text)));
     // In the output, to compare with the budget from one ticket to the next.
@@ -94,9 +94,9 @@ test("init changes two places in the project's source: the build config and the 
   const diff = await sh("git", ["diff", "--", "src/main.tsx", "vite.config.ts"], project);
   // Each one: the import, and the plugin or the component.
   expect(diff.split("\n").filter((line) => /^[-+](?![-+])/.test(line))).toEqual([
-    '+import { HumanTouch } from "humantouch/react";',
+    '+import { HumanTouch } from "humantouch-dev/react";',
     "+    <HumanTouch />",
-    '+import humanTouch from "humantouch/vite";',
+    '+import humanTouch from "humantouch-dev/vite";',
     "-  plugins: [react(), tailwindcss()],",
     "+  plugins: [humanTouch(), react(), tailwindcss()],",
   ]);

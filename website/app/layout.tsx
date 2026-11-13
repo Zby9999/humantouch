@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Instrument_Serif, Inter, Rajdhani } from "next/font/google";
 import "./globals.css";
-import { HumanTouch } from "humantouch/react";
+import { HumanTouch } from "humantouch-dev/react";
 import { Nav } from "@/components/Nav";
 import { SITE_URL } from "@/lib/site";
 

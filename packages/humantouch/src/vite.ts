@@ -44,7 +44,7 @@ export default function humanTouch(): Plugin {
     config() {
       // Served as published: pre-bundled, the toggle would come again unminified, with a source map inlined in it,
       // more than the page is to load with it (docs/goals.md). The rest of the editor layer still loads only as needed.
-      return { optimizeDeps: { exclude: ["humantouch"] } };
+      return { optimizeDeps: { exclude: ["humantouch-dev"] } };
     },
     async configResolved(config) {
       root = config.root;

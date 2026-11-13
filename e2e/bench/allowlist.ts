@@ -62,7 +62,7 @@ export function backgroundServer(command: string, servers: readonly string[], in
  * (ticket 91 re-review): `npx`, `bunx`, `pnpm exec` and the like, by an
  * allowlist, as no list of what to turn away closes them (a runner inside a
  * runner, `nice`, `nohup`, any program on PATH). `runners` names, for each
- * runner, the programs it may run: by name, or a version of it (`humantouch@latest`);
+ * runner, the programs it may run: by name, or a version of it (`humantouch-dev@latest`);
  * and for `humantouch`, a packed file of it (`file:…/humantouch-x.tgz`) too. Between
  * the runner and its program only `flags` may come, options that take no
  * value (so no `-c`, `--call`, `-p <package>`). No word anywhere is one of

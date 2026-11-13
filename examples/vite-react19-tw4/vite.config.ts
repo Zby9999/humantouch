@@ -1,6 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import humanTouch from "humantouch/vite";
+import humanTouch from "humantouch-dev/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({

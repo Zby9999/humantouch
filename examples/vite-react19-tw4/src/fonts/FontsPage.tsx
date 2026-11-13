@@ -1,4 +1,4 @@
-import { HumanTouch } from "humantouch/react";
+import { HumanTouch } from "humantouch-dev/react";
 
 /**
  * A page whose web font the project declares in three weights, Light, Medium
