@@ -20,3 +20,31 @@
 - [ ] `last` 列出 `finish` 那一轮的全部改动，⚠️ 的标 Not applied。有测试。
 - [ ] `--scripted` 里依赖「`finish` 后留到下一轮」的场景改成用 End this round 结束，或改判新的结果；改了哪些在 Comments 里说。
 - [ ] README、Skill、`finish` 的输出和 GLOSSARY 的说法跟新规则一致。
+
+## Comments
+
+**实现（2026-11-14，本票会话 nice-heyrovsky-b8aba6）**
+
+- `archiveRound(folder, ended)`：只有 `ended === "unlocked"`（End this round、按住切换按钮，走 service 的 `/unlock`）才 `carryOver`；`"finished"`（`finish`）一律归档，删掉 changeset、canvas、checks（page、other-usages、state 本来就删）。客户端同一张画布的逻辑（EditorLayer、Shell、freezer、saved-round、cli 的 `claimCarried`）原样保留，unlock 还在用。
+- 审查找到的：`finish` 时没落地的改动里有画布外的（挪出画布的删除、拖回、在画布外新建后拖回），整轮扔掉会让 `off-canvas.json` 和代码对不上（挪出的图层在页面上还在、off-canvas 里也有一份；拖回的图层两边都没了，违反 ADR 0009）。修法：`finished` 时对没落地的改动做 Discard all 同样的回退（`offCanvasWithout` 从 EditorLayer.tsx 挪到 client/changeset.ts 共用）。测试在 off-canvas-service.test.ts。
+- 文案：README「If the Agent stops partway」那段、Skill 第 4 步（英文）、GLOSSARY「一轮」「画布」两条跟 ADR 0019 对齐；几处代码注释顺手改了。
+
+**`--scripted` / 测试里改了哪些（验收第 4 条）**
+
+- `e2e/tests/applying-bench.spec.ts` 的 playbook `finishes-with-changes-left`（记录名没变，字段换了）：原来断言 ⚠️ 的留到下一轮、同一张画布、第二轮全落地后才重新冻结；改判为：`finish` 后没有改动单、切换按钮上没有数字、再进编辑模式重新冻结且画布上是 Agent 改过的填色、`last` 三条依次 Applied / Not applied / Not applied。
+- 依赖「`finish` 后留下」的单测改成 unlock 结束：cli.test.ts（carried-over 一组、Stacks 那条、`finish names…` 改断言只剩 history 并查 `last`），page-service.test.ts、page-claim-service.test.ts（POST /unlock，或 finish 后重放一轮）。新增：`finish` 有没落地的改动什么都不留 + `last` 全列；unlock 照旧留。
+- `e2e/bench/scenarios.ts` 里两处 `finish`（714、1615）都是全部落地，不受影响，没改。
+- `e2e/perf/flex.perf.ts`「the same canvas again」原来靠 `finish` 造留下的一轮，改成按住切换按钮（否则 carried 那一行悄悄不测）。perf 没跑（按规矩），由规划会话决定。
+
+**代定**
+
+1. `finish` 的输出不改：它本来就没说「留到下一轮」；不往报告规则里加「⚠️ 不会留下」，免得 claim/finish 文案变动影响 Agent 行为。Skill 第 4 步加了一句英文说明。
+2. 画布外改动在 `finish` 时按 Discard all 回退（见上），而不是留着不动。
+3. `last` 的标法沿用 ticket 148（⚠️ 和没标 done 的都是 Not applied），不新增「Skipped」之类。
+4. website/ 里两份 SKILL.md 副本没同步（website 线自己的事；发 0.1.1 时随 init 更新）。
+
+**风险**
+
+1. Agent 跑了 `finish` 却跳过几条的，这几条只在报告里（ADR 0019 已接受）；真实 Agent 数据要等下一次真跑。
+2. 画布外回退只覆盖 `offCanvasWithout` 认得的三类（`offCanvas` 删除、`putBack`、`madeOffCanvas`）；画布外图层自己的编辑（`edits`）不属于一轮，照旧。
+3. perf 那一处改成按住切换按钮后没实际跑过。

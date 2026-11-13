@@ -64,7 +64,7 @@ async function movedOffAndApplied(page: Page, APP: string, original: string) {
   await expect(promisify(execFile)("git", ["check-ignore", "-q", `${HUMAN_TOUCH_FOLDER}off-canvas.json`], { cwd: EXAMPLE })).resolves.toBeDefined();
   await expect.poll(() => readHumanTouchFile("changeset.json")?.changes).toMatchObject([{ kind: "delete", offCanvas: kept.id }]);
 
-  // The Agent applies the round: the notes say to delete it, and it does; the page shows it gone (ticket 68: else the deletion is left for the next round).
+  // The Agent applies the round: the notes say to delete it, and it does; the page shows it gone (else `finish` lists it under ⚠️).
   const notes = await npxHumanTouch("claim");
   expect(notes).toContain("Delete this layer");
   writeFileSync(APP, original.replace(`          ${kept.origin.snippet.code}\n`, ""));

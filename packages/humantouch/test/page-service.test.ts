@@ -64,7 +64,8 @@ test("a round that ends with changes left takes it away; claimed, none is kept",
   await call("PUT", PAGE_PATH, PRINT);
   expect(await cli("claim")).toBe(0);
   expect((await call("PUT", PAGE_PATH, PRINT)).status).toBe(409);
-  expect(await cli("finish")).toBe(0);
+  // Ended by the designer: the changes left are carried over (ADR 0019).
+  expect((await call("POST", "/unlock")).status).toBe(204);
   const carried = await round();
   expect(carried.changeSet.changes).toHaveLength(2);
   expect(carried.page).toBeUndefined();

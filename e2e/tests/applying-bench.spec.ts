@@ -862,54 +862,40 @@ test("playbook: the Agent stops halfway; the designer ends the round, and edits 
   expect((await pageSinceNoticesShown(page)).length).toBe(0);
 });
 
-test("playbook: the Agent finishes with changes not applied (⚠️); they are left for the next round on the same canvas, and once all are applied, edit mode freezes the page afresh (ticket 68)", async ({ page }) => {
+test("playbook: the Agent finishes with changes not applied (⚠️); the round leaves nothing: no count on the toggle, edit mode freezes the page afresh with the Agent's code, and `last` lists every change (ADR 0019)", async ({ page }) => {
   await designTheRound(page);
-  const before = await canvasLooks(page);
   await leaveEditMode(page);
   await npxHumanTouch("claim");
   await apply(page, 1);
   await npxHumanTouch("done", "1");
   const finished = (await npxHumanTouch("finish")).split("\n")[0];
   await expect(page.getByRole("button", { name: TOGGLE_LABEL })).toBeEnabled();
-  const left = changesNow();
-  const unapplied = CHANGES.slice(1).length;
+  const left = readHumanTouchFile("changeset.json");
+  // Read once the page has the round's end: a render as it unlocks may still count the round it had.
+  await expect(page.getByRole("button", { name: /not applied yet$/ })).toHaveCount(0);
+  const counted = await page.getByRole("button", { name: /not applied yet$/ }).count();
 
-  await enterAgain(page);
-  const same = compareLooks(before, await canvasLooks(page));
-  await leaveEditMode(page);
-
-  // The rest applied in the next round: then no change is left, and edit mode freezes the page afresh.
-  const notes = await npxHumanTouch("claim");
-  await apply(page, 2);
-  await apply(page, 3);
-  await npxHumanTouch("done", "1", "2");
-  await npxHumanTouch("finish");
-  const leftAtLast = readHumanTouchFile("changeset.json");
   await enterAgain(page);
   const refrozen = await frozenAfresh(page);
+  const fillOnCanvas = await canvas(page).locator("article").first().evaluate((card) => getComputedStyle(card).backgroundColor);
   const lastRound = await npxHumanTouch("last");
+  const statuses = lastRound.match(/\*\*Status:\*\* \w[\w ]*/g);
 
   record("finishes-with-changes-left", {
     finished,
-    unappliedKeptForNextRound: left.filter((change) => change.property !== "fill").length / unapplied,
-    appliedBackInNextRound: left.some((change) => change.property === "fill"),
-    numberedFrom1: left.map((change) => change.id),
-    canvasElementsCompared: same.compared,
-    canvasElementsDiffering: same.differing,
-    nextClaimOpening: notes.split("\n")[2],
-    leftOnceAllApplied: leftAtLast?.changes.length ?? 0,
-    frozenAfreshOnceAllApplied: refrozen,
-    lastIsTheNextRound: lastRound.includes("## 1. Corner radius") && !lastRound.includes("## 3."),
+    countOnToggle: counted,
+    leftAfterFinish: left?.changes.length ?? 0,
+    frozenAfresh: refrozen,
+    agentsCodeOnCanvas: fillOnCanvas === CHANGES[0].shown,
+    lastStatuses: statuses,
     pageSinceNoticesShown: (await pageSinceNoticesShown(page)).length,
   });
   expect(finished).toBe("Round finished: 1 of 3 changes applied. The page does not show: 2, 3.");
-  expect(left.map((change) => [change.id, change.property])).toEqual([
-    [1, "radius"],
-    [2, "stroke"],
-  ]);
-  expect(same.differing).toBe(0);
-  expect(leftAtLast).toBeNull();
+  expect(counted).toBe(0);
+  expect(left).toBeNull();
   expect(refrozen).toBe(true);
+  expect(fillOnCanvas).toBe(CHANGES[0].shown);
+  expect(statuses).toEqual(["**Status:** Applied", "**Status:** Not applied", "**Status:** Not applied"]);
   // Ticket 141: the Agent's code, applying the round, is no change to the page the canvas reflects.
   expect((await pageSinceNoticesShown(page)).length).toBe(0);
 });

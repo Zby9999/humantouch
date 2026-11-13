@@ -145,9 +145,10 @@ describe("what the other usages showed, kept with the claim (ticket 82)", () => 
     await call("PUT", ROUND_PATH, ROUND);
     expect((await call("POST", CLAIM_PATH, { since: Date.now(), otherUsages: noted(WHITE) })).status).toBe(204);
     expect(existsSync(kept)).toBe(true);
-    // Not done: carried over to the next round, on the same canvas.
+    // Finished, the round leaves nothing (ADR 0019): the designer makes the next.
     expect((await cli("finish")).code).toBe(0);
     expect(existsSync(kept)).toBe(false);
+    await call("PUT", ROUND_PATH, ROUND);
     expect(await loaded()).toBeUndefined();
     expect((await cli("claim")).code).toBe(0);
     expect(await loaded()).toEqual({});
@@ -159,6 +160,7 @@ describe("what the other usages showed, kept with the claim (ticket 82)", () => 
     expect((await cli("claim")).code).toBe(0);
     expect(await loaded()).toEqual({});
     await cli("finish");
+    await call("PUT", ROUND_PATH, ROUND);
     writeFileSync(kept, JSON.stringify(noted(RED)));
     expect((await call("POST", CLAIM_PATH, { since: Date.now() })).status).toBe(204);
     expect(await loaded()).toEqual({});
@@ -168,8 +170,8 @@ describe("what the other usages showed, kept with the claim (ticket 82)", () => 
     await call("PUT", ROUND_PATH, ROUND);
     expect((await cli("claim")).code).toBe(0);
     const before = new Date().toISOString();
-    // Not done: carried over, renumbered from 1, and claimed again.
-    expect((await cli("finish")).code).toBe(0);
+    // Not done, the round ended by the designer: carried over, renumbered from 1, and claimed again.
+    expect((await call("POST", "/unlock")).status).toBe(204);
     await wait(5);
     expect((await cli("claim")).code).toBe(0);
     // Noted as the round before was claimed, its page's word comes in late.
@@ -186,6 +188,7 @@ describe("what the other usages showed, kept with the claim (ticket 82)", () => 
     expect((await call("POST", CLAIM_PATH, { since: Date.now(), otherUsages: noted(RED) })).status).toBe(204);
     const written = readFileSync(kept, "utf8");
     expect((await cli("finish")).code).toBe(0);
+    await call("PUT", ROUND_PATH, ROUND);
     await wait(5);
     expect((await cli("claim")).code).toBe(0);
     // A page's note of the round before, kept as `finish` took the round away.

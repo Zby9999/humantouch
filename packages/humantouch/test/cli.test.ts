@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { run } from "../src/cli";
+import { archiveRound, humanTouchFolder } from "../src/human-touch-folder";
 import type { Change } from "../src/client/changeset";
 import { uncheckable } from "../src/client/check";
 import { REPORT_HEADINGS, REPORT_RULES } from "../src/report-form";
@@ -79,6 +80,11 @@ function changeSections(notes: string) {
 /** What `finish` says of the round: its first line, before the form of the report. */
 function finished(output: string) {
   return output.slice(0, output.indexOf("\n") + 1);
+}
+
+/** Ends the claimed round by hand, as the designer does with End this round (the local service's unlock): changes not applied are carried over (ticket 68, ADR 0019). */
+async function unlock() {
+  return archiveRound(humanTouchFolder(project), "unlocked");
 }
 
 /** Runs the command line in the project, as an Agent would: what it prints, and its errors apart. */
@@ -1636,7 +1642,7 @@ describe("claim, Stacks made and dissolved", () => {
     );
     await cli("claim");
     await cli("done", "1");
-    await cli("finish");
+    await unlock();
 
     const notes = section((await cli("claim")).output, 1);
 
@@ -2899,8 +2905,10 @@ describe("done, checked on the page", () => {
     expect(finished(output)).toBe("Round finished: 1 of 2 changes applied. The page does not show: 2.\n",
     );
     expect(history()[0].result.checks).toMatchObject({ 1: { outcome: "shown" }, 2: { outcome: "not shown", actual: 12 } });
-    // Change 2 is carried over to the next round (ticket 68): the open page is still counted, with none of this round's checks.
-    expect(JSON.parse(readFileSync(join(project, ".humantouch/checks.json"), "utf8"))).toMatchObject({ pages: 1, results: {} });
+    // Finished, the round leaves nothing (ADR 0019): change 2 is in the report, and in `last`, not carried over.
+    expect(readdirSync(join(project, ".humantouch"))).toEqual(["history"]);
+    const { output: listed } = await cli("last");
+    expect(listed.match(/\*\*Status:\*\* \w[\w ]*/g)).toEqual(["**Status:** Applied", "**Status:** Not applied"]);
   });
 });
 
@@ -3444,13 +3452,13 @@ describe("last", () => {
   });
 });
 
-describe("changes not applied, carried over to the next round on the same canvas (ticket 68)", () => {
+describe("changes not applied, carried over to the next round on the same canvas as the designer ends the round (ticket 68, ADR 0019)", () => {
   let closePage = () => {};
   afterEach(() => closePage());
   const halfOpacity = { ...redFill, id: 3, property: "opacity", before: 1, after: 0.5, style: { opacity: "0.5" } };
   const changeSet = () => JSON.parse(readFileSync(join(project, ".humantouch/changeset.json"), "utf8"));
 
-  test("finish with changes not applied keeps them, numbered from 1 in their order, and the canvas; the applied ones are archived and kept apart, for the canvas to take in", async () => {
+  test("finish with changes not applied leaves nothing: every change archived, the canvas gone, edit mode freezes the page afresh (ADR 0019)", async () => {
     saveRound(redFill, smallRadius, halfOpacity);
     await cli("claim");
     await cli("done", "2");
@@ -3458,6 +3466,21 @@ describe("changes not applied, carried over to the next round on the same canvas
     const { output } = await cli("finish");
 
     expect(finished(output)).toBe("Round finished: 1 of 3 changes applied. Not marked done: 1, 3.\n");
+    expect(readdirSync(join(project, ".humantouch"))).toEqual(["history"]);
+    expect(history()[0].changeSet).toEqual({ lastId: 3, changes: [redFill, smallRadius, halfOpacity] });
+    expect(history()[0].result).toMatchObject({ ended: "finished", applied: [2] });
+    // `last` lists them all: the one applied, and those not.
+    const { output: listed } = await cli("last");
+    expect(listed.match(/\*\*Status:\*\* \w[\w ]*/g)).toEqual(["**Status:** Not applied", "**Status:** Applied", "**Status:** Not applied"]);
+  });
+
+  test("ended by the designer with changes not applied keeps them, numbered from 1 in their order, and the canvas; the applied ones are archived and kept apart, for the canvas to take in", async () => {
+    saveRound(redFill, smallRadius, halfOpacity);
+    await cli("claim");
+    await cli("done", "2");
+
+    expect(await unlock()).toMatchObject({ ended: "unlocked", applied: [2] });
+
     expect(readdirSync(join(project, ".humantouch")).sort()).toEqual(["canvas.html", "changeset.json", "history"]);
     // The archive keeps the whole round, as before: `last` is as it was.
     expect(history()[0].changeSet).toEqual({ lastId: 3, changes: [redFill, smallRadius, halfOpacity] });
@@ -3484,7 +3507,7 @@ describe("changes not applied, carried over to the next round on the same canvas
     saveRound(redFill, smallRadius, halfOpacity);
     await cli("claim");
     await cli("done", "2");
-    await cli("finish");
+    await unlock();
     const next = changeSet();
     const shadow = { ...redFill, id: 3, property: "blur", before: 0, after: 4, style: { filter: "blur(4px)" } };
     writeFileSync(join(project, ".humantouch/changeset.json"), JSON.stringify({ ...next, lastId: 3, changes: [...next.changes, shadow] }));
@@ -3522,7 +3545,7 @@ describe("changes not applied, carried over to the next round on the same canvas
     saveRound(...changes);
     await cli("claim");
     await cli("done", "1");
-    await cli("finish");
+    await unlock();
   }
 
   test("an X carried over goes from the X the page shows now: its `left`, the margin kept apart", async () => {
@@ -3635,7 +3658,7 @@ describe("changes not applied, carried over to the next round on the same canvas
     saveRound(redFill, smallRadius);
     await cli("claim");
     await cli("done", "2");
-    await cli("finish");
+    await unlock();
     closePage = openPage(() => ({ outcome: "shown" }));
 
     const { output } = await cli("claim");

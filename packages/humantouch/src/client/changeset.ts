@@ -602,6 +602,19 @@ export function editsOf(kept: SavedOffCanvasLayer): Change[] {
   return [...(kept.origin.edits ?? []), ...kept.edits.changes];
 }
 
+/**
+ * The layers off the canvas once `changes` are taken back: but those they
+ * moved out, which are back on the canvas instead; and with those they put
+ * back, which are off it again, as they were, unless moved out by them too.
+ */
+export function offCanvasWithout(layers: SavedOffCanvasLayer[], changes: Change[]): SavedOffCanvasLayer[] {
+  const out = new Set(changes.map((change) => change.offCanvas));
+  const known = new Set(layers.map((layer) => layer.id));
+  const back = putBackBy(changes).filter((layer) => !out.has(layer.id) && !known.has(layer.id));
+  if (!back.length && !layers.some((layer) => out.has(layer.id))) return layers;
+  return [...layers.filter((layer) => !out.has(layer.id)), ...back];
+}
+
 /** The layers off the canvas that `changes` put back onto it, as they were kept there: those made in the blank space too (ticket 106). */
 export function putBackBy(changes: Change[]): SavedOffCanvasLayer[] {
   return changes.flatMap((change) => (change.kind === "putBack" ? [(change.after as PutBack).layer] : change.madeOffCanvas ? [change.madeOffCanvas] : []));
